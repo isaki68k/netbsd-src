@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci_sbus.c,v 1.13 2016/07/18 22:17:09 maya Exp $	*/
+/*	$NetBSD: ohci_sbus.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,9 +30,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci_sbus.c,v 1.13 2016/07/18 22:17:09 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci_sbus.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $");
 
 #include <sys/param.h>
+#include <sys/kmem.h>
 
 /* bus_dma */
 #include <sys/mbuf.h>
@@ -149,7 +150,8 @@ ohci_sbus_attach(struct device *parent, struct device *self, void *aux)
 	}
 
 	/* Attach usb device. */
-	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint);
+	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint,
+	    CFARGS_NONE);
 }
 
 void
@@ -171,7 +173,7 @@ _ohci_sbus_mem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	int error;
 
 	KDASSERT(sc);
-	ds = malloc(sizeof(struct ohci_dma_segment), M_DEVBUF, M_NOWAIT);
+	ds = kmem_intr_alloc(sizeof(struct ohci_dma_segment), KM_NOSLEEP);
 	if (ds == NULL)
 		return 1;
 	/*
@@ -181,7 +183,7 @@ _ohci_sbus_mem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	error = iopdma_allocate_buffer(iopdma_seg, size);
 
 	if (error) {
-		free(ds, M_DEVBUF);
+		kmem_intr_free(ds, sizeof(*ds));
 		return 1;
 	}
 
@@ -209,7 +211,7 @@ _ohci_sbus_mem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 			iopdma_free_buffer(&ds->ds_iopdma_seg);
 
 			LIST_REMOVE(ds, ds_link);
-			free(ds, M_DEVBUF);
+			kmem_intr_free(ds, sizeof(*ds));
 			return;
 		}
 	}

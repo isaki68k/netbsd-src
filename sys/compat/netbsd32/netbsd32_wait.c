@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_wait.c,v 1.23 2016/09/23 14:09:39 skrll Exp $	*/
+/*	$NetBSD: netbsd32_wait.c,v 1.26 2021/12/05 08:13:12 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_wait.c,v 1.23 2016/09/23 14:09:39 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_wait.c,v 1.26 2021/12/05 08:13:12 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,13 +66,14 @@ netbsd32___wait450(struct lwp *l, const struct netbsd32___wait450_args *uap,
 	if (pid == 0)
 		return error;
 
-	if (SCARG_P32(uap, rusage)) {
+	if (SCARG_P32(uap, status))
+		error = copyout(&status, SCARG_P32(uap, status),
+		    sizeof(status));
+
+	if (SCARG_P32(uap, rusage) && error == 0) {
 		netbsd32_from_rusage(&ru, &ru32);
 		error = copyout(&ru32, SCARG_P32(uap, rusage), sizeof(ru32));
 	}
-
-	if (error == 0 && SCARG_P32(uap, status))
-		error = copyout(&status, SCARG_P32(uap, status), sizeof(status));
 
 	return error;
 }
@@ -118,7 +119,7 @@ netbsd32_wait6(struct lwp *l, const struct netbsd32_wait6_args *uap,
 #if 0
 	/*
 	 * should we copyout if there was no process, hence no useful data?
-	 * We don't for an old sytle wait4() (etc) but I believe
+	 * We don't for an old style wait4() (etc) but I believe
 	 * FreeBSD does for wait6(), so a tossup...  Go with FreeBSD for now.
 	 */
 	if (pid == 0)
@@ -132,6 +133,7 @@ netbsd32_wait6(struct lwp *l, const struct netbsd32_wait6_args *uap,
 	if (wrup != NULL && error == 0) {
 		struct netbsd32_wrusage wru32;
 
+		memset(&wru32, 0, sizeof(wru32));
 		netbsd32_from_rusage(&wrup->wru_self, &wru32.wru_self);
 		netbsd32_from_rusage(&wrup->wru_children, &wru32.wru_children);
 		error = copyout(&wru32, SCARG_P32(uap, wru), sizeof(wru32));

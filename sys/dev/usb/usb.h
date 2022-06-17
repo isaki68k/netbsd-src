@@ -1,4 +1,4 @@
-/*	$NetBSD: usb.h,v 1.118 2019/08/23 07:17:31 mrg Exp $	*/
+/*	$NetBSD: usb.h,v 1.120 2022/04/17 13:15:37 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -202,12 +202,18 @@ typedef struct {
 
 #define USB_3_MAX_CTRL_PACKET	512
 
+/*
+ * This is the common header to all USB descriptors defined in the USB
+ * specification.
+ *
+ * DO NOT CHANGE THIS TYPE!
+ */
 typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;
-	uByte		bDescriptorSubtype;
 } UPACKED usb_descriptor_t;
-#define USB_DESCRIPTOR_SIZE 3
+#define USB_DESCRIPTOR_SIZE 2
+__CTASSERT(sizeof(usb_descriptor_t) == USB_DESCRIPTOR_SIZE);
 
 typedef struct {
 	uByte		bLength;
@@ -771,7 +777,7 @@ typedef struct {
 /* Allow for marginal (i.e. non-conforming) devices. */
 #define USB_PORT_RESET_DELAY	50  /* ms */
 #define USB_PORT_ROOT_RESET_DELAY 250  /* ms */
-#define USB_PORT_RESET_RECOVERY	250  /* ms */
+#define USB_PORT_RESET_RECOVERY	10  /* ms */
 #define USB_PORT_POWERUP_DELAY	300 /* ms */
 #define USB_SET_ADDRESS_SETTLE	10  /* ms */
 #define USB_RESUME_DELAY	(50*5)  /* ms */

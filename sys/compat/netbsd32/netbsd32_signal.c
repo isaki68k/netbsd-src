@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_signal.c,v 1.45 2017/12/17 20:59:27 christos Exp $	*/
+/*	$NetBSD: netbsd32_signal.c,v 1.53 2021/11/06 20:42:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_signal.c,v 1.45 2017/12/17 20:59:27 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_signal.c,v 1.53 2021/11/06 20:42:56 thorpej Exp $");
 
 #if defined(_KERNEL_OPT) 
 #include "opt_ktrace.h"
@@ -43,11 +43,14 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_signal.c,v 1.45 2017/12/17 20:59:27 christo
 #include <sys/proc.h>
 #include <sys/wait.h>
 #include <sys/dirent.h>
+#include <sys/module.h>
+#include <sys/exec.h>
 
 #include <uvm/uvm_extern.h>
 
 #include <compat/netbsd32/netbsd32.h>
 #include <compat/netbsd32/netbsd32_conv.h>
+#include <compat/netbsd32/netbsd32_exec.h>
 #include <compat/netbsd32/netbsd32_syscallargs.h>
 
 #include <compat/sys/signal.h>
@@ -83,9 +86,10 @@ netbsd32_sigaction(struct lwp *l, const struct netbsd32_sigaction_args *uap, reg
 			   NULL, 0);
 
 	if (error)
-		return (error);
+		return error;
 
 	if (SCARG_P32(uap, osa)) {
+		memset(&sa32, 0, sizeof(sa32));
 		NETBSD32PTR32(sa32.netbsd32_sa_handler, osa.sa_handler);
 		sa32.netbsd32_sa_mask = osa.sa_mask.__bits[0];
 		sa32.netbsd32_sa_flags = osa.sa_flags;
@@ -94,7 +98,7 @@ netbsd32_sigaction(struct lwp *l, const struct netbsd32_sigaction_args *uap, reg
 			return EFAULT;
 	}
 
-	return (0);
+	return 0;
 }
 
 int
@@ -123,7 +127,7 @@ netbsd32___sigaction14(struct lwp *l, const struct netbsd32___sigaction14_args *
 	if (SCARG_P32(uap, nsa)) {
 		error = copyin(SCARG_P32(uap, nsa), &sa32, sizeof(sa32));
 		if (error)
-			return (error);
+			return error;
 		nsa.sa_handler = NETBSD32PTR64(sa32.netbsd32_sa_handler);
 		nsa.sa_mask = sa32.netbsd32_sa_mask;
 		nsa.sa_flags = sa32.netbsd32_sa_flags;
@@ -133,16 +137,17 @@ netbsd32___sigaction14(struct lwp *l, const struct netbsd32___sigaction14_args *
 		    SCARG_P32(uap, osa) ? &osa : 0,
 		    NULL, 0);
 	if (error)
-		return (error);
+		return error;
 	if (SCARG_P32(uap, osa)) {
+		memset(&sa32, 0, sizeof(sa32));
 		NETBSD32PTR32(sa32.netbsd32_sa_handler, osa.sa_handler);
 		sa32.netbsd32_sa_mask = osa.sa_mask;
 		sa32.netbsd32_sa_flags = osa.sa_flags;
 		error = copyout(&sa32, SCARG_P32(uap, osa), sizeof(sa32));
 		if (error)
-			return (error);
+			return error;
 	}
-	return (0);
+	return 0;
 }
 
 /* ARGSUSED */
@@ -158,158 +163,192 @@ netbsd32___sigaction_sigtramp(struct lwp *l, const struct netbsd32___sigaction_s
 	} */
 	struct netbsd32_sigaction sa32;
 	struct sigaction nsa, osa;
-	int error;
+	int error, vers;
 
 	if (SCARG_P32(uap, nsa)) {
 		error = copyin(SCARG_P32(uap, nsa), &sa32, sizeof(sa32));
 		if (error)
-			return (error);
+			return error;
 		nsa.sa_handler = NETBSD32PTR64(sa32.netbsd32_sa_handler);
 		nsa.sa_mask = sa32.netbsd32_sa_mask;
 		nsa.sa_flags = sa32.netbsd32_sa_flags;
 	}
+	vers = SCARG(uap, vers);
+#ifndef __HAVE_MD_NETBSD32_SENDSIG	/* XXX paying for yesterday's sins */
+	if (vers < __SIGTRAMP_SIGINFO_VERSION_MIN) {
+		/*
+		 * sigaction1() doesn't enforce sigcontext-ness for
+		 * __SIGTRAMP_SIGCODE_VERSION because it might be
+		 * a foreign emulation.  However, we know these are
+		 * native NetBSD 32-bit binaries, so we do.
+		 */
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+		struct proc *p = l->l_proc;
+		bool sigcontext_valid = false;
+
+		/*
+		 * We need to ensure the compat_netbsd32_16 module
+		 * is loaded, because sigaction1() gives a free pass
+		 * to processes marked PK_32 (it can't be sure which
+		 * 32-bit compat module is needed).
+		 */
+		if ((p->p_lflag & PL_SIGCOMPAT) == 0) {
+			kernconfig_lock();
+			(void)module_autoload("compat_netbsd32_16",
+			    MODULE_CLASS_ANY);
+			if (netbsd32_sendsig_sigcontext_16_hook.hooked) {
+				sigcontext_valid = true;
+			}
+			mutex_enter(&proc_lock);
+			/*
+			 * Prevent unload of compat module while
+			 * this process remains.
+			 */
+			p->p_lflag |= PL_SIGCOMPAT;
+			mutex_exit(&proc_lock);
+			kernconfig_unlock();
+		}
+		if (!sigcontext_valid) {
+			return EINVAL;
+		}
+#else /* ! __HAVE_STRUCT_SIGCONTEXT */
+		return EINVAL;
+#endif /* __HAVE_STRUCT_SIGCONTEXT */
+	}
+#endif /* __HAVE_MD_NETBSD32_SENDSIG */
 	error = sigaction1(l, SCARG(uap, signum),
 	    SCARG_P32(uap, nsa) ? &nsa : 0,
 	    SCARG_P32(uap, osa) ? &osa : 0,
-	    SCARG_P32(uap, tramp), SCARG(uap, vers));
+	    SCARG_P32(uap, tramp), vers);
 	if (error)
-		return (error);
+		return error;
 	if (SCARG_P32(uap, osa)) {
+		memset(&sa32, 0, sizeof(sa32));
 		NETBSD32PTR32(sa32.netbsd32_sa_handler, osa.sa_handler);
 		sa32.netbsd32_sa_mask = osa.sa_mask;
 		sa32.netbsd32_sa_flags = osa.sa_flags;
 		error = copyout(&sa32, SCARG_P32(uap, osa), sizeof(sa32));
 		if (error)
-			return (error);
+			return error;
 	}
-	return (0);
+	return 0;
 }
+
+#ifndef __HAVE_MD_NETBSD32_SENDSIG	/* XXX paying for yesterday's sins */
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+struct netbsd32_sendsig_sigcontext_16_hook_t netbsd32_sendsig_sigcontext_16_hook;
+#endif
+
+void
+netbsd32_sendsig(const struct ksiginfo *ksi, const sigset_t *mask)
+{
+	struct sigacts *sa;
+	int sig;
+
+	sig = ksi->ksi_signo;
+	sa = curproc->p_sigacts;
+
+	switch (sa->sa_sigdesc[sig].sd_vers) {
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+	case __SIGTRAMP_SIGCODE_VERSION:
+	case __SIGTRAMP_SIGCONTEXT_VERSION_MIN ...
+	     __SIGTRAMP_SIGCONTEXT_VERSION_MAX:
+		/* Compat for 1.6 and earlier. */
+		MODULE_HOOK_CALL_VOID(netbsd32_sendsig_sigcontext_16_hook,
+		    (ksi, mask), break);
+		return;
+#endif /* __HAVE_STRUCT_SIGCONTEXT */
+	case __SIGTRAMP_SIGINFO_VERSION_MIN ...
+	     __SIGTRAMP_SIGINFO_VERSION_MAX:
+		netbsd32_sendsig_siginfo(ksi, mask);
+		return;
+	default:
+		break;
+	}
+
+	printf("%s: bad version %d\n", __func__, sa->sa_sigdesc[sig].sd_vers);
+	sigexit(curlwp, SIGILL);
+}
+#endif /* __HAVE_MD_NETBSD32_SENDSIG */
 
 void
 netbsd32_ksi32_to_ksi(struct _ksiginfo *si, const struct __ksiginfo32 *si32)
 {
+	size_t i;
+
 	memset(si, 0, sizeof (*si));
 	si->_signo = si32->_signo;
 	si->_code = si32->_code;
 	si->_errno = si32->_errno;
 
+	if (si32->_code == SI_NOINFO)
+		return;
+	else if (si32->_code <= 0)	/* codes described in siginfo(2) */
+		goto fill_rt;
+
 	switch (si32->_signo) {
 	case SIGILL:
+	case SIGFPE:
 	case SIGBUS:
 	case SIGSEGV:
-	case SIGFPE:
-	case SIGTRAP:
+fill_fault:
 		si->_reason._fault._addr =
 		    NETBSD32IPTR64(si32->_reason._fault._addr);
 		si->_reason._fault._trap = si32->_reason._fault._trap;
+		break;
+	case SIGTRAP:
+		switch (si32->_code) {
+		case TRAP_EXEC:
+			break;
+		case TRAP_CHLD:
+		case TRAP_LWP:
+			si->_reason._ptrace_state._pe_report_event =
+			    si32->_reason._ptrace_state._pe_report_event;
+CTASSERT(sizeof(si->_reason._ptrace_state._option._pe_other_pid) ==
+    sizeof(si->_reason._ptrace_state._option._pe_lwp));
+			si->_reason._ptrace_state._option._pe_other_pid =
+			    si32->_reason._ptrace_state._option._pe_other_pid;
+			break;
+		case TRAP_SCE:
+		case TRAP_SCX:
+			si->_reason._syscall._sysnum =
+			    si32->_reason._syscall._sysnum;
+			si->_reason._syscall._retval[0] =
+			    si32->_reason._syscall._retval[0];
+			si->_reason._syscall._retval[1] =
+			    si32->_reason._syscall._retval[1];
+			si->_reason._syscall._error =
+			    si32->_reason._syscall._error;
+			for (i = 0;
+			    i < __arraycount(si->_reason._syscall._args); i++)
+				si->_reason._syscall._args[i] =
+				    si32->_reason._syscall._args[i];
+			break;
+		default:
+			goto fill_fault;
+		}
 		break;
 	case SIGALRM:
 	case SIGVTALRM:
 	case SIGPROF:
 	default:	/* see sigqueue() and kill1() */
+fill_rt:
 		si->_reason._rt._pid = si32->_reason._rt._pid;
 		si->_reason._rt._uid = si32->_reason._rt._uid;
 		si->_reason._rt._value.sival_int =
 		    si32->_reason._rt._value.sival_int;
-		break;
-	case SIGCHLD:
-		si->_reason._child._pid = si32->_reason._child._pid;
-		si->_reason._child._uid = si32->_reason._child._uid;
-		si->_reason._child._utime = si32->_reason._child._utime;
-		si->_reason._child._stime = si32->_reason._child._stime;
 		break;
 	case SIGURG:
 	case SIGIO:
 		si->_reason._poll._band = si32->_reason._poll._band;
 		si->_reason._poll._fd = si32->_reason._poll._fd;
 		break;
-	}
-}
-
-#ifdef notyet
-#ifdef KTRACE
-static void
-netbsd32_ksi_to_ksi32(struct __ksiginfo32 *si32, const struct _ksiginfo *si)
-{
-	memset(si32, 0, sizeof (*si32));
-	si32->_signo = si->_signo;
-	si32->_code = si->_code;
-	si32->_errno = si->_errno;
-
-	switch (si->_signo) {
-	case SIGILL:
-	case SIGBUS:
-	case SIGSEGV:
-	case SIGFPE:
-	case SIGTRAP:
-		si32->_reason._fault._addr =
-		    NETBSD32PTR32I(si->_reason._fault._addr);
-		si32->_reason._fault._trap = si->_reason._fault._trap;
-		break;
-	case SIGALRM:
-	case SIGVTALRM:
-	case SIGPROF:
-	default:	/* see sigqueue() and kill1() */
-		si32->_reason._rt._pid = si->_reason._rt._pid;
-		si32->_reason._rt._uid = si->_reason._rt._uid;
-		si32->_reason._rt._value.sival_int =
-		    si->_reason._rt._value.sival_int;
-		break;
 	case SIGCHLD:
-		si32->_reason._child._pid = si->_reason._child._pid;
-		si32->_reason._child._uid = si->_reason._child._uid;
-		si32->_reason._child._utime = si->_reason._child._utime;
-		si32->_reason._child._stime = si->_reason._child._stime;
-		break;
-	case SIGURG:
-	case SIGIO:
-		si32->_reason._poll._band = si->_reason._poll._band;
-		si32->_reason._poll._fd = si->_reason._poll._fd;
-		break;
-	}
-}
-#endif
-#endif
-
-void
-netbsd32_si_to_si32(siginfo32_t *si32, const siginfo_t *si)
-{
-	memset(si32, 0, sizeof (*si32));
-	si32->si_signo = si->si_signo;
-	si32->si_code = si->si_code;
-	si32->si_errno = si->si_errno;
-
-	switch (si32->si_signo) {
-	case 0:	/* SA */
-		si32->si_value.sival_int = si->si_value.sival_int;
-		break;
-	case SIGILL:
-	case SIGBUS:
-	case SIGSEGV:
-	case SIGFPE:
-	case SIGTRAP:
-		si32->si_addr = (uint32_t)(uintptr_t)si->si_addr;
-		si32->si_trap = si->si_trap;
-		break;
-	case SIGALRM:
-	case SIGVTALRM:
-	case SIGPROF:
-	default:
-		si32->si_pid = si->si_pid;
-		si32->si_uid = si->si_uid;
-		si32->si_value.sival_int = si->si_value.sival_int;
-		break;
-	case SIGCHLD:
-		si32->si_pid = si->si_pid;
-		si32->si_uid = si->si_uid;
-		si32->si_status = si->si_status;
-		si32->si_utime = si->si_utime;
-		si32->si_stime = si->si_stime;
-		break;
-	case SIGURG:
-	case SIGIO:
-		si32->si_band = si->si_band;
-		si32->si_fd = si->si_fd;
+		si->_reason._child._pid = si32->_reason._child._pid;
+		si->_reason._child._uid = si32->_reason._child._uid;
+		si->_reason._child._status = si32->_reason._child._status;
+		si->_reason._child._utime = si32->_reason._child._utime;
+		si->_reason._child._stime = si32->_reason._child._stime;
 		break;
 	}
 }
@@ -317,44 +356,99 @@ netbsd32_si_to_si32(siginfo32_t *si32, const siginfo_t *si)
 void
 netbsd32_si32_to_si(siginfo_t *si, const siginfo32_t *si32)
 {
-	memset(si, 0, sizeof (*si));
-	si->si_signo = si32->si_signo;
-	si->si_code = si32->si_code;
-	si->si_errno = si32->si_errno;
 
-	switch (si->si_signo) {
-	case 0:	/* SA */
-		si->si_value.sival_int = si32->si_value.sival_int;
-		break;
+	memset(si, 0, sizeof (*si));
+	netbsd32_ksi32_to_ksi(&si->_info, &si32->_info);
+}
+
+static void
+netbsd32_ksi_to_ksi32(struct __ksiginfo32 *si32, const struct _ksiginfo *si)
+{
+	size_t i;
+
+	memset(si32, 0, sizeof (*si32));
+	si32->_signo = si->_signo;
+	si32->_code = si->_code;
+	si32->_errno = si->_errno;
+
+	if (si->_code == SI_NOINFO)
+		return;
+	else if (si->_code <= 0)	/* codes described in siginfo(2) */
+		goto fill_rt;
+
+	switch (si->_signo) {
 	case SIGILL:
+	case SIGFPE:
 	case SIGBUS:
 	case SIGSEGV:
-	case SIGFPE:
+fill_fault:
+		si32->_reason._fault._addr =
+		    NETBSD32PTR32I(si->_reason._fault._addr);
+		si32->_reason._fault._trap = si->_reason._fault._trap;
+		break;
 	case SIGTRAP:
-		si->si_addr = (void *)(uintptr_t)si32->si_addr;
-		si->si_trap = si32->si_trap;
+		switch (si->_code) {
+		case TRAP_EXEC:
+			break;
+		case TRAP_CHLD:
+		case TRAP_LWP:
+			si32->_reason._ptrace_state._pe_report_event =
+			    si->_reason._ptrace_state._pe_report_event;
+CTASSERT(sizeof(si32->_reason._ptrace_state._option._pe_other_pid) ==
+    sizeof(si32->_reason._ptrace_state._option._pe_lwp));
+			si32->_reason._ptrace_state._option._pe_other_pid =
+			    si->_reason._ptrace_state._option._pe_other_pid;
+			break;
+		case TRAP_SCE:
+		case TRAP_SCX:
+			si32->_reason._syscall._sysnum =
+			    si->_reason._syscall._sysnum;
+			si32->_reason._syscall._retval[0] =
+			    si->_reason._syscall._retval[0];
+			si32->_reason._syscall._retval[1] =
+			    si->_reason._syscall._retval[1];
+			si32->_reason._syscall._error =
+			    si->_reason._syscall._error;
+			for (i = 0;
+			    i < __arraycount(si->_reason._syscall._args); i++)
+				si32->_reason._syscall._args[i] =
+				    si->_reason._syscall._args[i];
+			break;
+		default:
+			goto fill_fault;
+		}
 		break;
 	case SIGALRM:
 	case SIGVTALRM:
 	case SIGPROF:
-	default:
-		si->si_pid = si32->si_pid;
-		si->si_uid = si32->si_uid;
-		si->si_value.sival_int = si32->si_value.sival_int;
-		break;
-	case SIGCHLD:
-		si->si_pid = si32->si_pid;
-		si->si_uid = si32->si_uid;
-		si->si_status = si32->si_status;
-		si->si_utime = si32->si_utime;
-		si->si_stime = si32->si_stime;
+	default:	/* see sigqueue() and kill1() */
+fill_rt:
+		si32->_reason._rt._pid = si->_reason._rt._pid;
+		si32->_reason._rt._uid = si->_reason._rt._uid;
+		si32->_reason._rt._value.sival_int =
+		    si->_reason._rt._value.sival_int;
 		break;
 	case SIGURG:
 	case SIGIO:
-		si->si_band = si32->si_band;
-		si->si_fd = si32->si_fd;
+		si32->_reason._poll._band = si->_reason._poll._band;
+		si32->_reason._poll._fd = si->_reason._poll._fd;
+		break;
+	case SIGCHLD:
+		si32->_reason._child._pid = si->_reason._child._pid;
+		si32->_reason._child._uid = si->_reason._child._uid;
+		si32->_reason._child._status = si->_reason._child._status;
+		si32->_reason._child._utime = si->_reason._child._utime;
+		si32->_reason._child._stime = si->_reason._child._stime;
 		break;
 	}
+}
+
+void
+netbsd32_si_to_si32(siginfo32_t *si32, const siginfo_t *si)
+{
+
+	memset(si32, 0, sizeof (*si32));
+	netbsd32_ksi_to_ksi32(&si32->_info, &si->_info);
 }
 
 void
@@ -427,7 +521,7 @@ setucontext32(struct lwp *l, const ucontext32_t *ucp)
 	error = cpu_setmcontext32(l, &ucp->uc_mcontext, ucp->uc_flags);
 	mutex_enter(p->p_lock);
 	if (error != 0)
-		return (error);
+		return error;
 
 	l->l_ctxlink = (void *)(intptr_t)ucp->uc_link;
 
@@ -458,16 +552,16 @@ netbsd32_setcontext(struct lwp *l, const struct netbsd32_setcontext_args *uap, r
 
 	error = copyin(SCARG_P32(uap, ucp), &uc, sizeof (uc));
 	if (error)
-		return (error);
+		return error;
 	if (!(uc.uc_flags & _UC_CPU))
-		return (EINVAL);
+		return EINVAL;
 	mutex_enter(p->p_lock);
 	error = setucontext32(l, &uc);
 	mutex_exit(p->p_lock);
 	if (error)
-		return (error);
+		return error;
 
-	return (EJUSTRETURN);
+	return EJUSTRETURN;
 }
 
 static int

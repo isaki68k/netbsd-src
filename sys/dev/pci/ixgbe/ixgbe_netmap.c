@@ -1,3 +1,4 @@
+/* $NetBSD: ixgbe_netmap.c,v 1.5 2021/12/10 11:27:17 msaitoh Exp $ */
 /******************************************************************************
 
   Copyright (c) 2001-2017, Intel Corporation
@@ -69,6 +70,9 @@
  * it near the beginning of the standard driver.
  */
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: ixgbe_netmap.c,v 1.5 2021/12/10 11:27:17 msaitoh Exp $");
+
 #ifdef DEV_NETMAP
 /*
  * Some drivers may need the following headers. Others
@@ -117,9 +121,11 @@ set_crcstrip(struct ixgbe_hw *hw, int onoff)
 
 	hl = IXGBE_READ_REG(hw, IXGBE_HLREG0);
 	rxc = IXGBE_READ_REG(hw, IXGBE_RDRXCTL);
+#ifdef D
 	if (netmap_verbose)
 		D("%s read  HLREG 0x%x rxc 0x%x",
 			onoff ? "enter" : "exit", hl, rxc);
+#endif
 	/* hw requirements ... */
 	rxc &= ~IXGBE_RDRXCTL_RSCFRSTSIZE;
 	rxc |= IXGBE_RDRXCTL_RSCACKC;
@@ -132,9 +138,11 @@ set_crcstrip(struct ixgbe_hw *hw, int onoff)
 		hl |= IXGBE_HLREG0_RXCRCSTRP;
 		rxc |= IXGBE_RDRXCTL_CRCSTRIP;
 	}
+#ifdef D
 	if (netmap_verbose)
 		D("%s write HLREG 0x%x rxc 0x%x",
 			onoff ? "enter" : "exit", hl, rxc);
+#endif
 	IXGBE_WRITE_REG(hw, IXGBE_HLREG0, hl);
 	IXGBE_WRITE_REG(hw, IXGBE_RDRXCTL, rxc);
 }
@@ -340,7 +348,9 @@ ixgbe_netmap_txsync(struct netmap_kring *kring, int flags)
 		 */
 		nic_i = IXGBE_READ_REG(&adapter->hw, IXGBE_TDH(kring->ring_id));
 		if (nic_i >= kring->nkr_num_slots) { /* XXX can it happen ? */
+#ifdef D
 			D("TDH wrap %d", nic_i);
+#endif
 			nic_i -= kring->nkr_num_slots;
 		}
 		if (nic_i != txr->next_to_clean) {

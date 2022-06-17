@@ -1,7 +1,7 @@
-/*	$NetBSD: imxgpio.c,v 1.6 2019/07/24 12:33:18 hkenken Exp $ */
+/*	$NetBSD: imxgpio.c,v 1.11 2021/08/07 16:18:44 thorpej Exp $ */
 
 /*-
- * Copyright (c) 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxgpio.c,v 1.6 2019/07/24 12:33:18 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxgpio.c,v 1.11 2021/08/07 16:18:44 thorpej Exp $");
 
 #define	_INTR_PRIVATE
 
@@ -40,8 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: imxgpio.c,v 1.6 2019/07/24 12:33:18 hkenken Exp $");
 #include <sys/evcnt.h>
 #include <sys/atomic.h>
 #include <sys/bus.h>
-
-#include <machine/intr.h>
+#include <sys/cpu.h>
+#include <sys/intr.h>
 
 #include <arm/cpu.h>
 #include <arm/armreg.h>
@@ -288,40 +288,37 @@ imxgpio_pin_ctl(void *arg, int pin, int flags)
 }
 
 static void
-gpio_defer(device_t self)
+imxgpio_attach_ports(struct imxgpio_softc *gpio)
 {
-	struct imxgpio_softc * const gpio = device_private(self);
 	struct gpio_chipset_tag * const gp = &gpio->gpio_chipset;
 	struct gpiobus_attach_args gba;
-	gpio_pin_t *pins;
-	uint32_t mask, dir, value;
-	int pin;
+	uint32_t dir;
+	u_int pin;
 
 	gp->gp_cookie = gpio;
 	gp->gp_pin_read = imxgpio_pin_read;
 	gp->gp_pin_write = imxgpio_pin_write;
 	gp->gp_pin_ctl = imxgpio_pin_ctl;
 
-	gba.gba_gc = gp;
-	gba.gba_pins = gpio->gpio_pins;
-	gba.gba_npins = __arraycount(gpio->gpio_pins);
-
 	dir = GPIO_READ(gpio, GPIO_DIR);
-	value = GPIO_READ(gpio, GPIO_DR);
-	for (pin = 0, mask = 1, pins = gpio->gpio_pins;
-	     pin < 32; pin++, mask <<= 1, pins++) {
+	for (pin = 0; pin < __arraycount(gpio->gpio_pins); pin++) {
+		uint32_t mask = __BIT(pin);
+		gpio_pin_t *pins = &gpio->gpio_pins[pin];
 		pins->pin_num = pin;
 		if ((gpio->gpio_edge_mask | gpio->gpio_level_mask) & mask)
 			pins->pin_caps = GPIO_PIN_INPUT;
 		else
-			pins->pin_caps = GPIO_PIN_INPUT|GPIO_PIN_OUTPUT;
+			pins->pin_caps = GPIO_PIN_INPUT | GPIO_PIN_OUTPUT;
 		pins->pin_flags =
 		    (dir & mask) ? GPIO_PIN_OUTPUT : GPIO_PIN_INPUT;
-		pins->pin_state =
-		    (value & mask) ? GPIO_PIN_HIGH : GPIO_PIN_LOW;
+		pins->pin_state = imxgpio_pin_read(gpio, pin);
 	}
 
-	config_found_ia(self, "gpiobus", &gba, gpiobus_print);
+	memset(&gba, 0, sizeof(gba));
+	gba.gba_gc = gp;
+	gba.gba_pins = gpio->gpio_pins;
+	gba.gba_npins = __arraycount(gpio->gpio_pins);
+	config_found(gpio->gpio_dev, &gba, gpiobus_print, CFARGS_NONE);
 }
 #endif /* NGPIO > 0 */
 
@@ -330,34 +327,35 @@ imxgpio_attach_common(device_t self)
 {
 	struct imxgpio_softc * const gpio = device_private(self);
 
-	KASSERT(gpio->gpio_unit < MAX_NGROUP);
-
 	gpio->gpio_dev = self;
 
-	if (gpio->gpio_irqbase > 0) {
-		aprint_normal_dev(gpio->gpio_dev, "interrupts %d..%d\n",
-		    gpio->gpio_irqbase, gpio->gpio_irqbase + GPIO_NPINS - 1);
-
+	if (gpio->gpio_irqbase == PIC_IRQBASE_ALLOC || gpio->gpio_irqbase > 0) {
 		gpio->gpio_pic.pic_ops = &imxgpio_pic_ops;
 		strlcpy(gpio->gpio_pic.pic_name, device_xname(self),
 		    sizeof(gpio->gpio_pic.pic_name));
-		gpio->gpio_pic.pic_maxsources = 32;
+		gpio->gpio_pic.pic_maxsources = GPIO_NPINS;
 
-		pic_add(&gpio->gpio_pic, gpio->gpio_irqbase);
+		gpio->gpio_irqbase = pic_add(&gpio->gpio_pic, gpio->gpio_irqbase);
+
+		aprint_normal_dev(gpio->gpio_dev, "interrupts %d..%d\n",
+		    gpio->gpio_irqbase, gpio->gpio_irqbase + GPIO_NPINS - 1);
 	}
 
 	mutex_init(&gpio->gpio_lock, MUTEX_DEFAULT, IPL_VM);
 
-	imxgpio_handles[gpio->gpio_unit] = gpio;
+	if (gpio->gpio_unit != -1) {
+		KASSERT(gpio->gpio_unit < MAX_NGROUP);
+		imxgpio_handles[gpio->gpio_unit] = gpio;
+	}
 
 #if NGPIO > 0
-	config_interrupts(self, gpio_defer);
+	imxgpio_attach_ports(gpio);
 #endif
 }
 
 /* in-kernel GPIO access utility functions */
 void
-gpio_set_direction(u_int gpio, int dir)
+imxgpio_set_direction(u_int gpio, int dir)
 {
 	int index = gpio / GPIO_NPINS;
 	int pin = gpio % GPIO_NPINS;
@@ -369,7 +367,7 @@ gpio_set_direction(u_int gpio, int dir)
 }
 
 void
-gpio_data_write(u_int gpio, u_int value)
+imxgpio_data_write(u_int gpio, u_int value)
 {
 	int index = gpio / GPIO_NPINS;
 	int pin = gpio % GPIO_NPINS;
@@ -381,7 +379,7 @@ gpio_data_write(u_int gpio, u_int value)
 }
 
 bool
-gpio_data_read(u_int gpio)
+imxgpio_data_read(u_int gpio)
 {
 	int index = gpio / GPIO_NPINS;
 	int pin = gpio % GPIO_NPINS;

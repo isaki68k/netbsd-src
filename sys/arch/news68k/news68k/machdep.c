@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.104 2019/03/14 16:59:10 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.110 2021/10/09 20:00:42 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.104 2019/03/14 16:59:10 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.110 2021/10/09 20:00:42 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -189,7 +189,7 @@ news68k_init(void)
 	 */
 	for (i = 0; i < btoc(MSGBUFSIZE); i++)
 		pmap_kenter_pa((vaddr_t)msgbufaddr + i * PAGE_SIZE,
-		    avail_end + i * PAGE_SIZE, VM_PROT_READ|VM_PROT_WRITE, 0)
+		    avail_end + i * PAGE_SIZE, VM_PROT_READ|VM_PROT_WRITE, 0);
 	pmap_update(pmap_kernel());
 	initmsgbuf(msgbufaddr, m68k_round_page(MSGBUFSIZE));
 }
@@ -237,7 +237,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -321,7 +321,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 		printf("\n");
 	}
 #endif
@@ -992,8 +994,17 @@ consinit(void)
 int
 mm_md_physacc(paddr_t pa, vm_prot_t prot)
 {
+	paddr_t memend;
 
-	return (pa < lowram || pa >= 0xfffffffc) ? EFAULT : 0;
+	/*
+	 * news68k has one contiguous memory segment.
+	 */
+	memend = lowram + ctob(physmem);
+
+	if (lowram <= pa && pa < memend) 
+		return 0;
+
+	return EFAULT;
 }
 
 int

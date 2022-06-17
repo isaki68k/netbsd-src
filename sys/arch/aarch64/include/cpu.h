@@ -1,7 +1,7 @@
-/* $NetBSD: cpu.h,v 1.14 2019/10/19 18:04:26 jmcneill Exp $ */
+/* $NetBSD: cpu.h,v 1.45 2021/11/02 11:26:03 ryo Exp $ */
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -32,9 +32,12 @@
 #ifndef _AARCH64_CPU_H_
 #define _AARCH64_CPU_H_
 
+#include <arm/cpu.h>
+
 #ifdef __aarch64__
 
 #ifdef _KERNEL_OPT
+#include "opt_gprof.h"
 #include "opt_multiprocessor.h"
 #endif
 
@@ -43,8 +46,8 @@
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #include <sys/evcnt.h>
 
-#include <aarch64/frame.h>
 #include <aarch64/armreg.h>
+#include <aarch64/frame.h>
 
 struct clockframe {
 	struct trapframe cf_tf;
@@ -66,71 +69,140 @@ struct clockframe {
 
 struct aarch64_cpufuncs {
 	void (*cf_set_ttbr0)(uint64_t);
+	void (*cf_icache_sync_range)(vaddr_t, vsize_t);
+};
+
+#define MAX_CACHE_LEVEL	8		/* ARMv8 has maximum 8 level cache */
+
+struct aarch64_cache_unit {
+	u_int cache_type;
+#define CACHE_TYPE_VPIPT	0	/* VMID-aware PIPT */
+#define CACHE_TYPE_VIVT		1	/* ASID-tagged VIVT */
+#define CACHE_TYPE_VIPT		2
+#define CACHE_TYPE_PIPT		3
+	u_int cache_line_size;
+	u_int cache_ways;
+	u_int cache_sets;
+	u_int cache_way_size;
+	u_int cache_size;
+};
+
+struct aarch64_cache_info {
+	u_int cacheable;
+#define CACHE_CACHEABLE_NONE	0
+#define CACHE_CACHEABLE_ICACHE	1	/* instruction cache only */
+#define CACHE_CACHEABLE_DCACHE	2	/* data cache only */
+#define CACHE_CACHEABLE_IDCACHE	3	/* instruction and data caches */
+#define CACHE_CACHEABLE_UNIFIED	4	/* unified cache */
+	struct aarch64_cache_unit icache;
+	struct aarch64_cache_unit dcache;
 };
 
 struct cpu_info {
 	struct cpu_data ci_data;
 	device_t ci_dev;
 	cpuid_t ci_cpuid;
-	struct lwp *ci_curlwp;
-	struct lwp *ci_softlwps[SOFTINT_COUNT];
+
+	/*
+	 * the following are in their own cache line, as they are stored to
+	 * regularly by remote CPUs; when they were mixed with other fields
+	 * we observed frequent cache misses.
+	 */
+	int ci_want_resched __aligned(COHERENCY_UNIT);
+	/* XXX pending IPIs? */
+
+	/*
+	 * this is stored frequently, and is fetched by remote CPUs.
+	 */
+	struct lwp *ci_curlwp __aligned(COHERENCY_UNIT);
+	struct lwp *ci_onproc;
+
+	/*
+	 * largely CPU-private.
+	 */
+	struct lwp *ci_softlwps[SOFTINT_COUNT] __aligned(COHERENCY_UNIT);
 
 	uint64_t ci_lastintr;
 
 	int ci_mtx_oldspl;
 	int ci_mtx_count;
 
-	int ci_want_resched;
-	int ci_cpl;
+	int ci_cpl;		/* current processor level (spl) */
+	int ci_hwpl;		/* current hardware priority */
 	volatile u_int ci_softints;
-	volatile u_int ci_astpending;
 	volatile u_int ci_intr_depth;
+	volatile uint32_t ci_blocked_pics;
+	volatile uint32_t ci_pending_pics;
+	volatile uint32_t ci_pending_ipls;
+	void *ci_splx_restart;
+	int ci_splx_savedipl;
+
+	int ci_kfpu_spl;
+
+	/* ASID of current pmap */
+	tlb_asid_t ci_pmap_asid_cur;
 
 	/* event counters */
 	struct evcnt ci_vfp_use;
 	struct evcnt ci_vfp_reuse;
 	struct evcnt ci_vfp_save;
 	struct evcnt ci_vfp_release;
+	struct evcnt ci_uct_trap;
+	struct evcnt ci_intr_preempt;
+
+	/* FDT or similar supplied "cpu capacity" */
+	uint32_t ci_capacity_dmips_mhz;
 
 	/* interrupt controller */
 	u_int ci_gic_redist;	/* GICv3 redistributor index */
 	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
 
 	/* ACPI */
-	uint64_t ci_acpiid;	/* ACPI Processor Unique ID */
+	uint32_t ci_acpiid;	/* ACPI Processor Unique ID */
 
+	/* cached system registers */
+	uint64_t ci_sctlr_el1;
+	uint64_t ci_sctlr_el2;
+
+	/* sysctl(9) exposed system registers */
 	struct aarch64_sysctl_cpu_id ci_id;
 
-	struct aarch64_cache_info *ci_cacheinfo;
+	/* cache information and function pointers */
+	struct aarch64_cache_info ci_cacheinfo[MAX_CACHE_LEVEL];
 	struct aarch64_cpufuncs ci_cpufuncs;
 
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 } __aligned(COHERENCY_UNIT);
 
-static inline struct cpu_info *
-curcpu(void)
+#ifdef _KERNEL
+static inline __always_inline struct lwp * __attribute__ ((const))
+aarch64_curlwp(void)
 {
-	struct cpu_info *ci;
-	__asm __volatile ("mrs %0, tpidr_el1" : "=r"(ci));
-	return ci;
+	struct lwp *l;
+	__asm("mrs %0, tpidr_el1" : "=r"(l));
+	return l;
 }
-#define curlwp			(curcpu()->ci_curlwp)
 
-#define setsoftast(ci)		atomic_or_uint(&(ci)->ci_astpending, __BIT(0))
-#define cpu_signotify(l)	setsoftast((l)->l_cpu)
+/* forward declaration; defined in sys/lwp.h. */
+static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 
-void cpu_set_curpri(int);
-void cpu_proc_fork(struct proc *, struct proc *);
-void cpu_need_proftick(struct lwp *l);
-void cpu_boot_secondary_processors(void);
-void cpu_mpstart(void);
-void cpu_hatch(struct cpu_info *);
+#define	curcpu()		(lwp_getcpu(aarch64_curlwp()))
+#define	setsoftast(ci)		(cpu_signotify((ci)->ci_onproc))
+#undef curlwp
+#define	curlwp			(aarch64_curlwp())
+
+void	cpu_signotify(struct lwp *l);
+void	cpu_need_proftick(struct lwp *l);
+
+void	cpu_hatch(struct cpu_info *);
 
 extern struct cpu_info *cpu_info[];
-extern uint64_t cpu_mpidr[];		/* MULTIPROCESSOR */
-bool cpu_hatched_p(u_int);		/* MULTIPROCESSOR */
+extern struct cpu_info cpu_info_store[];
 
-#define CPU_INFO_ITERATOR	cpuid_t
-#ifdef MULTIPROCESSOR
+#define CPU_INFO_ITERATOR	int
+#if defined(MULTIPROCESSOR) || defined(_MODULE)
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)
 #define CPU_INFO_FOREACH(cii, ci)					\
@@ -144,36 +216,34 @@ bool cpu_hatched_p(u_int);		/* MULTIPROCESSOR */
 	cii = 0, __USE(cii), ci = curcpu(); ci != NULL; ci = NULL
 #endif /* MULTIPROCESSOR */
 
+#define	LWP0_CPU_INFO	(&cpu_info_store[0])
+
+#define	__HAVE_CPU_DOSOFTINTS_CI
+
+static inline void
+cpu_dosoftints_ci(struct cpu_info *ci)
+{
+#if defined(__HAVE_FAST_SOFTINTS) && !defined(__HAVE_PIC_FAST_SOFTINTS)
+	void dosoftints(void);
+
+	if (ci->ci_intr_depth == 0 && (ci->ci_softints >> ci->ci_cpl) > 0) {
+		dosoftints();
+	}
+#endif
+}
 
 static inline void
 cpu_dosoftints(void)
 {
 #if defined(__HAVE_FAST_SOFTINTS) && !defined(__HAVE_PIC_FAST_SOFTINTS)
-	void dosoftints(void);
-	struct cpu_info * const ci = curcpu();
-
-	if (ci->ci_intr_depth == 0 && (ci->ci_softints >> ci->ci_cpl) > 0)
-		dosoftints();
+	cpu_dosoftints_ci(curcpu());
 #endif
 }
 
-static inline bool
-cpu_intr_p(void)
-{
-#ifdef __HAVE_PIC_FAST_SOFTINTS
-	if (ci->ci_cpl < IPL_VM)
-		return false;
-#endif
-	return curcpu()->ci_intr_depth > 0;
-}
 
-void	cpu_attach(device_t, cpuid_t);
+#endif /* _KERNEL */
 
 #endif /* _KERNEL || _KMEMUSER */
-
-#elif defined(__arm__)
-
-#include <arm/cpu.h>
 
 #endif
 

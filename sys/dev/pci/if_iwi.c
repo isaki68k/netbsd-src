@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwi.c,v 1.111 2019/02/03 03:19:27 mrg Exp $  */
+/*	$NetBSD: if_iwi.c,v 1.118 2022/05/23 13:53:37 rin Exp $  */
 /*	$OpenBSD: if_iwi.c,v 1.111 2010/11/15 19:11:57 damien Exp $	*/
 
 /*-
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.111 2019/02/03 03:19:27 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.118 2022/05/23 13:53:37 rin Exp $");
 
 /*-
  * Intel(R) PRO/Wireless 2200BG/2225BG/2915ABG driver
@@ -164,21 +164,29 @@ MEM_READ_4(struct iwi_softc *sc, uint32_t addr)
 CFATTACH_DECL_NEW(iwi, sizeof (struct iwi_softc), iwi_match, iwi_attach,
     iwi_detach, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_PRO_WL_2200BG), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_PRO_WL_2225BG), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_PRO_WL_2915ABG_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_PRO_WL_2915ABG_2), },
+
+
+	PCI_COMPAT_EOL
+};
+
 static int
 iwi_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct pci_attach_args *pa = aux;
 
-	if (PCI_VENDOR(pa->pa_id) != PCI_VENDOR_INTEL)
-		return 0;
-
-	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2200BG ||
-	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2225BG ||
-	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2915ABG_1 ||
-	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2915ABG_2)
-		return 1;
-
-	return 0;
+	return pci_compatible_match(pa, compat_data);
 }
 
 /* Base Address Register */
@@ -356,13 +364,7 @@ iwi_attach(device_t parent, device_t self, void *aux)
 	IFQ_SET_READY(&ifp->if_snd);
 	memcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
 
-	error = if_initialize(ifp);
-	if (error != 0) {
-		ifp->if_softc = NULL; /* For iwi_detach() */
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		goto fail;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);
@@ -375,7 +377,11 @@ iwi_attach(device_t parent, device_t self, void *aux)
 	/* override state transition machine */
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = iwi_newstate;
-	ieee80211_media_init(ic, iwi_media_change, iwi_media_status);
+
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTNET);
+	ieee80211_media_init_with_lock(ic,
+	    iwi_media_change, iwi_media_status, &sc->sc_media_mtx);
 
 	/*
 	 * Allocate rings.
@@ -626,12 +632,7 @@ iwi_alloc_tx_ring(struct iwi_softc *sc, struct iwi_tx_ring *ring,
 	memset(ring->desc, 0, IWI_TX_DESC_SIZE * count);
 
 	ring->data = malloc(count * sizeof (struct iwi_tx_data), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (ring->data == NULL) {
-		aprint_error_dev(sc->sc_dev, "could not allocate soft data\n");
-		error = ENOMEM;
-		goto fail;
-	}
+	    M_WAITOK | M_ZERO);
 	ring->count = count;
 
 	/*
@@ -660,16 +661,16 @@ iwi_reset_tx_ring(struct iwi_softc *sc, struct iwi_tx_ring *ring)
 
 	for (i = 0; i < ring->count; i++) {
 		data = &ring->data[i];
-
-		if (data->m != NULL) {
-			m_freem(data->m);
-			data->m = NULL;
-		}
 	
 		if (data->map != NULL) {
 			bus_dmamap_sync(sc->sc_dmat, data->map, 0,
 			    data->map->dm_mapsize, BUS_DMASYNC_POSTWRITE);
 			bus_dmamap_unload(sc->sc_dmat, data->map);
+		}
+
+		if (data->m != NULL) {
+			m_freem(data->m);
+			data->m = NULL;
 		}
 
 		if (data->ni != NULL) {
@@ -701,13 +702,13 @@ iwi_free_tx_ring(struct iwi_softc *sc, struct iwi_tx_ring *ring)
 	for (i = 0; i < ring->count; i++) {
 		data = &ring->data[i];
 
-		if (data->m != NULL) {
-			m_freem(data->m);
-		}
-
 		if (data->map != NULL) {
 			bus_dmamap_unload(sc->sc_dmat, data->map);
 			bus_dmamap_destroy(sc->sc_dmat, data->map);
+		}
+
+		if (data->m != NULL) {
+			m_freem(data->m);
 		}
 	}
 }
@@ -721,13 +722,7 @@ iwi_alloc_rx_ring(struct iwi_softc *sc, struct iwi_rx_ring *ring, int count)
 	ring->cur = 0;
 
 	ring->data = malloc(count * sizeof (struct iwi_rx_data), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (ring->data == NULL) {
-		aprint_error_dev(sc->sc_dev, "could not allocate soft data\n");
-		error = ENOMEM;
-		goto fail;
-	}
-
+	    M_WAITOK | M_ZERO);
 	ring->count = count;
 
 	/*
@@ -781,15 +776,14 @@ iwi_free_rx_ring(struct iwi_softc *sc, struct iwi_rx_ring *ring)
 	for (i = 0; i < ring->count; i++) {
 		data = &ring->data[i];
 
-		if (data->m != NULL) {
-			m_freem(data->m);
-		}
-
 		if (data->map != NULL) {
 			bus_dmamap_unload(sc->sc_dmat, data->map);
 			bus_dmamap_destroy(sc->sc_dmat, data->map);
 		}
 
+		if (data->m != NULL) {
+			m_freem(data->m);
+		}
 	}
 }
 
@@ -1167,7 +1161,7 @@ iwi_frame_intr(struct iwi_softc *sc, struct iwi_rx_data *data, int i,
 	if (le16toh(frame->len) < sizeof (struct ieee80211_frame) ||
 	    le16toh(frame->len) > MCLBYTES) {
 		DPRINTF(("%s: bad frame length\n", device_xname(sc->sc_dev)));
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1182,7 +1176,7 @@ iwi_frame_intr(struct iwi_softc *sc, struct iwi_rx_data *data, int i,
 	 * end of the ring to the front instead of dropping.
 	 */
 	if ((m_new = iwi_alloc_rx_buf(sc)) == NULL) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1194,7 +1188,7 @@ iwi_frame_intr(struct iwi_softc *sc, struct iwi_rx_data *data, int i,
 		aprint_error_dev(sc->sc_dev,
 		    "could not load rx buf DMA map\n");
 		m_freem(m_new);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		error = bus_dmamap_load_mbuf(sc->sc_dmat, data->map,
 		    data->m, BUS_DMA_READ | BUS_DMA_NOWAIT);
 		if (error)
@@ -1466,7 +1460,7 @@ iwi_tx_intr(struct iwi_softc *sc, struct iwi_tx_ring *txq)
 
 		DPRINTFN(15, ("tx done idx=%u\n", txq->next));
 
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 		txq->queued--;
 		txq->next = (txq->next + 1) % txq->count;
@@ -1640,7 +1634,7 @@ iwi_tx_start(struct ifnet *ifp, struct mbuf *m0, struct ieee80211_node *ni,
 		if (in->in_station == -1) {	/* h/w table is full */
 			m_freem(m0);
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return 0;
 		}
 		iwi_write_ibssnode(sc, in);
@@ -1793,7 +1787,7 @@ iwi_start(struct ifnet *ifp)
 
 		if (m0->m_len < sizeof (struct ether_header) &&
 		    (m0 = m_pullup(m0, sizeof (struct ether_header))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -1801,7 +1795,7 @@ iwi_start(struct ifnet *ifp)
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m0);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -1809,7 +1803,7 @@ iwi_start(struct ifnet *ifp)
 		if (ieee80211_classify(ic, m0, ni) != 0) {
 			m_freem(m0);
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -1831,7 +1825,7 @@ iwi_start(struct ifnet *ifp)
 		m0 = ieee80211_encap(ic, m0, ni);
 		if (m0 == NULL) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -1839,7 +1833,7 @@ iwi_start(struct ifnet *ifp)
 
 		if (iwi_tx_start(ifp, m0, ni, ac) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 
@@ -1859,7 +1853,7 @@ iwi_watchdog(struct ifnet *ifp)
 	if (sc->sc_tx_timer > 0) {
 		if (--sc->sc_tx_timer == 0) {
 			aprint_error_dev(sc->sc_dev, "device timeout\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			ifp->if_flags &= ~IFF_UP;
 			iwi_stop(ifp, 1);
 			return;
@@ -1875,8 +1869,9 @@ iwi_get_table0(struct iwi_softc *sc, uint32_t *tbl)
 {
 	uint32_t size, buf[128];
 
+	memset(buf, 0, sizeof buf);
+
 	if (!(sc->flags & IWI_FLAG_FW_INITED)) {
-		memset(buf, 0, sizeof buf);
 		return copyout(buf, tbl, sizeof buf);
 	}
 

@@ -1,4 +1,4 @@
-/*      $NetBSD: sa1111.c,v 1.24 2011/07/01 20:31:39 dyoung Exp $	*/
+/*      $NetBSD: sa1111.c,v 1.28 2021/08/07 16:18:45 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sa1111.c,v 1.24 2011/07/01 20:31:39 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sa1111.c,v 1.28 2021/08/07 16:18:45 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: sa1111.c,v 1.24 2011/07/01 20:31:39 dyoung Exp $");
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/uio.h>
 
 #include <sys/bus.h>
@@ -102,8 +102,8 @@ sa1111_search(device_t parent, cfdata_t cf, const int *ldesc,
 	aa.sa_memsize = cf->cf_loc[SACCCF_MEMSIZE];
 #endif
 
-        if (config_match(parent, cf, &aa) > 0)
-                config_attach(parent, cf, &aa, sa1111_print);
+        if (config_probe(parent, cf, &aa))
+                config_attach(parent, cf, &aa, sa1111_print, CFARGS_NONE);
 
         return 0;
 }
@@ -124,10 +124,7 @@ sacc_intr_establish(sacc_chipset_tag_t *ic, int irq, int type, int level,
 	struct sacc_softc *sc = (struct sacc_softc *)ic;
 	struct sacc_intrhand **p, *ih;
 
-	/* no point in sleeping unless someone can free memory. */
-	ih = malloc(sizeof *ih, M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (ih == NULL)
-		panic("sacc_intr_establish: can't malloc handler info");
+	ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 
 	if (irq < 0 || irq > SACCIC_LEN ||
 	    !(type == IST_EDGE_RAISE || type == IST_EDGE_FALL))
@@ -189,7 +186,7 @@ sacc_intr_disestablish(sacc_chipset_tag_t *ic, void *arg)
 	sacc_intr_calculatemasks(sc);
 	splx(s);
 
-	free(ih, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 static void

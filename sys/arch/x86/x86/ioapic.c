@@ -1,4 +1,4 @@
-/* 	$NetBSD: ioapic.c,v 1.63 2019/06/19 06:32:46 msaitoh Exp $	*/
+/*	$NetBSD: ioapic.c,v 1.65 2021/10/07 12:52:27 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2009 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ioapic.c,v 1.63 2019/06/19 06:32:46 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ioapic.c,v 1.65 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include "opt_ddb.h"
 
@@ -112,8 +112,8 @@ bool ioapic_trymask(struct pic *, int);
 static void ioapic_addroute(struct pic *, struct cpu_info *, int, int, int);
 static void ioapic_delroute(struct pic *, struct cpu_info *, int, int, int);
 
-struct ioapic_softc *ioapics;	 /* head of linked list */
-int nioapics = 0;	   	 /* number attached */
+struct ioapic_softc *ioapics;	/* head of linked list */
+int nioapics = 0;		/* number attached */
 static int ioapic_vecbase;
 
 static inline u_long
@@ -301,6 +301,9 @@ ioapic_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pic.pic_trymask = ioapic_trymask;
 	sc->sc_pic.pic_edge_stubs = ioapic_edge_stubs;
 	sc->sc_pic.pic_level_stubs = ioapic_level_stubs;
+	sc->sc_pic.pic_intr_get_devname = x86_intr_get_devname;
+	sc->sc_pic.pic_intr_get_assigned = x86_intr_get_assigned;
+	sc->sc_pic.pic_intr_get_count = x86_intr_get_count;
 
 	apic_id = (ioapic_read(sc, IOAPIC_ID) & IOAPIC_ID_MASK)
 	    >> IOAPIC_ID_SHIFT;
@@ -419,7 +422,7 @@ apic_set_redir(struct ioapic_softc *sc, int pin, int idt_vec,
 
 	if (delmode == IOAPIC_REDLO_DEL_FIXED ||
 	    delmode == IOAPIC_REDLO_DEL_LOPRI) {
-	    	if (pp->ip_type == IST_NONE) {
+		if (pp->ip_type == IST_NONE) {
 			redlo |= IOAPIC_REDLO_MASK;
 		} else {
 			redhi = (ci->ci_cpuid << IOAPIC_REDHI_DEST_SHIFT);

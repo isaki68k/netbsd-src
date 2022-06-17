@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_machdep.c,v 1.86 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: pci_machdep.c,v 1.91 2022/05/24 14:00:23 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.86 2019/05/24 14:28:48 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.91 2022/05/24 14:00:23 bouyer Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -534,6 +534,16 @@ pci_attach_hook(device_t parent, device_t self, struct pcibus_attach_args *pba)
 		aprint_verbose("\n");
 		aprint_verbose_dev(self,
 		    "This pci host does not support MSI-X.");
+#if NACPICA > 0
+	} else if (acpi_active &&
+		   AcpiGbl_FADT.Header.Revision >= 4 &&
+		   (AcpiGbl_FADT.BootFlags & ACPI_FADT_NO_MSI) != 0) {
+		pba->pba_flags &= ~PCI_FLAGS_MSI_OKAY;
+		pba->pba_flags &= ~PCI_FLAGS_MSIX_OKAY;
+		aprint_verbose("\n");
+		aprint_verbose_dev(self,
+		    "MSI support disabled via ACPI IAPC_BOOT_ARCH flag.\n");
+#endif
 	} else {
 		pba->pba_flags |= PCI_FLAGS_MSI_OKAY;
 		pba->pba_flags |= PCI_FLAGS_MSIX_OKAY;
@@ -554,6 +564,7 @@ pci_attach_hook(device_t parent, device_t self, struct pcibus_attach_args *pba)
 			pba->pba_flags &= ~PCI_FLAGS_MSIX_OKAY;
 		}
 	}
+
 #endif /* __HAVE_PCI_MSI_MSIX */
 }
 
@@ -720,6 +731,44 @@ pci_conf_write(pci_chipset_tag_t pc, pcitag_t tag, int reg, pcireg_t data)
 	outl(pci_conf_port(tag, reg), data);
 	pci_conf_unlock(&ocl);
 }
+
+#ifdef XENPV
+void
+pci_conf_write16(pci_chipset_tag_t pc, pcitag_t tag, int reg, uint16_t data)
+{
+	pci_chipset_tag_t ipc;
+	struct pci_conf_lock ocl;
+	int dev;
+
+	KASSERT((reg & 0x1) == 0);
+
+	for (ipc = pc; ipc != NULL; ipc = ipc->pc_super) {
+		if ((ipc->pc_present & PCI_OVERRIDE_CONF_WRITE) == 0)
+			continue;
+		panic("pci_conf_write16 and override");
+	}
+
+	pci_decompose_tag(pc, tag, NULL, &dev, NULL);
+	if (__predict_false(pci_mode == 2 && dev >= 16)) {
+		return;
+	}
+
+	if (reg < 0)
+		return;
+	if (reg >= PCI_CONF_SIZE) {
+#if NACPICA > 0 && !defined(NO_PCI_EXTENDED_CONFIG)
+		if (reg >= PCI_EXTCONF_SIZE)
+			return;
+		panic("pci_conf_write16 and reg >= PCI_CONF_SIZE");
+#endif
+		return;
+	}
+
+	pci_conf_lock(&ocl, pci_conf_selector(tag, reg & ~0x3));
+	outl(pci_conf_port(tag, reg & ~0x3) + (reg & 0x3), data);
+	pci_conf_unlock(&ocl);
+}
+#endif /* XENPV */
 
 void
 pci_mode_set(int mode)
@@ -1009,8 +1058,6 @@ x86_genfb_setmode(struct genfb_softc *sc, int newmode)
 
 	switch (newmode) {
 	case WSDISPLAYIO_MODE_EMUL:
-		x86_genfb_mtrr_init(sc->sc_fboffset,
-		    sc->sc_height * sc->sc_stride);
 # if NACPICA > 0 && defined(VGA_POST)
 		if (curmode != newmode) {
 			if (vga_posth != NULL && acpi_md_vesa_modenum != 0) {

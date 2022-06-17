@@ -1,4 +1,4 @@
-/*	$NetBSD: ulfs_readwrite.c,v 1.25 2019/06/20 00:49:11 christos Exp $	*/
+/*	$NetBSD: ulfs_readwrite.c,v 1.28 2021/10/20 03:08:19 thorpej Exp $	*/
 /*  from NetBSD: ufs_readwrite.c,v 1.120 2015/04/12 22:48:38 riastradh Exp  */
 
 /*-
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: ulfs_readwrite.c,v 1.25 2019/06/20 00:49:11 christos Exp $");
+__KERNEL_RCSID(1, "$NetBSD: ulfs_readwrite.c,v 1.28 2021/10/20 03:08:19 thorpej Exp $");
 
 #define	FS			struct lfs
 #define	I_FS			i_lfs
@@ -48,7 +48,7 @@ __KERNEL_RCSID(1, "$NetBSD: ulfs_readwrite.c,v 1.25 2019/06/20 00:49:11 christos
 
 static int	ulfs_post_read_update(struct vnode *, int, int);
 static int	ulfs_post_write_update(struct vnode *, struct uio *, int,
-		    kauth_cred_t, off_t, int, int, int);
+		    kauth_cred_t, off_t, int, int);
 
 /*
  * Vnode op for reading.
@@ -105,7 +105,7 @@ READ(void *v)
 		if (bytelen == 0)
 			break;
 		error = ubc_uiomove(&vp->v_uobj, uio, bytelen, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -239,7 +239,6 @@ WRITE(void *v)
 	off_t osize, origoff, oldoff, preallocoff, endallocoff, nsize;
 	int blkoffset, error, flags, ioflag, resid;
 	int aflag;
-	int extended=0;
 	vsize_t bytelen;
 	bool async;
 
@@ -303,7 +302,7 @@ WRITE(void *v)
 		if (error)
 			goto out;
 		if (flags & B_SYNC) {
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			VOP_PUTPAGES(vp, trunc_page(osize & lfs_sb_getbmask(fs)),
 			    round_page(eob),
 			    PGO_CLEANIT | PGO_SYNCIO);
@@ -373,7 +372,7 @@ WRITE(void *v)
 		 */
 
 		error = ubc_uiomove(&vp->v_uobj, uio, bytelen,
-		    IO_ADV_DECODE(ioflag), ubc_flags | UBC_UNMAP_FLAG(vp));
+		    IO_ADV_DECODE(ioflag), ubc_flags | UBC_VNODE_FLAGS(vp));
 
 		/*
 		 * update UVM's notion of the size now that we've
@@ -384,7 +383,6 @@ WRITE(void *v)
 
 		if (vp->v_size < newoff) {
 			uvm_vnp_setsize(vp, newoff);
-			extended = 1;
 		}
 
 		if (error)
@@ -398,7 +396,7 @@ WRITE(void *v)
 		__USE(async);
 	}
 	if (error == 0 && ioflag & IO_SYNC) {
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(vp, trunc_page(origoff & lfs_sb_getbmask(fs)),
 		    round_page(lfs_blkroundup(fs, uio->uio_offset)),
 		    PGO_CLEANIT | PGO_SYNCIO);
@@ -406,7 +404,7 @@ WRITE(void *v)
 
 out:
 	error = ulfs_post_write_update(vp, uio, ioflag, cred, osize, resid,
-	    extended, error);
+	    error);
 
 	return (error);
 }
@@ -424,7 +422,6 @@ BUFWR(struct vnode *vp, struct uio *uio, int ioflag, kauth_cred_t cred)
 	off_t osize;
 	int resid, xfersize, size, blkoffset;
 	daddr_t lbn;
-	int extended=0;
 	int error;
 	bool need_unreserve = false;
 
@@ -482,7 +479,6 @@ BUFWR(struct vnode *vp, struct uio *uio, int ioflag, kauth_cred_t cred)
 			ip->i_size = uio->uio_offset + xfersize;
 			DIP_ASSIGN(ip, size, ip->i_size);
 			uvm_vnp_setsize(vp, ip->i_size);
-			extended = 1;
 		}
 		size = lfs_blksize(fs, ip, lbn) - bp->b_resid;
 		if (xfersize > size)
@@ -512,14 +508,14 @@ BUFWR(struct vnode *vp, struct uio *uio, int ioflag, kauth_cred_t cred)
 	}
 
 	error = ulfs_post_write_update(vp, uio, ioflag, cred, osize, resid,
-	    extended, error);
+	    error);
 
 	return (error);
 }
 
 static int
 ulfs_post_write_update(struct vnode *vp, struct uio *uio, int ioflag,
-    kauth_cred_t cred, off_t osize, int resid, int extended, int oerror)
+    kauth_cred_t cred, off_t osize, int resid, int oerror)
 {
 	struct inode *ip = VTOI(vp);
 	int error = oerror;
@@ -551,10 +547,6 @@ ulfs_post_write_update(struct vnode *vp, struct uio *uio, int ioflag,
 			}
 		}
 	}
-
-	/* If we successfully wrote anything, notify kevent listeners.  */
-	if (resid > uio->uio_resid)
-		VN_KNOTE(vp, NOTE_WRITE | (extended ? NOTE_EXTEND : 0));
 
 	/*
 	 * Update the size on disk: truncate back to original size on

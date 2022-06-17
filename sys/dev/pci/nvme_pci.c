@@ -1,4 +1,4 @@
-/*	$NetBSD: nvme_pci.c,v 1.26 2019/01/23 06:56:19 msaitoh Exp $	*/
+/*	$NetBSD: nvme_pci.c,v 1.32 2022/03/31 19:30:16 pgoyette Exp $	*/
 /*	$OpenBSD: nvme_pci.c,v 1.3 2016/04/14 11:18:32 dlg Exp $ */
 
 /*
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvme_pci.c,v 1.26 2019/01/23 06:56:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvme_pci.c,v 1.32 2022/03/31 19:30:16 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -82,6 +82,8 @@ static int	nvme_pci_match(device_t, cfdata_t, void *);
 static void	nvme_pci_attach(device_t, device_t, void *);
 static int	nvme_pci_detach(device_t, int);
 static int	nvme_pci_rescan(device_t, const char *, const int *);
+static bool	nvme_pci_suspend(device_t, const pmf_qual_t *);
+static bool	nvme_pci_resume(device_t, const pmf_qual_t *);
 
 CFATTACH_DECL3_NEW(nvme_pci, sizeof(struct nvme_pci_softc),
     nvme_pci_match, nvme_pci_attach, nvme_pci_detach, NULL, nvme_pci_rescan,
@@ -108,6 +110,8 @@ static const struct nvme_pci_quirk {
 	    NVME_QUIRK_DELAY_B4_CHK_RDY },
 	{ PCI_VENDOR_SAMSUNGELEC3, PCI_PRODUCT_SAMSUNGELEC3_172XAB,
 	    NVME_QUIRK_DELAY_B4_CHK_RDY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_DC_P4500_SSD,
+	    NVME_QUIRK_NOMSI },
 };
 
 static const struct nvme_pci_quirk *
@@ -133,7 +137,7 @@ nvme_pci_match(device_t parent, cfdata_t match, void *aux)
 
 	if (PCI_CLASS(pa->pa_class) == PCI_CLASS_MASS_STORAGE &&
 	    PCI_SUBCLASS(pa->pa_class) == PCI_SUBCLASS_MASS_STORAGE_NVM &&
-	    PCI_INTERFACE(pa->pa_class) == PCI_INTERFACE_NVM_NVME)
+	    PCI_INTERFACE(pa->pa_class) == PCI_INTERFACE_NVM_NVME_IO)
 		return 1;
 
 	return 0;
@@ -157,6 +161,10 @@ nvme_pci_attach(device_t parent, device_t self, void *aux)
 		sc->sc_dmat = pa->pa_dmat64;
 	else
 		sc->sc_dmat = pa->pa_dmat;
+
+	quirk = nvme_pci_lookup_quirk(pa);
+	if (quirk != NULL)
+		sc->sc_quirks = quirk->quirks;
 
 	pci_aprint_devinfo(pa, NULL);
 
@@ -195,7 +203,7 @@ nvme_pci_attach(device_t parent, device_t self, void *aux)
 		msixtbl = pci_conf_read(pa->pa_pc, pa->pa_tag,
 		    msixoff + PCI_MSIX_TBLOFFSET);
 		table_offset = msixtbl & PCI_MSIX_TBLOFFSET_MASK;
-		bir = msixtbl & PCI_MSIX_PBABIR_MASK;
+		bir = msixtbl & PCI_MSIX_TBLBIR_MASK;
 		if (bir == PCI_MAPREG_NUM(NVME_PCI_BAR)) {
 			sc->sc_ios = table_offset;
 		}
@@ -221,16 +229,12 @@ nvme_pci_attach(device_t parent, device_t self, void *aux)
 	sc->sc_softih = kmem_zalloc(
 	    sizeof(*sc->sc_softih) * psc->psc_nintrs, KM_SLEEP);
 
-	quirk = nvme_pci_lookup_quirk(pa);
-	if (quirk != NULL)
-		sc->sc_quirks = quirk->quirks;
-
 	if (nvme_attach(sc) != 0) {
 		/* error printed by nvme_attach() */
 		goto softintr_free;
 	}
 
-	if (!pmf_device_register(self, NULL, NULL))
+	if (!pmf_device_register(self, nvme_pci_suspend, nvme_pci_resume))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
 	SET(sc->sc_flags, NVME_F_ATTACHED);
@@ -252,6 +256,34 @@ nvme_pci_rescan(device_t self, const char *attr, const int *flags)
 {
 
 	return nvme_rescan(self, attr, flags);
+}
+
+static bool
+nvme_pci_suspend(device_t self, const pmf_qual_t *qual)
+{
+	struct nvme_pci_softc *psc = device_private(self);
+	struct nvme_softc *sc = &psc->psc_nvme;
+	int error;
+
+	error = nvme_suspend(sc);
+	if (error)
+		return false;
+
+	return true;
+}
+
+static bool
+nvme_pci_resume(device_t self, const pmf_qual_t *qual)
+{
+	struct nvme_pci_softc *psc = device_private(self);
+	struct nvme_softc *sc = &psc->psc_nvme;
+	int error;
+
+	error = nvme_resume(sc);
+	if (error)
+		return false;
+
+	return true;
 }
 
 static int
@@ -399,7 +431,7 @@ nvme_pci_setup_intr(struct pci_attach_args *pa, struct nvme_pci_softc *psc)
 	memset(counts, 0, sizeof(counts));
 
 	if (nvme_pci_force_intx)
-		goto force_intx;
+		goto setup_intx;
 
 	/* MSI-X */
 	counts[PCI_INTR_TYPE_MSIX] = uimin(pci_msix_count(pa->pa_pc, pa->pa_tag),
@@ -412,6 +444,8 @@ nvme_pci_setup_intr(struct pci_attach_args *pa, struct nvme_pci_softc *psc)
 	}
 
 	/* MSI */
+	if (sc->sc_quirks & NVME_QUIRK_NOMSI)
+		goto setup_intx;
 	counts[PCI_INTR_TYPE_MSI] = pci_msi_count(pa->pa_pc, pa->pa_tag);
 	if (counts[PCI_INTR_TYPE_MSI] > 0) {
 		while (counts[PCI_INTR_TYPE_MSI] > ncpu + 1) {
@@ -427,7 +461,7 @@ nvme_pci_setup_intr(struct pci_attach_args *pa, struct nvme_pci_softc *psc)
 			counts[PCI_INTR_TYPE_MSI] = 2;	/* adminq + 1 ioq */
 	}
 
-force_intx:
+setup_intx:
 	/* INTx */
 	counts[PCI_INTR_TYPE_INTX] = 1;
 
@@ -467,12 +501,6 @@ nvme_modcmd(modcmd_t cmd, void *opaque)
 #ifdef _MODULE
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		error = config_init_component(cfdriver_ioconf_nvme_pci,
-		    cfattach_ioconf_nvme_pci, cfdata_ioconf_nvme_pci);
-		if (error)
-			break;
-
-		bmajor = cmajor = NODEVMAJOR;
 		error = devsw_attach(nvme_cd.cd_name, NULL, &bmajor,
 		    &nvme_cdevsw, &cmajor);
 		if (error) {
@@ -480,12 +508,18 @@ nvme_modcmd(modcmd_t cmd, void *opaque)
 			    nvme_cd.cd_name);
 			/* do not abort, just /dev/nvme* will not work */
 		}
+		error = config_init_component(cfdriver_ioconf_nvme_pci,
+		    cfattach_ioconf_nvme_pci, cfdata_ioconf_nvme_pci);
+		if (error) {
+			devsw_detach(NULL, &nvme_cdevsw);
+			break;
+		}
+		bmajor = cmajor = NODEVMAJOR;
 		break;
 	case MODULE_CMD_FINI:
-		devsw_detach(NULL, &nvme_cdevsw);
-
 		error = config_fini_component(cfdriver_ioconf_nvme_pci,
 		    cfattach_ioconf_nvme_pci, cfdata_ioconf_nvme_pci);
+		devsw_detach(NULL, &nvme_cdevsw);
 		break;
 	default:
 		break;

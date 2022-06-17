@@ -1,4 +1,4 @@
-/* $NetBSD: apecs_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $ */
+/* $NetBSD: apecs_dma.c,v 1.25 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -32,13 +32,12 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: apecs_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: apecs_dma.c,v 1.25 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 
 #define _ALPHA_BUS_DMA_PRIVATE
 #include <sys/bus.h>
@@ -48,21 +47,21 @@ __KERNEL_RCSID(0, "$NetBSD: apecs_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $");
 #include <alpha/pci/apecsreg.h>
 #include <alpha/pci/apecsvar.h>
 
-bus_dma_tag_t apecs_dma_get_tag(bus_dma_tag_t, alpha_bus_t);
+static bus_dma_tag_t apecs_dma_get_tag(bus_dma_tag_t, alpha_bus_t);
 
-int	apecs_bus_dmamap_load_sgmap(bus_dma_tag_t, bus_dmamap_t, void *,
-	    bus_size_t, struct proc *, int);
+static int	apecs_bus_dmamap_load_sgmap(bus_dma_tag_t, bus_dmamap_t, void *,
+		    bus_size_t, struct proc *, int);
 
-int	apecs_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    struct mbuf *, int);
+static int	apecs_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    struct mbuf *, int);
 
-int	apecs_bus_dmamap_load_uio_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    struct uio *, int);
+static int	apecs_bus_dmamap_load_uio_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    struct uio *, int);
 
-int	apecs_bus_dmamap_load_raw_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    bus_dma_segment_t *, int, bus_size_t, int);
+static int	apecs_bus_dmamap_load_raw_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    bus_dma_segment_t *, int, bus_size_t, int);
 
-void	apecs_bus_dmamap_unload_sgmap(bus_dma_tag_t, bus_dmamap_t);
+static void	apecs_bus_dmamap_unload_sgmap(bus_dma_tag_t, bus_dmamap_t);
 
 /*
  * Direct-mapped window: 1G at 1G
@@ -181,20 +180,13 @@ apecs_dma_init(struct apecs_config *acp)
 	alpha_mb();
 
 	APECS_TLB_INVALIDATE();
-
-	/* XXX XXX BEGIN XXX XXX */
-	{							/* XXX */
-		extern paddr_t alpha_XXX_dmamap_or;		/* XXX */
-		alpha_XXX_dmamap_or = APECS_DIRECT_MAPPED_BASE;	/* XXX */
-	}							/* XXX */
-	/* XXX XXX END XXX XXX */
 }
 
 /*
  * Return the bus dma tag to be used for the specified bus type.
  * INTERNAL USE ONLY!
  */
-bus_dma_tag_t
+static bus_dma_tag_t
 apecs_dma_get_tag(bus_dma_tag_t t, alpha_bus_t bustype)
 {
 	struct apecs_config *acp = t->_cookie;
@@ -225,7 +217,7 @@ apecs_dma_get_tag(bus_dma_tag_t t, alpha_bus_t bustype)
 /*
  * Load an APECS SGMAP-mapped DMA map with a linear buffer.
  */
-int
+static int
 apecs_bus_dmamap_load_sgmap(bus_dma_tag_t t, bus_dmamap_t map, void *buf, bus_size_t buflen, struct proc *p, int flags)
 {
 	int error;
@@ -241,7 +233,7 @@ apecs_bus_dmamap_load_sgmap(bus_dma_tag_t t, bus_dmamap_t map, void *buf, bus_si
 /*
  * Load an APECS SGMAP-mapped DMA map with an mbuf chain.
  */
-int
+static int
 apecs_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m, int flags)
 {
 	int error;
@@ -256,7 +248,7 @@ apecs_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf 
 /*
  * Load an APECS SGMAP-mapped DMA map with a uio.
  */
-int
+static int
 apecs_bus_dmamap_load_uio_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct uio *uio, int flags)
 {
 	int error;
@@ -271,7 +263,7 @@ apecs_bus_dmamap_load_uio_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct uio *u
 /*
  * Load an APECS SGMAP-mapped DMA map with raw memory.
  */
-int
+static int
 apecs_bus_dmamap_load_raw_sgmap(bus_dma_tag_t t, bus_dmamap_t map, bus_dma_segment_t *segs, int nsegs, bus_size_t size, int flags)
 {
 	int error;
@@ -287,7 +279,7 @@ apecs_bus_dmamap_load_raw_sgmap(bus_dma_tag_t t, bus_dmamap_t map, bus_dma_segme
 /*
  * Unload an APECS DMA map.
  */
-void
+static void
 apecs_bus_dmamap_unload_sgmap(bus_dma_tag_t t, bus_dmamap_t map)
 {
 
@@ -301,5 +293,5 @@ apecs_bus_dmamap_unload_sgmap(bus_dma_tag_t t, bus_dmamap_t map)
 	/*
 	 * Do the generic bits of the unload.
 	 */
-	_bus_dmamap_unload(t, map);
+	_bus_dmamap_unload_common(t, map);
 }

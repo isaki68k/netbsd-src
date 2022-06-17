@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.h,v 1.48 2012/10/27 17:18:11 chs Exp $ */
+/*	$NetBSD: autoconf.h,v 1.51 2022/05/22 11:27:34 andvar Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -69,6 +69,9 @@
  *	@(#)autoconf.h	8.2 (Berkeley) 9/30/93
  */
 
+#ifndef	_MACHINE_AUTOCONF_H_
+#define	_MACHINE_AUTOCONF_H_
+
 /*
  * Autoconfiguration information.
  */
@@ -100,7 +103,7 @@ struct rom_intr {
 	uint32_t	int_vec;	/* vector (always 0?) */
 };
 
-/* Address translation accross busses */
+/* Address translation across busses */
 struct rom_range {		/* Only used on v3 PROMs */
 	uint32_t	cspace;		/* Client space */
 	uint32_t	coffset;	/* Client offset */
@@ -173,3 +176,10 @@ void	mountroot_hook_establish(void (*)(device_t), device_t);
 
 void	bootstrap(void);
 int	romgetcursoraddr(int **, int **);
+
+/* Exported from autoconf.c for other consumers.  */
+extern char	machine_model[100];
+extern struct sparc_bus_dma_tag mainbus_dma_tag;
+extern struct sparc_bus_space_tag mainbus_space_tag;
+
+#endif /* !_MACHINE_AUTOCONF_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: cd9660_node.h,v 1.16 2014/06/16 09:55:49 hannken Exp $	*/
+/*	$NetBSD: cd9660_node.h,v 1.18 2022/03/27 17:10:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 1994
@@ -97,22 +97,13 @@ struct iso_node {
  * Prototypes for ISOFS vnode operations
  */
 int	cd9660_lookup(void *);
-#define	cd9660_open	genfs_nullop
-#define	cd9660_close	genfs_nullop
 int	cd9660_access(void *);
 int	cd9660_getattr(void *);
 int	cd9660_read(void *);
-#define	cd9660_ioctl	genfs_enoioctl
-#define	cd9660_poll	genfs_poll
-#define	cd9660_mmap	genfs_mmap
-#define	cd9660_seek	genfs_seek
 int	cd9660_readdir(void *);
 int	cd9660_readlink(void *);
-#define	cd9660_abortop	genfs_abortop
 int	cd9660_inactive(void *);
 int	cd9660_reclaim(void *);
-int	cd9660_link(void *);
-int	cd9660_symlink(void *);
 int	cd9660_bmap(void *);
 int	cd9660_lock(void *);
 int	cd9660_unlock(void *);

@@ -33,7 +33,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autofs_vfsops.c,v 1.4 2018/01/14 22:43:18 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autofs_vfsops.c,v 1.12 2022/03/28 12:33:22 riastradh Exp $");
 
 
 #include "autofs.h"
@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: autofs_vfsops.c,v 1.4 2018/01/14 22:43:18 christos E
 MODULE(MODULE_CLASS_VFS, autofs, NULL);
 
 static int	autofs_statvfs(struct mount *, struct statvfs *);
-static int	autofs_sysctl_create(void);
 
 static void
 autofs_init(void)
@@ -66,7 +65,6 @@ autofs_init(void)
 	mutex_init(&autofs_softc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	autofs_softc->sc_dev_opened = false;
 
-	autofs_sysctl_create();
 	workqueue_create(&autofs_tmo_wq, "autofstmo",
 	    autofs_timeout_wq, NULL, 0, 0, WQ_MPSAFE);
 }
@@ -74,6 +72,7 @@ autofs_init(void)
 static void
 autofs_done(void)
 {
+
 	KASSERT(autofs_softc);
 	KASSERT(!autofs_softc->sc_dev_opened);
 
@@ -195,7 +194,7 @@ autofs_unmount(struct mount *mp, int mntflags)
 		flags |= FORCECLOSE;
 	error = vflush(mp, NULL, flags);
 	if (error) {
-		AUTOFS_WARN("vflush failed with error %d", error);
+		AUTOFS_DEBUG("vflush failed with error %d", error);
 		return error;
 	}
 
@@ -232,14 +231,14 @@ autofs_unmount(struct mount *mp, int mntflags)
 	mutex_enter(&amp->am_lock);
 	while (!RB_EMPTY(&amp->am_root->an_children)) {
 		struct autofs_node *anp;
+		/*
+		 * Force delete all nodes when more than one level of
+		 * directories are created via indirect map. Autofs doesn't
+		 * support rmdir(2), thus this is the only way to get out.
+		 */
 		anp = RB_MIN(autofs_node_tree, &amp->am_root->an_children);
-		if (!RB_EMPTY(&anp->an_children)) {
-			AUTOFS_DEBUG("%s: %s has children", __func__,
-			    anp->an_name);
-			mutex_exit(&amp->am_lock);
-			return EBUSY;
-		}
-			
+		while (!RB_EMPTY(&anp->an_children))
+			anp = RB_MIN(autofs_node_tree, &anp->an_children);
 		autofs_node_delete(anp);
 	}
 	autofs_node_delete(amp->am_root);
@@ -261,7 +260,7 @@ autofs_start(struct mount *mp, int flags)
 }
 
 static int
-autofs_root(struct mount *mp, struct vnode **vpp)
+autofs_root(struct mount *mp, int lktype, struct vnode **vpp)
 {
 	struct autofs_node *anp = VFSTOAUTOFS(mp)->am_root;
 	int error;
@@ -269,10 +268,10 @@ autofs_root(struct mount *mp, struct vnode **vpp)
 	error = vcache_get(mp, &anp, sizeof(anp), vpp);
 	if (error)
 		return error;
-	error = vn_lock(*vpp, LK_EXCLUSIVE);
+	error = vn_lock(*vpp, lktype);
 	if (error) {
 		vrele(*vpp);
-		*vpp = NULL;
+		*vpp = NULLVP;
 		return error;
 	}
 
@@ -374,10 +373,7 @@ static struct vfsops autofs_vfsops = {
 #define AUTOFS_SYSCTL_RETRY_DELAY	6
 #define AUTOFS_SYSCTL_INTERRUPTIBLE	7
 
-static struct sysctllog *autofs_sysctl_log;
-
-static int
-autofs_sysctl_create(void)
+SYSCTL_SETUP(autofs_sysctl_create, "autofs sysctl")
 {
 	int error;
 
@@ -386,7 +382,7 @@ autofs_sysctl_create(void)
 	 * more instance of the "number to vfs" mapping problem, but
 	 * "33" is the order as taken from sys/mount.h
 	 */
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT,
 	    CTLTYPE_NODE, "autofs",
 	    SYSCTL_DESCR("Automounter filesystem"),
@@ -395,7 +391,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_debug",
 	    SYSCTL_DESCR("Enable debug messages"),
@@ -404,7 +400,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_mount_on_stat",
 	    SYSCTL_DESCR("Trigger mount on stat(2) on mountpoint"),
@@ -413,7 +409,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_timeout",
 	    SYSCTL_DESCR("Number of seconds to wait for automountd(8)"),
@@ -422,7 +418,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_cache",
 	    SYSCTL_DESCR("Number of seconds to wait before reinvoking"),
@@ -431,7 +427,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_retry_attempts",
 	    SYSCTL_DESCR("Number of attempts before failing mount"),
@@ -440,7 +436,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_retry_delay",
 	    SYSCTL_DESCR("Number of seconds before retrying"),
@@ -449,7 +445,7 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	error = sysctl_createv(&autofs_sysctl_log, 0, NULL, NULL,
+	error = sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 	    CTLTYPE_INT, "autofs_interruptible",
 	    SYSCTL_DESCR("Allow requests to be interrupted by signal"),
@@ -458,11 +454,11 @@ autofs_sysctl_create(void)
 	if (error)
 		goto fail;
 
-	return 0;
+	return;
 fail:
 	AUTOFS_WARN("sysctl_createv failed with error %d", error);
 
-	return error;
+	return;
 }
 
 extern const struct cdevsw autofs_cdevsw;
@@ -500,9 +496,7 @@ autofs_modcmd(modcmd_t cmd, void *arg)
 		}
 		mutex_exit(&autofs_softc->sc_lock);
 
-		error = devsw_detach(NULL, &autofs_cdevsw);
-		if (error)
-			break;
+		devsw_detach(NULL, &autofs_cdevsw);
 #endif
 		error = vfs_detach(&autofs_vfsops);
 		if (error)

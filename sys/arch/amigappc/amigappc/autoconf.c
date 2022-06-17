@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.6 2012/10/27 17:17:34 chs Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.10 2022/03/28 12:38:57 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1994 Christian E. Hopps
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.6 2012/10/27 17:17:34 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.10 2022/03/28 12:38:57 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -39,6 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.6 2012/10/27 17:17:34 chs Exp $");
 #include <sys/conf.h>
 #include <sys/buf.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/disklabel.h>
 #include <sys/disk.h>
 #include <sys/proc.h>
@@ -122,14 +123,18 @@ matchname(const char *fp, const char *sp)
  * by checking for NULL.
  */
 int
-amiga_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
+amiga_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn,
+    const struct cfargs *cfargs)
 {
 	struct device temp;
 	cfdata_t cf;
 	const struct cfattach *ca;
+	int rv = 0;
 
-	if (amiga_realconfig)
-		return config_found(parent, aux, pfn) != NULL;
+	if (amiga_realconfig) {
+		rv = config_found(parent, aux, pfn, cfargs) != NULL;
+		goto out;
+	}
 
 	if (parent == NULL) {
 		memset(&temp, 0, sizeof temp);
@@ -140,16 +145,16 @@ amiga_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
 	parent->dv_cfdriver = config_cfdriver_lookup(pcfp->cf_name);
 	parent->dv_unit = pcfp->cf_unit;
 
-	if ((cf = config_search_ia(NULL, parent, NULL, aux)) != NULL) {
+	if ((cf = config_search(parent, aux,  cfargs)) != NULL) {
 		ca = config_cfattach_lookup(cf->cf_name, cf->cf_atname);
 		if (ca != NULL) {
 			(*ca->ca_attach)(parent, NULL, aux);
-			parent->dv_cfdata = NULL;
-			return 1;
+			rv = 1;
 		}
 	}
 	parent->dv_cfdata = NULL;
-	return 0;
+ out:
+	return rv;
 }
 
 /*
@@ -174,13 +179,13 @@ config_console(void)
 	/*
 	 * internal grf.
 	 */
-	amiga_config_found(cf, NULL, __UNCONST("grfcc"), NULL);
+	amiga_config_found(cf, NULL, __UNCONST("grfcc"), NULL, CFARGS_NONE);
 
 	/*
 	 * zbus knows when its not for real and will
 	 * only configure the appropriate hardware
 	 */
-	amiga_config_found(cf, NULL, __UNCONST("zbus"), NULL);
+	amiga_config_found(cf, NULL, __UNCONST("zbus"), NULL, CFARGS_NONE);
 }
 
 /*

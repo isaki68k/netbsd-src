@@ -1,4 +1,4 @@
-/*	$NetBSD: ti_sdhc.c,v 1.3 2019/10/29 22:19:13 jmcneill Exp $	*/
+/*	$NetBSD: ti_sdhc.c,v 1.12 2022/02/06 15:52:20 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_sdhc.c,v 1.3 2019/10/29 22:19:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_sdhc.c,v 1.12 2022/02/06 15:52:20 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -85,12 +85,23 @@ static const struct ti_sdhc_config omap4_hsmmc_config = {
 	.regoff = 0x100
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "ti,omap2-hsmmc",		(uintptr_t)&omap2_hsmmc_config },
-	{ "ti,omap3-hsmmc",		(uintptr_t)&omap2_hsmmc_config },
-	{ "ti,omap3-pre-es3-hsmmc",	(uintptr_t)&omap3_pre_es3_hsmmc_config },
-	{ "ti,omap4-hsmmc",		(uintptr_t)&omap4_hsmmc_config },
-	{ NULL }
+static const struct ti_sdhc_config am335_sdhci_config = {
+	.regoff = 0x100
+};
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,omap2-hsmmc",
+	  .data = &omap2_hsmmc_config },
+	{ .compat = "ti,omap3-hsmmc",
+	  .data = &omap2_hsmmc_config },
+	{ .compat = "ti,omap3-pre-es3-hsmmc",
+	  .data = &omap3_pre_es3_hsmmc_config },
+	{ .compat = "ti,omap4-hsmmc",
+	  .data = &omap4_hsmmc_config },
+	{ .compat = "ti,am335-sdhci",
+	  .data = &am335_sdhci_config },
+
+	DEVICE_COMPAT_EOL
 };
 
 enum {
@@ -146,7 +157,7 @@ ti_sdhc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -160,7 +171,7 @@ ti_sdhc_attach(device_t parent, device_t self, void *aux)
 	bus_size_t size;
 	u_int bus_width;
 
-	conf = (const void *)of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	if (ti_prcm_enable_hwmod(phandle, 0) != 0) {
 		aprint_error(": couldn't enable module\n");
@@ -180,7 +191,6 @@ ti_sdhc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_addr = addr;
 	sc->sc_bst = faa->faa_bst;
 
-#if notyet
 	/* XXX use fdtbus_dma API */
 	int len;
 	const u_int *dmas = fdtbus_get_prop(phandle, "dmas", &len);
@@ -198,10 +208,6 @@ ti_sdhc_attach(device_t parent, device_t self, void *aux)
 		sc->sc_edma_chan[EDMA_CHAN_RX] = -1;
 		break;
 	}
-#else
-	sc->sc_edma_chan[EDMA_CHAN_TX] = -1;
-	sc->sc_edma_chan[EDMA_CHAN_RX] = -1;
-#endif
 
 	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh) != 0) {
 		aprint_error(": couldn't map registers\n");
@@ -219,7 +225,7 @@ ti_sdhc_attach(device_t parent, device_t self, void *aux)
 		sc->sc.sc_flags |= SDHC_FLAG_8BIT_MODE;
 	if (of_hasprop(phandle, "ti,needs-special-reset"))
 		sc->sc.sc_flags |= SDHC_FLAG_WAIT_RESET;
-	if (of_hasprop(phandle, "ti,needs-special-hs-handling"))
+	if (!of_hasprop(phandle, "ti,needs-special-hs-handling"))
 		sc->sc.sc_flags |= SDHC_FLAG_NO_HS_BIT;
 	if (of_hasprop(phandle, "ti,dual-volt"))
 		sc->sc.sc_caps = SDHC_VOLTAGE_SUPP_3_0V;
@@ -310,8 +316,8 @@ no_dma:
 		aprint_error_dev(dev, "couldn't decode interrupt\n");
 		return;
 	}
-	sc->sc_ih = fdtbus_intr_establish(sc->sc_phandle, 0, IPL_VM,
-	    0, sdhc_intr, &sc->sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(sc->sc_phandle, 0, IPL_VM,
+	    0, sdhc_intr, &sc->sc, device_xname(dev));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(dev, "couldn't establish interrupt\n");
 		return;
@@ -391,10 +397,13 @@ no_dma:
 	SDHC_WRITE(sc, SDHC_CLOCK_CTL,
 	    SDHC_READ(sc, SDHC_CLOCK_CTL) | SDHC_SDCLK_ENABLE);
 
-	if (sc->sc.sc_flags & SDHC_FLAG_USE_ADMA2)
+#if notyet
+	if (sc->sc_use_adma2) {
 		bus_space_write_4(sc->sc_bst, sc->sc_bsh, MMCHS_CON,
 		    bus_space_read_4(sc->sc_bst, sc->sc_bsh, MMCHS_CON) |
 		    CON_MNS);
+	}
+#endif
 }
 
 static int
@@ -433,15 +442,21 @@ static int
 ti_sdhc_bus_width(struct sdhc_softc *sc, int width)
 {
 	struct ti_sdhc_softc *hmsc = (struct ti_sdhc_softc *)sc;
-	uint32_t con;
+	uint32_t con, hctl;
 
 	con = bus_space_read_4(hmsc->sc_bst, hmsc->sc_bsh, MMCHS_CON);
+	hctl = SDHC_READ(hmsc, SDHC_HOST_CTL);
 	if (width == 8) {
 		con |= CON_DW8;
+	} else if (width == 4) {
+		con &= ~CON_DW8;
+		hctl |= SDHC_4BIT_MODE;
 	} else {
 		con &= ~CON_DW8;
+		hctl &= ~SDHC_4BIT_MODE;
 	}
 	bus_space_write_4(hmsc->sc_bst, hmsc->sc_bsh, MMCHS_CON, con);
+	SDHC_WRITE(hmsc, SDHC_HOST_CTL, hctl);
 
 	return 0;
 }
@@ -492,6 +507,13 @@ ti_sdhc_edma_init(struct ti_sdhc_softc *sc, u_int tx_chan, u_int rx_chan)
 		    error);
 		return error;
 	}
+	error = bus_dmamap_load(sc->sc.sc_dmat, sc->sc_edma_dmamap,
+	    sc->sc_edma_bbuf, MAXPHYS, NULL, BUS_DMA_WAITOK);
+	if (error) {
+		device_printf(sc->sc.sc_dev, "couldn't load dmamap: %d\n",
+		    error);
+		return error;
+	}
 
 	return error;
 }
@@ -501,24 +523,23 @@ ti_sdhc_edma_xfer_data(struct sdhc_softc *sdhc_sc, struct sdmmc_command *cmd)
 {
 	struct ti_sdhc_softc *sc = device_private(sdhc_sc->sc_dev);
 	const bus_dmamap_t map = cmd->c_dmamap;
-	int seg, error;
 	bool bounce;
+	int error;
 
-	for (bounce = false, seg = 0; seg < cmd->c_dmamap->dm_nsegs; seg++) {
-		if ((cmd->c_dmamap->dm_segs[seg].ds_addr & 0x1f) != 0) {
+#if notyet
+	bounce = false;
+	for (int seg = 0; seg < cmd->c_dmamap->dm_nsegs; seg++) {
+		if ((cmd->c_dmamap->dm_segs[seg].ds_addr & 0x1f) != 0 ||
+		    (cmd->c_dmamap->dm_segs[seg].ds_len & 3) != 0) {
 			bounce = true;
 			break;
 		}
 	}
+#else
+	bounce = true;
+#endif
 
 	if (bounce) {
-		error = bus_dmamap_load(sc->sc.sc_dmat, sc->sc_edma_dmamap,
-		    sc->sc_edma_bbuf, MAXPHYS, NULL, BUS_DMA_WAITOK);
-		if (error) {
-			device_printf(sc->sc.sc_dev,
-			    "[bounce] bus_dmamap_load failed: %d\n", error);
-			return error;
-		}
 		if (ISSET(cmd->c_flags, SCF_CMD_READ)) {
 			bus_dmamap_sync(sc->sc.sc_dmat, sc->sc_edma_dmamap, 0,
 			    MAXPHYS, BUS_DMASYNC_PREREAD);
@@ -541,7 +562,6 @@ ti_sdhc_edma_xfer_data(struct sdhc_softc *sdhc_sc, struct sdmmc_command *cmd)
 			bus_dmamap_sync(sc->sc.sc_dmat, sc->sc_edma_dmamap, 0,
 			    MAXPHYS, BUS_DMASYNC_POSTWRITE);
 		}
-		bus_dmamap_unload(sc->sc.sc_dmat, sc->sc_edma_dmamap);
 		if (ISSET(cmd->c_flags, SCF_CMD_READ) && error == 0) {
 			memcpy(cmd->c_data, sc->sc_edma_bbuf, cmd->c_datalen);
 		}

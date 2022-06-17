@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.186 2019/08/28 01:44:39 mrg Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.242 2022/04/06 22:01:45 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.186 2019/08/28 01:44:39 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.242 2022/04/06 22:01:45 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -55,22 +55,93 @@ __KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.186 2019/08/28 01:44:39 mrg Exp $");
 #include <dev/usb/usbdivar.h>
 #include <dev/usb/usb_mem.h>
 #include <dev/usb/usb_quirks.h>
+#include <dev/usb/usb_sdt.h>
 #include <dev/usb/usbhist.h>
 
 /* UTF-8 encoding stuff */
 #include <fs/unicode.h>
 
-extern int usbdebug;
+SDT_PROBE_DEFINE5(usb, device, pipe, open,
+    "struct usbd_interface *"/*iface*/,
+    "uint8_t"/*address*/,
+    "uint8_t"/*flags*/,
+    "int"/*ival*/,
+    "struct usbd_pipe *"/*pipe*/);
 
-Static usbd_status usbd_ar_pipe(struct usbd_pipe *);
+SDT_PROBE_DEFINE7(usb, device, pipe, open__intr,
+    "struct usbd_interface *"/*iface*/,
+    "uint8_t"/*address*/,
+    "uint8_t"/*flags*/,
+    "int"/*ival*/,
+    "usbd_callback"/*cb*/,
+    "void *"/*cookie*/,
+    "struct usbd_pipe *"/*pipe*/);
+
+SDT_PROBE_DEFINE2(usb, device, pipe, transfer__start,
+    "struct usbd_pipe *"/*pipe*/,
+    "struct usbd_xfer *"/*xfer*/);
+SDT_PROBE_DEFINE3(usb, device, pipe, transfer__done,
+    "struct usbd_pipe *"/*pipe*/,
+    "struct usbd_xfer *"/*xfer*/,
+    "usbd_status"/*err*/);
+SDT_PROBE_DEFINE2(usb, device, pipe, start,
+    "struct usbd_pipe *"/*pipe*/,
+    "struct usbd_xfer *"/*xfer*/);
+
+SDT_PROBE_DEFINE1(usb, device, pipe, close,  "struct usbd_pipe *"/*pipe*/);
+SDT_PROBE_DEFINE1(usb, device, pipe, abort__start,
+    "struct usbd_pipe *"/*pipe*/);
+SDT_PROBE_DEFINE1(usb, device, pipe, abort__done,
+    "struct usbd_pipe *"/*pipe*/);
+SDT_PROBE_DEFINE1(usb, device, pipe, clear__endpoint__stall,
+    "struct usbd_pipe *"/*pipe*/);
+SDT_PROBE_DEFINE1(usb, device, pipe, clear__endpoint__toggle,
+    "struct usbd_pipe *"/*pipe*/);
+
+SDT_PROBE_DEFINE5(usb, device, xfer, create,
+    "struct usbd_xfer *"/*xfer*/,
+    "struct usbd_pipe *"/*pipe*/,
+    "size_t"/*len*/,
+    "unsigned int"/*flags*/,
+    "unsigned int"/*nframes*/);
+SDT_PROBE_DEFINE1(usb, device, xfer, start,  "struct usbd_xfer *"/*xfer*/);
+SDT_PROBE_DEFINE1(usb, device, xfer, preabort,  "struct usbd_xfer *"/*xfer*/);
+SDT_PROBE_DEFINE1(usb, device, xfer, abort,  "struct usbd_xfer *"/*xfer*/);
+SDT_PROBE_DEFINE1(usb, device, xfer, timeout,  "struct usbd_xfer *"/*xfer*/);
+SDT_PROBE_DEFINE2(usb, device, xfer, done,
+    "struct usbd_xfer *"/*xfer*/,
+    "usbd_status"/*status*/);
+SDT_PROBE_DEFINE1(usb, device, xfer, destroy,  "struct usbd_xfer *"/*xfer*/);
+
+SDT_PROBE_DEFINE5(usb, device, request, start,
+    "struct usbd_device *"/*dev*/,
+    "usb_device_request_t *"/*req*/,
+    "size_t"/*len*/,
+    "int"/*flags*/,
+    "uint32_t"/*timeout*/);
+
+SDT_PROBE_DEFINE7(usb, device, request, done,
+    "struct usbd_device *"/*dev*/,
+    "usb_device_request_t *"/*req*/,
+    "size_t"/*actlen*/,
+    "int"/*flags*/,
+    "uint32_t"/*timeout*/,
+    "void *"/*data*/,
+    "usbd_status"/*status*/);
+
+Static void usbd_ar_pipe(struct usbd_pipe *);
 Static void usbd_start_next(struct usbd_pipe *);
 Static usbd_status usbd_open_pipe_ival
 	(struct usbd_interface *, uint8_t, uint8_t, struct usbd_pipe **, int);
 static void *usbd_alloc_buffer(struct usbd_xfer *, uint32_t);
 static void usbd_free_buffer(struct usbd_xfer *);
 static struct usbd_xfer *usbd_alloc_xfer(struct usbd_device *, unsigned int);
-static usbd_status usbd_free_xfer(struct usbd_xfer *);
+static void usbd_free_xfer(struct usbd_xfer *);
 static void usbd_request_async_cb(struct usbd_xfer *, void *, usbd_status);
+static void usbd_xfer_timeout(void *);
+static void usbd_xfer_timeout_task(void *);
+static bool usbd_xfer_probe_timeout(struct usbd_xfer *);
+static void usbd_xfer_cancel_timeout_async(struct usbd_xfer *);
 
 #if defined(USB_DEBUG)
 void
@@ -81,11 +152,11 @@ usbd_dump_iface(struct usbd_interface *iface)
 
 	if (iface == NULL)
 		return;
-	USBHIST_LOG(usbdebug, "     device = %#jx idesc = %#jx index = %d",
+	USBHIST_LOG(usbdebug, "     device = %#jx idesc = %#jx index = %jd",
 	    (uintptr_t)iface->ui_dev, (uintptr_t)iface->ui_idesc,
 	    iface->ui_index, 0);
-	USBHIST_LOG(usbdebug, "     altindex=%d priv=%#jx",
-	    iface->ui_altindex, (uintptr_t)iface->ui_priv, 0, 0);
+	USBHIST_LOG(usbdebug, "     altindex=%jd",
+	    iface->ui_altindex, 0, 0, 0);
 }
 
 void
@@ -116,7 +187,7 @@ usbd_dump_endpoint(struct usbd_endpoint *endp)
 	USBHIST_LOG(usbdebug, "    edesc = %#jx refcnt = %jd",
 	    (uintptr_t)endp->ue_edesc, endp->ue_refcnt, 0, 0);
 	if (endp->ue_edesc)
-		USBHIST_LOG(usbdebug, "     bEndpointAddress=0x%02x",
+		USBHIST_LOG(usbdebug, "     bEndpointAddress=0x%02jx",
 		    endp->ue_edesc->bEndpointAddress, 0, 0, 0);
 }
 
@@ -166,32 +237,59 @@ usbd_status
 usbd_open_pipe_ival(struct usbd_interface *iface, uint8_t address,
 		    uint8_t flags, struct usbd_pipe **pipe, int ival)
 {
-	struct usbd_pipe *p;
-	struct usbd_endpoint *ep;
+	struct usbd_pipe *p = NULL;
+	struct usbd_endpoint *ep = NULL /* XXXGCC */;
+	bool piperef = false;
 	usbd_status err;
 	int i;
 
 	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "iface = %#jx address = 0x%jx flags = 0x%jx",
+	USBHIST_CALLARGS(usbdebug, "iface = %#jx address = %#jx flags = %#jx",
 	    (uintptr_t)iface, address, flags, 0);
 
+	/*
+	 * Block usbd_set_interface so we have a snapshot of the
+	 * interface endpoints.  They will remain stable until we drop
+	 * the reference in usbd_close_pipe (or on failure here).
+	 */
+	err = usbd_iface_piperef(iface);
+	if (err)
+		goto out;
+	piperef = true;
+
+	/* Find the endpoint at this address.  */
 	for (i = 0; i < iface->ui_idesc->bNumEndpoints; i++) {
 		ep = &iface->ui_endpoints[i];
-		if (ep->ue_edesc == NULL)
-			return USBD_IOERROR;
+		if (ep->ue_edesc == NULL) {
+			err = USBD_IOERROR;
+			goto out;
+		}
 		if (ep->ue_edesc->bEndpointAddress == address)
-			goto found;
+			break;
 	}
-	return USBD_BAD_ADDRESS;
- found:
-	if ((flags & USBD_EXCLUSIVE_USE) && ep->ue_refcnt != 0)
-		return USBD_IN_USE;
+	if (i == iface->ui_idesc->bNumEndpoints) {
+		err = USBD_BAD_ADDRESS;
+		goto out;
+	}
+
+	/* Set up the pipe with this endpoint.  */
 	err = usbd_setup_pipe_flags(iface->ui_dev, iface, ep, ival, &p, flags);
 	if (err)
-		return err;
-	LIST_INSERT_HEAD(&iface->ui_pipes, p, up_next);
+		goto out;
+
+	/* Success! */
 	*pipe = p;
-	return USBD_NORMAL_COMPLETION;
+	p = NULL;		/* handed off to caller */
+	piperef = false;	/* handed off to pipe */
+	SDT_PROBE5(usb, device, pipe, open,
+	    iface, address, flags, ival, p);
+	err = USBD_NORMAL_COMPLETION;
+
+out:	if (p)
+		usbd_close_pipe(p);
+	if (piperef)
+		usbd_iface_pipeunref(iface);
+	return err;
 }
 
 usbd_status
@@ -205,7 +303,7 @@ usbd_open_pipe_intr(struct usbd_interface *iface, uint8_t address,
 	struct usbd_pipe *ipipe;
 
 	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "address = 0x%jx flags = 0x%jx len = %jd",
+	USBHIST_CALLARGS(usbdebug, "address = %#jx flags = %#jx len = %jd",
 	    address, flags, len, 0);
 
 	err = usbd_open_pipe_ival(iface, address,
@@ -224,6 +322,8 @@ usbd_open_pipe_intr(struct usbd_interface *iface, uint8_t address,
 	*pipe = ipipe;
 	if (err != USBD_IN_PROGRESS)
 		goto bad3;
+	SDT_PROBE7(usb, device, pipe, open__intr,
+	    iface, address, flags, ival, cb, priv, ipipe);
 	return USBD_NORMAL_COMPLETION;
 
  bad3:
@@ -236,7 +336,7 @@ usbd_open_pipe_intr(struct usbd_interface *iface, uint8_t address,
 	return err;
 }
 
-usbd_status
+void
 usbd_close_pipe(struct usbd_pipe *pipe)
 {
 	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
@@ -244,30 +344,25 @@ usbd_close_pipe(struct usbd_pipe *pipe)
 	KASSERT(pipe != NULL);
 
 	usbd_lock_pipe(pipe);
-
+	SDT_PROBE1(usb, device, pipe, close,  pipe);
 	if (!SIMPLEQ_EMPTY(&pipe->up_queue)) {
 		printf("WARNING: pipe closed with active xfers on addr %d\n",
 		    pipe->up_dev->ud_addr);
 		usbd_ar_pipe(pipe);
 	}
-
 	KASSERT(SIMPLEQ_EMPTY(&pipe->up_queue));
-
-	LIST_REMOVE(pipe, up_next);
-	pipe->up_endpoint->ue_refcnt--;
-
 	pipe->up_methods->upm_close(pipe);
-
-	if (pipe->up_intrxfer != NULL) {
-	    	usbd_unlock_pipe(pipe);
-		usbd_destroy_xfer(pipe->up_intrxfer);
-		usbd_lock_pipe(pipe);
-	}
-
 	usbd_unlock_pipe(pipe);
-	kmem_free(pipe, pipe->up_dev->ud_bus->ub_pipesize);
 
-	return USBD_NORMAL_COMPLETION;
+	cv_destroy(&pipe->up_callingcv);
+	if (pipe->up_intrxfer)
+		usbd_destroy_xfer(pipe->up_intrxfer);
+	usb_rem_task_wait(pipe->up_dev, &pipe->up_async_task, USB_TASKQ_DRIVER,
+	    NULL);
+	usbd_endpoint_release(pipe->up_dev, pipe->up_endpoint);
+	if (pipe->up_iface)
+		usbd_iface_pipeunref(pipe->up_iface);
+	kmem_free(pipe, pipe->up_dev->ud_bus->ub_pipesize);
 }
 
 usbd_status
@@ -281,18 +376,13 @@ usbd_transfer(struct usbd_xfer *xfer)
 	    "xfer = %#jx, flags = %#jx, pipe = %#jx, running = %jd",
 	    (uintptr_t)xfer, xfer->ux_flags, (uintptr_t)pipe, pipe->up_running);
 	KASSERT(xfer->ux_status == USBD_NOT_STARTED);
+	SDT_PROBE1(usb, device, xfer, start,  xfer);
 
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
 #endif
 	xfer->ux_done = 0;
-
-	if (pipe->up_aborting) {
-		USBHIST_LOG(usbdebug, "<- done xfer %#jx, aborting",
-		    (uintptr_t)xfer, 0, 0, 0);
-		return USBD_CANCELLED;
-	}
 
 	KASSERT(xfer->ux_length == 0 || xfer->ux_buf != NULL);
 
@@ -321,8 +411,40 @@ usbd_transfer(struct usbd_xfer *xfer)
 		}
 	}
 
+	usbd_lock_pipe(pipe);
+	if (pipe->up_aborting) {
+		/*
+		 * XXX For synchronous transfers this is fine.  What to
+		 * do for asynchronous transfers?  The callback is
+		 * never run, not even with status USBD_CANCELLED.
+		 */
+		usbd_unlock_pipe(pipe);
+		USBHIST_LOG(usbdebug, "<- done xfer %#jx, aborting",
+		    (uintptr_t)xfer, 0, 0, 0);
+		SDT_PROBE2(usb, device, xfer, done,  xfer, USBD_CANCELLED);
+		return USBD_CANCELLED;
+	}
+
 	/* xfer is not valid after the transfer method unless synchronous */
-	err = pipe->up_methods->upm_transfer(xfer);
+	SDT_PROBE2(usb, device, pipe, transfer__start,  pipe, xfer);
+	do {
+#ifdef DIAGNOSTIC
+		xfer->ux_state = XFER_ONQU;
+#endif
+		SIMPLEQ_INSERT_TAIL(&pipe->up_queue, xfer, ux_next);
+		if (pipe->up_running && pipe->up_serialise) {
+			err = USBD_IN_PROGRESS;
+		} else {
+			pipe->up_running = 1;
+			err = USBD_NORMAL_COMPLETION;
+		}
+		if (err)
+			break;
+		err = pipe->up_methods->upm_transfer(xfer);
+	} while (0);
+	SDT_PROBE3(usb, device, pipe, transfer__done,  pipe, xfer, err);
+
+	usbd_unlock_pipe(pipe);
 
 	if (err != USBD_IN_PROGRESS && err) {
 		/*
@@ -330,9 +452,13 @@ usbd_transfer(struct usbd_xfer *xfer)
 		 * accepted by the HCD for some reason.  It needs removing
 		 * from the pipe queue.
 		 */
-		USBHIST_LOG(usbdebug, "xfer failed: %s, reinserting",
+		USBHIST_LOG(usbdebug, "xfer failed: %jd, reinserting",
 		    err, 0, 0, 0);
 		usbd_lock_pipe(pipe);
+		SDT_PROBE1(usb, device, xfer, preabort,  xfer);
+#ifdef DIAGNOSTIC
+		xfer->ux_state = XFER_BUSY;
+#endif
 		SIMPLEQ_REMOVE_HEAD(&pipe->up_queue, ux_next);
 		if (pipe->up_serialise)
 			usbd_start_next(pipe);
@@ -342,12 +468,15 @@ usbd_transfer(struct usbd_xfer *xfer)
 	if (!(flags & USBD_SYNCHRONOUS)) {
 		USBHIST_LOG(usbdebug, "<- done xfer %#jx, not sync (err %jd)",
 		    (uintptr_t)xfer, err, 0, 0);
+		KASSERTMSG(err != USBD_NORMAL_COMPLETION,
+		    "asynchronous xfer %p completed synchronously", xfer);
 		return err;
 	}
 
 	if (err != USBD_IN_PROGRESS) {
 		USBHIST_LOG(usbdebug, "<- done xfer %#jx, sync (err %jd)",
 		    (uintptr_t)xfer, err, 0, 0);
+		SDT_PROBE2(usb, device, xfer, done,  xfer, err);
 		return err;
 	}
 
@@ -366,11 +495,15 @@ usbd_transfer(struct usbd_xfer *xfer)
 			cv_wait(&xfer->ux_cv, pipe->up_dev->ud_bus->ub_lock);
 		}
 		if (err) {
-			if (!xfer->ux_done)
+			if (!xfer->ux_done) {
+				SDT_PROBE1(usb, device, xfer, abort,  xfer);
 				pipe->up_methods->upm_abort(xfer);
+			}
 			break;
 		}
 	}
+	SDT_PROBE2(usb, device, xfer, done,  xfer, xfer->ux_status);
+	/* XXX Race to read xfer->ux_status?  */
 	usbd_unlock_pipe(pipe);
 	return xfer->ux_status;
 }
@@ -404,7 +537,8 @@ usbd_alloc_buffer(struct usbd_xfer *xfer, uint32_t size)
 	if (bus->ub_usedma) {
 		usb_dma_t *dmap = &xfer->ux_dmabuf;
 
-		int err = usb_allocmem_flags(bus, size, 0, dmap, bus->ub_dmaflags);
+		KASSERT((bus->ub_dmaflags & USBMALLOC_COHERENT) == 0);
+		int err = usb_allocmem(bus->ub_dmatag, size, 0, bus->ub_dmaflags, dmap);
 		if (err) {
 			return NULL;
 		}
@@ -438,7 +572,7 @@ usbd_free_buffer(struct usbd_xfer *xfer)
 	if (bus->ub_usedma) {
 		usb_dma_t *dmap = &xfer->ux_dmabuf;
 
-		usb_freemem(bus, dmap);
+		usb_freemem(dmap);
 		return;
 	}
 #endif
@@ -474,7 +608,10 @@ usbd_alloc_xfer(struct usbd_device *dev, unsigned int nframes)
 		goto out;
 	xfer->ux_bus = dev->ud_bus;
 	callout_init(&xfer->ux_callout, CALLOUT_MPSAFE);
+	callout_setfunc(&xfer->ux_callout, usbd_xfer_timeout, xfer);
 	cv_init(&xfer->ux_cv, "usbxfer");
+	usb_init_task(&xfer->ux_aborttask, usbd_xfer_timeout_task, xfer,
+	    USB_TASKQ_MPSAFE);
 
 out:
 	USBHIST_CALLARGS(usbdebug, "returns %#jx", (uintptr_t)xfer, 0, 0, 0);
@@ -482,7 +619,7 @@ out:
 	return xfer;
 }
 
-static usbd_status
+static void
 usbd_free_xfer(struct usbd_xfer *xfer)
 {
 	USBHIST_FUNC();
@@ -491,15 +628,17 @@ usbd_free_xfer(struct usbd_xfer *xfer)
 	if (xfer->ux_buf) {
 		usbd_free_buffer(xfer);
 	}
-#if defined(DIAGNOSTIC)
-	if (callout_pending(&xfer->ux_callout)) {
-		callout_stop(&xfer->ux_callout);
-		printf("usbd_free_xfer: timeout_handle pending\n");
-	}
-#endif
+
+	/* Wait for any straggling timeout to complete. */
+	mutex_enter(xfer->ux_bus->ub_lock);
+	xfer->ux_timeout_reset = false; /* do not resuscitate */
+	callout_halt(&xfer->ux_callout, xfer->ux_bus->ub_lock);
+	usb_rem_task_wait(xfer->ux_pipe->up_dev, &xfer->ux_aborttask,
+	    USB_TASKQ_HC, xfer->ux_bus->ub_lock);
+	mutex_exit(xfer->ux_bus->ub_lock);
+
 	cv_destroy(&xfer->ux_cv);
 	xfer->ux_bus->ub_methods->ubm_freex(xfer->ux_bus, xfer);
-	return USBD_NORMAL_COMPLETION;
 }
 
 int
@@ -513,6 +652,11 @@ usbd_create_xfer(struct usbd_pipe *pipe, size_t len, unsigned int flags,
 	if (xfer == NULL)
 		return ENOMEM;
 
+	xfer->ux_pipe = pipe;
+	xfer->ux_flags = flags;
+	xfer->ux_nframes = nframes;
+	xfer->ux_methods = pipe->up_methods;
+
 	if (len) {
 		buf = usbd_alloc_buffer(xfer, len);
 		if (!buf) {
@@ -520,22 +664,18 @@ usbd_create_xfer(struct usbd_pipe *pipe, size_t len, unsigned int flags,
 			return ENOMEM;
 		}
 	}
-	xfer->ux_pipe = pipe;
-	xfer->ux_flags = flags;
-	xfer->ux_nframes = nframes;
-	xfer->ux_methods = pipe->up_methods;
 
 	if (xfer->ux_methods->upm_init) {
 		int err = xfer->ux_methods->upm_init(xfer);
 		if (err) {
-			if (buf)
-				usbd_free_buffer(xfer);
 			usbd_free_xfer(xfer);
 			return err;
 		}
 	}
 
 	*xp = xfer;
+	SDT_PROBE5(usb, device, xfer, create,
+	    xfer, pipe, len, flags, nframes);
 	return 0;
 }
 
@@ -543,9 +683,9 @@ void
 usbd_destroy_xfer(struct usbd_xfer *xfer)
 {
 
-	if (xfer->ux_methods->upm_fini) {
+	SDT_PROBE1(usb, device, xfer, destroy,  xfer);
+	if (xfer->ux_methods->upm_fini)
 		xfer->ux_methods->upm_fini(xfer);
-	}
 
 	usbd_free_xfer(xfer);
 }
@@ -603,6 +743,9 @@ usbd_setup_isoc_xfer(struct usbd_xfer *xfer, void *priv, uint16_t *frlengths,
 	xfer->ux_rqflags &= ~URQ_REQUEST;
 	xfer->ux_frlengths = frlengths;
 	xfer->ux_nframes = nframes;
+
+	for (size_t i = 0; i < xfer->ux_nframes; i++)
+		xfer->ux_length += xfer->ux_frlengths[i];
 }
 
 void
@@ -654,46 +797,57 @@ usbd_interface2endpoint_descriptor(struct usbd_interface *iface, uint8_t index)
 
 /* Some drivers may wish to abort requests on the default pipe, *
  * but there is no mechanism for getting a handle on it.        */
-usbd_status
+void
 usbd_abort_default_pipe(struct usbd_device *device)
 {
-	return usbd_abort_pipe(device->ud_pipe0);
+	usbd_abort_pipe(device->ud_pipe0);
 }
 
-usbd_status
+void
 usbd_abort_pipe(struct usbd_pipe *pipe)
 {
-	usbd_status err;
 
-	KASSERT(pipe != NULL);
+	usbd_suspend_pipe(pipe);
+	usbd_resume_pipe(pipe);
+}
+
+void
+usbd_suspend_pipe(struct usbd_pipe *pipe)
+{
 
 	usbd_lock_pipe(pipe);
-	err = usbd_ar_pipe(pipe);
+	usbd_ar_pipe(pipe);
 	usbd_unlock_pipe(pipe);
-	return err;
+}
+
+void
+usbd_resume_pipe(struct usbd_pipe *pipe)
+{
+
+	usbd_lock_pipe(pipe);
+	KASSERT(SIMPLEQ_EMPTY(&pipe->up_queue));
+	pipe->up_aborting = 0;
+	usbd_unlock_pipe(pipe);
 }
 
 usbd_status
 usbd_clear_endpoint_stall(struct usbd_pipe *pipe)
 {
 	struct usbd_device *dev = pipe->up_dev;
-	usb_device_request_t req;
 	usbd_status err;
 
 	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
+	SDT_PROBE1(usb, device, pipe, clear__endpoint__stall,  pipe);
 
 	/*
 	 * Clearing en endpoint stall resets the endpoint toggle, so
 	 * do the same to the HC toggle.
 	 */
+	SDT_PROBE1(usb, device, pipe, clear__endpoint__toggle,  pipe);
 	pipe->up_methods->upm_cleartoggle(pipe);
 
-	req.bmRequestType = UT_WRITE_ENDPOINT;
-	req.bRequest = UR_CLEAR_FEATURE;
-	USETW(req.wValue, UF_ENDPOINT_HALT);
-	USETW(req.wIndex, pipe->up_endpoint->ue_edesc->bEndpointAddress);
-	USETW(req.wLength, 0);
-	err = usbd_do_request(dev, &req, 0);
+	err = usbd_clear_endpoint_feature(dev,
+	    pipe->up_endpoint->ue_edesc->bEndpointAddress, UF_ENDPOINT_HALT);
 #if 0
 XXX should we do this?
 	if (!err) {
@@ -709,16 +863,13 @@ usbd_clear_endpoint_stall_task(void *arg)
 {
 	struct usbd_pipe *pipe = arg;
 	struct usbd_device *dev = pipe->up_dev;
-	usb_device_request_t req;
 
+	SDT_PROBE1(usb, device, pipe, clear__endpoint__stall,  pipe);
+	SDT_PROBE1(usb, device, pipe, clear__endpoint__toggle,  pipe);
 	pipe->up_methods->upm_cleartoggle(pipe);
 
-	req.bmRequestType = UT_WRITE_ENDPOINT;
-	req.bRequest = UR_CLEAR_FEATURE;
-	USETW(req.wValue, UF_ENDPOINT_HALT);
-	USETW(req.wIndex, pipe->up_endpoint->ue_edesc->bEndpointAddress);
-	USETW(req.wLength, 0);
-	(void)usbd_do_request(dev, &req, 0);
+	(void)usbd_clear_endpoint_feature(dev,
+	    pipe->up_endpoint->ue_edesc->bEndpointAddress, UF_ENDPOINT_HALT);
 }
 
 void
@@ -731,6 +882,7 @@ void
 usbd_clear_endpoint_toggle(struct usbd_pipe *pipe)
 {
 
+	SDT_PROBE1(usb, device, pipe, clear__endpoint__toggle,  pipe);
 	pipe->up_methods->upm_cleartoggle(pipe);
 }
 
@@ -787,38 +939,33 @@ usbd_pipe2device_handle(struct usbd_pipe *pipe)
 usbd_status
 usbd_set_interface(struct usbd_interface *iface, int altidx)
 {
+	bool locked = false;
 	usb_device_request_t req;
 	usbd_status err;
-	void *endpoints;
 
 	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "iface %#jx", (uintptr_t)iface, 0, 0, 0);
 
-	if (LIST_FIRST(&iface->ui_pipes) != NULL)
-		return USBD_IN_USE;
+	err = usbd_iface_lock(iface);
+	if (err)
+		goto out;
+	locked = true;
 
-	endpoints = iface->ui_endpoints;
-	int nendpt = iface->ui_idesc->bNumEndpoints;
-	USBHIST_CALLARGS(usbdebug, "iface %#jx endpoints = %#jx nendpt %jd",
-	    (uintptr_t)iface, (uintptr_t)endpoints,
-	    iface->ui_idesc->bNumEndpoints, 0);
 	err = usbd_fill_iface_data(iface->ui_dev, iface->ui_index, altidx);
 	if (err)
-		return err;
-
-	/* new setting works, we can free old endpoints */
-	if (endpoints != NULL) {
-		USBHIST_LOG(usbdebug, "iface %#jx endpoints = %#jx nendpt %jd",
-		    (uintptr_t)iface, (uintptr_t)endpoints, nendpt, 0);
-		kmem_free(endpoints, nendpt * sizeof(struct usbd_endpoint));
-	}
-	KASSERT(iface->ui_idesc != NULL);
+		goto out;
 
 	req.bmRequestType = UT_WRITE_INTERFACE;
 	req.bRequest = UR_SET_INTERFACE;
 	USETW(req.wValue, iface->ui_idesc->bAlternateSetting);
 	USETW(req.wIndex, iface->ui_idesc->bInterfaceNumber);
 	USETW(req.wLength, 0);
-	return usbd_do_request(iface->ui_dev, &req, 0);
+	err = usbd_do_request(iface->ui_dev, &req, 0);
+
+out:	/* XXX back out iface data?  */
+	if (locked)
+		usbd_iface_unlock(iface);
+	return err;
 }
 
 int
@@ -826,15 +973,24 @@ usbd_get_no_alts(usb_config_descriptor_t *cdesc, int ifaceno)
 {
 	char *p = (char *)cdesc;
 	char *end = p + UGETW(cdesc->wTotalLength);
-	usb_interface_descriptor_t *d;
+	usb_descriptor_t *desc;
+	usb_interface_descriptor_t *idesc;
 	int n;
 
-	for (n = 0; p < end; p += d->bLength) {
-		d = (usb_interface_descriptor_t *)p;
-		if (p + d->bLength <= end &&
-		    d->bDescriptorType == UDESC_INTERFACE &&
-		    d->bInterfaceNumber == ifaceno)
+	for (n = 0; end - p >= sizeof(*desc); p += desc->bLength) {
+		desc = (usb_descriptor_t *)p;
+		if (desc->bLength < sizeof(*desc) || desc->bLength > end - p)
+			break;
+		if (desc->bDescriptorType != UDESC_INTERFACE)
+			continue;
+		if (desc->bLength < sizeof(*idesc))
+			break;
+		idesc = (usb_interface_descriptor_t *)desc;
+		if (idesc->bInterfaceNumber == ifaceno) {
 			n++;
+			if (n == INT_MAX)
+				break;
+		}
 	}
 	return n;
 }
@@ -861,36 +1017,79 @@ usbd_get_interface(struct usbd_interface *iface, uint8_t *aiface)
 /*** Internal routines ***/
 
 /* Dequeue all pipe operations, called with bus lock held. */
-Static usbd_status
+Static void
 usbd_ar_pipe(struct usbd_pipe *pipe)
 {
 	struct usbd_xfer *xfer;
 
 	USBHIST_FUNC();
 	USBHIST_CALLARGS(usbdebug, "pipe = %#jx", (uintptr_t)pipe, 0, 0, 0);
+	SDT_PROBE1(usb, device, pipe, abort__start,  pipe);
 
+	ASSERT_SLEEPABLE();
 	KASSERT(mutex_owned(pipe->up_dev->ud_bus->ub_lock));
+
+	/*
+	 * Allow only one thread at a time to abort the pipe, so we
+	 * don't get confused if upm_abort drops the lock in the middle
+	 * of the abort to wait for hardware completion softints to
+	 * stop using the xfer before returning.
+	 */
+	KASSERTMSG(pipe->up_abortlwp == NULL, "pipe->up_abortlwp=%p",
+	    pipe->up_abortlwp);
+	pipe->up_abortlwp = curlwp;
 
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
 #endif
 	pipe->up_repeat = 0;
+	pipe->up_running = 0;
 	pipe->up_aborting = 1;
 	while ((xfer = SIMPLEQ_FIRST(&pipe->up_queue)) != NULL) {
 		USBHIST_LOG(usbdebug, "pipe = %#jx xfer = %#jx "
 		    "(methods = %#jx)", (uintptr_t)pipe, (uintptr_t)xfer,
 		    (uintptr_t)pipe->up_methods, 0);
 		if (xfer->ux_status == USBD_NOT_STARTED) {
+			SDT_PROBE1(usb, device, xfer, preabort,  xfer);
+#ifdef DIAGNOSTIC
+			xfer->ux_state = XFER_BUSY;
+#endif
 			SIMPLEQ_REMOVE_HEAD(&pipe->up_queue, ux_next);
 		} else {
 			/* Make the HC abort it (and invoke the callback). */
+			SDT_PROBE1(usb, device, xfer, abort,  xfer);
 			pipe->up_methods->upm_abort(xfer);
+			while (pipe->up_callingxfer == xfer) {
+				USBHIST_LOG(usbdebug, "wait for callback"
+				    "pipe = %#jx xfer = %#jx",
+				    (uintptr_t)pipe, (uintptr_t)xfer, 0, 0);
+				cv_wait(&pipe->up_callingcv,
+				    pipe->up_dev->ud_bus->ub_lock);
+			}
 			/* XXX only for non-0 usbd_clear_endpoint_stall(pipe); */
 		}
 	}
-	pipe->up_aborting = 0;
-	return USBD_NORMAL_COMPLETION;
+
+	/*
+	 * There may be an xfer callback already in progress which was
+	 * taken off the queue before we got to it.  We must wait for
+	 * the callback to finish before returning control to the
+	 * caller.
+	 */
+	while (pipe->up_callingxfer) {
+		USBHIST_LOG(usbdebug, "wait for callback"
+		    "pipe = %#jx xfer = %#jx",
+		    (uintptr_t)pipe, (uintptr_t)pipe->up_callingxfer, 0, 0);
+		cv_wait(&pipe->up_callingcv, pipe->up_dev->ud_bus->ub_lock);
+	}
+
+	KASSERT(mutex_owned(pipe->up_dev->ud_bus->ub_lock));
+	KASSERTMSG(pipe->up_abortlwp == curlwp, "pipe->up_abortlwp=%p",
+	    pipe->up_abortlwp);
+	pipe->up_abortlwp = NULL;
+
+	SDT_PROBE1(usb, device, pipe, abort__done,  pipe);
 }
 
 /* Called with USB lock held. */
@@ -924,7 +1123,7 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 	    xfer->ux_status == USBD_TIMEOUT &&
 	    !usbd_xfer_isread(xfer)) {
 		USBHIST_LOG(usbdebug, "Possible output ack miss for xfer %#jx: "
-		    "hiding write timeout to %d.%s for %d bytes written",
+		    "hiding write timeout to %jd.%jd for %ju bytes written",
 		    (uintptr_t)xfer, curlwp->l_proc->p_pid, curlwp->l_lid,
 		    xfer->ux_length);
 
@@ -968,6 +1167,7 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 
 	USBHIST_LOG(usbdebug, "xfer %#jx doing done %#jx", (uintptr_t)xfer,
 	    (uintptr_t)pipe->up_methods->upm_done, 0, 0);
+	SDT_PROBE2(usb, device, xfer, done,  xfer, xfer->ux_status);
 	pipe->up_methods->upm_done(xfer);
 
 	if (xfer->ux_length != 0 && xfer->ux_buffer != xfer->ux_buf) {
@@ -985,6 +1185,8 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 
 	if (xfer->ux_callback) {
 		if (!polling) {
+			KASSERT(pipe->up_callingxfer == NULL);
+			pipe->up_callingxfer = xfer;
 			mutex_exit(pipe->up_dev->ud_bus->ub_lock);
 			if (!(pipe->up_flags & USBD_MPSAFE))
 				KERNEL_LOCK(1, curlwp);
@@ -996,6 +1198,9 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 			if (!(pipe->up_flags & USBD_MPSAFE))
 				KERNEL_UNLOCK_ONE(curlwp);
 			mutex_enter(pipe->up_dev->ud_bus->ub_lock);
+			KASSERT(pipe->up_callingxfer == xfer);
+			pipe->up_callingxfer = NULL;
+			cv_broadcast(&pipe->up_callingcv);
 		}
 	}
 
@@ -1015,37 +1220,6 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 	}
 	if (pipe->up_running && pipe->up_serialise)
 		usbd_start_next(pipe);
-}
-
-/* Called with USB lock held. */
-usbd_status
-usb_insert_transfer(struct usbd_xfer *xfer)
-{
-	struct usbd_pipe *pipe = xfer->ux_pipe;
-	usbd_status err;
-
-	USBHIST_FUNC(); USBHIST_CALLARGS(usbdebug,
-	    "xfer = %#jx pipe = %#jx running = %jd timeout = %jd",
-	    (uintptr_t)xfer, (uintptr_t)pipe,
-	    pipe->up_running, xfer->ux_timeout);
-
-	KASSERT(mutex_owned(pipe->up_dev->ud_bus->ub_lock));
-	KASSERTMSG(xfer->ux_state == XFER_BUSY, "xfer %p state is %x", xfer,
-	    xfer->ux_state);
-
-#ifdef DIAGNOSTIC
-	xfer->ux_state = XFER_ONQU;
-#endif
-	SIMPLEQ_INSERT_TAIL(&pipe->up_queue, xfer, ux_next);
-	if (pipe->up_running && pipe->up_serialise)
-		err = USBD_IN_PROGRESS;
-	else {
-		pipe->up_running = 1;
-		err = USBD_NORMAL_COMPLETION;
-	}
-	USBHIST_LOG(usbdebug, "<- done xfer %#jx, err %jd", (uintptr_t)xfer,
-	    err, 0, 0);
-	return err;
 }
 
 /* Called with USB lock held. */
@@ -1072,11 +1246,8 @@ usbd_start_next(struct usbd_pipe *pipe)
 	if (xfer == NULL) {
 		pipe->up_running = 0;
 	} else {
-		if (!polling)
-			mutex_exit(pipe->up_dev->ud_bus->ub_lock);
+		SDT_PROBE2(usb, device, pipe, start,  pipe, xfer);
 		err = pipe->up_methods->upm_start(xfer);
-		if (!polling)
-			mutex_enter(pipe->up_dev->ud_bus->ub_lock);
 
 		if (err != USBD_IN_PROGRESS) {
 			USBHIST_LOG(usbdebug, "error = %jd", err, 0, 0, 0);
@@ -1120,9 +1291,15 @@ usbd_do_request_len(struct usbd_device *dev, usb_device_request_t *req,
 
 	ASSERT_SLEEPABLE();
 
+	SDT_PROBE5(usb, device, request, start,
+	    dev, req, len, flags, timeout);
+
 	int error = usbd_create_xfer(dev->ud_pipe0, len, 0, 0, &xfer);
-	if (error)
-		return error;
+	if (error) {
+		SDT_PROBE7(usb, device, request, done,
+		    dev, req, /*actlen*/0, flags, timeout, data, USBD_NOMEM);
+		return USBD_NOMEM;
+	}
 
 	usbd_setup_default_xfer(xfer, dev, 0, timeout, req, data,
 	    UGETW(req->wLength), flags, NULL);
@@ -1147,6 +1324,9 @@ usbd_do_request_len(struct usbd_device *dev, usb_device_request_t *req,
 
 	usbd_destroy_xfer(xfer);
 
+	SDT_PROBE7(usb, device, request, done,
+	    dev, req, xfer->ux_actlen, flags, timeout, data, err);
+
 	if (err) {
 		USBHIST_LOG(usbdebug, "returning err = %jd", err, 0, 0, 0);
 	}
@@ -1156,7 +1336,7 @@ usbd_do_request_len(struct usbd_device *dev, usb_device_request_t *req,
 static void
 usbd_request_async_cb(struct usbd_xfer *xfer, void *priv, usbd_status status)
 {
-	usbd_free_xfer(xfer);
+	usbd_destroy_xfer(xfer);
 }
 
 /*
@@ -1177,7 +1357,7 @@ usbd_request_async(struct usbd_device *dev, struct usbd_xfer *xfer,
 	    callback);
 	err = usbd_transfer(xfer);
 	if (err != USBD_IN_PROGRESS) {
-		usbd_free_xfer(xfer);
+		usbd_destroy_xfer(xfer);
 		return (err);
 	}
 	return (USBD_NORMAL_COMPLETION);
@@ -1271,39 +1451,6 @@ usb_match_device(const struct usb_devno *tbl, u_int nentries, u_int sz,
 	return NULL;
 }
 
-
-void
-usb_desc_iter_init(struct usbd_device *dev, usbd_desc_iter_t *iter)
-{
-	const usb_config_descriptor_t *cd = usbd_get_config_descriptor(dev);
-
-	iter->cur = (const uByte *)cd;
-	iter->end = (const uByte *)cd + UGETW(cd->wTotalLength);
-}
-
-const usb_descriptor_t *
-usb_desc_iter_next(usbd_desc_iter_t *iter)
-{
-	const usb_descriptor_t *desc;
-
-	if (iter->cur + sizeof(usb_descriptor_t) >= iter->end) {
-		if (iter->cur != iter->end)
-			printf("usb_desc_iter_next: bad descriptor\n");
-		return NULL;
-	}
-	desc = (const usb_descriptor_t *)iter->cur;
-	if (desc->bLength == 0) {
-		printf("usb_desc_iter_next: descriptor length = 0\n");
-		return NULL;
-	}
-	iter->cur += desc->bLength;
-	if (iter->cur > iter->end) {
-		printf("usb_desc_iter_next: descriptor length too large\n");
-		return NULL;
-	}
-	return desc;
-}
-
 usbd_status
 usbd_get_string(struct usbd_device *dev, int si, char *buf)
 {
@@ -1367,4 +1514,390 @@ usbd_get_string0(struct usbd_device *dev, int si, char *buf, int unicode)
 	}
 #endif
 	return USBD_NORMAL_COMPLETION;
+}
+
+/*
+ * usbd_xfer_trycomplete(xfer)
+ *
+ *	Try to claim xfer for completion.  Return true if successful,
+ *	false if the xfer has been synchronously aborted or has timed
+ *	out.
+ *
+ *	If this returns true, caller is responsible for setting
+ *	xfer->ux_status and calling usb_transfer_complete.  To be used
+ *	in a host controller interrupt handler.
+ *
+ *	Caller must either hold the bus lock or have the bus in polling
+ *	mode.  If this succeeds, caller must proceed to call
+ *	usb_complete_transfer under the bus lock or with polling
+ *	enabled -- must not release and reacquire the bus lock in the
+ *	meantime.  Failing to heed this rule may lead to catastrophe
+ *	with abort or timeout.
+ */
+bool
+usbd_xfer_trycomplete(struct usbd_xfer *xfer)
+{
+	struct usbd_bus *bus __diagused = xfer->ux_bus;
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+
+	/*
+	 * If software has completed it, either by synchronous abort or
+	 * by timeout, too late.
+	 */
+	if (xfer->ux_status != USBD_IN_PROGRESS)
+		return false;
+
+	/*
+	 * We are completing the xfer.  Cancel the timeout if we can,
+	 * but only asynchronously.  See usbd_xfer_cancel_timeout_async
+	 * for why we need not wait for the callout or task here.
+	 */
+	usbd_xfer_cancel_timeout_async(xfer);
+
+	/* Success!  Note: Caller must set xfer->ux_status afterwar.  */
+	return true;
+}
+
+/*
+ * usbd_xfer_abort(xfer)
+ *
+ *	Try to claim xfer to abort.  If successful, mark it completed
+ *	with USBD_CANCELLED and call the bus-specific method to abort
+ *	at the hardware level.
+ *
+ *	To be called in thread context from struct
+ *	usbd_pipe_methods::upm_abort.
+ *
+ *	Caller must hold the bus lock.
+ */
+void
+usbd_xfer_abort(struct usbd_xfer *xfer)
+{
+	struct usbd_bus *bus = xfer->ux_bus;
+
+	KASSERT(mutex_owned(bus->ub_lock));
+
+	/*
+	 * If host controller interrupt or timer interrupt has
+	 * completed it, too late.  But the xfer cannot be
+	 * cancelled already -- only one caller can synchronously
+	 * abort.
+	 */
+	KASSERT(xfer->ux_status != USBD_CANCELLED);
+	if (xfer->ux_status != USBD_IN_PROGRESS)
+		return;
+
+	/*
+	 * Cancel the timeout if we can, but only asynchronously; see
+	 * usbd_xfer_cancel_timeout_async for why we need not wait for
+	 * the callout or task here.
+	 */
+	usbd_xfer_cancel_timeout_async(xfer);
+
+	/*
+	 * We beat everyone else.  Claim the status as cancelled, do
+	 * the bus-specific dance to abort the hardware, and complete
+	 * the xfer.
+	 */
+	xfer->ux_status = USBD_CANCELLED;
+	bus->ub_methods->ubm_abortx(xfer);
+	usb_transfer_complete(xfer);
+}
+
+/*
+ * usbd_xfer_timeout(xfer)
+ *
+ *	Called at IPL_SOFTCLOCK when too much time has elapsed waiting
+ *	for xfer to complete.  Since we can't abort the xfer at
+ *	IPL_SOFTCLOCK, defer to a usb_task to run it in thread context,
+ *	unless the xfer has completed or aborted concurrently -- and if
+ *	the xfer has also been resubmitted, take care of rescheduling
+ *	the callout.
+ */
+static void
+usbd_xfer_timeout(void *cookie)
+{
+	struct usbd_xfer *xfer = cookie;
+	struct usbd_bus *bus = xfer->ux_bus;
+	struct usbd_device *dev = xfer->ux_pipe->up_dev;
+
+	/* Acquire the lock so we can transition the timeout state.  */
+	mutex_enter(bus->ub_lock);
+
+	/*
+	 * Use usbd_xfer_probe_timeout to check whether the timeout is
+	 * still valid, or to reschedule the callout if necessary.  If
+	 * it is still valid, schedule the task.
+	 */
+	if (usbd_xfer_probe_timeout(xfer))
+		usb_add_task(dev, &xfer->ux_aborttask, USB_TASKQ_HC);
+
+	/*
+	 * Notify usbd_xfer_cancel_timeout_async that we may have
+	 * scheduled the task.  This causes callout_invoking to return
+	 * false in usbd_xfer_cancel_timeout_async so that it can tell
+	 * which stage in the callout->task->abort process we're at.
+	 */
+	callout_ack(&xfer->ux_callout);
+
+	/* All done -- release the lock.  */
+	mutex_exit(bus->ub_lock);
+}
+
+/*
+ * usbd_xfer_timeout_task(xfer)
+ *
+ *	Called in thread context when too much time has elapsed waiting
+ *	for xfer to complete.  Abort the xfer with USBD_TIMEOUT, unless
+ *	it has completed or aborted concurrently -- and if the xfer has
+ *	also been resubmitted, take care of rescheduling the callout.
+ */
+static void
+usbd_xfer_timeout_task(void *cookie)
+{
+	struct usbd_xfer *xfer = cookie;
+	struct usbd_bus *bus = xfer->ux_bus;
+
+	/* Acquire the lock so we can transition the timeout state.  */
+	mutex_enter(bus->ub_lock);
+
+	/*
+	 * Use usbd_xfer_probe_timeout to check whether the timeout is
+	 * still valid, or to reschedule the callout if necessary.  If
+	 * it is not valid -- the timeout has been asynchronously
+	 * cancelled, or the xfer has already been resubmitted -- then
+	 * we're done here.
+	 */
+	if (!usbd_xfer_probe_timeout(xfer))
+		goto out;
+
+	/*
+	 * May have completed or been aborted, but we're the only one
+	 * who can time it out.  If it has completed or been aborted,
+	 * no need to timeout.
+	 */
+	KASSERT(xfer->ux_status != USBD_TIMEOUT);
+	if (xfer->ux_status != USBD_IN_PROGRESS)
+		goto out;
+
+	/*
+	 * We beat everyone else.  Claim the status as timed out, do
+	 * the bus-specific dance to abort the hardware, and complete
+	 * the xfer.
+	 */
+	xfer->ux_status = USBD_TIMEOUT;
+	bus->ub_methods->ubm_abortx(xfer);
+	usb_transfer_complete(xfer);
+
+out:	/* All done -- release the lock.  */
+	mutex_exit(bus->ub_lock);
+}
+
+/*
+ * usbd_xfer_probe_timeout(xfer)
+ *
+ *	Probe the status of xfer's timeout.  Acknowledge and process a
+ *	request to reschedule.  Return true if the timeout is still
+ *	valid and the caller should take further action (queueing a
+ *	task or aborting the xfer), false if it must stop here.
+ */
+static bool
+usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
+{
+	struct usbd_bus *bus = xfer->ux_bus;
+	bool valid;
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+
+	/* The timeout must be set.  */
+	KASSERT(xfer->ux_timeout_set);
+
+	/*
+	 * Neither callout nor task may be pending; they execute
+	 * alternately in lock step.
+	 */
+	KASSERT(!callout_pending(&xfer->ux_callout));
+	KASSERT(!usb_task_pending(xfer->ux_pipe->up_dev, &xfer->ux_aborttask));
+
+	/* There are a few cases... */
+	if (bus->ub_methods->ubm_dying(bus)) {
+		/* Host controller dying.  Drop it all on the floor.  */
+		xfer->ux_timeout_set = false;
+		xfer->ux_timeout_reset = false;
+		valid = false;
+	} else if (xfer->ux_timeout_reset) {
+		/*
+		 * The xfer completed _and_ got resubmitted while we
+		 * waited for the lock.  Acknowledge the request to
+		 * reschedule, and reschedule it if there is a timeout
+		 * and the bus is not polling.
+		 */
+		xfer->ux_timeout_reset = false;
+		if (xfer->ux_timeout && !bus->ub_usepolling) {
+			KASSERT(xfer->ux_timeout_set);
+			callout_schedule(&xfer->ux_callout,
+			    mstohz(xfer->ux_timeout));
+		} else {
+			/* No more callout or task scheduled.  */
+			xfer->ux_timeout_set = false;
+		}
+		valid = false;
+	} else if (xfer->ux_status != USBD_IN_PROGRESS) {
+		/*
+		 * The xfer has completed by hardware completion or by
+		 * software abort, and has not been resubmitted, so the
+		 * timeout must be unset, and is no longer valid for
+		 * the caller.
+		 */
+		xfer->ux_timeout_set = false;
+		valid = false;
+	} else {
+		/*
+		 * The xfer has not yet completed, so the timeout is
+		 * valid.
+		 */
+		valid = true;
+	}
+
+	/* Any reset must have been processed.  */
+	KASSERT(!xfer->ux_timeout_reset);
+
+	/*
+	 * Either we claim the timeout is set, or the callout is idle.
+	 * If the timeout is still set, we may be handing off to the
+	 * task instead, so this is an if but not an iff.
+	 */
+	KASSERT(xfer->ux_timeout_set || !callout_pending(&xfer->ux_callout));
+
+	/*
+	 * The task must be idle now.
+	 *
+	 * - If the caller is the callout, _and_ the timeout is still
+	 *   valid, the caller will schedule it, but it hasn't been
+	 *   scheduled yet.  (If the timeout is not valid, the task
+	 *   should not be scheduled.)
+	 *
+	 * - If the caller is the task, it cannot be scheduled again
+	 *   until the callout runs again, which won't happen until we
+	 *   next release the lock.
+	 */
+	KASSERT(!usb_task_pending(xfer->ux_pipe->up_dev, &xfer->ux_aborttask));
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+
+	return valid;
+}
+
+/*
+ * usbd_xfer_schedule_timeout(xfer)
+ *
+ *	Ensure that xfer has a timeout.  If the callout is already
+ *	queued or the task is already running, request that they
+ *	reschedule the callout.  If not, and if we're not polling,
+ *	schedule the callout anew.
+ *
+ *	To be called in thread context from struct
+ *	usbd_pipe_methods::upm_start.
+ */
+void
+usbd_xfer_schedule_timeout(struct usbd_xfer *xfer)
+{
+	struct usbd_bus *bus = xfer->ux_bus;
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+
+	if (xfer->ux_timeout_set) {
+		/*
+		 * Callout or task has fired from a prior completed
+		 * xfer but has not yet noticed that the xfer is done.
+		 * Ask it to reschedule itself to ux_timeout.
+		 */
+		xfer->ux_timeout_reset = true;
+	} else if (xfer->ux_timeout && !bus->ub_usepolling) {
+		/* Callout is not scheduled.  Schedule it.  */
+		KASSERT(!callout_pending(&xfer->ux_callout));
+		callout_schedule(&xfer->ux_callout, mstohz(xfer->ux_timeout));
+		xfer->ux_timeout_set = true;
+	}
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+}
+
+/*
+ * usbd_xfer_cancel_timeout_async(xfer)
+ *
+ *	Cancel the callout and the task of xfer, which have not yet run
+ *	to completion, but don't wait for the callout or task to finish
+ *	running.
+ *
+ *	If they have already fired, at worst they are waiting for the
+ *	bus lock.  They will see that the xfer is no longer in progress
+ *	and give up, or they will see that the xfer has been
+ *	resubmitted with a new timeout and reschedule the callout.
+ *
+ *	If a resubmitted request completed so fast that the callout
+ *	didn't have time to process a timer reset, just cancel the
+ *	timer reset.
+ */
+static void
+usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
+{
+	struct usbd_bus *bus __diagused = xfer->ux_bus;
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
+
+	/*
+	 * If the timer wasn't running anyway, forget about it.  This
+	 * can happen if we are completing an isochronous transfer
+	 * which doesn't use the same timeout logic.
+	 */
+	if (!xfer->ux_timeout_set)
+		return;
+
+	xfer->ux_timeout_reset = false;
+	if (!callout_stop(&xfer->ux_callout)) {
+		/*
+		 * We stopped the callout before it ran.  The timeout
+		 * is no longer set.
+		 */
+		xfer->ux_timeout_set = false;
+	} else if (callout_invoking(&xfer->ux_callout)) {
+		/*
+		 * The callout has begun to run but it has not yet
+		 * acquired the lock and called callout_ack.  The task
+		 * cannot be queued yet, and the callout cannot have
+		 * been rescheduled yet.
+		 *
+		 * By the time the callout acquires the lock, we will
+		 * have transitioned from USBD_IN_PROGRESS to a
+		 * completed status, and possibly also resubmitted the
+		 * xfer and set xfer->ux_timeout_reset = true.  In both
+		 * cases, the callout will DTRT, so no further action
+		 * is needed here.
+		 */
+	} else if (usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask)) {
+		/*
+		 * The callout had fired and scheduled the task, but we
+		 * stopped the task before it could run.  The timeout
+		 * is therefore no longer set -- the next resubmission
+		 * of the xfer must schedule a new timeout.
+		 *
+		 * The callout should not be pending at this point:
+		 * it is scheduled only under the lock, and only when
+		 * xfer->ux_timeout_set is false, or by the callout or
+		 * task itself when xfer->ux_timeout_reset is true.
+		 */
+		xfer->ux_timeout_set = false;
+	}
+
+	/*
+	 * The callout cannot be scheduled and the task cannot be
+	 * queued at this point.  Either we cancelled them, or they are
+	 * already running and waiting for the bus lock.
+	 */
+	KASSERT(!callout_pending(&xfer->ux_callout));
+	KASSERT(!usb_task_pending(xfer->ux_pipe->up_dev, &xfer->ux_aborttask));
+
+	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
 }

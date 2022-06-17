@@ -1,4 +1,4 @@
-/*	$NetBSD: footbridge_irqhandler.c,v 1.25 2014/04/02 11:35:36 matt Exp $	*/
+/*	$NetBSD: footbridge_irqhandler.c,v 1.28 2021/08/13 11:40:43 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
@@ -40,13 +40,13 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0,"$NetBSD: footbridge_irqhandler.c,v 1.25 2014/04/02 11:35:36 matt Exp $");
+__KERNEL_RCSID(0,"$NetBSD: footbridge_irqhandler.c,v 1.28 2021/08/13 11:40:43 skrll Exp $");
 
 #include "opt_irqstats.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/intr.h>
 #include <machine/cpu.h>
@@ -192,11 +192,11 @@ footbridge_intr_init(void)
 	set_curcpl(0xffffffff);
 	footbridge_ipending = 0;
 	footbridge_set_intrmask();
-	
+
 	for (i = 0, iq = footbridge_intrq; i < NIRQ; i++, iq++) {
 		TAILQ_INIT(&iq->iq_list);
 	}
-	
+
 	footbridge_intr_calculate_masks();
 
 	/* Enable IRQ's, we don't have any FIQ's*/
@@ -227,13 +227,7 @@ footbridge_intr_claim(int irq, int ipl, const char *name, int (*func)(void *), v
 	if (irq < 0 || irq > NIRQ)
 		panic("footbridge_intr_establish: IRQ %d out of range", irq);
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-	{
-		printf("No memory");
-		return (NULL);
-	}
-		
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = func;
 	ih->ih_arg = arg;
 	ih->ih_ipl = ipl;
@@ -253,9 +247,9 @@ footbridge_intr_claim(int irq, int ipl, const char *name, int (*func)(void *), v
 	evcnt_detach(&iq->iq_ev);
 	evcnt_attach_dynamic(&iq->iq_ev, EVCNT_TYPE_INTR,
 			NULL, "footbridge", name);
-	
+
 	restore_interrupts(oldirqstate);
-	
+
 	return(ih);
 }
 

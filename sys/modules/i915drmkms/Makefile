@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.14 2019/09/29 23:45:00 mrg Exp $
+# $NetBSD: Makefile,v 1.19 2021/12/19 01:03:42 riastradh Exp $
 
 .include "../Makefile.inc"
 .include "../drmkms/Makefile.inc"
@@ -25,6 +25,12 @@ CPPFLAGS+=	-DNACPICA=1
 CPPFLAGS+=	-DNVGA=1
 
 CWARNFLAGS+=	-Wno-shadow
+CWARNFLAGS+=	-Wno-pointer-arith
+CWARNFLAGS.clang+=	-Wno-error=enum-conversion
+CWARNFLAGS.clang+=	-Wno-error=unused-function
+
+# Code imported from Linux - expects signed overflow to be OK.
+COPTS+=		-fwrapv
 
 COPTS.i915_drv.c+=	${${ACTIVE_CC} == "gcc":? -Wno-override-init :}
 COPTS.i915_drv.c+=	${${ACTIVE_CC} == "clang":? -Wno-initializer-overrides :}
@@ -114,10 +120,10 @@ SRCS+=	intel_uncore.c
 
 WARNS=	3
 
-.if defined(HAVE_GCC) && ${HAVE_GCC} >= 7 && ${ACTIVE_CC} == "gcc"
-COPTS.intel_display.c+=	-Wno-error=implicit-fallthrough
-COPTS.intel_ddi.c+=	-Wno-error=implicit-fallthrough
-COPTS.intel_sdvo.c+=	-Wno-error=implicit-fallthrough
-.endif
+COPTS.intel_display.c+=		${GCC_NO_IMPLICIT_FALLTHRU}
+COPTS.intel_ddi.c+=		${GCC_NO_IMPLICIT_FALLTHRU}
+COPTS.intel_sdvo.c+=		${GCC_NO_IMPLICIT_FALLTHRU}
+COPTS.intel_ddi.c+=		${GCC_NO_MAYBE_UNINITIALIZED}
+COPTS.i915_guc_submission.c+=	${NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.kmodule.mk>

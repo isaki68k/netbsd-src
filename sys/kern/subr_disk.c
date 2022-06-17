@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_disk.c,v 1.129 2019/09/30 23:23:59 cnst Exp $	*/
+/*	$NetBSD: subr_disk.c,v 1.134 2022/03/28 12:33:59 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1999, 2000, 2009 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_disk.c,v 1.129 2019/09/30 23:23:59 cnst Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_disk.c,v 1.134 2022/03/28 12:33:59 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -79,29 +79,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_disk.c,v 1.129 2019/09/30 23:23:59 cnst Exp $")
 #include <sys/disk.h>
 #include <sys/sysctl.h>
 #include <lib/libkern/libkern.h>
-
-/*
- * Compute checksum for disk label.
- */
-u_int
-dkcksum(struct disklabel *lp)
-{
-
-	return dkcksum_sized(lp, lp->d_npartitions);
-}
-
-u_int
-dkcksum_sized(struct disklabel *lp, size_t npartitions)
-{
-	uint16_t *start, *end;
-	uint16_t sum = 0;
-
-	start = (uint16_t *)lp;
-	end = (uint16_t *)&lp->d_partitions[npartitions];
-	while (start < end)
-		sum ^= *start++;
-	return sum;
-}
 
 /*
  * Disk error is the preface to plaintive error messages
@@ -440,6 +417,10 @@ int
 disk_read_sectors(void (*strat)(struct buf *), const struct disklabel *lp,
     struct buf *bp, unsigned int sector, int count)
 {
+
+	if ((lp->d_secsize / DEV_BSIZE) == 0 || lp->d_secpercyl == 0)
+		return EINVAL;
+
 	bp->b_blkno = btodb((off_t)sector * lp->d_secsize);
 	bp->b_bcount = count * lp->d_secsize;
 	bp->b_flags = (bp->b_flags & ~B_WRITE) | B_READ;
@@ -683,21 +664,17 @@ disk_set_info(device_t dev, struct disk *dk, const char *type)
 	dk->dk_blkshift = DK_BSIZE2BLKSHIFT(dg->dg_secsize);
 	dk->dk_byteshift = DK_BSIZE2BYTESHIFT(dg->dg_secsize);
 
-	if (dg->dg_secperunit == 0 && dg->dg_ncylinders == 0) {
-#ifdef DIAGNOSTIC
-		printf("%s: secperunit and ncylinders are zero\n", dk->dk_name);
-#endif
-		return;
-	}
-
 	if (dg->dg_secperunit == 0) {
-		if (dg->dg_nsectors == 0 || dg->dg_ntracks == 0) {
 #ifdef DIAGNOSTIC
+		if (dg->dg_ncylinders == 0) {
+			printf("%s: secperunit and ncylinders are zero\n",
+			    dk->dk_name);
+		}
+		if (dg->dg_nsectors == 0 || dg->dg_ntracks == 0) {
 			printf("%s: secperunit and (sectors or tracks) "
 			    "are zero\n", dk->dk_name);
-#endif
-			return;
 		}
+#endif
 		dg->dg_secperunit = (int64_t) dg->dg_nsectors *
 		    dg->dg_ntracks * dg->dg_ncylinders;
 	}
@@ -733,7 +710,7 @@ disk_set_info(device_t dev, struct disk *dk, const char *type)
 	prop_dictionary_set(disk_info, "geometry", geom);
 
 	if (type)
-		prop_dictionary_set_cstring_nocopy(disk_info, "type", type);
+		prop_dictionary_set_string_nocopy(disk_info, "type", type);
 
 	prop_object_release(geom);
 
@@ -750,4 +727,11 @@ disk_set_info(device_t dev, struct disk *dk, const char *type)
 	 */
 	if (odisk_info)
 		prop_object_release(odisk_info);
+}
+
+int
+disklabel_dev_unit(dev_t dev)
+{
+
+	return DISKUNIT(dev);
 }

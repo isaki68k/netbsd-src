@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.28 2012/02/10 17:35:47 para Exp $	*/
+/*	$NetBSD: param.h,v 1.30 2021/05/31 14:38:57 simonb Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -41,6 +41,10 @@
 #ifndef	_MACHINE_PARAM_H_
 #define	_MACHINE_PARAM_H_
 
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
+
 /*
  * Machine dependent constants for x68k
  */
@@ -52,13 +56,13 @@
 
 #define	UPAGES		2		/* pages of u-area */
 
+#ifndef MSGBUFSIZE
+#define MSGBUFSIZE	(2 * NBPG)	/* default message buffer size */
+#endif
+
 #include <m68k/param.h>
 
 #define	NPTEPG		(NBPG/(sizeof (pt_entry_t)))
-
-#ifndef MSGBUFSIZE
-#define MSGBUFSIZE	NBPG		/* default message buffer size */
-#endif
 
 /*
  * Minimum and maximum sizes of the kernel malloc arena in PAGE_SIZE-sized

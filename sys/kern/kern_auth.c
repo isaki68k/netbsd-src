@@ -1,4 +1,4 @@
-/* $NetBSD: kern_auth.c,v 1.77 2018/09/03 16:29:35 riastradh Exp $ */
+/* $NetBSD: kern_auth.c,v 1.81 2022/04/09 23:38:33 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Elad Efrat <elad@NetBSD.org>
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_auth.c,v 1.77 2018/09/03 16:29:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_auth.c,v 1.81 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -144,8 +144,14 @@ kauth_cred_free(kauth_cred_t cred)
 	KASSERT(cred->cr_refcnt > 0);
 	ASSERT_SLEEPABLE();
 
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_release();
+#endif
 	if (atomic_dec_uint_nv(&cred->cr_refcnt) > 0)
 		return;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_acquire();
+#endif
 
 	kauth_cred_hook(cred, KAUTH_CRED_FREE, NULL, NULL);
 	specificdata_fini(kauth_domain, &cred->cr_sd);
@@ -396,6 +402,25 @@ kauth_cred_ismember_gid(kauth_cred_t cred, gid_t gid, int *resultp)
 		}
 
 	return (0);
+}
+
+int
+kauth_cred_groupmember(kauth_cred_t cred, gid_t gid)
+{
+	int ismember, error;
+
+	KASSERT(cred != NULL);
+	KASSERT(cred != NOCRED);
+	KASSERT(cred != FSCRED);
+
+	error = kauth_cred_ismember_gid(cred, gid, &ismember);
+	if (error)
+		return error;
+
+	if (kauth_cred_getegid(cred) == gid || ismember)
+		return 0;
+
+	return -1;
 }
 
 u_int
@@ -1090,18 +1115,19 @@ kauth_authorize_device_passthru(kauth_cred_t cred, dev_t dev, u_long bits,
 }
 
 kauth_action_t
-kauth_mode_to_action(mode_t mode)
+kauth_accmode_to_action(accmode_t accmode)
 {
 	kauth_action_t action = 0;
 
-	if (mode & VREAD)
+	// XXX: Revisit we need to have a richer set of kauth primitives
+	// We also get only the Unix perms here sometimes
+	if (accmode & (VSTAT_PERMS|VREAD))
 		action |= KAUTH_VNODE_READ_DATA;
-	if (mode & VWRITE)
+	if (accmode & (VMODIFY_PERMS|VADMIN_PERMS))
 		action |= KAUTH_VNODE_WRITE_DATA;
-	if (mode & VEXEC)
+	if (accmode & VEXEC)
 		action |= KAUTH_VNODE_EXECUTE;
-
-	return action;
+	return action == 0 ? KAUTH_VNODE_ACCESS : action;
 }
 
 kauth_action_t

@@ -1,4 +1,4 @@
-/* 	$NetBSD: design_gsrd1.c,v 1.3 2011/06/18 06:44:27 matt Exp $ */
+/* 	$NetBSD: design_gsrd1.c,v 1.8 2022/02/17 00:54:51 riastradh Exp $ */
 
 /*
  * Copyright (c) 2006 Jachym Holecek
@@ -30,13 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: design_gsrd1.c,v 1.3 2011/06/18 06:44:27 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: design_gsrd1.c,v 1.8 2022/02/17 00:54:51 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/cpu.h>
 #include <sys/bus.h>
 #include <sys/intr.h>
@@ -348,7 +348,8 @@ virtex_autoconf(device_t self, struct plb_attach_args *paa)
 		vaa.vaa_rx_dmac = virtex_mpmc_mapdma(g->gdv_rx_dma, &rx);
 		vaa.vaa_tx_dmac = virtex_mpmc_mapdma(g->gdv_tx_dma, &tx);
 
-		config_found_ia(self, g->gdv_attr, &vaa, xcvbus_print);
+		config_found(self, &vaa, xcvbus_print,
+		    CFARGS(.iattr = g->gdv_attr));
 	}
 
 	/* Setup the dispatch handler. */
@@ -373,11 +374,7 @@ ll_dmac_intr_establish(int chan, void (*func)(void *), void *arg)
 	if (cdmac_intrs[chan] != NULL)
 		return (NULL);
 
-	ih = malloc(sizeof(struct cdmac_intr_handle), M_DEVBUF,
-	    cold ? M_NOWAIT : M_WAITOK);
-	if (ih == NULL)
-		return (NULL);
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->cih_func = func;
 	ih->cih_arg = arg;
 
@@ -387,6 +384,7 @@ ll_dmac_intr_establish(int chan, void (*func)(void *), void *arg)
 void
 ll_dmac_intr_disestablish(int chan, void *handle)
 {
+	struct cdmac_intr_handle *ih = handle;
 	int 			s;
 
 	KASSERT(chan > 0 && chan < CDMAC_NCHAN);
@@ -396,7 +394,7 @@ ll_dmac_intr_disestablish(int chan, void *handle)
 	cdmac_intrs[chan] = NULL;
 	splx(s);
 
-	free(handle, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 int

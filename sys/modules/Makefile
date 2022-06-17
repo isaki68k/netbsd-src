@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.230 2019/10/28 16:03:55 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.266 2022/06/04 03:31:10 pgoyette Exp $
 
 .include <bsd.own.mk>
 
 # For all platforms
 
-# Modules for compatability with earlier versions of NetBSD
+# Modules for compatibility with earlier versions of NetBSD
 
 SUBDIR+=	compat_util
 SUBDIR+=	compat_43   compat_sysctl_09_43
@@ -14,6 +14,8 @@ SUBDIR+=	compat_60   compat_70   compat_80   compat_90
 
 SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
 
+SUBDIR+=	compat_50_quota
+
 SUBDIR+=	compat_raid_50
 SUBDIR+=	compat_raid_80
 
@@ -22,9 +24,11 @@ SUBDIR+=	compat_crypto_50
 SUBDIR+=	accf_dataready
 SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
+SUBDIR+=	adiantum
 SUBDIR+=	aio
 SUBDIR+=	audio
 SUBDIR+=	autofs
+SUBDIR+=	blake2s
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
@@ -54,7 +58,6 @@ SUBDIR+=	exec_script
 SUBDIR+=	fdesc
 SUBDIR+=	ffs
 SUBDIR+=	filecore
-SUBDIR+=	filemon
 SUBDIR+=	flash
 SUBDIR+=	fss
 SUBDIR+=	gpio
@@ -65,10 +68,10 @@ SUBDIR+=	gpioirq
 SUBDIR+=	gpiopps
 SUBDIR+=	hfs
 SUBDIR+=	hythygtemp
-SUBDIR+=	si70xxtemp
 SUBDIR+=	am2315temp
 SUBDIR+=	i2cexec
 SUBDIR+=	i2c_bitbang
+SUBDIR+=	i2c_subr
 SUBDIR+=	if_agr
 SUBDIR+=	if_aue
 SUBDIR+=	if_axe
@@ -80,17 +83,18 @@ SUBDIR+=	if_gif
 SUBDIR+=	if_gre
 SUBDIR+=	if_kue
 SUBDIR+=	if_l2tp
+SUBDIR+=	if_lagg
 SUBDIR+=	if_loop
 SUBDIR+=	if_mpls
 SUBDIR+=	if_mue
 SUBDIR+=	if_npflog
 SUBDIR+=	if_ppp
 SUBDIR+=	if_pppoe
+SUBDIR+=	if_run
 SUBDIR+=	if_sl
 SUBDIR+=	if_smsc
 SUBDIR+=	if_srt srt
 SUBDIR+=	if_stf
-SUBDIR+=	if_strip
 SUBDIR+=	if_tap tap
 SUBDIR+=	if_tun tun
 SUBDIR+=	if_udav
@@ -99,6 +103,7 @@ SUBDIR+=	if_ure
 SUBDIR+=	if_url
 SUBDIR+=	if_urndis
 SUBDIR+=	if_vlan
+SUBDIR+=	if_wg
 SUBDIR+=	iic
 SUBDIR+=	ip_ecn
 SUBDIR+=	ipl
@@ -110,6 +115,7 @@ SUBDIR+=	luasystm
 SUBDIR+=	luapmf
 SUBDIR+=	mfs
 SUBDIR+=	midi
+SUBDIR+=	midi_seq
 SUBDIR+=	miiverbose
 SUBDIR+=	miniroot
 SUBDIR+=	mqueue
@@ -129,6 +135,7 @@ SUBDIR+=	null
 SUBDIR+=	onewire
 SUBDIR+=	opencrypto
 SUBDIR+=	overlay
+SUBDIR+=	pad
 SUBDIR+=	pciverbose
 SUBDIR+=	pf
 SUBDIR+=	ppp_bsdcomp
@@ -140,6 +147,9 @@ SUBDIR+=	ptyfs
 SUBDIR+=	puffs
 SUBDIR+=	putter
 SUBDIR+=	raid
+SUBDIR+=	scmd
+SUBDIR+=	scmdi2c
+SUBDIR+=	scsi_subr
 SUBDIR+=	scsiverbose
 SUBDIR+=	sdtemp
 SUBDIR+=	secmodel_bsd44
@@ -147,9 +157,12 @@ SUBDIR+=	secmodel_extensions
 SUBDIR+=	secmodel_overlay
 SUBDIR+=	securelevel
 SUBDIR+=	sequencer
+SUBDIR+=	sgp40mox
+SUBDIR+=	sht3xtemp
+SUBDIR+=	sht4xtemp
+SUBDIR+=	si70xxtemp
 SUBDIR+=	skipjack
 SUBDIR+=	slcompress
-SUBDIR+=	smbfs
 SUBDIR+=	spdmem
 SUBDIR+=	spkr
 SUBDIR+=	sppp_subr
@@ -181,7 +194,6 @@ SUBDIR+=	wsbell
 SUBDIR+=	zlib
 SUBDIR+=	tprof
 .if (defined(NOTYET))
-SUBDIR+=	hifn		# Builds on architectures with PCI bus
 SUBDIR+=	unionfs
 .endif
 .if ${MKBINUTILS} != "no"
@@ -227,13 +239,19 @@ SUBDIR+=	tprof_x86
 SUBDIR+=	vmt
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64"
+.if ${HAVE_NVMM:Uno} == "yes"
 SUBDIR+=	nvmm
 .endif
 
-.if ${MACHINE_ARCH} == "i386" || \
-    ${MACHINE_ARCH} == "x86_64"
-SUBDIR+=	ubsec		# Builds on architectures with PCI bus
+# Builds on architectures with PCI bus
+.if \
+     ${MACHINE} == "evbarm" || \
+     ${MACHINE_ARCH} == "i386" || \
+     ${MACHINE_ARCH} == "x86_64"
+#SUBDIR+=	hifn
+SUBDIR+=	if_iavf
+SUBDIR+=	if_ixl
+SUBDIR+=	ubsec
 .endif
 
 .if ${MKSLJIT} != "no"
@@ -294,14 +312,17 @@ SUBDIR+=	compat_netbsd32_40	compat_netbsd32_50
 SUBDIR+=	compat_netbsd32_60	compat_netbsd32_80
 SUBDIR+=	compat_netbsd32_90
 SUBDIR+=	compat_netbsd32_43
+SUBDIR+=	compat_netbsd32_coredump
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
 SUBDIR+=	compat_netbsd32_ptrace
+SUBDIR+=	compat_netbsd32_quota
+SUBDIR+=	compat_netbsd32_quota_50
+SUBDIR+=	compat_netbsd32_raid
 SUBDIR+=	compat_netbsd32_sysvipc
 SUBDIR+=	compat_netbsd32_sysvipc_10
 SUBDIR+=	compat_netbsd32_sysvipc_14
 SUBDIR+=	compat_netbsd32_sysvipc_50
-SUBDIR+=	compat_netbsd32_raid
 
 .if ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	compat_linux32
@@ -327,16 +348,14 @@ SUBDIR+=	viadrmums
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
-SUBDIR+=	azalia
 SUBDIR+=	compat_linux
 SUBDIR+=	drm
-SUBDIR+=	drmkms
-SUBDIR+=	drmkms_agp
-SUBDIR+=	drmkms_linux
-SUBDIR+=	drmkms_pci
+#SUBDIR+=	drmkms
+#SUBDIR+=	drmkms_agp
+#SUBDIR+=	drmkms_linux
+#SUBDIR+=	drmkms_pci
 SUBDIR+=	i915drm
-SUBDIR+=	i915drmkms
-SUBDIR+=	pad
+#SUBDIR+=	i915drmkms
 #
 # ISA modules
 #
@@ -348,6 +367,11 @@ SUBDIR+=	lm_isa
 SUBDIR+=	lm_isa_common
 SUBDIR+=	lm_wbsio
 SUBDIR+=	wbsio
+.endif
+
+.if ${MACHINE_CPU} == "aarch64"
+SUBDIR+=	compat_linux
+SUBDIR+=	compat_linux32
 .endif
 
 .if ${MACHINE_CPU} == "m68k"
@@ -381,6 +405,8 @@ SUBDIR+= 	dm
 SUBDIR+=	cyclic
 SUBDIR+=	dtrace
 .endif
+
+SUBDIR+=        sodium
 
 # we need solaris for the dtrace and zfs modules
 .if (${MKDTRACE} != "no" || ${MKZFS} != "no")
@@ -439,7 +465,9 @@ SUBDIR+=	ataraid
 SUBDIR+=	cac
 SUBDIR+=	cac_eisa
 SUBDIR+=	cac_pci
+SUBDIR+=	if_aq
 SUBDIR+=	if_vioif
+SUBDIR+=	if_vmx
 SUBDIR+=	ld
 SUBDIR+=	ld_aac
 SUBDIR+=	ld_amr

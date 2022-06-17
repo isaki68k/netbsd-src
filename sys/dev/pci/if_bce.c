@@ -1,4 +1,4 @@
-/* $NetBSD: if_bce.c,v 1.56 2019/10/18 23:08:29 msaitoh Exp $	 */
+/* $NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $	 */
 
 /*
  * Copyright (c) 2003 Clifford Wright. All rights reserved.
@@ -35,9 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.56 2019/10/18 23:08:29 msaitoh Exp $");
-
-#include "vlan.h"
+__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -266,7 +264,7 @@ bce_attach(device_t parent, device_t self, void *aux)
 	sc->bce_pa = *pa;
 
 	/* BCM440x can only address 30 bits (1GB) */
-	if (bus_dmatag_subregion(pa->pa_dmat, 0, (1 << 30),
+	if (bus_dmatag_subregion(pa->pa_dmat, 0, __MASK(30),
 	    &(sc->bce_dmatag), BUS_DMA_NOWAIT) != 0) {
 		aprint_error_dev(self,
 		    "WARNING: failed to restrict dma range,"
@@ -475,6 +473,7 @@ bce_attach(device_t parent, device_t self, void *aux)
 	rnd_attach_source(&sc->rnd_source, device_xname(self),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 	callout_init(&sc->bce_timeout, 0);
+	callout_setfunc(&sc->bce_timeout, bce_tick, sc);
 
 	if (pmf_device_register(self, NULL, bce_resume))
 		pmf_class_network_register(self, ifp);
@@ -558,7 +557,7 @@ bce_start(struct ifnet *ifp)
 			    "dropping...\n");
 			IFQ_DEQUEUE(&ifp->if_snd, m0);
 			m_freem(m0);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		} else if (error) {
 			/* short on resources, come back later */
@@ -654,7 +653,7 @@ bce_watchdog(struct ifnet *ifp)
 	struct bce_softc *sc = ifp->if_softc;
 
 	device_printf(sc->bce_dev, "device timeout\n");
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	(void) bce_init(ifp);
 
@@ -702,7 +701,7 @@ bce_intr(void *xsc)
 				msg = "transmit fifo underflow";
 			if (intstatus & I_RO) {
 				msg = "receive fifo overflow";
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 			}
 			if (intstatus & I_RU)
 				msg = "receive descriptor underflow";
@@ -762,7 +761,7 @@ bce_rxintr(struct bce_softc *sc)
 		 */
 		pph = mtod(sc->bce_cdata.bce_rx_chain[i], struct rx_pph *);
 		if (pph->flags & (RXF_NO | RXF_RXER | RXF_CRC | RXF_OV)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			pph->len = 0;
 			pph->flags = 0;
 			continue;
@@ -805,7 +804,7 @@ bce_rxintr(struct bce_softc *sc)
 			m = sc->bce_cdata.bce_rx_chain[i];
 			if (bce_add_rxbuf(sc, i) != 0) {
 		dropit:
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				/* continue to use old buffer */
 				sc->bce_cdata.bce_rx_chain[i]->m_data -= 30;
 				bus_dmamap_sync(sc->bce_dmatag,
@@ -862,7 +861,7 @@ bce_txintr(struct bce_softc *sc)
 		bus_dmamap_unload(sc->bce_dmatag, sc->bce_cdata.bce_tx_map[i]);
 		m_freem(sc->bce_cdata.bce_tx_chain[i]);
 		sc->bce_cdata.bce_tx_chain[i] = NULL;
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 	}
 	sc->bce_txin = curr;
 
@@ -998,7 +997,7 @@ bce_init(struct ifnet *ifp)
 	    BCE_ENET_CTL) | EC_EE);
 
 	/* start timer */
-	callout_reset(&sc->bce_timeout, hz, bce_tick, sc);
+	callout_schedule(&sc->bce_timeout, hz);
 
 	/* mark as running, and no outputs active */
 	ifp->if_flags |= IFF_RUNNING;
@@ -1487,5 +1486,5 @@ bce_tick(void *v)
 	mii_tick(&sc->bce_mii);
 	splx(s);
 
-	callout_reset(&sc->bce_timeout, hz, bce_tick, sc);
+	callout_schedule(&sc->bce_timeout, hz);
 }

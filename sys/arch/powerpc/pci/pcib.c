@@ -1,4 +1,4 @@
-/*	$NetBSD: pcib.c,v 1.7 2011/07/01 18:59:19 dyoung Exp $	*/
+/*	$NetBSD: pcib.c,v 1.11 2022/05/17 05:05:20 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.7 2011/07/01 18:59:19 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.11 2022/05/17 05:05:20 andvar Exp $");
+
+#include "isa.h"
+#include "isadma.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -45,9 +48,6 @@ __KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.7 2011/07/01 18:59:19 dyoung Exp $");
 #include <dev/pci/pcireg.h>
 
 #include <dev/pci/pcidevs.h>
-
-#include "isa.h"
-#include "isadma.h"
 
 int	pcibmatch(device_t, cfdata_t, void *);
 void	pcibattach(device_t, device_t, void *);
@@ -151,7 +151,7 @@ pcibattach(device_t parent, device_t self, void *aux)
 	 * us that the interrupt is MPIC 0, which is the bridge intr for
 	 * the 8259.
 	 * Additionally, sometimes the PCI Interrupt Routing Control Register
-	 * is improperly initialized, causing all sorts of wierd interrupt
+	 * is improperly initialized, causing all sorts of weird interrupt
 	 * issues on the machine.  The manual says it should default to
 	 * 0000h (index 45-44h) however it would appear that PPCBUG is
 	 * setting it up differently.  Reset it to 0000h.
@@ -213,6 +213,6 @@ pcib_callback(device_t self)
 #if NISADMA > 0
 	iba.iba_dmat = &isa_bus_dma_tag;
 #endif
-	config_found_ia(sc->sc_dev, "isabus", &iba, isabusprint);
+	config_found(sc->sc_dev, &iba, isabusprint, CFARGS_NONE);
 #endif
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: udf_strat_sequential.c,v 1.15 2016/05/24 09:55:57 reinoud Exp $ */
+/* $NetBSD: udf_strat_sequential.c,v 1.17 2022/04/16 18:15:22 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_strat_sequential.c,v 1.15 2016/05/24 09:55:57 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_strat_sequential.c,v 1.17 2022/04/16 18:15:22 andvar Exp $");
 #endif /* not lint */
 
 
@@ -118,7 +118,7 @@ udf_wr_nodedscr_callback(struct buf *buf)
 	/* XXX right flags to mark dirty again on error? */
 	if (buf->b_error) {
 		udf_node->i_flags |= IN_MODIFIED | IN_ACCESSED;
-		/* XXX TODO reshedule on error */
+		/* XXX TODO reschedule on error */
 	}
 
 	/* decrement outstanding_nodedscr */
@@ -243,12 +243,12 @@ out:
 /* --------------------------------------------------------------------- */
 
 /*
- * Main file-system specific sheduler. Due to the nature of optical media
- * sheduling can't be performed in the traditional way. Most OS
+ * Main file-system specific scheduler. Due to the nature of optical media
+ * scheduling can't be performed in the traditional way. Most OS
  * implementations i've seen thus read or write a file atomically giving all
  * kinds of side effects.
  *
- * This implementation uses a kernel thread to shedule the queued requests in
+ * This implementation uses a kernel thread to schedule the queued requests in
  * such a way that is semi-optimal for optical media; this means aproximately
  * (R*|(Wr*|Ws*))* since switching between reading and writing is expensive in
  * time.
@@ -276,7 +276,7 @@ udf_queuebuf_seq(struct udf_strat_args *args)
 			queue = UDF_SHED_WRITING;
 	}
 
-	/* use our own sheduler lists for more complex sheduling */
+	/* use our own scheduler lists for more complex scheduling */
 	mutex_enter(&priv->discstrat_mutex);
 		bufq_put(priv->queues[queue], nestbuf);
 		vfs_timestamp(&priv->last_queued[queue]);
@@ -549,6 +549,8 @@ udf_doshedule(struct udf_mount *ump)
 	if (new_queue != priv->cur_queue) {
 		DPRINTF(SHEDULE, ("switching from %d to %d\n",
 			priv->cur_queue, new_queue));
+		if (new_queue == UDF_SHED_READING)
+			udf_mmc_synchronise_caches(ump);
 	}
 
 	priv->cur_queue = new_queue;
@@ -640,7 +642,7 @@ udf_discstrat_init_seq(struct udf_strat_args *args)
 	VOP_IOCTL(ump->devvp, DIOCSSTRATEGY, &dkstrat, FWRITE | FKIOCTL,
 		NOCRED);
 
-	/* initialise our internal sheduler */
+	/* initialise our internal scheduler */
 	priv->cur_queue = UDF_SHED_READING;
 	bufq_alloc(&priv->queues[UDF_SHED_READING], "disksort",
 		BUFQ_SORT_RAWBLOCK);
@@ -672,7 +674,7 @@ udf_discstrat_finish_seq(struct udf_strat_args *args)
 	if (ump == NULL)
 		return;
 
-	/* stop our sheduling thread */
+	/* stop our scheduling thread */
 	KASSERT(priv->run_thread == 1);
 	priv->run_thread = 0;
 	wakeup(priv->queue_lwp);

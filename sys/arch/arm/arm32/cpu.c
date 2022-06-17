@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.134 2019/10/20 14:25:14 jmcneill Exp $	*/
+/*	$NetBSD: cpu.c,v 1.153 2022/03/03 06:26:05 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -46,32 +46,27 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.134 2019/10/20 14:25:14 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.153 2022/03/03 06:26:05 riastradh Exp $");
 
 #include <sys/param.h>
+
 #include <sys/conf.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/proc.h>
+#include <sys/reboot.h>
 #include <sys/systm.h>
 
 #include <uvm/uvm_extern.h>
 
 #include <arm/locore.h>
 #include <arm/undefined.h>
+#include <arm/cpu_topology.h>
 
 extern const char *cpu_arch;
 
 #ifdef MULTIPROCESSOR
-uint32_t cpu_mpidr[MAXCPUS] = {
-	[0 ... MAXCPUS - 1] = ~0,
-};
-
-volatile u_int arm_cpu_hatched __cacheline_aligned = 0;
-volatile uint32_t arm_cpu_mbox __cacheline_aligned = 0;
-u_int arm_cpu_max = 1;
-
 #ifdef MPDEBUG
 uint32_t arm_cpu_marker[2] __cacheline_aligned = { 0, 0 };
 #endif
@@ -80,8 +75,8 @@ uint32_t arm_cpu_marker[2] __cacheline_aligned = { 0, 0 };
 
 /* Prototypes */
 void identify_arm_cpu(device_t, struct cpu_info *);
+void identify_features(device_t, struct cpu_info *);
 void identify_cortex_caches(device_t);
-void identify_features(device_t);
 
 /*
  * Identify the master (boot) CPU
@@ -101,38 +96,39 @@ cpu_attach(device_t dv, cpuid_t id)
 		ci->ci_ctrl = cpu_control(0, 0);
 
 		/* Get the CPU ID from coprocessor 15 */
-
 		ci->ci_cpuid = id;
 		ci->ci_arm_cpuid = cpu_idnum();
 		ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
 		ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
-#ifdef MULTIPROCESSOR
-		uint32_t mpidr = armreg_mpidr_read();
-		ci->ci_mpidr = mpidr;
 
-		if (mpidr & MPIDR_MT) {
-			ci->ci_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-			ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-			ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
-		} else {
-			ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-			ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-		}
-#endif
+		/*
+		 * Get other sysregs for BP. APs information is grabbed in
+		 * cpu_init_secondary_processor.
+		 */
+		ci->ci_actlr = armreg_auxctl_read();
+		ci->ci_revidr = armreg_revidr_read();
 	} else {
 #ifdef MULTIPROCESSOR
+		if ((boothowto & RB_MD1) != 0) {
+			aprint_naive("\n");
+			aprint_normal(": multiprocessor boot disabled\n");
+			return;
+		}
+
+		KASSERT(unit < MAXCPUS);
+		ci = &cpu_info_store[unit];
+
 		KASSERT(cpu_info[unit] == NULL);
-		ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
 		ci->ci_cpl = IPL_HIGH;
 		ci->ci_cpuid = id;
-		ci->ci_data.cpu_cc_freq = cpu_info_store.ci_data.cpu_cc_freq;
+		ci->ci_data.cpu_cc_freq = cpu_info_store[0].ci_data.cpu_cc_freq;
 
-		ci->ci_undefsave[2] = cpu_info_store.ci_undefsave[2];
+		ci->ci_undefsave[2] = cpu_info_store[0].ci_undefsave[2];
 
 		cpu_info[unit] = ci;
 		if (cpu_hatched_p(unit) == false) {
 			ci->ci_dev = dv;
-			dv->dv_private = ci;
+			device_set_private(dv, ci);
 			aprint_naive(": disabled\n");
 			aprint_normal(": disabled (unresponsive)\n");
 			return;
@@ -145,7 +141,9 @@ cpu_attach(device_t dv, cpuid_t id)
 	}
 
 	ci->ci_dev = dv;
-	dv->dv_private = ci;
+	device_set_private(dv, ci);
+
+	arm_cpu_do_topology(ci);
 
 	evcnt_attach_dynamic(&ci->ci_arm700bugcount, EVCNT_TYPE_MISC,
 	    NULL, xname, "arm700swibug");
@@ -187,18 +185,14 @@ cpu_attach(device_t dv, cpuid_t id)
 	evcnt_attach_dynamic_nozero(&ci->ci_und_cp15_ev, EVCNT_TYPE_TRAP,
 	    NULL, xname, "undefined cp15 insn traps");
 
+	ci->ci_kfpu_spl = -1;
+
 #ifdef MULTIPROCESSOR
-	/*
-	 * and we are done if this is a secondary processor.
-	 */
 	if (unit != 0) {
-		aprint_naive("\n");
-		aprint_normal("\n");
 		mi_cpu_attach(ci);
 #ifdef ARM_MMU_EXTENDED
 		pmap_tlb_info_attach(&pmap_tlb0_info, ci);
 #endif
-		return;
 	}
 #endif
 
@@ -236,17 +230,8 @@ cpu_attach(device_t dv, cpuid_t id)
  	}
 #endif
 
-	vfp_attach(ci);		/* XXX SMP */
+	vfp_attach(ci);
 }
-
-#ifdef MULTIPROCESSOR
-bool
-cpu_hatched_p(u_int cpuindex)
-{
-	membar_consumer();
-	return (arm_cpu_hatched & __BIT(cpuindex)) != 0;
-}
-#endif
 
 enum cpu_class {
 	CPU_CLASS_NONE,
@@ -491,8 +476,8 @@ const struct cpuidtab cpuids[] = {
 
 	{ CPU_ID_ARM1026EJS,	CPU_CLASS_ARM10EJ,	"ARM1026EJ-S",
 	  generic_steppings, "5TEJ" },
-	{ CPU_ID_ARM926EJS,	CPU_CLASS_ARM9EJS,	"ARM926EJ-S",
-	  generic_steppings, "5TEJ" },
+	{ CPU_ID_ARM926EJS,	CPU_CLASS_ARM9EJS,	"ARM926EJ-S r0",
+	  pN_steppings, "5TEJ" },
 
 	{ CPU_ID_ARM1136JS,	CPU_CLASS_ARM11J,	"ARM1136J-S r0",
 	  pN_steppings, "6J" },
@@ -623,22 +608,34 @@ static void
 print_cache_info(device_t dv, struct arm_cache_info *info, u_int level)
 {
 	if (info->cache_unified) {
-		aprint_normal_dev(dv, "%dKB/%dB %d-way %s L%u %cI%cT Unified cache\n",
+		aprint_normal_dev(dv, "L%u %dKB/%dB %d-way (%u set) %s %cI%cT Unified cache\n",
+		    level + 1,
 		    info->dcache_size / 1024,
 		    info->dcache_line_size, info->dcache_ways,
-		    wtnames[info->cache_type], level + 1,
+		    info->dcache_sets ? info->dcache_sets :
+			info->dcache_size /
+			    (info->dcache_line_size * info->dcache_ways),
+		    wtnames[info->cache_type],
 		    info->dcache_type & CACHE_TYPE_PIxx ? 'P' : 'V',
 		    info->dcache_type & CACHE_TYPE_xxPT ? 'P' : 'V');
 	} else {
-		aprint_normal_dev(dv, "%dKB/%dB %d-way L%u %cI%cT Instruction cache\n",
+		aprint_normal_dev(dv, "L%u %dKB/%dB %d-way (%u set) %cI%cT Instruction cache\n",
+		    level + 1,
 		    info->icache_size / 1024,
-		    info->icache_line_size, info->icache_ways, level + 1,
+		    info->icache_line_size, info->icache_ways,
+		    info->icache_sets ? info->icache_sets :
+			info->icache_size /
+			    (info->icache_line_size * info->icache_ways),
 		    info->icache_type & CACHE_TYPE_PIxx ? 'P' : 'V',
 		    info->icache_type & CACHE_TYPE_xxPT ? 'P' : 'V');
-		aprint_normal_dev(dv, "%dKB/%dB %d-way %s L%u %cI%cT Data cache\n",
+		aprint_normal_dev(dv, "L%u %dKB/%dB %d-way (%u set) %s %cI%cT Data cache\n",
+		    level + 1,
 		    info->dcache_size / 1024,
 		    info->dcache_line_size, info->dcache_ways,
-		    wtnames[info->cache_type], level + 1,
+		    info->dcache_sets ? info->dcache_sets :
+			info->dcache_size /
+			    (info->dcache_line_size * info->dcache_ways),
+		    wtnames[info->cache_type],
 		    info->dcache_type & CACHE_TYPE_PIxx ? 'P' : 'V',
 		    info->dcache_type & CACHE_TYPE_xxPT ? 'P' : 'V');
 	}
@@ -674,6 +671,7 @@ identify_arm_cpu(device_t dv, struct cpu_info *ci)
 	const uint32_t arm_cpuid = ci->ci_arm_cpuid;
 	const char * const xname = device_xname(dv);
 	char model[128];
+	const char *m;
 
 	if (arm_cpuid == 0) {
 		aprint_error("Processor failed probe - no CPU ID\n");
@@ -683,7 +681,9 @@ identify_arm_cpu(device_t dv, struct cpu_info *ci)
 	const enum cpu_class cpu_class = identify_arm_model(arm_cpuid,
 	     model, sizeof(model));
 	if (ci->ci_cpuid == 0) {
-		cpu_setmodel("%s", model);
+		m = cpu_getmodel();
+		if (m == NULL || *m == 0)
+			cpu_setmodel("%s", model);
 	}
 
 	if (ci->ci_data.cpu_cc_freq != 0) {
@@ -750,8 +750,13 @@ identify_arm_cpu(device_t dv, struct cpu_info *ci)
 
 	aprint_normal("\n");
 
-	if (CPU_ID_CORTEX_P(arm_cpuid) || CPU_ID_ARM11_P(arm_cpuid) || CPU_ID_MV88SV58XX_P(arm_cpuid)) {
-		identify_features(dv);
+	if (CPU_ID_CORTEX_P(arm_cpuid) ||
+	    CPU_ID_ARM11_P(arm_cpuid) ||
+	    CPU_ID_MV88SV58XX_P(arm_cpuid)) {
+		if ((arm_cpuid & CPU_ID_CPU_MASK) != CPU_ID_ARM1136JS &&
+		    (arm_cpuid & CPU_ID_CPU_MASK) != CPU_ID_ARM1176JZS) {
+			identify_features(dv, ci);
+		}
 	}
 
 	/* Print cache info. */
@@ -829,8 +834,20 @@ extern int cpu_simd_present;
 extern int cpu_simdex_present;
 
 void
-identify_features(device_t dv)
+identify_features(device_t dv, struct cpu_info *ci)
 {
+	const int unit = device_unit(dv);
+
+	aprint_debug_dev(dv, "sctlr:  %#x\n", ci->ci_ctrl);
+	aprint_debug_dev(dv, "actlr:  %#x\n", ci->ci_actlr);
+	aprint_debug_dev(dv, "revidr: %#x\n", ci->ci_revidr);
+#ifdef MULTIPROCESSOR
+	aprint_debug_dev(dv, "mpidr:  %#x\n", ci->ci_mpidr);
+#endif
+
+	if (unit != 0)
+		return;
+
 	cpu_instruction_set_attributes[0] = armreg_isar0_read();
 	cpu_instruction_set_attributes[1] = armreg_isar1_read();
 	cpu_instruction_set_attributes[2] = armreg_isar2_read();
@@ -856,10 +873,10 @@ identify_features(device_t dv)
 #if 0
 	if (__SHIFTOUT(cpu_memory_model_features[3], __BITS(23,20))) {
 		/*
-		 * Updates to the translation tables do not require a clean
-		 * to the point of unification to ensure visibility by
-		 * subsequent translation table walks.
-		 */
+		* Updates to the translation tables do not require a clean
+		* to the point of unification to ensure visibility by
+		* subsequent translation table walks.
+		*/
 		pmap_needs_pte_sync = 0;
 	}
 #endif
@@ -867,12 +884,6 @@ identify_features(device_t dv)
 	cpu_processor_features[0] = armreg_pfr0_read();
 	cpu_processor_features[1] = armreg_pfr1_read();
 
-	aprint_debug_dev(dv, "sctlr:  %#x\n", armreg_sctlr_read());
-	aprint_debug_dev(dv, "actlr:  %#x\n", armreg_auxctl_read());
-	aprint_debug_dev(dv, "revidr: %#x\n", armreg_revidr_read());
-#ifdef MULTIPROCESSOR
-	aprint_debug_dev(dv, "mpidr:  %#x\n", armreg_mpidr_read());
-#endif
 	aprint_debug_dev(dv,
 	    "isar: [0]=%#x [1]=%#x [2]=%#x [3]=%#x, [4]=%#x, [5]=%#x\n",
 	    cpu_instruction_set_attributes[0],
@@ -889,3 +900,16 @@ identify_features(device_t dv)
 	    "pfr: [0]=%#x [1]=%#x\n",
 	    cpu_processor_features[0], cpu_processor_features[1]);
 }
+
+#ifdef _ARM_ARCH_6
+int
+cpu_maxproc_hook(int nmaxproc)
+{
+
+#ifdef ARM_MMU_EXTENDED
+	return pmap_maxproc_set(nmaxproc);
+#else
+	return 0;
+#endif
+}
+#endif

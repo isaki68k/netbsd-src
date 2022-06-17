@@ -1,4 +1,4 @@
-/*	$NetBSD: hvkbd.c,v 1.3 2019/10/01 18:00:08 chs Exp $	*/
+/*	$NetBSD: hvkbd.c,v 1.9 2021/08/07 16:19:11 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2017 Microsoft Corp.
@@ -36,7 +36,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hvkbd.c,v 1.3 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hvkbd.c,v 1.9 2021/08/07 16:19:11 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -210,11 +210,6 @@ hvkbd_attach(device_t parent, device_t self, void *aux)
 	hvkbd_alloc_keybuf(sc);
 
 	sc->sc_buf = kmem_zalloc(HVKBD_BUFSIZE, KM_SLEEP);
-	if (vmbus_channel_setdeferred(sc->sc_chan, device_xname(self))) {
-		aprint_error_dev(self,
-		    "failed to create the interrupt thread\n");
-		goto free_buf;
-	}
 
 	sc->sc_chan->ch_flags &= ~CHF_BATCHED;
 	if (vmbus_channel_open(sc->sc_chan,
@@ -242,7 +237,7 @@ hvkbd_attach(device_t parent, device_t self, void *aux)
 	a.keymap = &hvkbd_keymapdata;
 	a.accessops = &hvkbd_accessops;
 	a.accesscookie = sc;
-	sc->sc_wskbddev = config_found(self, &a, wskbddevprint);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARGS_NONE);
 	return;
 
 free_buf:
@@ -349,13 +344,14 @@ hvkbd_connect(struct hvkbd_softc *sc)
 	}
 
 	do {
-		if (cold)
+		if (cold) {
 			delay(1000);
-		else
-			tsleep(sc, PRIBIO | PCATCH, "hvkbdcon", 1);
-		s = spltty();
-		hvkbd_intr(sc);
-		splx(s);
+			s = spltty();
+			hvkbd_intr(sc);
+			splx(s);
+		} else
+			tsleep(sc, PRIBIO | PCATCH, "hvkbdcon",
+			    uimax(1, mstohz(1)));
 	} while (--timo > 0 && sc->sc_connected == 0);
 
 	if (timo == 0 && sc->sc_connected == 0) {

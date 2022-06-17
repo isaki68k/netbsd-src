@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32.h,v 1.127 2019/10/03 22:16:53 kamil Exp $	*/
+/*	$NetBSD: netbsd32.h,v 1.140 2022/04/23 17:46:23 reinoud Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2015 Matthew R. Green
@@ -39,6 +39,7 @@
 #include <sys/param.h> /* precautionary upon removal from ucred.h */
 #include <sys/systm.h>
 #include <sys/mount.h>
+#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/syscallargs.h>
@@ -57,7 +58,7 @@
 #include <nfs/rpcv2.h>
 
 /*
- * first, define the basic types we need.
+ * first define the basic types we need, and any applicable limits.
  */
 
 typedef int32_t netbsd32_long;
@@ -71,6 +72,9 @@ typedef int32_t netbsd32_clockid_t;
 typedef int32_t netbsd32_key_t;
 typedef int32_t netbsd32_intptr_t;
 typedef uint32_t netbsd32_uintptr_t;
+
+/* Note: 32-bit sparc defines ssize_t as long but still has same size as int. */
+#define	NETBSD32_SSIZE_MAX	INT32_MAX
 
 /* netbsd32_[u]int64 are machine dependent and defined below */
 
@@ -162,6 +166,10 @@ typedef int64_t netbsd32_int64 NETBSD32_INT64_ALIGN;
 typedef uint64_t netbsd32_uint64 NETBSD32_INT64_ALIGN;
 #undef NETBSD32_INT64_ALIGN
 
+/* Type used in siginfo, avoids circular dependencies between headers. */
+CTASSERT(sizeof(netbsd32_uint64) == sizeof(netbsd32_siginfo_uint64));
+CTASSERT(__alignof__(netbsd32_uint64) == __alignof__(netbsd32_siginfo_uint64));
+
 /*
  * all pointers are netbsd32_pointer_t (defined in <machine/netbsd32_machdep.h>)
  */
@@ -185,6 +193,7 @@ typedef netbsd32_pointer_t netbsd32_caddr_t;
 typedef netbsd32_pointer_t netbsd32_lwpctlp;
 typedef netbsd32_pointer_t netbsd32_pid_tp;
 typedef netbsd32_pointer_t netbsd32_psetidp_t;
+typedef netbsd32_pointer_t netbsd32_aclp_t;
 
 /*
  * now, the compatibility structures and their fake pointer types.
@@ -197,6 +206,7 @@ typedef netbsd32_pointer_t netbsd32_semidp_t;
 typedef netbsd32_uint64 netbsd32_dev_t;
 typedef netbsd32_int64 netbsd32_off_t;
 typedef netbsd32_uint64 netbsd32_ino_t;
+typedef netbsd32_int64 netbsd32_blkcnt_t;
 
 /* from <sys/spawn.h> */
 typedef netbsd32_pointer_t netbsd32_posix_spawn_file_actionsp;
@@ -325,6 +335,16 @@ struct netbsd32_ptrace_siginfo {
 	lwpid_t		psi_lwpid;	/* destination LWP of the signal
 					 * value 0 means the whole process
 					 * (route signal to all LWPs) */
+};
+
+#define PL32_LNAMELEN 20
+
+struct netbsd32_ptrace_lwpstatus {
+	lwpid_t		pl_lwpid;
+	sigset_t	pl_sigpend;
+	sigset_t	pl_sigmask;
+	char		pl_name[PL32_LNAMELEN];
+	netbsd32_voidp	pl_private;
 };
 
 /* from <sys/quotactl.h> */
@@ -902,7 +922,7 @@ struct netbsd32_statvfs {
 	netbsd32_u_long	f_fsid;		/* Posix compatible fsid */
 	netbsd32_u_long	f_namemax;	/* maximum filename length */
 	uid_t		f_owner;	/* user that mounted the file system */
-	uint64_t	f_spare[4];	/* spare space */
+	netbsd32_uint64	f_spare[4];	/* spare space */
 	char	f_fstypename[_VFS_NAMELEN]; /* fs type name */
 	char	f_mntonname[_VFS_MNAMELEN];  /* directory on which mounted */
 	char	f_mntfromname[_VFS_MNAMELEN];  /* mounted file system */
@@ -1054,14 +1074,14 @@ typedef netbsd32_pointer_t netbsd32_nfsdp;
 struct netbsd32_nfsd_srvargs {
 	netbsd32_nfsdp	nsd_nfsd;
 	uid_t		nsd_uid;
-	u_int32_t	nsd_haddr;
+	uint32_t	nsd_haddr;
 	struct uucred	nsd_cr;
 	int		nsd_authlen;
 	netbsd32_u_charp nsd_authstr;
 	int		nsd_verflen;
 	netbsd32_u_charp nsd_verfstr;
 	struct netbsd32_timeval	nsd_timestamp;
-	u_int32_t	nsd_ttl;
+	uint32_t	nsd_ttl;
 	NFSKERBKEY_T	nsd_key;
 };
 
@@ -1120,6 +1140,25 @@ struct netbsd32_msdosfs_args {
 	int	gmtoff;		/* v3: offset from UTC in seconds */
 };
 
+/* from <udf/udf_mount.h> */
+struct netbsd32_udf_args {
+	uint32_t	 version;	/* version of this structure         */
+	netbsd32_charp	 fspec;		/* mount specifier                   */
+	int32_t		 sessionnr;	/* session specifier, rel of abs     */
+	uint32_t	 udfmflags;	/* mount options                     */
+	int32_t		 gmtoff;	/* offset from UTC in seconds        */
+
+	uid_t		 anon_uid;	/* mapping of anonymous files uid    */
+	gid_t		 anon_gid;	/* mapping of anonymous files gid    */
+	uid_t		 nobody_uid;	/* nobody:nobody will map to -1:-1   */
+	gid_t		 nobody_gid;	/* nobody:nobody will map to -1:-1   */
+
+	uint32_t	 sector_size;	/* for mounting dumps/files          */
+
+	/* extendable */
+	uint8_t	 reserved[32];
+};
+
 /* from <miscfs/genfs/layer.h> */
 struct netbsd32_layer_args {
 	netbsd32_charp target;		/* Target of loopback  */
@@ -1132,7 +1171,8 @@ struct netbsd32_null_args {
 };
 
 struct netbsd32_posix_spawn_file_actions_entry {
-	enum { FAE32_OPEN, FAE32_DUP2, FAE32_CLOSE } fae_action;
+	enum { FAE32_OPEN, FAE32_DUP2, FAE32_CLOSE,
+	    FAE32_CHDIR, FAE32_FCHDIR } fae_action;
 
 	int fae_fildes;
 	union {
@@ -1144,6 +1184,9 @@ struct netbsd32_posix_spawn_file_actions_entry {
 		struct {
 			int newfildes;
 		} dup2;
+		struct {
+			netbsd32_charp path;
+		} chdir;
 	} fae_data;
 };
 
@@ -1196,6 +1239,7 @@ int	netbsd32_kevent(struct lwp *, void *, register_t *);
 
 struct coredump_iostate;
 int	coredump_netbsd32(struct lwp *, struct coredump_iostate *);
+int	real_coredump_netbsd32(struct lwp *, struct coredump_iostate *);
 
 /*
  * random other stuff
@@ -1208,6 +1252,8 @@ void	netbsd32_si_to_si32(siginfo32_t *, const siginfo_t *);
 void	netbsd32_si32_to_si(siginfo_t *, const siginfo32_t *);
 
 void	netbsd32_ksi32_to_ksi(struct _ksiginfo *si, const struct __ksiginfo32 *si32);
+
+void	netbsd32_read_lwpstatus(struct lwp *, struct netbsd32_ptrace_lwpstatus *);
 
 #ifdef KTRACE
 void netbsd32_ktrpsig(int, sig_t, const sigset_t *, const ksiginfo_t *);
@@ -1227,8 +1273,10 @@ struct iovec *netbsd32_get_iov(struct netbsd32_iovec *, int, struct iovec *,
 SYSCTL_SETUP_PROTO(netbsd32_sysctl_emul_setup);
 #endif /* SYSCTL_SETUP_PROTO */
 
-MODULE_HOOK(netbsd32_sendsig_hook, void,
-    (const ksiginfo_t *, const sigset_t *));
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+MODULE_HOOK(netbsd32_sendsig_sigcontext_16_hook, void,
+    (const struct ksiginfo *, const sigset_t *));
+#endif
 
 extern struct sysent netbsd32_sysent[];
 extern const uint32_t netbsd32_sysent_nomodbits[]; 

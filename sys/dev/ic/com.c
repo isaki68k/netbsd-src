@@ -1,4 +1,4 @@
-/* $NetBSD: com.c,v 1.355 2019/01/11 23:10:40 thorpej Exp $ */
+/* $NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2004, 2008 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.355 2019/01/11 23:10:40 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $");
 
 #include "opt_com.h"
 #include "opt_ddb.h"
@@ -128,17 +128,20 @@ __KERNEL_RCSID(0, "$NetBSD: com.c,v 1.355 2019/01/11 23:10:40 thorpej Exp $");
 
 #include "ioconf.h"
 
-#define	CSR_WRITE_1(r, o, v)	\
-	bus_space_write_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], v)
 #define	CSR_READ_1(r, o)	\
-	bus_space_read_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o])
+	(r)->cr_read((r), (r)->cr_map[o])
+#define	CSR_WRITE_1(r, o, v)	\
+	(r)->cr_write((r), (r)->cr_map[o], (v))
+#define	CSR_WRITE_MULTI(r, o, p, n)	\
+	(r)->cr_write_multi((r), (r)->cr_map[o], (p), (n))
+
+/*
+ * XXX COM_TYPE_AU1x00 specific
+ */
 #define	CSR_WRITE_2(r, o, v)	\
 	bus_space_write_2((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], v)
 #define	CSR_READ_2(r, o)	\
 	bus_space_read_2((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o])
-#define	CSR_WRITE_MULTI(r, o, p, n)	\
-	bus_space_write_multi_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], p, n)
-
 
 static void com_enable_debugport(struct com_softc *);
 
@@ -159,7 +162,7 @@ int	com_to_tiocm(struct com_softc *);
 void	com_iflush(struct com_softc *);
 
 int	com_common_getc(dev_t, struct com_regs *);
-static void	com_common_putc(dev_t, struct com_regs *, int);
+static void	com_common_putc(dev_t, struct com_regs *, int, int);
 
 int	cominit(struct com_regs *, int, int, int, tcflag_t);
 
@@ -192,8 +195,11 @@ static struct comcons_info comcons_info;
  * Following are all routines needed for COM to act as console
  */
 static struct consdev comcons = {
-	NULL, NULL, comcngetc, comcnputc, comcnpollc, NULL, NULL, NULL,
-	NODEV, CN_NORMAL
+	.cn_getc = comcngetc,
+	.cn_putc = comcnputc,
+	.cn_pollc = comcnpollc,
+	.cn_dev = NODEV,
+	.cn_pri = CN_NORMAL
 };
 
 
@@ -272,6 +278,70 @@ static const bus_size_t com_std_map[COM_REGMAP_NENTRIES] = {
 	bus_space_barrier((r)->cr_iot, (r)->cr_ioh, 0, (r)->cr_nports, (f))
 
 /*
+ * com_read_1 --
+ *	Default register read callback using single byte accesses.
+ */
+static uint8_t
+com_read_1(struct com_regs *regs, u_int reg)
+{
+	return bus_space_read_1(regs->cr_iot, regs->cr_ioh, reg);
+}
+
+/*
+ * com_write_1 --
+ *	Default register write callback using single byte accesses.
+ */
+static void
+com_write_1(struct com_regs *regs, u_int reg, uint8_t val)
+{
+	bus_space_write_1(regs->cr_iot, regs->cr_ioh, reg, val);
+}
+
+/*
+ * com_write_multi_1 --
+ *	Default register multi write callback using single byte accesses.
+ */
+static void
+com_write_multi_1(struct com_regs *regs, u_int reg, const uint8_t *datap,
+    bus_size_t count)
+{
+	bus_space_write_multi_1(regs->cr_iot, regs->cr_ioh, reg, datap, count);
+}
+
+/*
+ * com_read_4 --
+ *	Default register read callback using dword accesses.
+ */
+static uint8_t
+com_read_4(struct com_regs *regs, u_int reg)
+{
+	return bus_space_read_4(regs->cr_iot, regs->cr_ioh, reg) & 0xff;
+}
+
+/*
+ * com_write_4 --
+ *	Default register write callback using dword accesses.
+ */
+static void
+com_write_4(struct com_regs *regs, u_int reg, uint8_t val)
+{
+	bus_space_write_4(regs->cr_iot, regs->cr_ioh, reg, val);
+}
+
+/*
+ * com_write_multi_4 --
+ *	Default register multi write callback using dword accesses.
+ */
+static void
+com_write_multi_4(struct com_regs *regs, u_int reg, const uint8_t *datap,
+    bus_size_t count)
+{
+	while (count-- > 0) {
+		bus_space_write_4(regs->cr_iot, regs->cr_ioh, reg, *datap++);
+	}
+}
+
+/*
  * com_init_regs --
  *	Driver front-ends use this to initialize our register map
  *	in the standard fashion.  They may then tailor the map to
@@ -287,6 +357,9 @@ com_init_regs(struct com_regs *regs, bus_space_tag_t st, bus_space_handle_t sh,
 	regs->cr_ioh = sh;
 	regs->cr_iobase = addr;
 	regs->cr_nports = COM_NPORTS;
+	regs->cr_read = com_read_1;
+	regs->cr_write = com_write_1;
+	regs->cr_write_multi = com_write_multi_1;
 	memcpy(regs->cr_map, com_std_map, sizeof(regs->cr_map));
 }
 
@@ -305,6 +378,37 @@ com_init_regs_stride(struct com_regs *regs, bus_space_tag_t st,
 		regs->cr_map[i] <<= regshift;
 	}
 	regs->cr_nports <<= regshift;
+}
+
+/*
+ * com_init_regs_stride_width --
+ *	Convenience function for front-ends that have a stride between
+ *	registers and specific I/O width requirements.
+ */
+void
+com_init_regs_stride_width(struct com_regs *regs, bus_space_tag_t st,
+			   bus_space_handle_t sh, bus_addr_t addr,
+			   u_int regshift, u_int width)
+{
+
+	com_init_regs(regs, st, sh, addr);
+	for (size_t i = 0; i < __arraycount(regs->cr_map); i++) {
+		regs->cr_map[i] <<= regshift;
+	}
+	regs->cr_nports <<= regshift;
+
+	switch (width) {
+	case 1:
+		/* Already set by com_init_regs */
+		break;
+	case 4:
+		regs->cr_read = com_read_4;
+		regs->cr_write = com_write_4;
+		regs->cr_write_multi = com_write_multi_4;
+		break;
+	default:
+		panic("com: unsupported I/O width %d", width);
+	}
 }
 
 /*ARGSUSED*/
@@ -417,7 +521,7 @@ com_intr_poll(void *arg)
 
 	comintr(sc);
 
-	callout_schedule(&sc->sc_poll_callout, 1);
+	callout_schedule(&sc->sc_poll_callout, sc->sc_poll_ticks);
 }
 
 void
@@ -425,9 +529,10 @@ com_attach_subr(struct com_softc *sc)
 {
 	struct com_regs *regsp = &sc->sc_regs;
 	struct tty *tp;
-	u_int8_t lcr;
+	uint32_t cpr;
+	uint8_t lcr;
 	const char *fifo_msg = NULL;
-	prop_dictionary_t	dict;
+	prop_dictionary_t dict;
 	bool is_console = true;
 	bool force_console = false;
 
@@ -495,32 +600,32 @@ com_attach_subr(struct com_softc *sc)
 
 	case COM_TYPE_AU1x00:
 		sc->sc_fifolen = 16;
-		fifo_msg = "Au1X00 UART, working fifo";
+		fifo_msg = "Au1X00 UART";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		goto fifodelay;
 
 	case COM_TYPE_16550_NOERS:
 		sc->sc_fifolen = 16;
-		fifo_msg = "ns16650, no ERS, working fifo";
+		fifo_msg = "ns16650, no ERS";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		goto fifodelay;
 
 	case COM_TYPE_OMAP:
 		sc->sc_fifolen = 64;
-		fifo_msg = "OMAP UART, working fifo";
+		fifo_msg = "OMAP UART";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		goto fifodelay;
 
 	case COM_TYPE_INGENIC:
 		sc->sc_fifolen = 16;
-		fifo_msg = "Ingenic UART, working fifo";
+		fifo_msg = "Ingenic UART";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		SET(sc->sc_hwflags, COM_HW_NOIEN);
 		goto fifodelay;
 
 	case COM_TYPE_TEGRA:
 		sc->sc_fifolen = 8;
-		fifo_msg = "Tegra UART, working fifo";
+		fifo_msg = "Tegra UART";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		CSR_WRITE_1(regsp, COM_REG_FIFO,
 		    FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST | FIFO_TRIGGER_1);
@@ -528,10 +633,28 @@ com_attach_subr(struct com_softc *sc)
 
 	case COM_TYPE_BCMAUXUART:
 		sc->sc_fifolen = 1;
-		fifo_msg = "BCM AUX UART, working fifo";
+		fifo_msg = "BCM AUX UART";
 		SET(sc->sc_hwflags, COM_HW_FIFO);
 		CSR_WRITE_1(regsp, COM_REG_FIFO,
 		    FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST | FIFO_TRIGGER_1);
+		goto fifodelay;
+
+	case COM_TYPE_DW_APB:
+		if (!prop_dictionary_get_uint(dict, "fifolen", &sc->sc_fifolen)) {
+			cpr = bus_space_read_4(sc->sc_regs.cr_iot,
+			    sc->sc_regs.cr_ioh, DW_APB_UART_CPR);
+			sc->sc_fifolen = __SHIFTOUT(cpr, UART_CPR_FIFO_MODE) * 16;
+		}
+		if (sc->sc_fifolen == 0) {
+			sc->sc_fifolen = 1;
+			fifo_msg = "DesignWare APB UART, no fifo";
+			CSR_WRITE_1(regsp, COM_REG_FIFO, 0);
+		} else {
+			fifo_msg = "DesignWare APB UART";
+			SET(sc->sc_hwflags, COM_HW_FIFO);
+			CSR_WRITE_1(regsp, COM_REG_FIFO,
+			    FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST | FIFO_TRIGGER_1);
+		}
 		goto fifodelay;
 	}
 
@@ -551,7 +674,8 @@ com_attach_subr(struct com_softc *sc)
 		    == FIFO_TRIGGER_14) {
 			SET(sc->sc_hwflags, COM_HW_FIFO);
 
-			fifo_msg = "ns16550a, working fifo";
+			fifo_msg = "ns16550a";
+			sc->sc_fifolen = 16;
 
 			/*
 			 * IIR changes into the EFR if LCR is set to LCR_EERS
@@ -585,9 +709,9 @@ com_attach_subr(struct com_softc *sc)
 				if (sc->sc_fifolen == 0)
 					fifo_msg = "st16650, broken fifo";
 				else if (sc->sc_fifolen == 32)
-					fifo_msg = "st16650a, working fifo";
+					fifo_msg = "st16650a";
 				else
-					fifo_msg = "ns16550a, working fifo";
+					fifo_msg = "ns16550a";
 			}
 
 			/*
@@ -626,9 +750,9 @@ com_attach_subr(struct com_softc *sc)
 					CSR_WRITE_1(regsp, COM_REG_FIFO, fcr);
 
 				if (sc->sc_fifolen == 64)
-					fifo_msg = "tl16c750, working fifo";
+					fifo_msg = "tl16c750";
 				else
-					fifo_msg = "ns16750, working fifo";
+					fifo_msg = "ns16750";
 			}
 		} else
 			fifo_msg = "ns16550, broken fifo";
@@ -644,7 +768,11 @@ fifodelay:
 	 * printing it until now.
 	 */
 	delay(10);
-	aprint_normal(": %s\n", fifo_msg);
+	if (ISSET(sc->sc_hwflags, COM_HW_FIFO)) {
+		aprint_normal(": %s, %d-byte FIFO\n", fifo_msg, sc->sc_fifolen);
+	} else {
+		aprint_normal(": %s\n", fifo_msg);
+	}
 	if (ISSET(sc->sc_hwflags, COM_HW_TXFIFO_DISABLE)) {
 		sc->sc_fifolen = 1;
 		aprint_normal_dev(sc->sc_dev, "txfifo disabled\n");
@@ -659,14 +787,9 @@ fifodone:
 	tp->t_softc = sc;
 
 	sc->sc_tty = tp;
-	sc->sc_rbuf = malloc(com_rbuf_size << 1, M_DEVBUF, M_NOWAIT);
+	sc->sc_rbuf = malloc(com_rbuf_size << 1, M_DEVBUF, M_WAITOK);
 	sc->sc_rbput = sc->sc_rbget = sc->sc_rbuf;
 	sc->sc_rbavail = com_rbuf_size;
-	if (sc->sc_rbuf == NULL) {
-		aprint_error_dev(sc->sc_dev,
-		    "unable to allocate ring buffer\n");
-		return;
-	}
 	sc->sc_ebuf = sc->sc_rbuf + (com_rbuf_size << 1);
 
 	tty_attach(tp);
@@ -720,8 +843,8 @@ fifodone:
 
 	SET(sc->sc_hwflags, COM_HW_DEV_OK);
 
-	if (ISSET(sc->sc_hwflags, COM_HW_POLL))
-		callout_schedule(&sc->sc_poll_callout, 1);
+	if (sc->sc_poll_ticks != 0)
+		callout_schedule(&sc->sc_poll_callout, sc->sc_poll_ticks);
 }
 
 void
@@ -870,10 +993,8 @@ com_shutdown(struct com_softc *sc)
 	 */
 	if (ISSET(tp->t_cflag, HUPCL)) {
 		com_modem(sc, 0);
-		mutex_spin_exit(&sc->sc_lock);
-		/* XXX will only timeout */
-		(void) kpause(ttclos, false, hz, NULL);
-		mutex_spin_enter(&sc->sc_lock);
+		microuptime(&sc->sc_hup_pending);
+		sc->sc_hup_pending.tv_sec++;
 	}
 
 	/* Turn off interrupts. */
@@ -946,6 +1067,7 @@ comopen(dev_t dev, int flag, int mode, struct lwp *l)
 	 */
 	if (!ISSET(tp->t_state, TS_ISOPEN) && tp->t_wopen == 0) {
 		struct termios t;
+		struct timeval now, diff;
 
 		tp->t_dev = dev;
 
@@ -961,6 +1083,19 @@ comopen(dev_t dev, int flag, int mode, struct lwp *l)
 			com_config(sc);
 		} else {
 			mutex_spin_enter(&sc->sc_lock);
+		}
+
+		if (timerisset(&sc->sc_hup_pending)) {
+			microuptime(&now);
+			while (timercmp(&now, &sc->sc_hup_pending, <)) {
+				timersub(&sc->sc_hup_pending, &now, &diff);
+				const int ms = diff.tv_sec * 1000 +
+				    diff.tv_usec / 1000;
+				kpause(ttclos, false, uimax(mstohz(ms), 1),
+				    &sc->sc_lock);
+				microuptime(&now);
+			}
+			timerclear(&sc->sc_hup_pending);
 		}
 
 		/* Turn on interrupts. */
@@ -2113,7 +2248,9 @@ comintr(void *arg)
 	/* DesignWare APB UART BUSY interrupt */
 	if (sc->sc_type == COM_TYPE_DW_APB &&
 	    (iir & IIR_BUSY) == IIR_BUSY) {
-		if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {
+		if (ISSET(sc->sc_hwflags, COM_HW_CONSOLE)) {
+			(void)CSR_READ_1(regsp, COM_REG_USR);
+		} else if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {
 			CSR_WRITE_1(regsp, COM_REG_HALT, HALT_CHCFG_EN);
 			CSR_WRITE_1(regsp, COM_REG_LCR, sc->sc_lcr | LCR_DLAB);
 			CSR_WRITE_1(regsp, COM_REG_DLBL, sc->sc_dlbl);
@@ -2143,14 +2280,16 @@ comintr(void *arg)
 		}
 	}
 
-	if (ISSET(iir, IIR_NOPEND)) {
-		mutex_spin_exit(&sc->sc_lock);
-		return (0);
-	}
-
 	end = sc->sc_ebuf;
 	put = sc->sc_rbput;
 	cc = sc->sc_rbavail;
+
+	if (ISSET(iir, IIR_NOPEND)) {
+		if (ISSET(sc->sc_hwflags, COM_HW_BROKEN_ETXRDY))
+			goto do_tx;
+		mutex_spin_exit(&sc->sc_lock);
+		return (0);
+	}
 
 again:	do {
 		u_char	msr, delta;
@@ -2287,6 +2426,7 @@ again:	do {
 	     */
 	    (iir & IIR_IMASK) != IIR_TXRDY);
 
+do_tx:
 	/*
 	 * Read LSR again, since there may be an interrupt between
 	 * the last LSR read and IIR read above.
@@ -2339,7 +2479,8 @@ again:	do {
 	mutex_spin_exit(&sc->sc_lock);
 
 	/* Wake up the poller. */
-	softint_schedule(sc->sc_si);
+	if ((sc->sc_rx_ready | sc->sc_st_check | sc->sc_tx_done) != 0)
+		softint_schedule(sc->sc_si);
 
 #ifdef RND_COM
 	rnd_add_uint32(&sc->rnd_source, iir | lsr);
@@ -2401,12 +2542,12 @@ com_common_getc(dev_t dev, struct com_regs *regsp)
 }
 
 static void
-com_common_putc(dev_t dev, struct com_regs *regsp, int c)
+com_common_putc(dev_t dev, struct com_regs *regsp, int c, int with_readahead)
 {
 	int s = splserial();
 	int cin, stat, timo;
 
-	if (com_readaheadcount < MAX_READAHEAD
+	if (with_readahead && com_readaheadcount < MAX_READAHEAD
 	     && ISSET(stat = CSR_READ_1(regsp, COM_REG_LSR), LSR_RXRDY)) {
 		int cn_trapped = 0;
 		cin = CSR_READ_1(regsp, COM_REG_RXDATA);
@@ -2444,11 +2585,11 @@ cominit(struct com_regs *regsp, int rate, int frequency, int type,
 	}
 
 	rate = comspeed(rate, frequency, type);
-	if (__predict_true(rate != -1)) {
+	if (rate != -1) {
 		if (type == COM_TYPE_AU1x00) {
+			/* no EFR on alchemy */
 			CSR_WRITE_2(regsp, COM_REG_DLBL, rate);
 		} else {
-			/* no EFR on alchemy */
 			if ((type != COM_TYPE_16550_NOERS) && 
 			    (type != COM_TYPE_INGENIC)) {
 				CSR_WRITE_1(regsp, COM_REG_LCR, LCR_EERS);
@@ -2574,7 +2715,7 @@ void
 comcnputc(dev_t dev, int c)
 {
 
-	com_common_putc(dev, &comcons_info.regs, c);
+	com_common_putc(dev, &comcons_info.regs, c, cold);
 }
 
 void
@@ -2643,7 +2784,7 @@ void
 com_kgdb_putc(void *arg, int c)
 {
 
-	com_common_putc(NODEV, &comkgdbregs, c);
+	com_common_putc(NODEV, &comkgdbregs, c, 0);
 }
 #endif /* KGDB */
 

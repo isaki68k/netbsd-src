@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -59,7 +59,7 @@
 #define ACPI_INVALID_PROTOCOL_ID        0x80
 #define ACPI_MAX_PROTOCOL_ID            0x0F
 
-const UINT8     AcpiProtocolLengths[] =
+static const UINT8      AcpiProtocolLengths[] =
 {
     ACPI_INVALID_PROTOCOL_ID,   /* 0 - reserved */
     ACPI_INVALID_PROTOCOL_ID,   /* 1 - reserved */
@@ -138,7 +138,8 @@ AcpiExGetProtocolBufferLength (
  * RETURN:      Status
  *
  * DESCRIPTION: Read from a named field. Returns either an Integer or a
- *              Buffer, depending on the size of the field.
+ *              Buffer, depending on the size of the field and whether if a
+ *              field is created by the CreateField() operator.
  *
  ******************************************************************************/
 
@@ -186,7 +187,8 @@ AcpiExReadDataFromField (
     else if ((ObjDesc->Common.Type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
         (ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_SMBUS ||
          ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_GSBUS ||
-         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_IPMI))
+         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_IPMI  ||
+         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_PLATFORM_RT))
     {
         /* SMBus, GSBus, IPMI serial */
 
@@ -202,12 +204,17 @@ AcpiExReadDataFromField (
      * the use of arithmetic operators on the returned value if the
      * field size is equal or smaller than an Integer.
      *
+     * However, all buffer fields created by CreateField operator needs to
+     * remain as a buffer to match other AML interpreter implementations.
+     *
      * Note: Field.length is in bits.
      */
     BufferLength = (ACPI_SIZE) ACPI_ROUND_BITS_UP_TO_BYTES (
         ObjDesc->Field.BitLength);
 
-    if (BufferLength > AcpiGbl_IntegerByteWidth)
+    if (BufferLength > AcpiGbl_IntegerByteWidth ||
+        (ObjDesc->Common.Type == ACPI_TYPE_BUFFER_FIELD &&
+        ObjDesc->BufferField.IsCreateField))
     {
         /* Field is too large for an Integer, create a Buffer instead */
 
@@ -353,7 +360,8 @@ AcpiExWriteDataToField (
     else if ((ObjDesc->Common.Type == ACPI_TYPE_LOCAL_REGION_FIELD) &&
         (ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_SMBUS ||
          ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_GSBUS ||
-         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_IPMI))
+         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_IPMI  ||
+         ObjDesc->Field.RegionObj->Region.SpaceId == ACPI_ADR_SPACE_PLATFORM_RT))
     {
         /* SMBus, GSBus, IPMI serial */
 
@@ -376,9 +384,7 @@ AcpiExWriteDataToField (
             ObjDesc->Field.BaseByteOffset,
             SourceDesc->Buffer.Pointer, DataLength);
 
-        if ((ObjDesc->Field.RegionObj->Region.Address == PCC_MASTER_SUBSPACE &&
-           MASTER_SUBSPACE_COMMAND (ObjDesc->Field.BaseByteOffset)) ||
-           GENERIC_SUBSPACE_COMMAND (ObjDesc->Field.BaseByteOffset))
+        if (MASTER_SUBSPACE_COMMAND (ObjDesc->Field.BaseByteOffset))
         {
             /* Perform the write */
 

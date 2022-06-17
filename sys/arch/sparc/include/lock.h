@@ -1,4 +1,4 @@
-/*	$NetBSD: lock.h,v 1.32 2017/09/17 00:01:08 christos Exp $ */
+/*	$NetBSD: lock.h,v 1.34 2022/02/13 13:41:17 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2006 The NetBSD Foundation, Inc.
@@ -118,6 +118,12 @@ __cpu_simple_lock(__cpu_simple_lock_t *alp)
 		while (*alp != __SIMPLELOCK_UNLOCKED)
 			/* spin */ ;
 	}
+
+	/*
+	 * No memory barrier needed here to make this a load-acquire
+	 * operation because LDSTUB already implies that.  See SPARCv8
+	 * Reference Manual, Appendix J.4 `Spin Locks', p. 271.
+	 */
 }
 #endif /* __CPU_SIMPLE_LOCK_NOINLINE */
 
@@ -125,6 +131,10 @@ static __inline int
 __cpu_simple_lock_try(__cpu_simple_lock_t *alp)
 {
 
+	/*
+	 * No memory barrier needed for LDSTUB to be a load-acquire --
+	 * see __cpu_simple_lock.
+	 */
 	return (__ldstub(alp) == __SIMPLELOCK_UNLOCKED);
 }
 
@@ -135,51 +145,12 @@ __cpu_simple_unlock(__cpu_simple_lock_t *alp)
 	/*
 	 * Insert compiler barrier to prevent instruction re-ordering
 	 * around the lock release.
+	 *
+	 * No memory barrier needed because we run the kernel in TSO.
+	 * If we ran the kernel in PSO, this would require STBAR.
 	 */
 	__insn_barrier();
 	*alp = __SIMPLELOCK_UNLOCKED;
 }
-
-#if defined(__sparc_v9__)
-static __inline void
-mb_read(void)
-{
-	__asm __volatile("membar #LoadLoad" : : : "memory");
-}
-
-static __inline void
-mb_write(void)
-{
-	__asm __volatile("" : : : "memory");
-}
-
-static __inline void
-mb_memory(void)
-{
-	__asm __volatile("membar #MemIssue" : : : "memory");
-}
-#else	/* __sparc_v9__ */
-static __inline void
-mb_read(void)
-{
-	static volatile int junk;
-	__asm volatile("st %%g0,[%0]"
-	    :
-	    : "r" (&junk)
-	    : "memory");
-}
-
-static __inline void
-mb_write(void)
-{
-	__insn_barrier();
-}
-
-static __inline void
-mb_memory(void)
-{
-	mb_read();
-}
-#endif	/* __sparc_v9__ */
 
 #endif /* _MACHINE_LOCK_H */

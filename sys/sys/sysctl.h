@@ -1,4 +1,4 @@
-/*	$NetBSD: sysctl.h,v 1.230 2019/05/31 23:01:39 kamil Exp $	*/
+/*	$NetBSD: sysctl.h,v 1.236 2021/09/16 22:47:29 christos Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -274,6 +274,7 @@ struct ctlname {
 #define	KERN_SYSVIPC		82	/* node: SysV IPC parameters */
 #define	KERN_BOOTTIME		83	/* struct: time kernel was booted */
 #define	KERN_EVCNT		84	/* struct: evcnts */
+#define	KERN_SOFIXEDBUF		85	/* bool: fixed socket buffer sizes */
 
 /*
  *  KERN_CLOCKRATE structure
@@ -547,6 +548,34 @@ struct kinfo_proc2 {
  */
 #define	L_DETACHED		0x00800000
 
+#define	__SYSCTL_PROC_FLAG_BITS \
+	"\20" \
+	"\1ADVLOCK" \
+	"\2CONTROLT" \
+	"\3INMEM" \
+	"\4NOCLDSTOP" \
+	"\5PPWAIT" \
+	"\6PROFIL" \
+	"\7SELECT" \
+	"\10SINTR" \
+	"\11SUGID" \
+	"\12SYSTEM" \
+	"\13SA" \
+	"\14TRACED" \
+	"\15WAITED" \
+	"\16WEXIT" \
+	"\17EXEC" \
+	"\20OWEUPC" \
+	"\22NOCLDWAIT" \
+	"\23P32" \
+	"\24CLDSIGIGN" \
+	"\26SYSTRACE" \
+	"\27CHTRACED" \
+	"\30STOPFORK" \
+	"\31STOPEXEC" \
+	"\32STOPEXIT" \
+	"\33SYSCALL"
+
 /*
  * KERN_LWP structure. See notes on KERN_PROC2 about adding elements.
  */
@@ -661,6 +690,8 @@ struct buf_sysctl {
 	uint64_t b_lblkno;	/* DADDR_T: Logical block number */
 };
 
+#define	KERN_BUFSLOP	20
+
 /*
  * kern.file2 returns an array of these structures, which are designed
  * both to be immune to 32/64 bit emulation issues and to
@@ -720,11 +751,33 @@ struct evcnt_sysctl {
 	 * Now the group and name strings follow (both include the trailing
 	 * NUL).  ev_name start at &ev_strings[ev_grouplen+1]
 	 */
-	char		ev_strings[0];
+	char		ev_strings[];
 };
 
 #define	KERN_EVCNT_COUNT_ANY		0
 #define	KERN_EVCNT_COUNT_NONZERO	1
+
+
+/*
+ * kern.hashstat returns an array of these structures, which are designed
+ * to be immune to 32/64 bit emulation issues.
+ *
+ * Hash users can register a filler function to fill the hashstat_sysctl
+ * which can then be exposed via vmstat(1).
+ *
+ * See comments for hashstat_sysctl() in kern/subr_hash.c for details
+ * on sysctl(3) usage.
+ */
+struct hashstat_sysctl {
+	char		hash_name[SYSCTL_NAMELEN];
+	char		hash_desc[SYSCTL_NAMELEN];
+	uint64_t	hash_size;
+	uint64_t	hash_used;
+	uint64_t	hash_items;
+	uint64_t	hash_maxchain;
+};
+typedef int	(*hashstat_func_t)(struct hashstat_sysctl *, bool);
+void		hashstat_register(const char *, hashstat_func_t);
 
 /*
  * CTL_VM identifiers in <uvm/uvm_param.h>

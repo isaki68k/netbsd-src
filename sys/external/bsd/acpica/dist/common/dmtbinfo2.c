@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -80,6 +80,25 @@
  * Remaining tables are not consumed directly by the ACPICA subsystem
  */
 
+/*******************************************************************************
+ *
+ * AGDI - Arm Generic Diagnostic Dump and Reset Device Interface
+ *
+ * Conforms to "ACPI for Arm Components 1.1, Platform Design Document"
+ * ARM DEN0093 v1.1
+ *
+ ******************************************************************************/
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoAgdi[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_AGDI_OFFSET (Flags),                   "Flags (decoded below)", 0},
+    {ACPI_DMT_FLAG0,    ACPI_AGDI_FLAG_OFFSET (Flags, 0),           "Signalling mode", 0},
+    {ACPI_DMT_UINT24,   ACPI_AGDI_OFFSET (Reserved[0]),             "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_AGDI_OFFSET (SdeiEvent),               "SdeiEvent", 0},
+    {ACPI_DMT_UINT32,   ACPI_AGDI_OFFSET (Gsiv),                    "Gsiv", 0},
+    ACPI_DMT_TERMINATOR
+};
+
 
 /*******************************************************************************
  *
@@ -110,7 +129,20 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIortHdr[] =
     {ACPI_DMT_UINT8,    ACPI_IORTH_OFFSET (Type),                   "Type", 0},
     {ACPI_DMT_UINT16,   ACPI_IORTH_OFFSET (Length),                 "Length", DT_LENGTH},
     {ACPI_DMT_UINT8,    ACPI_IORTH_OFFSET (Revision),               "Revision", 0},
-    {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (Reserved),               "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (Identifier),             "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (MappingCount),           "Mapping Count", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (MappingOffset),          "Mapping Offset", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Common Subtable header (one per Subtable)- Revision 3 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIortHdr3[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_IORTH_OFFSET (Type),                   "Type", 0},
+    {ACPI_DMT_UINT16,   ACPI_IORTH_OFFSET (Length),                 "Length", DT_LENGTH},
+    {ACPI_DMT_UINT8,    ACPI_IORTH_OFFSET (Revision),               "Revision", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (Identifier),             "Identifier", 0},
     {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (MappingCount),           "Mapping Count", 0},
     {ACPI_DMT_UINT32,   ACPI_IORTH_OFFSET (MappingOffset),          "Mapping Offset", 0},
     ACPI_DMT_TERMINATOR
@@ -261,6 +293,25 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIort5[] =
 };
 
 
+/* 0x06: RMR */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIort6[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_IORT6_OFFSET (Flags),                  "Flags (decoded below)", 0},
+    {ACPI_DMT_FLAG0,    ACPI_IORT6_FLAG_OFFSET (Flags, 0),          "Remapping Permitted", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT6_OFFSET (RmrCount),               "Number of RMR Descriptors", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT6_OFFSET (RmrOffset),              "RMR Descriptor Offset", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIort6a[] =
+{
+    {ACPI_DMT_UINT64,   ACPI_IORT6A_OFFSET (BaseAddress),           "Base Address of RMR", DT_OPTIONAL},
+    {ACPI_DMT_UINT64,   ACPI_IORT6A_OFFSET (Length),                "Length of RMR", 0},
+    {ACPI_DMT_UINT32,   ACPI_IORT6A_OFFSET (Reserved),              "Reserved", 0},
+    ACPI_DMT_TERMINATOR
+};
+
 /*******************************************************************************
  *
  * IVRS - I/O Virtualization Reporting Structure
@@ -274,35 +325,70 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs[] =
     ACPI_DMT_TERMINATOR
 };
 
-/* Common Subtable header (one per Subtable) */
-
-ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHdr[] =
-{
-    {ACPI_DMT_IVRS,     ACPI_IVRSH_OFFSET (Type),                   "Subtable Type", 0},
-    {ACPI_DMT_UINT8,    ACPI_IVRSH_OFFSET (Flags),                  "Flags", 0},
-    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (Length),                 "Length", DT_LENGTH},
-    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (DeviceId),               "DeviceId", 0},
-    ACPI_DMT_TERMINATOR
-};
-
 /* IVRS subtables */
 
 /* 0x10: I/O Virtualization Hardware Definition (IVHD) Block */
 
-ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs0[] =
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHware1[] =
 {
+    {ACPI_DMT_IVRS,     ACPI_IVRSH_OFFSET (Type),                   "Subtable Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_IVRSH_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG},
+    {ACPI_DMT_FLAG0,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "HtTunEn", 0},
+    {ACPI_DMT_FLAG1,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "PassPW", 0},
+    {ACPI_DMT_FLAG2,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "ResPassPW", 0},
+    {ACPI_DMT_FLAG3,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Isoc Control", 0},
+    {ACPI_DMT_FLAG4,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Iotlb Support", 0},
+    {ACPI_DMT_FLAG5,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Coherent", 0},
+    {ACPI_DMT_FLAG6,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Prefetch Support", 0},
+    {ACPI_DMT_FLAG7,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "PPR Support", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (Length),                 "Length", DT_LENGTH},
+    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (DeviceId),               "DeviceId", 0},
     {ACPI_DMT_UINT16,   ACPI_IVRS0_OFFSET (CapabilityOffset),       "Capability Offset", 0},
     {ACPI_DMT_UINT64,   ACPI_IVRS0_OFFSET (BaseAddress),            "Base Address", 0},
     {ACPI_DMT_UINT16,   ACPI_IVRS0_OFFSET (PciSegmentGroup),        "PCI Segment Group", 0},
     {ACPI_DMT_UINT16,   ACPI_IVRS0_OFFSET (Info),                   "Virtualization Info", 0},
-    {ACPI_DMT_UINT32,   ACPI_IVRS0_OFFSET (Reserved),               "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_IVRS0_OFFSET (FeatureReporting),       "Feature Reporting", 0},
     ACPI_DMT_TERMINATOR
 };
 
-/* 0x20, 0x21, 0x22: I/O Virtualization Memory Definition (IVMD) Block */
+/* 0x11, 0x40: I/O Virtualization Hardware Definition (IVHD) Block */
 
-ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs1[] =
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHware23[] =
 {
+    {ACPI_DMT_IVRS,     ACPI_IVRSH_OFFSET (Type),                   "Subtable Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_IVRSH_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG},
+    {ACPI_DMT_FLAG0,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "HtTunEn", 0},
+    {ACPI_DMT_FLAG1,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "PassPW", 0},
+    {ACPI_DMT_FLAG2,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "ResPassPW", 0},
+    {ACPI_DMT_FLAG3,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Isoc Control", 0},
+    {ACPI_DMT_FLAG4,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Iotlb Support", 0},
+    {ACPI_DMT_FLAG5,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Coherent", 0},
+    {ACPI_DMT_FLAG6,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Prefetch Support", 0},
+    {ACPI_DMT_FLAG7,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "PPR Support", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRS01_OFFSET (Header.Length),         "Length", DT_LENGTH},
+    {ACPI_DMT_UINT16,   ACPI_IVRS01_OFFSET (Header.DeviceId),       "DeviceId", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRS01_OFFSET (CapabilityOffset),      "Capability Offset", 0},
+    {ACPI_DMT_UINT64,   ACPI_IVRS01_OFFSET (BaseAddress),           "Base Address", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRS01_OFFSET (PciSegmentGroup),       "PCI Segment Group", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRS01_OFFSET (Info),                  "Virtualization Info", 0},
+    {ACPI_DMT_UINT32,   ACPI_IVRS01_OFFSET (Attributes),            "Attributes", 0},
+    {ACPI_DMT_UINT64,   ACPI_IVRS01_OFFSET (EfrRegisterImage),      "EFR Image", 0},
+    {ACPI_DMT_UINT64,   ACPI_IVRS01_OFFSET (Reserved),              "Reserved", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 0x20, 0x21, 0x22: I/O Virtualization Memory Definition (IVMD) Device Entry Block */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsMemory[] =
+{
+    {ACPI_DMT_IVRS,     ACPI_IVRSH_OFFSET (Type),                   "Subtable Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_IVRSH_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG},
+    {ACPI_DMT_FLAG0,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Unity", 0},
+    {ACPI_DMT_FLAG1,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Readable", 0},
+    {ACPI_DMT_FLAG2,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Writeable", 0},
+    {ACPI_DMT_FLAG3,    ACPI_IVRS_FLAG_OFFSET (Flags,0),            "Exclusion Range", 0},
+    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (Length),                 "Length", DT_LENGTH},
+    {ACPI_DMT_UINT16,   ACPI_IVRSH_OFFSET (DeviceId),               "DeviceId", 0},
     {ACPI_DMT_UINT16,   ACPI_IVRS1_OFFSET (AuxData),                "Auxiliary Data", 0},
     {ACPI_DMT_UINT64,   ACPI_IVRS1_OFFSET (Reserved),               "Reserved", 0},
     {ACPI_DMT_UINT64,   ACPI_IVRS1_OFFSET (StartAddress),           "Start Address", 0},
@@ -313,19 +399,26 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs1[] =
 /* Device entry header for IVHD block */
 
 #define ACPI_DMT_IVRS_DE_HEADER \
-    {ACPI_DMT_UINT8,    ACPI_IVRSD_OFFSET (Type),                   "Entry Type", 0}, \
+    {ACPI_DMT_IVRS_DE,  ACPI_IVRSD_OFFSET (Type),                   "Subtable Type", 0}, \
     {ACPI_DMT_UINT16,   ACPI_IVRSD_OFFSET (Id),                     "Device ID", 0}, \
-    {ACPI_DMT_UINT8,    ACPI_IVRSD_OFFSET (DataSetting),            "Data Setting", 0}
+    {ACPI_DMT_UINT8,    ACPI_IVRSD_OFFSET (DataSetting),            "Data Setting (decoded below)", 0}, \
+    {ACPI_DMT_FLAG0,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "INITPass", 0}, \
+    {ACPI_DMT_FLAG1,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "EIntPass", 0}, \
+    {ACPI_DMT_FLAG2,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "NMIPass", 0}, \
+    {ACPI_DMT_FLAG3,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "Reserved", 0}, \
+    {ACPI_DMT_FLAGS4,   ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "System MGMT", 0}, \
+    {ACPI_DMT_FLAG6,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "LINT0 Pass", 0}, \
+    {ACPI_DMT_FLAG7,    ACPI_IVRSDE_FLAG_OFFSET (DataSetting, 0),   "LINT1 Pass", 0}
 
-/* 4-byte device entry */
+/* 4-byte device entry (Types 1,2,3,4) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs4[] =
 {
     ACPI_DMT_IVRS_DE_HEADER,
-    {ACPI_DMT_EXIT,     0,                                          NULL, 0},
+    ACPI_DMT_TERMINATOR
 };
 
-/* 8-byte device entry */
+/* 8-byte device entry (Type Alias Select, Alias Start of Range) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8a[] =
 {
@@ -336,7 +429,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8a[] =
     ACPI_DMT_TERMINATOR
 };
 
-/* 8-byte device entry */
+/* 8-byte device entry (Type Extended Select, Extended Start of Range) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8b[] =
 {
@@ -345,7 +438,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8b[] =
     ACPI_DMT_TERMINATOR
 };
 
-/* 8-byte device entry */
+/* 8-byte device entry (Type Special Device) */
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8c[] =
 {
@@ -353,6 +446,53 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrs8c[] =
     {ACPI_DMT_UINT8,    ACPI_IVRS8C_OFFSET (Handle),                "Handle", 0},
     {ACPI_DMT_UINT16,   ACPI_IVRS8C_OFFSET (UsedId),                "Source Used Device ID", 0},
     {ACPI_DMT_UINT8,    ACPI_IVRS8C_OFFSET (Variety),               "Variety", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Variable-length Device Entry Type 0xF0 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHid[] =
+{
+    ACPI_DMT_IVRS_DE_HEADER,
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsUidString[] =
+{
+    {ACPI_DMT_UINT8,    0,                                          "UID Format", DT_DESCRIBES_OPTIONAL},
+    {ACPI_DMT_UINT8,    1,                                          "UID Length", DT_DESCRIBES_OPTIONAL},
+    {ACPI_DMT_IVRS_UNTERMINATED_STRING, 2,                          "UID", DT_OPTIONAL},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsUidInteger[] =
+{
+    {ACPI_DMT_UINT8,    0,                                          "UID Format", DT_DESCRIBES_OPTIONAL},
+    {ACPI_DMT_UINT8,    1,                                          "UID Length", DT_DESCRIBES_OPTIONAL},
+    {ACPI_DMT_UINT64, 2,                                            "UID", DT_OPTIONAL},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHidString[] =
+{
+    {ACPI_DMT_NAME8,        0,                                      "ACPI HID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsHidInteger[] =
+{
+    {ACPI_DMT_UINT64,       0,                                      "ACPI HID", 0},
+    ACPI_DMT_TERMINATOR
+};
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsCidString[] =
+{
+    {ACPI_DMT_NAME8,        0,                                      "ACPI CID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoIvrsCidInteger[] =
+{
+    {ACPI_DMT_UINT64,       0,                                      "ACPI CID", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -629,6 +769,16 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoMadt15[] =
    ACPI_DMT_TERMINATOR
 };
 
+/* 16: Multiprocessor wakeup structure (ACPI 6.4) */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoMadt16[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_MADT16_OFFSET (MailboxVersion),        "Mailbox Version", 0},
+    {ACPI_DMT_UINT32,   ACPI_MADT16_OFFSET (Reserved),              "Reserved", 0},
+    {ACPI_DMT_UINT64,   ACPI_MADT16_OFFSET (BaseAddress),           "Mailbox Address", 0},
+   ACPI_DMT_TERMINATOR
+};
+
 
 /*******************************************************************************
  *
@@ -789,28 +939,6 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoMsct0[] =
 
 /*******************************************************************************
  *
- * MTMR - MID Timer Table
- *
- ******************************************************************************/
-
-ACPI_DMTABLE_INFO           AcpiDmTableInfoMtmr[] =
-{
-    ACPI_DMT_TERMINATOR
-};
-
-/* MTMR Subtables - MTMR Entry */
-
-ACPI_DMTABLE_INFO           AcpiDmTableInfoMtmr0[] =
-{
-    {ACPI_DMT_GAS,      ACPI_MTMR0_OFFSET (PhysicalAddress),        "PhysicalAddress", 0},
-    {ACPI_DMT_UINT32,   ACPI_MTMR0_OFFSET (Frequency),              "Frequency", 0},
-    {ACPI_DMT_UINT32,   ACPI_MTMR0_OFFSET (Irq),                    "IRQ", 0},
-    ACPI_DMT_TERMINATOR
-};
-
-
-/*******************************************************************************
- *
  * NFIT - NVDIMM Firmware Interface Table and Subtables - (ACPI 6.0)
  *
  ******************************************************************************/
@@ -838,12 +966,14 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoNfit0[] =
     {ACPI_DMT_UINT16,   ACPI_NFIT0_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG},
     {ACPI_DMT_FLAG0,    ACPI_NFIT0_FLAG_OFFSET (Flags,0),           "Add/Online Operation Only", 0},
     {ACPI_DMT_FLAG1,    ACPI_NFIT0_FLAG_OFFSET (Flags,0),           "Proximity Domain Valid", 0},
+    {ACPI_DMT_FLAG2,    ACPI_NFIT0_FLAG_OFFSET (Flags,0),           "Location Cookie Valid", 0},
     {ACPI_DMT_UINT32,   ACPI_NFIT0_OFFSET (Reserved),               "Reserved", 0},
     {ACPI_DMT_UINT32,   ACPI_NFIT0_OFFSET (ProximityDomain),        "Proximity Domain", 0},
     {ACPI_DMT_UUID,     ACPI_NFIT0_OFFSET (RangeGuid[0]),           "Region Type GUID", 0},
     {ACPI_DMT_UINT64,   ACPI_NFIT0_OFFSET (Address),                "Address Range Base", 0},
     {ACPI_DMT_UINT64,   ACPI_NFIT0_OFFSET (Length),                 "Address Range Length", 0},
     {ACPI_DMT_UINT64,   ACPI_NFIT0_OFFSET (MemoryMapping),          "Memory Map Attribute", 0},
+    {ACPI_DMT_UINT64,   ACPI_NFIT0_OFFSET (LocationCookie),         "Location Cookie", 0},      /* ACPI 6.4 */
     ACPI_DMT_TERMINATOR
 };
 
@@ -971,6 +1101,215 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoNfit7[] =
     {ACPI_DMT_FLAG1,    ACPI_NFIT7_FLAG_OFFSET (Capabilities,0),    "Memory Flush to NVDIMM", 0},
     {ACPI_DMT_FLAG2,    ACPI_NFIT7_FLAG_OFFSET (Capabilities,0),    "Memory Mirroring", 0},
     {ACPI_DMT_UINT32,   ACPI_NFIT7_OFFSET (Reserved2),              "Reserved", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+
+/*******************************************************************************
+ *
+ * NHLT - Non HD Audio Link Table. Conforms to Intel Smart Sound Technology
+ * NHLT Specification, January 2020 Revision 0.8.1
+ *
+ ******************************************************************************/
+
+/* Main table */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT_OFFSET (EndpointCount),           "Endpoint Count", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Endpoint config */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt0[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_NHLT0_OFFSET (DescriptorLength),       "Descriptor Length", DT_LENGTH},
+    {ACPI_DMT_NHLT1,    ACPI_NHLT0_OFFSET (LinkType),               "Link Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT0_OFFSET (InstanceId),             "Instance Id", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT0_OFFSET (VendorId),               "Vendor Id", 0},
+    {ACPI_DMT_NHLT1e,   ACPI_NHLT0_OFFSET (DeviceId),               "Device Id", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT0_OFFSET (RevisionId),             "Revision Id", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT0_OFFSET (SubsystemId),            "Subsystem Id", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT0_OFFSET (DeviceType),             "Device Type", 0},
+    {ACPI_DMT_NHLT1a,   ACPI_NHLT0_OFFSET (Direction),              "Direction", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT0_OFFSET (VirtualBusId),           "Virtual Bus Id", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Device_Specific config */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt1[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_NHLT1_OFFSET (CapabilitiesSize),       "Capabilities Size", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT1_OFFSET (VirtualSlot),            "Virtual Slot", 0},
+    {ACPI_DMT_NHLT1f,   ACPI_NHLT1_OFFSET (ConfigType),             "Config Type", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Wave Format Extensible */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt2[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (FormatTag),              "Format Tag", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (ChannelCount),           "Channel Count", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT2_OFFSET (SamplesPerSec),          "Samples Per Second", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT2_OFFSET (AvgBytesPerSec),         "Average Bytes Per Second", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (BlockAlign),             "Block Alignment", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (BitsPerSample),          "Bits Per Sample", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (ExtraFormatSize),        "Extra Format Size", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT2_OFFSET (ValidBitsPerSample),     "Valid Bits Per Sample", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT2_OFFSET (ChannelMask),            "Channel Mask", 0},
+    {ACPI_DMT_UUID,     ACPI_NHLT2_OFFSET (SubFormatGuid),          "SubFormat GUID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Format Config (wave_format_extensible structure) */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt3[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.FormatTag),               "Format Tag", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.ChannelCount),            "Channel Count", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT3_OFFSET (Format.SamplesPerSec),           "Samples Per Second", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT3_OFFSET (Format.AvgBytesPerSec),          "Average Bytes Per Second", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.BlockAlign),              "Block Alignment", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.BitsPerSample),           "Bits Per Sample", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.ExtraFormatSize),         "Extra Format Size", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT3_OFFSET (Format.ValidBitsPerSample),      "Valid Bits Per Sample", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT3_OFFSET (Format.ChannelMask),             "Channel Mask", 0},
+    {ACPI_DMT_UUID,     ACPI_NHLT3_OFFSET (Format.SubFormatGuid),           "SubFormat GUID", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT3_OFFSET (CapabilitySize),                 "Capabilities Length", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/*
+ * We treat the binary Capabilities field as its own subtable (to make
+ * ACPI_DMT_RAW_BUFFER work properly).
+ */
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt3a[] =
+{
+    {ACPI_DMT_RAW_BUFFER, 0,                                        "Capabilities", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Formats Config */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt4[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT4_OFFSET (FormatsCount),           "Formats Count", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Specific Config, CapabilitiesSize == 2 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt5[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT5_OFFSET (VirtualSlot),            "Virtual Slot", 0},
+    {ACPI_DMT_NHLT1f,   ACPI_NHLT5_OFFSET (ConfigType),             "Config Type", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Specific Config, CapabilitiesSize == 3 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt5a[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT5A_OFFSET (VirtualSlot),           "Virtual Slot", 0},
+    {ACPI_DMT_NHLT1f,   ACPI_NHLT5A_OFFSET (ConfigType),            "Config Type", 0},
+    {ACPI_DMT_NHLT1d,   ACPI_NHLT5A_OFFSET (ArrayType),             "Array Type", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Specific Config, CapabilitiesSize == 0 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt5b[] =
+{
+    {ACPI_DMT_UINT32,    ACPI_NHLT5B_OFFSET (CapabilitiesSize),     "Capabilities Size", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Specific Config, CapabilitiesSize == 1 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt5c[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT5C_OFFSET (VirtualSlot),           "Virtual Slot", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Microphone array Config */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt6a[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT6A_OFFSET (MicrophoneCount),       "Microphone Count", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Render Feedback Device Config, CapabilitiesSize == 7 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt6b[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT6B_OFFSET (FeedbackVirtualSlot),       "Feedback Virtual Slot", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6B_OFFSET (FeedbackChannels),          "Feedback Channels", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6B_OFFSET (FeedbackValidBitsPerSample),"Valid Bits Per Sample", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt6[] =
+{
+    {ACPI_DMT_NHLT1b,   ACPI_NHLT6_OFFSET (Type),                   "Type", 0},
+    {ACPI_DMT_NHLT1c,   ACPI_NHLT6_OFFSET (Panel),                  "Panel", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (SpeakerPositionDistance), "Speaker Position Distance", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (HorizontalOffset),       "Horizontal Offset", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (VerticalOffset),         "Vertical Offset", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT6_OFFSET (FrequencyLowBand),       "Frequency Low Band", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT6_OFFSET (FrequencyHighBand),      "Frequency High Band", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (DirectionAngle),         "Direction Angle", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (ElevationAngle),         "Elevation Angle", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (WorkVerticalAngleBegin), "Work Vertical Angle Begin", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (WorkVerticalAngleEnd),   "Work Vertical Angle End", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (WorkHorizontalAngleBegin), "Work Horizontal Angle Begin", 0},
+    {ACPI_DMT_UINT16,   ACPI_NHLT6_OFFSET (WorkHorizontalAngleEnd), "Work Horizontal Angle End", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Number of Linux-specific structures */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt7[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_NHLT7_OFFSET (StructureCount),         "Linux-specific Count", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* The Linux-specific structure */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt7a[] =
+{
+    {ACPI_DMT_BUF16,    ACPI_NHLT7A_OFFSET (DeviceId),              "Device ID", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT7A_OFFSET (DeviceInstanceId),      "Device Instance ID", 0},
+    {ACPI_DMT_UINT8,    ACPI_NHLT7A_OFFSET (DevicePortId),          "Device Port ID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt7b[] =
+{
+    {ACPI_DMT_BUF18,    ACPI_NHLT7B_OFFSET (SpecificData),          "Specific Data", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Table terminator (may or may not be present) */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt8[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_NHLT8_OFFSET (TerminatorValue),        "Terminator Value", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT8_OFFSET (TerminatorSignature),    "Terminator Signature", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Sensitivity Extension */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoNhlt9[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_NHLT9_OFFSET (SNR),                    "Signal-to-noise ratio", 0},
+    {ACPI_DMT_UINT32,   ACPI_NHLT9_OFFSET (Sensitivity),            "Mic Sensitivity", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -1119,6 +1458,25 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPcct4[] =
     ACPI_DMT_TERMINATOR
 };
 
+/* 5: HW Registers based Communications Subspace */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPcct5[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_PCCT5_OFFSET (Version),                "Version", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (BaseAddress),            "Base Address", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (Length),                 "Length", 0},
+    {ACPI_DMT_GAS,      ACPI_PCCT5_OFFSET (DoorbellRegister),       "Doorbell Register", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (DoorbellPreserve),       "Preserve Mask", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (DoorbellWrite),          "Write Mask", 0},
+    {ACPI_DMT_GAS,      ACPI_PCCT5_OFFSET (CmdCompleteRegister),    "Command Complete Register", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (CmdCompleteMask),        "Command Complete Check Mask", 0},
+    {ACPI_DMT_GAS,      ACPI_PCCT5_OFFSET (ErrorStatusRegister),    "Error Status Register", 0},
+    {ACPI_DMT_UINT64,   ACPI_PCCT5_OFFSET (ErrorStatusMask),        "Error Status Mask", 0},
+    {ACPI_DMT_UINT32,   ACPI_PCCT5_OFFSET (NominalLatency),         "Nominal Latency", 0},
+    {ACPI_DMT_UINT32,   ACPI_PCCT5_OFFSET (MinTurnaroundTime),      "Minimum Turnaround Time", 0},
+    ACPI_DMT_TERMINATOR
+};
+
 
 /*******************************************************************************
  *
@@ -1147,30 +1505,83 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPdtt0[] =
 
 /*******************************************************************************
  *
+ * PHAT - Platform Health Assessment Table (ACPI 6.4)
+ *
+ ******************************************************************************/
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhatHdr[] =
+{
+    {ACPI_DMT_PHAT,     ACPI_PHATH_OFFSET (Type),                 "Subtable Type", 0},
+    {ACPI_DMT_UINT16,   ACPI_PHATH_OFFSET (Length),               "Length", 0},
+    {ACPI_DMT_UINT8,    ACPI_PHATH_OFFSET (Revision),             "Revision", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 0: Firmware version table */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhat0[] =
+{
+    {ACPI_DMT_UINT24,   ACPI_PHAT0_OFFSET (Reserved),             "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_PHAT0_OFFSET (ElementCount),         "Element Count", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhat0a[] =
+{
+    {ACPI_DMT_UUID,     ACPI_PHAT0A_OFFSET (Guid),                "GUID", 0},
+    {ACPI_DMT_UINT64,   ACPI_PHAT0A_OFFSET (VersionValue),        "Version Value", 0},
+    {ACPI_DMT_UINT32,   ACPI_PHAT0A_OFFSET (ProducerId),          "Producer ID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 1: Firmware Health Data Record */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhat1[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_PHAT1_OFFSET (Reserved),             "Reserved", 0},
+    {ACPI_DMT_UINT8,    ACPI_PHAT1_OFFSET (Health),               "Health", 0},
+    {ACPI_DMT_UUID,     ACPI_PHAT1_OFFSET (DeviceGuid),           "Device GUID", 0},
+    {ACPI_DMT_UINT32,   ACPI_PHAT1_OFFSET (DeviceSpecificOffset), "Device specific offset", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhat1a[] =
+{
+    {ACPI_DMT_STRING,   0,                                          "Namepath", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPhat1b[] =
+{
+    {ACPI_DMT_RAW_BUFFER, 0,                                        "Vendor Data", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+
+/*******************************************************************************
+ *
  * PMTT - Platform Memory Topology Table
  *
  ******************************************************************************/
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt[] =
 {
-    {ACPI_DMT_UINT32,   ACPI_PMTT_OFFSET (Reserved),                "Reserved", 0},
+    {ACPI_DMT_UINT32,   ACPI_PMTT_OFFSET (MemoryDeviceCount),       "Memory Device Count", 0},
     ACPI_DMT_TERMINATOR
 };
 
 /* Common Subtable header (one per Subtable) */
 
-ACPI_DMTABLE_INFO           AcpiDmTableInfoPmttHdr[] =
-{
-    {ACPI_DMT_PMTT,     ACPI_PMTTH_OFFSET (Type),                   "Subtable Type", 0},
-    {ACPI_DMT_UINT8,    ACPI_PMTTH_OFFSET (Reserved1),              "Reserved", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Length),                 "Length", DT_LENGTH},
-    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG},
-    {ACPI_DMT_FLAG0,    ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Top-level Device", 0},
-    {ACPI_DMT_FLAG1,    ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Physical Element", 0},
-    {ACPI_DMT_FLAGS2,   ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Memory Type", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Reserved2),              "Reserved", 0},
-    ACPI_DMT_TERMINATOR
-};
+#define ACPI_DM_PMTT_HEADER \
+    {ACPI_DMT_PMTT,     ACPI_PMTTH_OFFSET (Type),                   "Subtable Type", 0}, \
+    {ACPI_DMT_UINT8,    ACPI_PMTTH_OFFSET (Reserved1),              "Reserved", 0}, \
+    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Length),                 "Length", DT_LENGTH}, \
+    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Flags),                  "Flags (decoded below)", DT_FLAG}, \
+    {ACPI_DMT_FLAG0,    ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Top-level Device", 0}, \
+    {ACPI_DMT_FLAG1,    ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Physical Element", 0}, \
+    {ACPI_DMT_FLAGS2,   ACPI_PMTTH_FLAG_OFFSET (Flags,0),           "Memory Type", 0}, \
+    {ACPI_DMT_UINT16,   ACPI_PMTTH_OFFSET (Reserved2),              "Reserved", 0}, \
+    {ACPI_DMT_UINT32,   ACPI_PMTTH_OFFSET (MemoryDeviceCount),      "Memory Device Count", 0}
 
 /* PMTT Subtables */
 
@@ -1178,6 +1589,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPmttHdr[] =
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt0[] =
 {
+    ACPI_DM_PMTT_HEADER,
     {ACPI_DMT_UINT16,   ACPI_PMTT0_OFFSET (SocketId),               "Socket ID", 0},
     {ACPI_DMT_UINT16,   ACPI_PMTT0_OFFSET (Reserved),               "Reserved", 0},
     ACPI_DMT_TERMINATOR
@@ -1187,22 +1599,9 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt0[] =
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt1[] =
 {
-    {ACPI_DMT_UINT32,   ACPI_PMTT1_OFFSET (ReadLatency),            "Read Latency", 0},
-    {ACPI_DMT_UINT32,   ACPI_PMTT1_OFFSET (WriteLatency),           "Write Latency", 0},
-    {ACPI_DMT_UINT32,   ACPI_PMTT1_OFFSET (ReadBandwidth),          "Read Bandwidth", 0},
-    {ACPI_DMT_UINT32,   ACPI_PMTT1_OFFSET (WriteBandwidth),         "Write Bandwidth", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTT1_OFFSET (AccessWidth),            "Access Width", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTT1_OFFSET (Alignment),              "Alignment", 0},
+    ACPI_DM_PMTT_HEADER,
+    {ACPI_DMT_UINT16,   ACPI_PMTT1_OFFSET (ControllerId),           "Controller ID", 0},
     {ACPI_DMT_UINT16,   ACPI_PMTT1_OFFSET (Reserved),               "Reserved", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTT1_OFFSET (DomainCount),            "Domain Count", 0},
-    ACPI_DMT_TERMINATOR
-};
-
-/* 1a: Proximity Domain */
-
-ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt1a[] =
-{
-    {ACPI_DMT_UINT32,   ACPI_PMTT1A_OFFSET (ProximityDomain),       "Proximity Domain", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -1210,10 +1609,18 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt1a[] =
 
 ACPI_DMTABLE_INFO           AcpiDmTableInfoPmtt2[] =
 {
-    {ACPI_DMT_UINT16,   ACPI_PMTT2_OFFSET (ComponentId),            "Component ID", 0},
-    {ACPI_DMT_UINT16,   ACPI_PMTT2_OFFSET (Reserved),               "Reserved", 0},
-    {ACPI_DMT_UINT32,   ACPI_PMTT2_OFFSET (MemorySize),             "Memory Size", 0},
+    ACPI_DM_PMTT_HEADER,
     {ACPI_DMT_UINT32,   ACPI_PMTT2_OFFSET (BiosHandle),             "Bios Handle", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 0xFF: Vendor Specific */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPmttVendor[] =
+{
+    ACPI_DM_PMTT_HEADER,
+    {ACPI_DMT_UUID,         ACPI_PMTT_VENDOR_OFFSET (TypeUuid),     "Type Uuid", 0},
+    {ACPI_DMT_PMTT_VENDOR,  ACPI_PMTT_VENDOR_OFFSET (Specific),     "Vendor Data", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -1271,6 +1678,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPptt1[] =
     {ACPI_DMT_FLAG4,    ACPI_PPTT1_FLAG_OFFSET (Flags,0),           "Cache Type valid", 0},
     {ACPI_DMT_FLAG5,    ACPI_PPTT1_FLAG_OFFSET (Flags,0),           "Write Policy valid", 0},
     {ACPI_DMT_FLAG6,    ACPI_PPTT1_FLAG_OFFSET (Flags,0),           "Line Size valid", 0},
+    {ACPI_DMT_FLAG7,    ACPI_PPTT1_FLAG_OFFSET (Flags,0),           "Cache ID valid", 0},
     {ACPI_DMT_UINT32,   ACPI_PPTT1_OFFSET (NextLevelOfCache),       "Next Level of Cache", 0},
     {ACPI_DMT_UINT32,   ACPI_PPTT1_OFFSET (Size),                   "Size", 0},
     {ACPI_DMT_UINT32,   ACPI_PPTT1_OFFSET (NumberOfSets),           "Number of Sets", 0},
@@ -1280,6 +1688,14 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPptt1[] =
     {ACPI_DMT_FLAGS2,   ACPI_PPTT1_OFFSET (Attributes),             "Cache Type", 0},
     {ACPI_DMT_FLAG4,    ACPI_PPTT1_OFFSET (Attributes),             "Write Policy", 0},
     {ACPI_DMT_UINT16,   ACPI_PPTT1_OFFSET (LineSize),               "Line Size", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 1: cache type v1 */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPptt1a[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_PPTT1A_OFFSET (CacheId),               "Cache ID", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -1300,6 +1716,52 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPptt2[] =
 
 /*******************************************************************************
  *
+ * PRMT - Platform Runtime Mechanism Table
+ *        Version 1
+ *
+ ******************************************************************************/
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPrmtHdr[] =
+{
+    {ACPI_DMT_UUID,     ACPI_PRMTH_OFFSET (PlatformGuid[0]),       "Platform GUID", 0},
+    {ACPI_DMT_UINT32,   ACPI_PRMTH_OFFSET (ModuleInfoOffset),      "Module info offset", 0},
+    {ACPI_DMT_UINT32,   ACPI_PRMTH_OFFSET (ModuleInfoCount),       "Module info count", 0},
+    ACPI_DMT_NEW_LINE,
+    ACPI_DMT_TERMINATOR
+
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPrmtModule[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_PRMT0_OFFSET (Revision),               "Revision", 0},
+    {ACPI_DMT_UINT16,   ACPI_PRMT0_OFFSET (Length),                 "Length", 0},
+    {ACPI_DMT_UUID,     ACPI_PRMT0_OFFSET (ModuleGuid[0]),          "Module GUID", 0},
+    {ACPI_DMT_UINT16,   ACPI_PRMT0_OFFSET (MajorRev),               "Major Revision", 0},
+    {ACPI_DMT_UINT16,   ACPI_PRMT0_OFFSET (MinorRev),               "Minor Revision", 0},
+    {ACPI_DMT_UINT16,   ACPI_PRMT0_OFFSET (HandlerInfoCount),       "Handler Info Count", 0},
+    {ACPI_DMT_UINT32,   ACPI_PRMT0_OFFSET (HandlerInfoOffset),      "Handler Info Offset", 0},
+    {ACPI_DMT_UINT64,   ACPI_PRMT0_OFFSET (MmioListPointer),        "Mmio List pointer", 0},
+    ACPI_DMT_NEW_LINE,
+    ACPI_DMT_TERMINATOR
+
+};
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoPrmtHandler[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_PRMT1_OFFSET (Revision),               "Revision", 0},
+    {ACPI_DMT_UINT16,   ACPI_PRMT1_OFFSET (Length),                 "Length", 0},
+    {ACPI_DMT_UUID,     ACPI_PRMT1_OFFSET (HandlerGuid[0]),         "Handler GUID", 0},
+    {ACPI_DMT_UINT64,   ACPI_PRMT1_OFFSET (HandlerAddress),         "Handler address", 0},
+    {ACPI_DMT_UINT64,   ACPI_PRMT1_OFFSET (StaticDataBufferAddress),"Satic Data Address", 0},
+    {ACPI_DMT_UINT64,   ACPI_PRMT1_OFFSET (AcpiParamBufferAddress), "ACPI Parameter Address", 0},
+    ACPI_DMT_NEW_LINE,
+    ACPI_DMT_TERMINATOR
+
+};
+
+
+/*******************************************************************************
+ *
  * RASF -  RAS Feature table
  *
  ******************************************************************************/
@@ -1307,6 +1769,31 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoPptt2[] =
 ACPI_DMTABLE_INFO           AcpiDmTableInfoRasf[] =
 {
     {ACPI_DMT_BUF12,    ACPI_RASF_OFFSET (ChannelId[0]),            "Channel ID", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+
+/*******************************************************************************
+ *
+ * RGRT -  Regulatory Graphics Resource Table
+ *
+ ******************************************************************************/
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoRgrt[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_RGRT_OFFSET (Version),                 "Version", 0},
+    {ACPI_DMT_RGRT,     ACPI_RGRT_OFFSET (ImageType),               "Image Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_RGRT_OFFSET (Reserved),                "Reserved", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/*
+ * We treat the binary image field as its own subtable (to make
+ * ACPI_DMT_RAW_BUFFER work properly).
+ */
+ACPI_DMTABLE_INFO           AcpiDmTableInfoRgrt0[] =
+{
+    {ACPI_DMT_RAW_BUFFER, 0,                                        "Image", 0},
     ACPI_DMT_TERMINATOR
 };
 
@@ -1399,6 +1886,7 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoSdevHdr[] =
     {ACPI_DMT_SDEV,     ACPI_SDEVH_OFFSET (Type),                   "Subtable Type", 0},
     {ACPI_DMT_UINT8,    ACPI_SDEVH_OFFSET (Flags),                  "Flags (decoded below)", 0},
     {ACPI_DMT_FLAG0,    ACPI_SDEVH_FLAG_OFFSET (Flags,0),           "Allow handoff to unsecure OS", 0},
+    {ACPI_DMT_FLAG1,    ACPI_SDEVH_FLAG_OFFSET (Flags,0),           "Secure access components present", 0},
     {ACPI_DMT_UINT16,   ACPI_SDEVH_OFFSET (Length),                 "Length", 0},
     ACPI_DMT_TERMINATOR
 };
@@ -1421,6 +1909,53 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoSdev0a[] =
     {ACPI_DMT_STRING,   0,                                          "Namepath", 0},
     ACPI_DMT_TERMINATOR
 };
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoSdev0b[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_SDEV0B_OFFSET (SecureComponentOffset), "Secure Access Components Offset", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEV0B_OFFSET (SecureComponentLength), "Secure Access Components Length", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* Secure access components */
+
+/* Common secure access components header secure access component */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoSdevSecCompHdr[] =
+{
+    {ACPI_DMT_UINT8,    ACPI_SDEVCH_OFFSET (Type),                   "Secure Component Type", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVCH_OFFSET (Flags),                  "Flags (decoded below)", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEVCH_OFFSET (Length),                 "Length", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 0: Identification Based Secure Access Component */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoSdevSecCompId[] =
+{
+    {ACPI_DMT_UINT16,   ACPI_SDEVC0_OFFSET (HardwareIdOffset),      "Hardware ID Offset", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEVC0_OFFSET (HardwareIdLength),      "Hardware ID Length", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEVC0_OFFSET (SubsystemIdOffset),     "Subsystem ID Offset", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEVC0_OFFSET (SubsystemIdLength),     "Subsystem ID Length", 0},
+    {ACPI_DMT_UINT16,   ACPI_SDEVC0_OFFSET (HardwareRevision),      "Hardware Revision", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVC0_OFFSET (HardwareRevPresent),    "Hardware Rev Present", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVC0_OFFSET (ClassCodePresent),      "Class Code Present", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVC0_OFFSET (PciBaseClass),          "PCI Base Class", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVC0_OFFSET (PciSubClass),           "PCI SubClass", 0},
+    {ACPI_DMT_UINT8,    ACPI_SDEVC0_OFFSET (PciProgrammingXface),   "PCI Programming Xface", 0},
+    ACPI_DMT_TERMINATOR
+};
+
+/* 1: Memory Based Secure Access Component */
+
+ACPI_DMTABLE_INFO           AcpiDmTableInfoSdevSecCompMem[] =
+{
+    {ACPI_DMT_UINT32,   ACPI_SDEVC1_OFFSET (Reserved),              "Reserved", 0},
+    {ACPI_DMT_UINT64,   ACPI_SDEVC1_OFFSET (MemoryBaseAddress),     "Memory Base Address", 0},
+    {ACPI_DMT_UINT64,   ACPI_SDEVC1_OFFSET (MemoryLength),          "Memory Length", 0},
+    ACPI_DMT_TERMINATOR
+};
+
 
 /* 1: PCIe Endpoint Device Based Device Structure */
 
@@ -1447,4 +1982,5 @@ ACPI_DMTABLE_INFO           AcpiDmTableInfoSdev1b[] =
     {ACPI_DMT_RAW_BUFFER, 0,                                        "Vendor Data", 0}, /*, DT_OPTIONAL}, */
     ACPI_DMT_TERMINATOR
 };
+
 /*! [End] no source code translation !*/

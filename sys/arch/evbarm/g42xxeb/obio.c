@@ -1,4 +1,4 @@
-/*	$NetBSD: obio.c,v 1.11 2012/10/27 17:17:47 chs Exp $ */
+/*	$NetBSD: obio.c,v 1.13 2021/08/07 16:18:49 thorpej Exp $ */
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec corp.  All rights reserved.
@@ -261,7 +261,8 @@ obio_attach(device_t parent, device_t self, void *aux)
 	/*
 	 *  Attach each devices
 	 */
-	config_search_ia(obio_search, self, "obio", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = obio_search));
 	return;
 
  fail:
@@ -279,8 +280,8 @@ obio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
         oba.oba_addr = cf->cf_loc[OBIOCF_ADDR];
         oba.oba_intr = cf->cf_loc[OBIOCF_INTR];
 
-        if (config_match(parent, cf, &oba) > 0)
-                config_attach(parent, cf, &oba, obio_print);
+        if (config_probe(parent, cf, &oba))
+                config_attach(parent, cf, &oba, obio_print, CFARGS_NONE);
 
         return 0;
 }

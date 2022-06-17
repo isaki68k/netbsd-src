@@ -1,4 +1,4 @@
-/*	$NetBSD: sii.c,v 1.13 2016/12/12 15:58:44 maya Exp $	*/
+/*	$NetBSD: sii.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sii.c,v 1.13 2016/12/12 15:58:44 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sii.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $");
 
 #include "sii.h"
 /*
@@ -191,7 +191,7 @@ siiattach(struct siisoftc *sc)
 	/*
 	 * Now try to attach all the sub-devices
 	 */
-	config_found(sc->sc_dev, &sc->sc_channel, scsiprint);
+	config_found(sc->sc_dev, &sc->sc_channel, scsiprint, CFARGS_NONE);
 }
 
 /*
@@ -681,7 +681,7 @@ again:
 			    device_xname(sc->sc_dev));
 			goto abort;
 		}
-		/* dmalen = amount left to transfer, i = amount transfered */
+		/* dmalen = amount left to transfer, i = amount transferred */
 		i = state->dmalen;
 		state->dmalen = 0;
 		state->dmaCurPhase = -1;
@@ -945,7 +945,7 @@ again:
 #endif
 			}
 
-			/* read amount transfered if DMA didn't finish */
+			/* read amount transferred if DMA didn't finish */
 			if (state->dmalen > 0) {
 				i = state->dmalen - regs->dmlotc;
 				state->dmalen = 0;

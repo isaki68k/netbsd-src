@@ -1,4 +1,4 @@
-/*	$NetBSD: le_bus.c,v 1.19 2016/10/13 06:48:07 maya Exp $	*/
+/*	$NetBSD: le_bus.c,v 1.22 2021/09/16 20:17:47 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -30,18 +30,18 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: le_bus.c,v 1.19 2016/10/13 06:48:07 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: le_bus.c,v 1.22 2021/09/16 20:17:47 andvar Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/bswap.h>
 #include <machine/cpu.h>
 #include <sys/bus.h>
 
 /*
- * This file contains the common functions for using a litte endian (linear)
+ * This file contains the common functions for using a little endian (linear)
  * bus on a big endian atari.
  */
 
@@ -262,13 +262,12 @@ leb_alloc_bus_space_tag(bus_space_tag_t storage)
 
 	/*
 	 * Allow the caller to specify storage space for the tag. This
-	 * is used during console config (when malloc() can't be used).
+	 * is used during console config (when kmem_alloc() can't be used).
 	 */
 	if (storage != NULL)
 		leb_t = storage;
 	else {
-		if ((leb_t = malloc(sizeof(*leb_t), M_TEMP, M_NOWAIT)) == NULL)
-			return NULL;
+		leb_t = kmem_alloc(sizeof(*leb_t), KM_SLEEP);
 	}
 	memset(leb_t, 0, sizeof(*leb_t));
 

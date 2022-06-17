@@ -1,4 +1,4 @@
-/*	$NetBSD: fdc.c,v 1.47 2019/02/08 08:47:35 mrg Exp $	*/
+/*	$NetBSD: fdc.c,v 1.51 2021/08/07 16:19:05 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdc.c,v 1.47 2019/02/08 08:47:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdc.c,v 1.51 2021/08/07 16:19:05 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_md.h"
@@ -119,7 +119,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdc.c,v 1.47 2019/02/08 08:47:35 mrg Exp $");
 #include <sys/fdio.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
@@ -856,7 +856,8 @@ fdcattach(struct fdc_softc *fdc, int pri)
 	for (fa.fa_drive = 0; fa.fa_drive < 4; fa.fa_drive++) {
 		fa.fa_deftype = NULL;		/* unknown */
 		fa.fa_deftype = &fd_types[0];	/* XXX */
-		if (config_found(fdc->sc_dev, (void *)&fa, fdprint) != NULL)
+		if (config_found(fdc->sc_dev, (void *)&fa, fdprint,
+				 CFARGS_NONE) != NULL)
 			drive_attached = 1;
 	}
 
@@ -2287,11 +2288,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 			return EINVAL;
 		}
 
-		fd_formb = malloc(sizeof(struct ne7_fd_formb),
-		    M_TEMP, M_NOWAIT);
-		if (fd_formb == 0)
-			return ENOMEM;
-
+		fd_formb = kmem_alloc(sizeof(*fd_formb), KM_SLEEP);
 		fd_formb->head = form_cmd->head;
 		fd_formb->cyl = form_cmd->cylinder;
 		fd_formb->transfer_rate = fd->sc_type->rate;
@@ -2315,7 +2312,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		}
 
 		error = fdformat(dev, fd_formb, l->l_proc);
-		free(fd_formb, M_TEMP);
+		kmem_free(fd_formb, sizeof(*fd_formb));
 		return error;
 
 	case FDIOCGETOPTS:		/* get drive options */
@@ -2545,7 +2542,7 @@ fd_read_md_image(size_t	*sizep, void **addrp)
 
 	dev = makedev(54,0);	/* XXX */
 
-	addr = malloc(FDMICROROOTSIZE, M_DEVBUF, M_WAITOK);
+	addr = kmem_alloc(FDMICROROOTSIZE, KM_SLEEP);
 	*addrp = addr;
 
 	if (fdopen(dev, 0, S_IFCHR, NULL))

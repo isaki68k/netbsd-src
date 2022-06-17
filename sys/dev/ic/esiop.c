@@ -1,4 +1,4 @@
-/*	$NetBSD: esiop.c,v 1.57 2013/11/02 13:59:14 gson Exp $	*/
+/*	$NetBSD: esiop.c,v 1.61 2022/05/23 19:21:30 andvar Exp $	*/
 
 /*
  * Copyright (c) 2002 Manuel Bouyer.
@@ -28,7 +28,7 @@
 /* SYM53c7/8xx PCI-SCSI I/O Processors driver */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: esiop.c,v 1.57 2013/11/02 13:59:14 gson Exp $");
+__KERNEL_RCSID(0, "$NetBSD: esiop.c,v 1.61 2022/05/23 19:21:30 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -196,7 +196,7 @@ esiop_attach(struct esiop_softc *sc)
 	esiop_dump_script(sc);
 #endif
 
-	config_found(sc->sc_c.sc_dev, &sc->sc_c.sc_chan, scsiprint);
+	config_found(sc->sc_c.sc_dev, &sc->sc_c.sc_chan, scsiprint, CFARGS_NONE);
 }
 
 void
@@ -209,7 +209,7 @@ esiop_reset(struct esiop_softc *sc)
 	siop_common_reset(&sc->sc_c);
 
 	/*
-	 * we copy the script at the beggining of RAM. Then there is 4 bytes
+	 * we copy the script at the beginning of RAM. Then there is 4 bytes
 	 * for messages in, and 4 bytes for semaphore
 	 */
 	sc->sc_free_offset = __arraycount(esiop_script);
@@ -1398,7 +1398,7 @@ esiop_handle_qtag_reject(struct esiop_cmd *esiop_cmd)
 /*
  * handle a bus reset: reset chip, unqueue all active commands, free all
  * target struct and report lossage to upper layer.
- * As the upper layer may requeue immediatly we have to first store
+ * As the upper layer may requeue immediately we have to first store
  * all active commands in a temporary queue.
  */
 void

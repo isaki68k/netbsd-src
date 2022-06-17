@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: s3c2440_spi.c,v 1.2 2012/10/27 17:17:40 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: s3c2440_spi.c,v 1.4 2021/08/07 16:18:45 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -170,7 +170,8 @@ ssspi_attach(device_t parent, device_t self, void *aux)
 	/*
 	 *  Attach child devices
 	 */
-	config_search_ia(ssspi_search, self, "ssspi", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = ssspi_search));
 }
 
 int
@@ -191,8 +192,8 @@ ssspi_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	spia.spia_aux_intr = cf->cf_loc[SSSPICF_INTR];
 	spia.spia_dmat = s3c2xx0_softc->sc_dmat;
 
-	if (config_match(parent, cf, &spia))
-		config_attach(parent, cf, &spia, ssspi_print);
+	if (config_probe(parent, cf, &spia))
+		config_attach(parent, cf, &spia, ssspi_print, CFARGS_NONE);
 
 	return 0;
 }

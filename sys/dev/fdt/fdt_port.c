@@ -1,4 +1,4 @@
-/*	$NetBSD: fdt_port.c,v 1.2 2019/01/30 01:24:00 jmcneill Exp $	*/
+/*	$NetBSD: fdt_port.c,v 1.7 2022/01/21 21:00:26 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: fdt_port.c,v 1.2 2019/01/30 01:24:00 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: fdt_port.c,v 1.7 2022/01/21 21:00:26 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -190,8 +190,8 @@ fdt_endpoint_activate(struct fdt_endpoint *ep, bool activate)
 		return EBUSY;
 
 	rdp = rep->ep_port->port_dp;
-device_printf(rdp->dp_dev, "activating port %d endpoint %d\n",
-    fdt_endpoint_port_index(rep), fdt_endpoint_index(rep));
+	aprint_debug_dev(rdp->dp_dev, "activating port %d endpoint %d\n",
+	    fdt_endpoint_port_index(rep), fdt_endpoint_index(rep));
 	if (rdp->dp_ep_activate)
 		error = rdp->dp_ep_activate(rdp->dp_dev, rep, activate);
 
@@ -207,8 +207,8 @@ fdt_endpoint_activate_direct(struct fdt_endpoint *ep, bool activate)
 	int error = 0;
 
 	dp = ep->ep_port->port_dp;
-device_printf(dp->dp_dev, "activating port %d endpoint %d (direct)\n",
-    fdt_endpoint_port_index(ep), fdt_endpoint_index(ep));
+	aprint_debug_dev(dp->dp_dev, "activating port %d endpoint %d (direct)\n",
+	    fdt_endpoint_port_index(ep), fdt_endpoint_index(ep));
 	if (dp->dp_ep_activate)
 		error = dp->dp_ep_activate(dp->dp_dev, ep, activate);
 
@@ -257,7 +257,7 @@ fdt_ports_register(struct fdt_device_ports *ports, device_t self,
 	int port_phandle, child;
 	int i;
 	char buf[20];
-	uint64_t id;
+	bus_addr_t id;
 
 	ports->dp_dev = self;
 	SLIST_INSERT_HEAD(&fdt_port_devices, ports, dp_list);
@@ -296,12 +296,12 @@ again:
 		}
 		if (strcmp(buf, "port") != 0)
 			continue;
-		if (fdtbus_get_reg64(child, 0, &id, NULL) != 0) {
+		if (fdtbus_get_reg(child, 0, &id, NULL) != 0) {
 			if (ports->dp_nports > 1)
-				aprint_error_dev(self,
+				aprint_debug_dev(self,
 				    "%s: missing reg property",
 				    fdtbus_get_string(child, "name"));
-			id = i;
+			id = 0;
 		}
 		ports->dp_port[i].port_id = id;
 		ports->dp_port[i].port_phandle = child;
@@ -349,10 +349,10 @@ fdt_endpoints_register(int phandle, struct fdt_port *port,
 			continue;
 		if (fdtbus_get_reg64(child, 0, &id, NULL) != 0) {
 			if (port->port_nep > 1)
-				aprint_error_dev(port->port_dp->dp_dev,
+				aprint_debug_dev(port->port_dp->dp_dev,
 				    "%s: missing reg property",
 				    fdtbus_get_string(child, "name"));
-			id = i;
+			id = 0;
 		}
 		ep = &port->port_ep[i];
 		ep->ep_id = id;
@@ -372,8 +372,8 @@ fdt_endpoints_register(int phandle, struct fdt_port *port,
 		} else if (rep != NULL) {
 			rep->ep_rep = ep;
 			rep->ep_rphandle = child;
-			aprint_verbose("%s ", ep_name(ep, buf, sizeof(buf)));
-			aprint_verbose("connected to %s\n",
+			aprint_debug("%s ", ep_name(ep, buf, sizeof(buf)));
+			aprint_debug("connected to %s\n",
 			    ep_name(rep, buf, sizeof(buf)));
 			if (rep->ep_type == EP_OTHER)
 				rep->ep_type = ep->ep_type;

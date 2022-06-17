@@ -1,4 +1,4 @@
-/*	$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $ */
+/*	$NetBSD: ms.c,v 1.40 2022/05/23 16:58:37 tsutsui Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.40 2022/05/23 16:58:37 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -87,13 +87,23 @@ __KERNEL_RCSID(0, "$NetBSD: ms.c,v 1.34 2014/07/25 08:10:35 dholland Exp $");
 #define MS_BPS 4800
 
 /*
+ * Send mouse commands per MS_TICK.
+ */
+#ifndef HZ
+#define HZ		100
+#endif
+#define MS_TICK		2
+#define MS_TIMEOUT_SEC	5
+#define MS_TIMEOUT	((MS_TIMEOUT_SEC * HZ) / MS_TICK)
+
+/*
  * Mouse state.  A SHARP X1/X680x0 mouse is a fairly simple device,
  * producing three-byte blobs of the form:
  *
  *	b dx dy
  *
  * where b is the button state, encoded as 0x80|(buttons)---there are
- * two buttons (2=left, 1=right)---and dx,dy are X and Y delta values.
+ * two buttons (1=left, 2=right)---and dx,dy are X and Y delta values.
  *
  * It needs a trigger for the transmission.  When zs RTS negated, the
  * mouse begins the sequence.  RTS assertion has no effect.
@@ -134,12 +144,12 @@ struct ms_softc {
 	volatile int ms_ready;		/* event queue is ready */
 	struct	evvar ms_events;	/* event queue state */
 	kmutex_t ms_lock;
-} ms_softc;
+};
 
 static int ms_match(device_t, cfdata_t, void *);
 static void ms_attach(device_t, device_t, void *);
 static void ms_trigger(struct zs_chanstate *, int);
-void ms_modem(void *);
+static void ms_modem(void *);
 
 CFATTACH_DECL_NEW(ms, sizeof(struct ms_softc),
     ms_match, ms_attach, NULL, NULL);
@@ -150,19 +160,19 @@ static void ms_txint(struct zs_chanstate *);
 static void ms_softint(struct zs_chanstate *);
 static void ms_input(struct ms_softc *, int);
 
-struct zsops zsops_ms = {
+static struct zsops zsops_ms = {
 	ms_rxint,	/* receive char available */
 	ms_stint,	/* external/status */
 	ms_txint,	/* xmit buffer empty */
 	ms_softint,	/* process software interrupt */
 };
 
-dev_type_open(msopen);
-dev_type_close(msclose);
-dev_type_read(msread);
-dev_type_ioctl(msioctl);
-dev_type_poll(mspoll);
-dev_type_kqfilter(mskqfilter);
+static dev_type_open(msopen);
+static dev_type_close(msclose);
+static dev_type_read(msread);
+static dev_type_ioctl(msioctl);
+static dev_type_poll(mspoll);
+static dev_type_kqfilter(mskqfilter);
 
 const struct cdevsw ms_cdevsw ={
 	.d_open = msopen,
@@ -182,7 +192,7 @@ const struct cdevsw ms_cdevsw ={
 /*
  * ms_match: how is this zs channel configured?
  */
-int
+static int
 ms_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct zsc_attach_args *args = aux;
@@ -199,7 +209,7 @@ ms_match(device_t parent, cfdata_t cf, void *aux)
 	return 2;
 }
 
-void
+static void
 ms_attach(device_t parent, device_t self, void *aux)
 {
 	struct ms_softc *ms = device_private(self);
@@ -237,7 +247,7 @@ ms_attach(device_t parent, device_t self, void *aux)
  *  (open,close,read,write,...)
  ****************************************************************/
 
-int
+static int
 msopen(dev_t dev, int flags, int mode, struct lwp *l)
 {
 	struct ms_softc *ms;
@@ -258,12 +268,12 @@ msopen(dev_t dev, int flags, int mode, struct lwp *l)
 	ms->ms_nodata = 0;
 
 	/* start sequencer */
-	ms_modem(ms);
+	callout_reset(&ms->ms_modem_ch, MS_TICK, ms_modem, ms);
 
 	return 0;
 }
 
-int
+static int
 msclose(dev_t dev, int flags, int mode, struct lwp *l)
 {
 	struct ms_softc *ms;
@@ -277,7 +287,7 @@ msclose(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 msread(dev_t dev, struct uio *uio, int flags)
 {
 	struct ms_softc *ms;
@@ -286,7 +296,7 @@ msread(dev_t dev, struct uio *uio, int flags)
 	return ev_read(&ms->ms_events, uio, flags);
 }
 
-int
+static int
 msioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct ms_softc *ms;
@@ -326,7 +336,7 @@ msioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	return ENOTTY;
 }
 
-int
+static int
 mspoll(dev_t dev, int events, struct lwp *l)
 {
 	struct ms_softc *ms;
@@ -335,7 +345,7 @@ mspoll(dev_t dev, int events, struct lwp *l)
 	return ev_poll(&ms->ms_events, events, l);
 }
 
-int
+static int
 mskqfilter(dev_t dev, struct knote *kn)
 {
 	struct ms_softc *ms;
@@ -356,8 +366,8 @@ ms_input(struct ms_softc *ms, int c)
 {
 	struct firm_event *fe;
 	int mb, ub, d, get, put, any;
-	static const char to_one[] = { 1, 2, 3 };
-	static const int to_id[] = { MS_LEFT, MS_RIGHT, MS_MIDDLE };
+	static const char to_one[] = { 1, 2, 2 };
+	static const int to_id[] = { MS_LEFT, MS_RIGHT };
 
 	/*
 	 * Discard input if not ready.  Drop sync on parity or framing
@@ -402,7 +412,7 @@ ms_input(struct ms_softc *ms, int c)
 
 	/*
 	 * We have at least one event (mouse button, delta-X, or
-	 * delta-Y; possibly all three, and possibly three separate
+	 * delta-Y; possibly all three, and possibly two separate
 	 * button events).  Deliver these events until we are out
 	 * of changes or out of room.  As events get delivered,
 	 * mark them `unchanged'.
@@ -430,12 +440,12 @@ ms_input(struct ms_softc *ms, int c)
 	ub = ms->ms_ub;
 	while ((d = mb ^ ub) != 0) {
 		/*
-		 * Mouse button change.  Convert up to three changes
+		 * Mouse button change.  Convert up to two changes
 		 * to the `first' change, and drop it into the event queue.
 		 */
 		NEXT;
-		d = to_one[d - 1];		/* from 1..7 to {1,2,4} */
-		fe->id = to_id[d - 1];		/* from {1,2,4} to ID */
+		d = to_one[d - 1];		/* from 1..3 to {1,2} */
+		fe->id = to_id[d - 1];		/* from {1,2} to ID */
 		fe->value = mb & d ? VKEY_DOWN : VKEY_UP;
 		firm_gettime(fe);
 		ADVANCE;
@@ -454,7 +464,16 @@ ms_input(struct ms_softc *ms, int c)
 	if (ms->ms_dy) {
 		NEXT;
 		fe->id = LOC_Y_DELTA;
-		fe->value = -ms->ms_dy;	/* XXX? */
+		/*
+		 * struct firm_events (derived from SunOS) defines
+		 * moving up (forward) is positive. (see vuid_event.h)
+		 * On the other hand, X680x0 mouse protocol reports
+		 * moving down (backward) is positive.
+		 * 
+		 * Note wsmouse(9) also defines moving upward is positive,
+		 * but Xorg DIX layer requires moving down is positive.
+		 */
+		fe->value = -ms->ms_dy;
 		firm_gettime(fe);
 		ADVANCE;
 		ms->ms_dy = 0;
@@ -639,7 +658,7 @@ ms_trigger(struct zs_chanstate *cs, int onoff)
  * mouse timer interrupt.
  * called after system tick interrupt is done.
  */
-void
+static void
 ms_modem(void *arg)
 {
 	struct ms_softc *ms = arg;
@@ -649,9 +668,9 @@ ms_modem(void *arg)
 
 	mutex_enter(&ms->ms_lock);
 
-	if (ms->ms_nodata++ > 250) { /* XXX */
-		log(LOG_ERR, "%s: no data for 5 secs. resetting.\n",
-		    device_xname(ms->ms_dev));
+	if (ms->ms_nodata++ > MS_TIMEOUT) {
+		log(LOG_ERR, "%s: no data for %d secs. resetting.\n",
+		    device_xname(ms->ms_dev), MS_TIMEOUT_SEC);
 		ms->ms_byteno = -1;
 		ms->ms_nodata = 0;
 		ms->ms_rts = 0;
@@ -670,5 +689,5 @@ ms_modem(void *arg)
 	}
 
 	mutex_exit(&ms->ms_lock);
-	callout_reset(&ms->ms_modem_ch, 2, ms_modem, ms);
+	callout_schedule(&ms->ms_modem_ch, MS_TICK);
 }

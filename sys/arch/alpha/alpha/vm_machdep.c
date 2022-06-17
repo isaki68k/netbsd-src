@@ -1,4 +1,4 @@
-/* $NetBSD: vm_machdep.c,v 1.114 2018/03/19 10:31:56 martin Exp $ */
+/* $NetBSD: vm_machdep.c,v 1.122 2021/12/05 07:53:57 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,12 +29,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.114 2018/03/19 10:31:56 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.122 2021/12/05 07:53:57 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
-#include <sys/malloc.h>
 #include <sys/buf.h>
 #include <sys/vnode.h>
 #include <sys/core.h>
@@ -57,6 +56,20 @@ void
 cpu_lwp_free2(struct lwp *l)
 {
 	(void) l;
+}
+
+/*
+ * This is a backstop used to ensure that kernel threads never do
+ * something silly like attempt to return to userspace.  We achieve
+ * this by putting this at the root of their call graph instead of
+ * exception_return().
+ */
+void
+alpha_kthread_backstop(void)
+{
+	struct lwp * const l = curlwp;
+
+	panic("kthread lwp %p (%s) hit the backstop", l, l->l_name);
 }
 
 /*
@@ -99,19 +112,25 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 
 	/*
 	 * Copy pcb and user stack pointer from proc p1 to p2.
-	 * If specificed, give the child a different stack.
+	 * If specified, give the child a different stack.
 	 * Floating point state from the FP chip has already been saved.
 	 */
 	*pcb2 = *pcb1;
-	if (stack != NULL)
-		pcb2->pcb_hw.apcb_usp = (u_long)stack + stacksize;
-	else
+	if (stack != NULL) {
+		pcb2->pcb_hw.apcb_usp =
+		    ((u_long)stack + stacksize) & ~((u_long)STACK_ALIGNBYTES);
+	} else {
 		pcb2->pcb_hw.apcb_usp = alpha_pal_rdusp();
+	}
 
 	/*
-	 * Arrange for a non-local goto when the new process
-	 * is started, to resume here, returning nonzero from setjmp.
+	 * Put l2 on the kernel's page tables until its first trip
+	 * through pmap_activate().
 	 */
+	pcb2->pcb_hw.apcb_ptbr =
+	    ALPHA_K0SEG_TO_PHYS((vaddr_t)kernel_lev1map) >> PGSHIFT;
+	pcb2->pcb_hw.apcb_asn = PMAP_ASN_KERNEL;
+
 #ifdef DIAGNOSTIC
 	/*
 	 * If l1 != curlwp && l1 == &lwp0, we are creating a kernel
@@ -126,6 +145,7 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	 */
 	{
 		struct trapframe *l2tf;
+		uint64_t call_root;
 
 		/*
 		 * Pick a stack pointer, leaving room for a trapframe;
@@ -144,12 +164,24 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 		l2tf->tf_regs[FRAME_A3] = 0;		/* no error */
 		l2tf->tf_regs[FRAME_A4] = 1;		/* is child */
 
+		/*
+		 * Normal LWPs have their return address set to
+		 * exception_return() so that they'll pop into
+		 * user space.  But kernel threads don't have
+		 * a user space, so we put a backtop in place
+		 * just in case they try.
+		 */
+		if (__predict_true(l2->l_proc != &proc0))
+			call_root = (uint64_t)exception_return;
+		else
+			call_root = (uint64_t)alpha_kthread_backstop;
+
 		pcb2->pcb_hw.apcb_ksp =
 		    (uint64_t)l2->l_md.md_tf;
 		pcb2->pcb_context[0] =
 		    (uint64_t)func;			/* s0: pc */
 		pcb2->pcb_context[1] =
-		    (uint64_t)exception_return;		/* s1: ra */
+		    call_root;				/* s1: ra */
 		pcb2->pcb_context[2] =
 		    (uint64_t)arg;			/* s2: arg */
 		pcb2->pcb_context[3] =
@@ -216,6 +248,14 @@ vunmapbuf(struct buf *bp, vsize_t len)
 }
 
 #ifdef __HAVE_CPU_UAREA_ROUTINES
+static struct evcnt uarea_direct_success =
+    EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "uarea direct", "success");
+static struct evcnt uarea_direct_failure =
+    EVCNT_INITIALIZER(EVCNT_TYPE_MISC, NULL, "uarea direct", "failure");
+
+EVCNT_ATTACH_STATIC(uarea_direct_success);
+EVCNT_ATTACH_STATIC(uarea_direct_failure);
+
 void *
 cpu_uarea_alloc(bool system)
 {
@@ -227,8 +267,11 @@ cpu_uarea_alloc(bool system)
 	 * direct-mapped.
 	 */
 	error = uvm_pglistalloc(USPACE, 0, ptoa(physmem), 0, 0, &pglist, 1, 1);
-	if (error)
+	if (error) {
+		atomic_inc_ulong(&uarea_direct_failure.ev_count);
 		return NULL;
+	}
+	atomic_inc_ulong(&uarea_direct_success.ev_count);
 
 	/*
 	 * Get the physical address from the first page.

@@ -1,4 +1,4 @@
-/*	$NetBSD: multiboot2.c,v 1.2 2019/10/18 14:59:22 hannken Exp $	*/
+/*	$NetBSD: multiboot2.c,v 1.8 2021/10/07 12:52:27 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2005, 2006 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: multiboot2.c,v 1.2 2019/10/18 14:59:22 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: multiboot2.c,v 1.8 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include "opt_multiboot.h"
 
@@ -48,7 +48,19 @@ __KERNEL_RCSID(0, "$NetBSD: multiboot2.c,v 1.2 2019/10/18 14:59:22 hannken Exp $
 #include <x86/efi.h>
 
 #include <machine/bootinfo.h>
-#include <machine/multiboot2.h>
+#include <arch/i386/include/multiboot2.h>
+
+#ifdef _LOCORE64
+typedef uint64_t   locore_vaddr_t;
+typedef Elf64_Shdr locore_Elf_Shdr;
+typedef Elf64_Word locore_Elf_Word;
+typedef Elf64_Addr locore_Elf_Addr;
+#else
+typedef vaddr_t   locore_vaddr_t;
+typedef Elf_Shdr locore_Elf_Shdr;
+typedef Elf_Word locore_Elf_Word;
+typedef Elf_Addr locore_Elf_Addr;
+#endif
 
 #if !defined(MULTIBOOT)
 #  error "MULTIBOOT not defined; this cannot happen."
@@ -60,17 +72,20 @@ __KERNEL_RCSID(0, "$NetBSD: multiboot2.c,v 1.2 2019/10/18 14:59:22 hannken Exp $
  * it causes EFI to try to handle interrupts while the kernel
  * already took that over, hence we get a reboot.
  */
-#define BS_PRINT(efisystbl, wstring) 					\
+#define BS_PRINT(efisystbl, wstring)					\
 	efi_systbl->st_coutif->ei_outputstring(efi_systbl->st_coutif,	\
 	    (efi_char *)__UNCONST(wstring))
 
 struct multiboot_symbols {
-	void *	s_symstart;
-	size_t	s_symsize;
-	void *	s_strstart;
-	size_t	s_strsize;
-};	
+	uint32_t s_symstart;
+	uint32_t s_symsize;
+	uint32_t s_strstart;
+	uint32_t s_strsize;
+};
 
+void multiboot2_copy_syms(struct multiboot_tag_elf_sections *,
+			  struct multiboot_symbols *,
+			  bool *, int **, void *, vaddr_t);
 /*
  * Because of clashes between multiboot.h and multiboot2.h we
  * cannot include both, and we need to redefine here:
@@ -78,26 +93,28 @@ struct multiboot_symbols {
 void            multiboot2_pre_reloc(char *);
 void            multiboot2_post_reloc(void);
 void            multiboot2_print_info(void);
-bool            multiboot2_ksyms_addsyms_elf(void); 
+bool            multiboot2_ksyms_addsyms_elf(void);
 
 extern int              biosbasemem;
 extern int              biosextmem;
+#ifdef __i386__
 extern int              biosmem_implicit;
+#endif
 extern int              boothowto;
 extern struct bootinfo  bootinfo;
 extern int              end;
 extern int *            esym;
+extern char             start;
 
-/* 
+/*
  * There is no way to perform dynamic allocation
- * at this time, hence we need to waste memory, 
+ * at this time, hence we need to waste memory,
  * with the hope data will fit.
  */
-static char multiboot_info[16384] = "\0\0\0\0";
-static bool multiboot2_enabled = false;
-static bool has_syms = false;
-static struct multiboot_symbols Multiboot_Symbols;
-
+char multiboot_info[16384] = "\0\0\0\0";
+bool multiboot2_enabled = false;
+bool has_syms = false;
+struct multiboot_symbols Multiboot_Symbols;
 
 #define RELOC(type, x) ((type)((vaddr_t)(x) - KERNBASE))
 
@@ -151,17 +168,21 @@ exit_bs:
 	return;
 }
 
-static void
-copy_syms(struct multiboot_tag_elf_sections *mbt_elf)
+void
+multiboot2_copy_syms(struct multiboot_tag_elf_sections *mbt_elf,
+		     struct multiboot_symbols *ms,
+		     bool *has_symsp, int **esymp, void *endp,
+		     vaddr_t kernbase)
 {
 	int i;
-	struct multiboot_symbols *ms;
-	Elf32_Shdr *symtabp, *strtabp;
-	Elf32_Word symsize, strsize;
-	Elf32_Addr symaddr, straddr;
-	Elf32_Addr symstart, strstart;
-
-	ms = RELOC(struct multiboot_symbols *, &Multiboot_Symbols);
+	locore_Elf_Shdr *symtabp, *strtabp;
+	locore_Elf_Word symsize, strsize;
+	locore_Elf_Addr symaddr, straddr;
+	locore_Elf_Addr symstart, strstart;
+	locore_Elf_Addr cp1src, cp1dst;
+	locore_Elf_Word cp1size;
+	locore_Elf_Addr cp2src, cp2dst;
+	locore_Elf_Word cp2size;
 
 	/*
 	 * Locate a symbol table and its matching string table in the
@@ -171,20 +192,20 @@ copy_syms(struct multiboot_tag_elf_sections *mbt_elf)
 	symtabp = strtabp = NULL;
 	for (i = 0; i < mbt_elf->num && symtabp == NULL &&
 	    strtabp == NULL; i++) {
-		Elf32_Shdr *shdrp;
+		locore_Elf_Shdr *shdrp;
 
-		shdrp = &((Elf32_Shdr *)mbt_elf->sections)[i];
+		shdrp = &((locore_Elf_Shdr *)mbt_elf->sections)[i];
 
 		if ((shdrp->sh_type == SHT_SYMTAB) &&
 		    shdrp->sh_link != SHN_UNDEF) {
-			Elf32_Shdr *shdrp2;
+			locore_Elf_Shdr *shdrp2;
 
-			shdrp2 = &((Elf32_Shdr *)mbt_elf->sections)
+			shdrp2 = &((locore_Elf_Shdr *)mbt_elf->sections)
 			    [shdrp->sh_link];
 
 			if (shdrp2->sh_type == SHT_STRTAB) {
-				symtabp = shdrp;
-				strtabp = shdrp2;
+				symtabp = (locore_Elf_Shdr *)shdrp;
+				strtabp = (locore_Elf_Shdr *)shdrp2;
 			}
 		}
 	}
@@ -208,47 +229,48 @@ copy_syms(struct multiboot_tag_elf_sections *mbt_elf)
 	 * that if the tables start before the kernel's end address,
 	 * they will not grow over this address.
 	 */
-        if ((void *)symtabp < RELOC(void *, &end) &&
-	    (void *)strtabp < RELOC(void *, &end)) {
-		symstart = RELOC(Elf32_Addr, &end);
-		strstart = symstart + symsize;
-		memcpy((void *)symstart, (void *)symaddr, symsize);
-		memcpy((void *)strstart, (void *)straddr, strsize);
-        } else if ((void *)symtabp > RELOC(void *, &end) &&
-	           (void *)strtabp < RELOC(void *, &end)) {
-		symstart = RELOC(Elf32_Addr, &end);
-		strstart = symstart + symsize;
-		memcpy((void *)symstart, (void *)symaddr, symsize);
-		memcpy((void *)strstart, (void *)straddr, strsize);
-        } else if ((void *)symtabp < RELOC(void *, &end) &&
-	           (void *)strtabp > RELOC(void *, &end)) {
-		strstart = RELOC(Elf32_Addr, &end);
-		symstart = strstart + strsize;
-		memcpy((void *)strstart, (void *)straddr, strsize);
-		memcpy((void *)symstart, (void *)symaddr, symsize);
+	if ((void *)(uintptr_t)symaddr < endp &&
+	    (void *)(uintptr_t)straddr < endp) {
+		cp1src = symaddr; cp1size = symsize;
+		cp2src = straddr; cp2size = strsize;
+	} else if ((void *)(uintptr_t)symaddr > endp &&
+		   (void *)(uintptr_t)straddr < endp) {
+		cp1src = symaddr; cp1size = symsize;
+		cp2src = straddr; cp2size = strsize;
+	} else if ((void *)(uintptr_t)symaddr < endp &&
+		   (void *)(uintptr_t)straddr > endp) {
+		cp1src = straddr; cp1size = strsize;
+		cp2src = symaddr; cp2size = symsize;
 	} else {
-		/* symtabp and strtabp are both over end */
-		if (symtabp < strtabp) {
-			symstart = RELOC(Elf32_Addr, &end);
-			strstart = symstart + symsize;
-			memcpy((void *)symstart, (void *)symaddr, symsize);
-			memcpy((void *)strstart, (void *)straddr, strsize);
+		/* symaddr and straddr are both over end */
+		if (symaddr < straddr) {
+			cp1src = symaddr; cp1size = symsize;
+			cp2src = straddr; cp2size = strsize;
 		} else {
-			strstart = RELOC(Elf32_Addr, &end);
-			symstart = strstart + strsize;
-			memcpy((void *)strstart, (void *)straddr, strsize);
-			memcpy((void *)symstart, (void *)symaddr, symsize);
+			cp1src = straddr; cp1size = strsize;
+			cp2src = symaddr; cp2size = symsize;
 		}
 	}
 
-	*RELOC(bool *, &has_syms) = true;
-	*RELOC(int *, &esym) =
-	    (int)(symstart + symsize + strsize + KERNBASE);
+	cp1dst = (locore_Elf_Addr)(uintptr_t)endp;
+	cp2dst = (locore_Elf_Addr)(uintptr_t)endp + cp1size;
 
-	ms->s_symstart = (void *)(symstart + KERNBASE);
+	(void)memcpy((void *)(uintptr_t)cp1dst,
+		     (void *)(uintptr_t)cp1src, cp1size);
+	(void)memcpy((void *)(uintptr_t)cp2dst,
+		     (void *)(uintptr_t)cp2src, cp2size);
+
+	symstart = (cp1src == symaddr) ? cp1dst : cp2dst;
+	strstart = (cp1src == straddr) ? cp1dst : cp2dst;
+
+	ms->s_symstart = symstart + kernbase;
 	ms->s_symsize  = symsize;
-	ms->s_strstart = (void *)(strstart + KERNBASE);
+	ms->s_strstart = strstart + kernbase;
 	ms->s_strsize  = strsize;
+
+	*has_symsp = true;
+	*esymp = (int *)((uintptr_t)endp + symsize + strsize + kernbase);
+
 }
 
 void
@@ -310,23 +332,25 @@ multiboot2_pre_reloc(char *mbi)
 
 	/* Broken */
 	if (has_bs)
-		efi_exit_bs(efi_systbl, efi_ih);	
+		efi_exit_bs(efi_systbl, efi_ih);
 
 	if (mbt_elf)
-		copy_syms(mbt_elf);
+		multiboot2_copy_syms(mbt_elf,
+		    RELOC(struct multiboot_symbols *, &Multiboot_Symbols),
+		    RELOC(bool *, &has_syms),
+		    RELOC(int **, &esym),
+		    RELOC(void *, &end),
+		    KERNBASE);
 
 	return;
 }
 
-static void
-bootinfo_add(struct btinfo_common *item, int type, int len)    
+static struct btinfo_common *
+bootinfo_init(int type, int len)
 {
-	int i;  
+	int i;
 	struct bootinfo *bip = (struct bootinfo *)&bootinfo;
 	vaddr_t data;
-
-	item->type = type;
-	item->len = len;
 
 	data = (vaddr_t)&bip->bi_data;
 	for (i = 0; i < bip->bi_nentries; i++) {
@@ -336,9 +360,26 @@ bootinfo_add(struct btinfo_common *item, int type, int len)
 		data += tmp->len;
 	}
 	if (data + len < (vaddr_t)&bip->bi_data + sizeof(bip->bi_data)) {
-		memcpy((void *)data, item, len);
+		/* Initialize the common part */
+		struct btinfo_common *item = (struct btinfo_common *)data;
+		item->type = type;
+		item->len = len;
 		bip->bi_nentries++;
+		return item;
+	} else {
+		return NULL;
 	}
+}
+
+static void
+bootinfo_add(struct btinfo_common *item, int type, int len)
+{
+	struct btinfo_common *bip = bootinfo_init(type, len);
+	if (bip == NULL)
+		return;
+
+	/* Copy the data after the common part over */
+	memcpy(&bip[1], &item[1], len - sizeof(*item));
 }
 
 static void
@@ -350,38 +391,38 @@ mbi_cmdline(struct multiboot_tag_string *mbt)
 	char *cl;
 
 	if (optstr_get(cmdline, "console", bic.devname, sizeof(bic.devname))) {
-                if (strncmp(bic.devname, "com", sizeof(bic.devname)) == 0) {
-                        char opt[10];
-                
-                        if (optstr_get(cmdline, "console_speed",
-                        	       opt, sizeof(opt))) 
-                                bic.speed = strtoul(opt, NULL, 10);
-                        else
-                                bic.speed = 0; /* Use default speed. */
+		if (strncmp(bic.devname, "com", sizeof(bic.devname)) == 0) {
+			char opt[10];
 
-                        if (optstr_get(cmdline, "console_addr",
-                        	       opt, sizeof(opt))) {
-                                if (opt[0] == '0' && opt[1] == 'x')
-                                        bic.addr = strtoul(opt + 2, NULL, 16);
-                                else
-                                        bic.addr = strtoul(opt, NULL, 10);
-                        } else {
-                                bic.addr = 0; /* Use default address. */
+			if (optstr_get(cmdline, "console_speed",
+				       opt, sizeof(opt)))
+				bic.speed = strtoul(opt, NULL, 10);
+			else
+				bic.speed = 0; /* Use default speed. */
+
+			if (optstr_get(cmdline, "console_addr",
+				       opt, sizeof(opt))) {
+				if (opt[0] == '0' && opt[1] == 'x')
+					bic.addr = strtoul(opt + 2, NULL, 16);
+				else
+					bic.addr = strtoul(opt, NULL, 10);
+			} else {
+				bic.addr = 0; /* Use default address. */
 			}
 
-                        bootinfo_add((struct btinfo_common *)&bic,
-                        	     BTINFO_CONSOLE, sizeof(bic));
+			bootinfo_add((struct btinfo_common *)&bic,
+				     BTINFO_CONSOLE, sizeof(bic));
 
-                }
+		}
 
 		if (strncmp(bic.devname, "pc", sizeof(bic.devname)) == 0)
-                        bootinfo_add((struct btinfo_common *)&bic,
-                        	     BTINFO_CONSOLE, sizeof(bic));
-        }
+			bootinfo_add((struct btinfo_common *)&bic,
+				     BTINFO_CONSOLE, sizeof(bic));
+	}
 
 	if (optstr_get(cmdline, "root", bir.devname, sizeof(bir.devname)))
-                bootinfo_add((struct btinfo_common *)&bir, BTINFO_ROOTDEVICE,
-                    sizeof(bir));
+		bootinfo_add((struct btinfo_common *)&bir, BTINFO_ROOTDEVICE,
+		    sizeof(bir));
 
 	/*
 	 * Parse boot flags (-s and friends)
@@ -420,13 +461,12 @@ mbi_modules(char *mbi, uint32_t mbi_size, int module_count)
 	size_t bim_len;
 	struct bi_modulelist_entry *bie;
 	struct btinfo_modulelist *bim;
-	char bimbuf[16384];
 
 	bim_len = sizeof(*bim) + (module_count * sizeof(*bie));
-	if (bim_len > sizeof(bimbuf))
+	bim = (struct btinfo_modulelist *)bootinfo_init(BTINFO_MODULELIST,
+	    bim_len);
+	if (bim == NULL)
 		return;
-
-	bim = (struct btinfo_modulelist *)bimbuf;
 
 	bim->num = module_count;
 	bim->endpa = end;
@@ -447,25 +487,24 @@ mbi_modules(char *mbi, uint32_t mbi_size, int module_count)
 
 		bie++;
 	}
-
-	bootinfo_add((struct btinfo_common *)&bim,
-           BTINFO_MODULELIST, bim_len);
-
-	return;
 }
 
 static void
 mbi_basic_meminfo(struct multiboot_tag_basic_meminfo *mbt)
 {
-        /* Make sure we don't override user-set variables. */
-        if (biosbasemem == 0) {
-                biosbasemem = mbt->mem_lower;
-                biosmem_implicit = 1;
-        }
-        if (biosextmem == 0) {
-                biosextmem = mbt->mem_upper;
-                biosmem_implicit = 1;
-        }
+	/* Make sure we don't override user-set variables. */
+	if (biosbasemem == 0) {
+		biosbasemem = mbt->mem_lower;
+#ifdef __i386__
+		biosmem_implicit = 1;
+#endif
+	}
+	if (biosextmem == 0) {
+		biosextmem = mbt->mem_upper;
+#ifdef __i386__
+		biosmem_implicit = 1;
+#endif
+	}
 
 	return;
 }
@@ -478,22 +517,33 @@ mbi_bootdev(struct multiboot_tag_bootdev *mbt)
 	bid.labelsector = -1;
 	bid.biosdev = mbt->biosdev;
 	bid.partition = mbt->slice;
-	
+
 	bootinfo_add((struct btinfo_common *)&bid,
-           BTINFO_BOOTDISK, sizeof(bid));
+	   BTINFO_BOOTDISK, sizeof(bid));
 }
 
 static void
 mbi_mmap(struct multiboot_tag_mmap *mbt)
 {
-	char bimbuf[16384];
 	struct btinfo_memmap *bim;
+	int num;
 	char *cp;
 
 	if (mbt->entry_version != 0)
 		return;
 
-	bim = (struct btinfo_memmap *)bimbuf;
+	/* Determine size */
+	num = 0;
+	for (cp = (char *)(mbt + 1);
+	     cp - (char *)mbt < mbt->size;
+	     cp += mbt->entry_size) {
+		num++;
+	}
+
+	bim = (struct btinfo_memmap *)bootinfo_init(BTINFO_MEMMAP,
+	    sizeof(num) + num * sizeof(struct bi_memmap_entry));
+	if (bim == NULL)
+		return;
 	bim->num = 0;
 
 	for (cp = (char *)(mbt + 1);
@@ -527,15 +577,9 @@ mbi_mmap(struct multiboot_tag_mmap *mbt)
 		}
 
 		bim->num++;
-
-		if ((char*)&bim->entry[bim->num] - (char *)bim > sizeof(bimbuf))
-			break;
 	}
 
-	bootinfo_add((struct btinfo_common *)bim, BTINFO_MEMMAP,
-	    sizeof(bimbuf));
-
-	return;
+	KASSERT(bim->num == num);
 }
 
 static void
@@ -550,9 +594,9 @@ mbi_framebuffer(struct multiboot_tag_framebuffer *mbt,
      struct btinfo_framebuffer *bif)
 {
 	bif->physaddr = mbt->common.framebuffer_addr;
-	bif->width = mbt->common.framebuffer_width;	
-	bif->height = mbt->common.framebuffer_height;	
-	bif->depth = mbt->common.framebuffer_bpp;	
+	bif->width = mbt->common.framebuffer_width;
+	bif->height = mbt->common.framebuffer_height;
+	bif->depth = mbt->common.framebuffer_bpp;
 	bif->stride = mbt->common.framebuffer_pitch;
 
 	return;
@@ -565,9 +609,8 @@ mbi_efi32(struct multiboot_tag_efi32 *mbt)
 
 	bie.systblpa = mbt->pointer;
 	bie.flags = BI_EFI_32BIT;
-	
-	bootinfo_add((struct btinfo_common *)&bie,
-           BTINFO_EFI, sizeof(bie));
+
+	bootinfo_add((struct btinfo_common *)&bie, BTINFO_EFI, sizeof(bie));
 }
 
 static void
@@ -576,35 +619,29 @@ mbi_efi64(struct multiboot_tag_efi64 *mbt)
 	struct btinfo_efi bie;
 
 	bie.systblpa = mbt->pointer;
-	
-	bootinfo_add((struct btinfo_common *)&bie,
-           BTINFO_EFI, sizeof(bie));
+
+	bootinfo_add((struct btinfo_common *)&bie, BTINFO_EFI, sizeof(bie));
 }
 
 static void
 mbi_efi_mmap(struct multiboot_tag_efi_mmap *mbt)
 {
-	char biebuf[16384];
-	struct btinfo_efimemmap *bie = (struct btinfo_efimemmap *)biebuf;
+	struct btinfo_efimemmap *bie;
 	size_t bie_len;
 
 	if (mbt->descr_vers != 0)
-		goto out;
+		return;
 
 	bie_len = sizeof(*bie) + mbt->size - sizeof(*mbt);
-	if (bie_len > sizeof(biebuf))
-		goto out;
+	bie = (struct btinfo_efimemmap *)bootinfo_init(BTINFO_EFIMEMMAP,
+	    bie_len);
+	if (bie == NULL)
+		return;
 
 	bie->num = (mbt->size - sizeof(*mbt)) / mbt->descr_size;
 	bie->version = mbt->descr_vers;
 	bie->size = mbt->descr_size;
 	memcpy(bie->memmap, mbt + 1, mbt->size - sizeof(*mbt));
-
-	bootinfo_add((struct btinfo_common *)bie,
-           BTINFO_EFIMEMMAP, bie_len);
-
-out:
-	return;
 }
 
 void
@@ -633,7 +670,7 @@ multiboot2_post_reloc(void)
 	     cp - mbi < mbi_size;
 	     cp += roundup(mbt->size, MULTIBOOT_INFO_ALIGN)) {
 		mbt = (struct multiboot_tag *)cp;
-		switch(mbt->type) {
+		switch (mbt->type) {
 		case MULTIBOOT_TAG_TYPE_CMDLINE:
 			mbi_cmdline((void *)mbt);
 			break;
@@ -687,7 +724,7 @@ multiboot2_post_reloc(void)
 
 	if (has_fbinfo)
 		bootinfo_add((struct btinfo_common *)&fbinfo,
-       		    BTINFO_FRAMEBUFFER, sizeof(fbinfo));
+		    BTINFO_FRAMEBUFFER, sizeof(fbinfo));
 
 	if (module_count > 0)
 		mbi_modules(mbi, mbi_size, module_count);
@@ -707,7 +744,7 @@ mbi_hexdump(char *addr, size_t len)
 		printf("  %p ", addr + i);
 		for (j = 0; j < 16 && i + j < len; j++) {
 			char *cp = addr + i + j;
-			printf("%s%s%x", 
+			printf("%s%s%x",
 			       (i+j) % 4 ? "" : " ",
 			       (unsigned char)*cp < 0x10 ? "0" : "",
 			       (unsigned char)*cp);
@@ -855,10 +892,10 @@ multiboot2_print_info(void)
 
 			if (entry_version != 0)
 				break;
-			
+
 			for (mmap = ((struct multiboot_tag_mmap *)mbt)->entries;
-		 	    (char *)mmap - (char *)mbt < mbt->size;
-		 	    mmap = (void *)((char *)mmap + entry_size))
+			    (char *)mmap - (char *)mbt < mbt->size;
+			    mmap = (void *)((char *)mmap + entry_size))
 				printf("  0x%016"PRIx64" @ 0x%016"PRIx64" "
 				    "type 0x%x\n",
 				    (uint64_t)mmap->len, (uint64_t)mmap->addr,
@@ -913,7 +950,7 @@ multiboot2_print_info(void)
 		case MULTIBOOT_TAG_TYPE_SMBIOS:
 			printf("major = %d, minor = %d\n",
 			    ((struct multiboot_tag_smbios *)mbt)->major,
-		 	    ((struct multiboot_tag_smbios *)mbt)->minor);
+			    ((struct multiboot_tag_smbios *)mbt)->minor);
 #ifdef DEBUG
 			mbi_hexdump((char *)mbt, mbt->size);
 #endif
@@ -946,7 +983,7 @@ multiboot2_print_info(void)
 			printf("\n");
 			break;
 		case MULTIBOOT_TAG_TYPE_EFI32_IH:
-			printf("0x%"PRIx32"\n", 
+			printf("0x%"PRIx32"\n",
 			    ((struct multiboot_tag_efi32_ih *)mbt)->pointer);
 			break;
 		case MULTIBOOT_TAG_TYPE_EFI64_IH:
@@ -985,28 +1022,45 @@ bool
 multiboot2_ksyms_addsyms_elf(void)
 {
 	struct multiboot_symbols *ms = &Multiboot_Symbols;
+	vaddr_t symstart = (vaddr_t)ms->s_symstart;
+	vaddr_t strstart = (vaddr_t)ms->s_strstart;
+	Elf_Ehdr ehdr;
 
-	if (!multiboot2_enabled)
+	if (!multiboot2_enabled || !has_syms)
 		return false;
 
-	if (has_syms) {
-		Elf32_Ehdr ehdr;
+	KASSERT(esym != 0);
 
-		KASSERT(esym != 0);
+#ifdef __LP64__
+	/* Adjust pointer as 64 bits */
+	symstart &= 0xffffffff;
+	symstart |= ((vaddr_t)KERNBASE_HI << 32);
+	strstart &= 0xffffffff;
+	strstart |= ((vaddr_t)KERNBASE_HI << 32);
+#endif
 
-		memcpy(ehdr.e_ident, ELFMAG, SELFMAG);
-		ehdr.e_ident[EI_CLASS] = ELFCLASS32;
-		ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
-		ehdr.e_ident[EI_VERSION] = EV_CURRENT;
-		ehdr.e_type = ET_EXEC;
-		ehdr.e_machine = EM_386;
-		ehdr.e_version = 1;
-		ehdr.e_ehsize = sizeof(ehdr);
+	memset(&ehdr, 0, sizeof(ehdr));
+	memcpy(ehdr.e_ident, ELFMAG, SELFMAG);
+	ehdr.e_ident[EI_CLASS] = ELFCLASS;
+	ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
+	ehdr.e_ident[EI_VERSION] = EV_CURRENT;
+	ehdr.e_ident[EI_OSABI] = ELFOSABI_SYSV;
+	ehdr.e_ident[EI_ABIVERSION] = 0;
+	ehdr.e_type = ET_EXEC;
+#ifdef __amd64__
+	ehdr.e_machine = EM_X86_64;
+#elif __i386__
+	ehdr.e_machine = EM_386;
+#else
+	#error "Unknown ELF machine type"
+#endif
+	ehdr.e_version = 1;
+	ehdr.e_entry = (Elf_Addr)&start;
+	ehdr.e_ehsize = sizeof(ehdr);
 
-		ksyms_addsyms_explicit((void *)&ehdr,
-		    ms->s_symstart, ms->s_symsize,
-		    ms->s_strstart, ms->s_strsize);
-	}
+	ksyms_addsyms_explicit((void *)&ehdr,
+	    (void *)symstart, ms->s_symsize,
+	    (void *)strstart, ms->s_strsize);
 
-	return has_syms;
+	return true;
 }

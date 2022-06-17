@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_kernel.c,v 1.10 2012/07/28 23:11:01 matt Exp $	*/
+/*	$NetBSD: pmap_kernel.c,v 1.13 2022/02/16 23:31:13 riastradh Exp $	*/
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -30,11 +30,13 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: pmap_kernel.c,v 1.10 2012/07/28 23:11:01 matt Exp $");
+__KERNEL_RCSID(1, "$NetBSD: pmap_kernel.c,v 1.13 2022/02/16 23:31:13 riastradh Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
 #include "opt_ddb.h"
 #include "opt_pmap.h"
+#endif
 
 #include <sys/param.h>
 #include <uvm/uvm_extern.h>
@@ -107,6 +109,8 @@ void	pmap_pvo_verify(void)					__stub;
 #endif
 vaddr_t	pmap_steal_memory(vsize_t, vaddr_t *, vaddr_t *)	__stub;
 void	pmap_bootstrap(paddr_t, paddr_t)			__stub;
+void	pmap_bootstrap1(paddr_t, paddr_t)			__stub;
+void	pmap_bootstrap2(void)					__stub;
 
 int
 pmap_pte_spill(struct pmap *pm, vaddr_t va, bool exec)
@@ -211,6 +215,12 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 	(*pmapops->pmapop_page_protect)(pg, prot);
 }
 
+void
+pmap_pv_protect(paddr_t pa, vm_prot_t prot)
+{
+	(*pmapops->pmapop_pv_protect)(pa, prot);
+}
+
 bool
 pmap_query_bit(struct vm_page *pg, int ptebit)
 {
@@ -297,5 +307,17 @@ void
 pmap_bootstrap(paddr_t startkernel, paddr_t endkernel)
 {
 	(*pmapops->pmapop_bootstrap)(startkernel, endkernel);
+}
+
+void
+pmap_bootstrap1(paddr_t startkernel, paddr_t endkernel)
+{
+	(*pmapops->pmapop_bootstrap1)(startkernel, endkernel);
+}
+
+void
+pmap_bootstrap2(void)
+{
+	(*pmapops->pmapop_bootstrap2)();
 }
 #endif

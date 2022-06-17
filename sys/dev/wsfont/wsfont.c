@@ -1,4 +1,4 @@
-/* 	$NetBSD: wsfont.c,v 1.66 2019/04/07 13:48:27 jmcneill Exp $	*/
+/* 	$NetBSD: wsfont.c,v 1.78 2022/06/08 19:47:10 uwe Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.66 2019/04/07 13:48:27 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.78 2022/06/08 19:47:10 uwe Exp $");
 
 #include "opt_wsfont.h"
 
@@ -130,14 +130,19 @@ __KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.66 2019/04/07 13:48:27 jmcneill Exp $")
 #include <dev/wsfont/DejaVu_Sans_Mono_12x22.h>
 #endif
 
-#ifdef FONT_DROID_SANS_MONO12x22
-#define HAVE_FONT 1
-#include <dev/wsfont/Droid_Sans_Mono_12x22.h>
-#endif
-
 #ifdef FONT_DROID_SANS_MONO9x18
 #define HAVE_FONT 1
 #include <dev/wsfont/Droid_Sans_Mono_9x18.h>
+#endif
+
+#ifdef FONT_DROID_SANS_MONO10x20
+#define HAVE_FONT 1
+#include <dev/wsfont/Droid_Sans_Mono_10x20.h>
+#endif
+
+#ifdef FONT_DROID_SANS_MONO12x22
+#define HAVE_FONT 1
+#include <dev/wsfont/Droid_Sans_Mono_12x22.h>
 #endif
 
 #ifdef FONT_DROID_SANS_MONO19x36
@@ -148,6 +153,21 @@ __KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.66 2019/04/07 13:48:27 jmcneill Exp $")
 #ifdef FONT_GO_MONO12x23
 #define HAVE_FONT 1
 #include <dev/wsfont/Go_Mono_12x23.h>
+#endif
+
+#ifdef FONT_SPLEEN5x8
+#define HAVE_FONT 1
+#include <dev/wsfont/spleen5x8.h>
+#endif
+
+#ifdef FONT_SPLEEN6x12
+#define HAVE_FONT 1
+#include <dev/wsfont/spleen6x12.h>
+#endif
+
+#ifdef FONT_SPLEEN8x16
+#define HAVE_FONT 1
+#include <dev/wsfont/spleen8x16.h>
 #endif
 
 #ifdef FONT_SPLEEN12x24
@@ -165,14 +185,9 @@ __KERNEL_RCSID(0, "$NetBSD: wsfont.c,v 1.66 2019/04/07 13:48:27 jmcneill Exp $")
 #include <dev/wsfont/spleen32x64.h>
 #endif
 
-#ifdef FONT_SPLEEN5x8
+#ifdef FONT_LIBERATION_MONO12x21
 #define HAVE_FONT 1
-#include <dev/wsfont/spleen5x8.h>
-#endif
-
-#ifdef FONT_SPLEEN8x16
-#define HAVE_FONT 1
-#include <dev/wsfont/spleen8x16.h>
+#include <dev/wsfont/Liberation_Mono_12x21.h>
 #endif
 
 #ifdef FONT_BOLD16x32
@@ -217,12 +232,6 @@ static struct font builtin_fonts[] = {
 #endif
 #ifdef FONT_BOLD16x32
 	{ { NULL, NULL }, &bold16x32, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN  },
-#endif
-#ifdef FONT_ISO8x16
-	{ { NULL, NULL }, &iso8x16, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
-#endif
-#ifdef FONT_COURIER11x18
-	{ { NULL, NULL }, &courier11x18, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 #ifdef FONT_GALLANT12x22
 	{ { NULL, NULL }, &gallant12x22, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
@@ -272,17 +281,29 @@ static struct font builtin_fonts[] = {
 #ifdef FONT_DEJAVU_SANS_MONO12x22
 	{ { NULL, NULL }, &DejaVu_Sans_Mono_12x22, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
-#ifdef FONT_DROID_SANS_MONO12x22
-	{ { NULL, NULL }, &Droid_Sans_Mono_12x22, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
-#endif
 #ifdef FONT_DROID_SANS_MONO9x18
 	{ { NULL, NULL }, &Droid_Sans_Mono_9x18, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#endif
+#ifdef FONT_DROID_SANS_MONO10x20
+	{ { NULL, NULL }, &Droid_Sans_Mono_10x20, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#endif
+#ifdef FONT_DROID_SANS_MONO12x22
+	{ { NULL, NULL }, &Droid_Sans_Mono_12x22, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 #ifdef FONT_DROID_SANS_MONO19x36
 	{ { NULL, NULL }, &Droid_Sans_Mono_19x36, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 #ifdef FONT_GO_MONO12x23
 	{ { NULL, NULL }, &Go_Mono_12x23, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#endif
+#ifdef FONT_SPLEEN5x8
+	{ { NULL, NULL }, &spleen5x8, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#endif
+#ifdef FONT_SPLEEN6x12
+	{ { NULL, NULL }, &spleen6x12, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#endif
+#ifdef FONT_SPLEEN8x16
+	{ { NULL, NULL }, &spleen8x16, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 #ifdef FONT_SPLEEN12x24
 	{ { NULL, NULL }, &spleen12x24, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
@@ -293,11 +314,8 @@ static struct font builtin_fonts[] = {
 #ifdef FONT_SPLEEN32x64
 	{ { NULL, NULL }, &spleen32x64, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
-#ifdef FONT_SPLEEN5x8
-	{ { NULL, NULL }, &spleen5x8, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
-#endif
-#ifdef FONT_SPLEEN8x16
-	{ { NULL, NULL }, &spleen8x16, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
+#ifdef FONT_LIBERATION_MONO12x21
+	{ { NULL, NULL }, &Liberation_Mono_12x21, 0, 0, WSFONT_STATIC | WSFONT_BUILTIN },
 #endif
 	{ { NULL, NULL }, NULL, 0, 0, 0 },
 };
@@ -408,15 +426,15 @@ wsfont_enum(void (*cb)(const char *, int, int, int))
 
 #if NRASOPS_ROTATION > 0
 
-struct wsdisplay_font *wsfont_rotate_cw_internal(struct wsdisplay_font *);
-struct wsdisplay_font *wsfont_rotate_ccw_internal(struct wsdisplay_font *);
-
-struct wsdisplay_font *
-wsfont_rotate_cw_internal(struct wsdisplay_font *font)
+static struct wsdisplay_font *
+wsfont_rotate_internal(struct wsdisplay_font *font, int rotate)
 {
-	int b, n, r, namelen, newstride;
 	struct wsdisplay_font *newfont;
-	char *newname, *newbits;
+	char *newname, *newdata;
+	u_char *ch, *newch, *p, *newp;
+	int namelen, newstride, n, h, w;
+	u_char bit;
+	bool alpha = FONT_IS_ALPHA(font), cw = (rotate == WSFONT_ROTATE_CW);
 
 	/* Duplicate the existing font... */
 	newfont = malloc(sizeof(*font), M_DEVBUF, M_WAITOK);
@@ -426,37 +444,58 @@ wsfont_rotate_cw_internal(struct wsdisplay_font *font)
 	namelen = strlen(font->name) + 4;
 	newname = malloc(namelen, M_DEVBUF, M_WAITOK);
 	strlcpy(newname, font->name, namelen);
-	strlcat(newname, "cw", namelen);
+	strlcat(newname, cw ? "cw" : "ccw", namelen);
 	newfont->name = newname;
 
 	/* Allocate a buffer big enough for the rotated font. */
-	newstride = (font->fontheight + 7) / 8;
-	newbits = malloc(newstride * font->fontwidth * font->numchars,
+	newstride = alpha ? font->fontheight : howmany(font->fontheight, 8);
+	newdata = malloc(newstride * font->fontwidth * font->numchars,
 	    M_DEVBUF, M_WAITOK|M_ZERO);
 
-	/* Rotate the font a bit at a time. */
+#define	BYTE_OFFSET(x, alpha)	((alpha) ? (x) : (x) / 8)
+#define	BIT_FROM_LEFT(x)	__BIT(7 - ((x) % 8))
+#define	BIT_FROM_RIGHT(x)	__BIT((x) % 8)
+
+	/* Rotate the font a pixel at a time. */
 	for (n = 0; n < font->numchars; n++) {
-		unsigned char *ch = (unsigned char *)font->data +
+		ch = (u_char *)font->data +
 		    (n * font->stride * font->fontheight);
-
-		for (r = 0; r < font->fontheight; r++) {
-			for (b = 0; b < font->fontwidth; b++) {
-				unsigned char *rb;
-
-				rb = ch + (font->stride * r) + (b / 8);
-				if (*rb & (0x80 >> (b % 8))) {
-					unsigned char *rrb;
-
-					rrb = newbits + newstride - 1 - (r / 8)
-					    + (n * newstride * font->fontwidth)
-					    + (newstride * b);
-					*rrb |= (1 << (r % 8));
+		newch = newdata +
+		    (n * newstride * font->fontwidth);
+		for (h = 0; h < font->fontheight; h++) {
+			for (w = 0; w < font->fontwidth; w++) {
+				p = ch + (h * font->stride) +
+				    BYTE_OFFSET(w, alpha);
+				if (cw) {
+					/* Rotate clockwise. */
+					newp = newch +
+					    (w * newstride) +
+					    (newstride - 1 -
+						BYTE_OFFSET(h, alpha));
+					bit = BIT_FROM_RIGHT(h);
+				} else {
+					/* Rotate counter-clockwise. */
+					newp = newch +
+					    ((font->fontwidth - 1 - w) *
+						newstride) +
+					    BYTE_OFFSET(h, alpha);
+					bit = BIT_FROM_LEFT(h);
+				}
+				if (alpha) {
+					*newp = *p;
+				} else {
+					if (*p & BIT_FROM_LEFT(w))
+						*newp |= bit;
 				}
 			}
 		}
 	}
 
-	newfont->data = newbits;
+#undef	BYTE_OFFSET
+#undef	BIT_FROM_LEFT
+#undef	BIT_FROM_RIGHT
+
+	newfont->data = newdata;
 
 	/* Update font sizes. */
 	newfont->stride = newstride;
@@ -468,73 +507,7 @@ wsfont_rotate_cw_internal(struct wsdisplay_font *font)
 		 * If we seem to have rotated this font already, drop the
 		 * new one...
 		 */
-		free(newbits, M_DEVBUF);
-		free(newfont, M_DEVBUF);
-		newfont = NULL;
-	}
-
-	return (newfont);
-}
-
-struct wsdisplay_font *
-wsfont_rotate_ccw_internal(struct wsdisplay_font *font)
-{
-	int b, n, r, namelen, newstride;
-	struct wsdisplay_font *newfont;
-	char *newname, *newbits;
-
-	/* Duplicate the existing font... */
-	newfont = malloc(sizeof(*font), M_DEVBUF, M_WAITOK);
-
-	*newfont = *font;
-
-	namelen = strlen(font->name) + 4;
-	newname = malloc(namelen, M_DEVBUF, M_WAITOK);
-	strlcpy(newname, font->name, namelen);
-	strlcat(newname, "ccw", namelen);
-	newfont->name = newname;
-
-	/* Allocate a buffer big enough for the rotated font. */
-	newstride = (font->fontheight + 7) / 8;
-	newbits = malloc(newstride * font->fontwidth * font->numchars,
-	    M_DEVBUF, M_WAITOK|M_ZERO);
-
-	/* Rotate the font a bit at a time. */
-	for (n = 0; n < font->numchars; n++) {
-		unsigned char *ch = (unsigned char *)font->data +
-		    (n * font->stride * font->fontheight);
-
-		for (r = 0; r < font->fontheight; r++) {
-			for (b = 0; b < font->fontwidth; b++) {
-				unsigned char *rb;
-
-				rb = ch + (font->stride * r) + (b / 8);
-				if (*rb & (0x80 >> (b % 8))) {
-					unsigned char *rrb;
-					int w = font->fontwidth;
-
-					rrb = newbits + (r / 8)
-					    + (n * newstride * w)
-					    + (newstride * (w - 1 - b));
-					*rrb |= (0x80 >> (r % 8));
-				}
-			}
-		}
-	}
-
-	newfont->data = newbits;
-
-	/* Update font sizes. */
-	newfont->stride = newstride;
-	newfont->fontwidth = font->fontheight;
-	newfont->fontheight = font->fontwidth;
-
-	if (wsfont_add(newfont, 0) != 0) {
-		/*
-		 * If we seem to have rotated this font already, drop the
-		 * new one...
-		 */
-		free(newbits, M_DEVBUF);
+		free(newdata, M_DEVBUF);
 		free(newfont, M_DEVBUF);
 		newfont = NULL;
 	}
@@ -553,15 +526,13 @@ wsfont_rotate(int cookie, int rotate)
 	origfont = wsfont_find0(cookie, 0xffffffff);
 	splx(s);
 
+	if (origfont == NULL)
+		return (-1);
+
 	switch (rotate) {
 	case WSFONT_ROTATE_CW:
-		font = wsfont_rotate_cw_internal(origfont->font);
-		if (font == NULL)
-			return (-1);
-		break;
-
 	case WSFONT_ROTATE_CCW:
-		font = wsfont_rotate_ccw_internal(origfont->font);
+		font = wsfont_rotate_internal(origfont->font, rotate);
 		if (font == NULL)
 			return (-1);
 		break;
@@ -570,9 +541,9 @@ wsfont_rotate(int cookie, int rotate)
 	default:
 		return (-1);
 	}
-	/* rotation works only with bitmap fonts so far */
+
 	ncookie = wsfont_find(font->name, font->fontwidth, font->fontheight, 
-	    font->stride, 0, 0, WSFONT_FIND_BITMAP);
+	    font->stride, 0, 0, WSFONT_FIND_ALL);
 
 	return (ncookie);
 }
@@ -639,10 +610,17 @@ wsfont_matches(struct wsdisplay_font *font, const char *name,
 			if (font->fontwidth != width)
 				return (0);
 		} else {
-			if (font->fontwidth > width)
-				score -= 10000 + uimin(font->fontwidth - width, 9999);
-			else
+			if (font->fontwidth > width) {
+				score -= uimin(font->fontwidth - width, 9999);
+				if ((flags & WSFONT_PREFER_WIDE) == 0) {
+					score -= 10000;
+				}
+			} else {
 				score -= uimin(width - font->fontwidth, 9999);
+				if ((flags & WSFONT_PREFER_WIDE) != 0) {
+					score -= 10000;
+				}
+			}
 		}
 	}
 
@@ -1067,7 +1045,6 @@ static const struct wsfont_level1_glyphmap encodings[] = {
 	{ iso7_level1, 0, 0x26 },	/* WSDISPLAY_FONTENC_ISO7 */
 };
 
-#define MAX_ENCODING (sizeof(encodings) / sizeof(encodings[0]))
 
 /*
  * Remap Unicode character to glyph
@@ -1079,7 +1056,7 @@ wsfont_map_unichar(struct wsdisplay_font *font, int c)
 	const struct wsfont_level2_glyphmap *map2;
 	int hi, lo;
 
-	if (font->encoding < 0 || font->encoding >= MAX_ENCODING)
+	if (font->encoding < 0 || font->encoding >= __arraycount(encodings))
 		return (-1);
 
 	hi = (c >> 8);

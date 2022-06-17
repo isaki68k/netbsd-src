@@ -1,4 +1,4 @@
-/*	$NetBSD: boot2.c,v 1.72 2019/09/02 06:10:24 manu Exp $	*/
+/*	$NetBSD: boot2.c,v 1.79 2022/06/08 21:43:45 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -83,6 +83,9 @@
 #include <vbe.h>
 #include "devopen.h"
 
+#ifdef _STANDALONE
+#include <bootinfo.h>
+#endif
 #ifdef SUPPORT_PS2
 #include <biosmca.h>
 #endif
@@ -118,7 +121,6 @@ static const char *default_part_name;
 
 char *sprint_bootsel(const char *);
 static void bootit(const char *, int);
-void print_banner(void);
 void boot2(int, uint64_t);
 
 void	command_help(char *);
@@ -130,6 +132,7 @@ void	command_boot(char *);
 void	command_pkboot(char *);
 void	command_dev(char *);
 void	command_consdev(char *);
+void	command_root(char *);
 #ifndef SMALL
 void	command_menu(char *);
 #endif
@@ -147,6 +150,7 @@ const struct bootblk_command commands[] = {
 	{ "pkboot",	command_pkboot },
 	{ "dev",	command_dev },
 	{ "consdev",	command_consdev },
+	{ "root",	command_root },
 #ifndef SMALL
 	{ "menu",	command_menu },
 #endif
@@ -279,36 +283,18 @@ bootit(const char *filename, int howto)
 	if (howto & AB_VERBOSE)
 		printf("booting %s (howto 0x%x)\n", sprint_bootsel(filename),
 		    howto);
+#ifdef KERNEL_DIR
+	char path[512];
+	strcpy(path, filename);
+	strcat(path, "/kernel");
+	(void)exec_netbsd(path, 0, howto, boot_biosdev < 0x80, clearit);
+#endif
 
 	if (exec_netbsd(filename, 0, howto, boot_biosdev < 0x80, clearit) < 0)
 		printf("boot: %s: %s\n", sprint_bootsel(filename),
 		       strerror(errno));
 	else
 		printf("boot returned\n");
-}
-
-void
-print_banner(void)
-{
-
-	clearit();
-#ifndef SMALL
-	int n;
-	if (bootcfg_info.banner[0]) {
-		for (n = 0; n < BOOTCFG_MAXBANNER && bootcfg_info.banner[n];
-		    n++) 
-			printf("%s\n", bootcfg_info.banner[n]);
-	} else {
-#endif /* !SMALL */
-		printf("\n"
-		       ">> %s, Revision %s (from NetBSD %s)\n"
-		       ">> Memory: %d/%d k\n",
-		       bootprog_name, bootprog_rev, bootprog_kernrev,
-		       getbasemem(), getextmem());
-
-#ifndef SMALL
-	}
-#endif /* !SMALL */
 }
 
 /*
@@ -363,10 +349,12 @@ boot2(int biosdev, uint64_t biossector)
 	 * If console set in boot.cfg, switch to it.
 	 * This will print the banner, so we don't need to explicitly do it
 	 */
-	if (bootcfg_info.consdev)
+	if (bootcfg_info.consdev) {
 		command_consdev(bootcfg_info.consdev);
-	else 
-		print_banner();
+	} else {
+		clearit();
+		print_bootcfg_banner(bootprog_name, bootprog_rev);
+	}
 
 	/* Display the menu, if applicable */
 	twiddle_toggle = 0;
@@ -377,7 +365,8 @@ boot2(int biosdev, uint64_t biossector)
 
 #else
 	twiddle_toggle = 0;
-	print_banner();
+	clearit();
+	print_bootcfg_banner(bootprog_name, bootprog_rev);
 #endif
 
 	printf("Press return to boot now, any other key for boot menu\n");
@@ -443,7 +432,10 @@ command_help(char *arg)
 	       "ls [dev:][path]\n"
 #endif
 	       "dev [dev:]\n"
-	       "consdev {pc|com[0123]|com[0123]kbd|auto}\n"
+	       "consdev {pc|{com[0123]|com[0123]kbd|auto}[,{speed}]}\n"
+	       "root    {spec}\n"
+	       "     spec can be disk, e.g. wd0, sd0\n"
+	       "     or string like wedge:name\n"
 	       "vesa {modenum|on|off|enabled|disabled|list}\n"
 #ifndef SMALL
 	       "menu (reenters boot menu, if defined in boot.cfg)\n"
@@ -496,10 +488,6 @@ command_boot(char *arg)
 	} else {
 		int i;
 
-#ifndef SMALL
-		if (howto == 0)
-			bootdefault();
-#endif
 		for (i = 0; i < NUMNAMES; i++) {
 			bootit(names[i][0], howto);
 			bootit(names[i][1], howto);
@@ -575,15 +563,46 @@ void
 command_consdev(char *arg)
 {
 	const struct cons_devs *cdp;
+	char *sep;
+	int speed;
+
+	sep = strchr(arg, ',');
+	if (sep != NULL)
+		*sep++ = '\0';
 
 	for (cdp = cons_devs; cdp->name; cdp++) {
-		if (strcmp(arg, cdp->name) == 0) {
-			initio(cdp->tag);
-			print_banner();
-			return;
+		if (strcmp(arg, cdp->name) != 0)
+			continue;
+
+		if (sep != NULL) {
+			if (cdp->tag == CONSDEV_PC)
+				goto error;
+
+			speed = atoi(sep);
+			if (speed < 0)
+				goto error;
+			boot_params.bp_conspeed = speed;
 		}
+
+		initio(cdp->tag);
+		clearit();
+		print_bootcfg_banner(bootprog_name, bootprog_rev);
+		return;
 	}
+error:
 	printf("invalid console device.\n");
+}
+
+void
+command_root(char *arg)
+{
+	struct btinfo_rootdevice *biv = &bi_root;
+
+	strncpy(biv->devname, arg, sizeof(biv->devname));
+	if (biv->devname[sizeof(biv->devname)-1] != '\0') {
+		biv->devname[sizeof(biv->devname)-1] = '\0';
+		printf("truncated to %s\n",biv->devname);
+	}
 }
 
 #ifndef SMALL

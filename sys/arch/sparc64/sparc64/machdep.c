@@ -1,7 +1,7 @@
-/*	$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $ */
+/*	$NetBSD: machdep.c,v 1.304 2021/12/26 21:33:48 riastradh Exp $ */
 
 /*-
- * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996, 1997, 1998, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.304 2021/12/26 21:33:48 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -92,7 +92,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $")
 #include <sys/kernel.h>
 #include <sys/conf.h>
 #include <sys/file.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
 #include <sys/msgbuf.h>
@@ -102,6 +102,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $")
 #include <sys/cpu.h>
 #include <sys/module.h>
 #include <sys/ksyms.h>
+#include <sys/pserialize.h>
 
 #include <sys/exec_aout.h>
 
@@ -195,7 +196,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 #if 0
@@ -572,8 +573,15 @@ cpu_reboot(int howto, char *user_boot_string)
 		       config_detach_all(boothowto) ||
 		       vfs_unmount_forceone(l))
 			;	/* do nothing */
-	} else
-		suspendsched();
+	} else {
+		int ddb = 0;
+#ifdef DDB
+		extern int db_active; /* XXX */
+		ddb = db_active;
+#endif
+		if (!ddb)
+			suspendsched();
+	}
 
 	pmf_system_shutdown(boothowto);
 
@@ -836,17 +844,22 @@ get_symbol_and_offset(const char **mod, const char **sym, vaddr_t *offset, vaddr
 {
 	static char symbuf[256];
 	unsigned long symaddr;
+	int s, error;
 
 #if NKSYMS || defined(DDB) || defined(MODULAR)
+	s = pserialize_read_enter();
 	if (ksyms_getname(mod, sym, pc,
 			  KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY) == 0) {
-		if (ksyms_getval(*mod, *sym, &symaddr,
-				 KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY) != 0)
+		error = ksyms_getval(*mod, *sym, &symaddr,
+		    KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY);
+		pserialize_read_exit(s);
+		if (error)
 			goto failed;
 
 		*offset = (vaddr_t)(pc - symaddr);
 		return;
 	}
+	pserialize_read_exit(s);
 #endif
  failed:
 	snprintf(symbuf, sizeof symbuf, "%llx", (unsigned long long)pc);
@@ -911,6 +924,14 @@ cpu_exec_aout_makecmds(struct lwp *l, struct exec_package *epp)
 	return (ENOEXEC);
 }
 
+static size_t 
+_bus_dmamap_mapsize(int const nsegments)
+{ 
+	KASSERT(nsegments > 0);
+	return sizeof(struct sparc_bus_dmamap) +
+	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
+}
+
 /*
  * Common function for DMA map creation.  May be called by bus-specific
  * DMA map creation functions.
@@ -922,7 +943,6 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 {
 	struct sparc_bus_dmamap *map;
 	void *mapstore;
-	size_t mapsize;
 
 	/*
 	 * Allocate and initialize the DMA map.  The end of the map
@@ -936,13 +956,10 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * The bus_dmamap_t includes one bus_dma_segment_t, hence
 	 * the (nsegments - 1).
 	 */
-	mapsize = sizeof(struct sparc_bus_dmamap) +
-	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
-	if ((mapstore = malloc(mapsize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mapstore = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
-	memset(mapstore, 0, mapsize);
 	map = (struct sparc_bus_dmamap *)mapstore;
 	map->_dm_size = size;
 	map->_dm_segcnt = nsegments;
@@ -967,7 +984,7 @@ _bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 {
 	if (map->dm_nsegs)
 		bus_dmamap_unload(t, map);
-	free(map, M_DMAMAP);
+	kmem_free(map, _bus_dmamap_mapsize(map->_dm_segcnt));
 }
 
 /*
@@ -1371,8 +1388,8 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	low = vm_first_phys;
 	high = vm_first_phys + vm_num_phys - PAGE_SIZE;
 
-	if ((pglist = malloc(sizeof(*pglist), M_DEVBUF,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((pglist = kmem_alloc(sizeof(*pglist),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
 	/*
@@ -1391,7 +1408,7 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	error = uvm_pglistalloc(size, low, high,
 	    alignment, boundary, pglist, nsegs, (flags & BUS_DMA_NOWAIT) == 0);
 	if (error) {
-		free(pglist, M_DEVBUF);
+		kmem_free(pglist, sizeof(*pglist));
 		return (error);
 	}
 
@@ -1423,6 +1440,7 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 void
 _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 {
+	struct pglist *pglist = segs[0]._ds_mlist;
 
 	if (nsegs != 1)
 		panic("bus_dmamem_free: nsegs = %d", nsegs);
@@ -1430,8 +1448,8 @@ _bus_dmamem_free(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs)
 	/*
 	 * Return the list of pages back to the VM system.
 	 */
-	uvm_pglistfree(segs[0]._ds_mlist);
-	free(segs[0]._ds_mlist, M_DEVBUF);
+	uvm_pglistfree(pglist);
+	kmem_free(pglist, sizeof(*pglist));
 }
 
 /*
@@ -1456,7 +1474,7 @@ _bus_dmamem_map(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
 
 	/*
 	 * Find a region of kernel virtual addresses that can accommodate
-	 * our aligment requirements.
+	 * our alignment requirements.
 	 */
 	oversize = size + align - PAGE_SIZE;
 	r = uvm_map(kernel_map, &sva, oversize, NULL, UVM_UNKNOWN_OFFSET, 0,
@@ -2182,10 +2200,7 @@ bus_space_tag_alloc(bus_space_tag_t parent, void *cookie)
 {
 	struct sparc_bus_space_tag *sbt;
 
-	sbt = malloc(sizeof(struct sparc_bus_space_tag),
-		     M_DEVBUF, M_NOWAIT|M_ZERO);
-	if (sbt == NULL)
-		return (NULL);
+	sbt = kmem_zalloc(sizeof(*sbt), KM_SLEEP);
 
 	if (parent) {
 		memcpy(sbt, parent, sizeof(*sbt));
@@ -2624,19 +2639,16 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
  * or after the current trap/syscall if in system mode.
  */
 void
-cpu_need_resched(struct cpu_info *ci, int flags)
+cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
 
-	ci->ci_want_resched = 1;
 	ci->ci_want_ast = 1;
 
 #ifdef MULTIPROCESSOR
-	if (ci == curcpu())
-		return;
-	/* Just interrupt the target CPU, so it can notice its AST */
-	if ((flags & RESCHED_IMMED) != 0 &&
-	    ci->ci_data.cpu_onproc != ci->ci_data.cpu_idlelwp)
+	if ((flags & RESCHED_REMOTE) != 0) {
+		/* Just interrupt the target CPU, so it can notice its AST */
 		sparc64_send_ipi(ci->ci_cpuid, sparc64_ipi_nop, 0, 0);
+	}
 #endif
 }
 
@@ -2650,16 +2662,28 @@ cpu_signotify(struct lwp *l)
 
 	ci->ci_want_ast = 1;
 #ifdef MULTIPROCESSOR
-	if (ci != curcpu())
+	if (ci != curcpu()) {
 		sparc64_send_ipi(ci->ci_cpuid, sparc64_ipi_nop, 0, 0);
+	}
 #endif
 }
 
 bool
 cpu_intr_p(void)
 {
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
 
-	return curcpu()->ci_idepth >= 0;
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_idepth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+	return idepth >= 0;
 }
 
 #ifdef MODULAR

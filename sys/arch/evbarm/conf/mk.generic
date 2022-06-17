@@ -1,6 +1,4 @@
-#	$NetBSD: mk.generic,v 1.8 2019/04/14 07:57:51 skrll Exp $
-
-.include "$S/arch/arm/nvidia/tegra_xusb-fw.mk"
+#	$NetBSD: mk.generic,v 1.10 2020/08/29 19:06:18 jakllsch Exp $
 
 .if !empty(MACHINE_ARCH:M*eb)
 EXTRA_LINKFLAGS+=	--be8
@@ -17,16 +15,11 @@ MKUBOOTIMAGEARGS=	-A arm -T kernel_noload -O linux -C none
 MKUBOOTIMAGEARGS+=	-e 0
 MKUBOOTIMAGEARGS+=	-n "NetBSD/${BOARDTYPE:U${MACHINE_ARCH}} ${_OSRELEASE}"
 
-MKKNLIMG=		${THISARM}/compile/rpi-mkknlimg.sh
-
 SYSTEM_LD_TAIL_EXTRA+=; \
-	echo ${OBJCOPY} -S -O binary $@ $@.bin; \
-	${OBJCOPY} -S -O binary $@ $@.bin; \
-	echo ${TOOL_MKUBOOTIMAGE} ${MKUBOOTIMAGEARGS} $@.bin $@.ub; \
-	${TOOL_MKUBOOTIMAGE} ${MKUBOOTIMAGEARGS} $@.bin $@.ub; \
-	echo ${MKKNLIMG} $@.bin $@.img; \
-	${HOST_SH} ${MKKNLIMG} $@.bin $@.img;
+	echo ${OBJCOPY} -S -O binary $@ $@.img; \
+	${OBJCOPY} -S -O binary $@ $@.img; \
+	echo ${TOOL_MKUBOOTIMAGE} ${MKUBOOTIMAGEARGS} $@.img $@.ub; \
+	${TOOL_MKUBOOTIMAGE} ${MKUBOOTIMAGEARGS} $@.img $@.ub
 
-EXTRA_KERNELS+= ${KERNELS:@.KERNEL.@${.KERNEL.}.bin@}
-EXTRA_KERNELS+= ${KERNELS:@.KERNEL.@${.KERNEL.}.ub@}
 EXTRA_KERNELS+= ${KERNELS:@.KERNEL.@${.KERNEL.}.img@}
+EXTRA_KERNELS+= ${KERNELS:@.KERNEL.@${.KERNEL.}.ub@}

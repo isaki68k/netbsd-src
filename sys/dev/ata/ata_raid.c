@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_raid.c,v 1.42 2019/04/26 11:51:56 pgoyette Exp $	*/
+/*	$NetBSD: ata_raid.c,v 1.45 2021/08/07 16:19:09 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_raid.c,v 1.42 2019/04/26 11:51:56 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_raid.c,v 1.45 2021/08/07 16:19:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -114,7 +114,7 @@ ataraidattach(int count)
 
 /* ARGSUSED */
 static int
-ataraid_rescan(device_t self, const char *attr, const int *flags)
+ataraid_rescan(device_t self, const char *ifattr, const int *locs)
 {
 
 	finalize_done = 0;
@@ -141,9 +141,9 @@ ata_raid_type_name(u_int type)
 	};
 
 	if (type < __arraycount(ata_raid_type_names))
-		return (ata_raid_type_names[type]);
+		return ata_raid_type_names[type];
 
-	return (NULL);
+	return NULL;
 }
 
 /*
@@ -176,7 +176,7 @@ ata_raid_finalize(device_t self)
 		    ataraid_cd.cd_name);
 
  out:
-	return (1);
+	return 1;
 }
 
 /*
@@ -189,7 +189,7 @@ ataraid_match(device_t parent, cfdata_t cf, void *aux)
 {
 
 	/* pseudo-device; always present */
-	return (1);
+	return 1;
 }
 
 /*
@@ -215,8 +215,9 @@ ataraid_attach(device_t parent, device_t self, void *aux)
 		locs[ATARAIDCF_VENDTYPE] = aai->aai_type;
 		locs[ATARAIDCF_UNIT] = aai->aai_arrayno;
 
-		config_found_sm_loc(self, "ataraid", locs, aai,
-				    ataraid_print, config_stdsubmatch);
+		config_found(self, aai, ataraid_print,
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .locators = locs));
 	}
 }
 
@@ -233,7 +234,7 @@ ataraid_print(void *aux, const char *pnp)
 	if (pnp != NULL)
 		aprint_normal("block device at %s", pnp);
 	aprint_normal(" vendtype %d unit %d", aai->aai_type, aai->aai_arrayno);
-	return (UNCONF);
+	return UNCONF;
 }
 
 /*
@@ -295,7 +296,7 @@ ata_raid_get_array_info(u_int type, u_int arrayno)
 	TAILQ_INSERT_TAIL(&ataraid_array_info_list, aai, aai_list);
 
  out:
-	return (aai);
+	return aai;
 }
 
 int
@@ -317,7 +318,7 @@ ata_raid_config_block_rw(struct vnode *vp, daddr_t blkno, void *tbuf,
 	error = biowait(bp);
 
 	putiobuf(bp);
-	return (error);
+	return error;
 }
 
 MODULE(MODULE_CLASS_DRIVER, ataraid, NULL);

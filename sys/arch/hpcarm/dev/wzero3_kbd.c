@@ -1,4 +1,4 @@
-/*	$NetBSD: wzero3_kbd.c,v 1.8 2012/10/27 17:17:52 chs Exp $	*/
+/*	$NetBSD: wzero3_kbd.c,v 1.12 2021/08/07 16:18:53 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 2008, 2009, 2010 NONAKA Kimihiro <nonaka@netbsd.org>
@@ -26,13 +26,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wzero3_kbd.c,v 1.8 2012/10/27 17:17:52 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wzero3_kbd.c,v 1.12 2021/08/07 16:18:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/callout.h>
 #include <sys/bus.h>
 
@@ -288,18 +288,8 @@ wzero3kbd_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_okeystat = malloc(sc->sc_nrow * sc->sc_ncolumn, M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	sc->sc_keystat = malloc(sc->sc_nrow * sc->sc_ncolumn, M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (sc->sc_okeystat == NULL || sc->sc_keystat == NULL) {
-		aprint_error_dev(self, "couldn't alloc memory.\n");
-		if (sc->sc_okeystat)
-			free(sc->sc_okeystat, M_DEVBUF);
-		if (sc->sc_keystat)
-			free(sc->sc_keystat, M_DEVBUF);
-		return;
-	}
+	sc->sc_okeystat = kmem_zalloc(sc->sc_nrow * sc->sc_ncolumn, KM_SLEEP);
+	sc->sc_keystat = kmem_zalloc(sc->sc_nrow * sc->sc_ncolumn, KM_SLEEP);
 
 	sc->sc_if.hii_ctx = sc;
 	sc->sc_if.hii_establish = wzero3kbd_input_establish;
@@ -360,7 +350,7 @@ wzero3kbd_attach(device_t parent, device_t self, void *aux)
 
 	/* Attach hpckbd. */
 	haa.haa_ic = &sc->sc_if;
-	config_found(self, &haa, hpckbd_print);
+	config_found(self, &haa, hpckbd_print, CFARGS_NONE);
 
 #if defined(KEYTEST) || defined(KEYTEST2) || defined(KEYTEST3) || defined(KEYTEST4) || defined(KEYTEST5)
 	sc->sc_test_ih = NULL;

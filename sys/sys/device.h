@@ -1,4 +1,30 @@
-/* $NetBSD: device.h,v 1.157 2018/12/01 01:51:38 msaitoh Exp $ */
+/* $NetBSD: device.h,v 1.182 2022/03/28 12:38:59 riastradh Exp $ */
+
+/*
+ * Copyright (c) 2021 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -122,11 +148,45 @@ typedef struct cfdata *cfdata_t;
 typedef struct cfdriver *cfdriver_t;
 typedef struct cfattach *cfattach_t;
 
-#if defined(_KERNEL) || defined(_KMEMUSER)
-struct device_compatible_entry {
-	const char	*compat;
-	uintptr_t	data;
+#if defined(_KERNEL) || defined(_KMEMUSER) || defined(_STANDALONE)
+/*
+ * devhandle_t --
+ *
+ *	This is an abstraction of the device handles used by ACPI,
+ *	OpenFirmware, and others, to support device enumeration and
+ *	device tree linkage.  A devhandle_t can be safely passed
+ *	by value.
+ */
+struct devhandle {
+	const struct devhandle_impl *	impl;
+	union {
+		/*
+		 * Storage for the device handle.  Which storage field
+		 * is used is at the sole discretion of the type
+		 * implementation.
+		 */
+		void *			pointer;
+		const void *		const_pointer;
+		uintptr_t		uintptr;
+		intptr_t		integer;
+	};
 };
+typedef struct devhandle devhandle_t;
+#endif
+
+#if defined(_KERNEL) || defined(_KMEMUSER) 
+struct device_compatible_entry {
+	union {
+		const char *compat;
+		uintptr_t id;
+	};
+	union {
+		const void *data;
+		uintptr_t value;
+	};
+};
+
+#define	DEVICE_COMPAT_EOL	{ .compat = NULL }
 
 struct device_lock {
 	int		dvl_nwait;
@@ -148,61 +208,60 @@ struct device_garbage {
 	int		dg_ndevs;
 };
 
-struct device {
-	devclass_t	dv_class;	/* this device's classification */
-	TAILQ_ENTRY(device) dv_list;	/* entry on list of all devices */
-	cfdata_t	dv_cfdata;	/* config data that found us
-					   (NULL if pseudo-device) */
-	cfdriver_t	dv_cfdriver;	/* our cfdriver */
-	cfattach_t	dv_cfattach;	/* our cfattach */
-	int		dv_unit;	/* device unit number */
-	char		dv_xname[16];	/* external name (name + unit) */
-	device_t	dv_parent;	/* pointer to parent device
-					   (NULL if pseudo- or root node) */
-	int		dv_depth;	/* number of parents until root */
-	int		dv_flags;	/* misc. flags; see below */
-	void		*dv_private;	/* this device's private storage */
-	int		*dv_locators;	/* our actual locators (optional) */
-	prop_dictionary_t dv_properties;/* properties dictionary */
 
-	size_t		dv_activity_count;
-	void		(**dv_activity_handlers)(device_t, devactive_t);
+typedef enum {
+	/* Used to represent invalid states. */
+	DEVHANDLE_TYPE_INVALID		=	0,
 
-	bool		(*dv_driver_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_driver_resume)(device_t, const pmf_qual_t *);
-	bool		(*dv_driver_shutdown)(device_t, int);
-	bool		(*dv_driver_child_register)(device_t);
+	/* ACPI */
+	DEVHANDLE_TYPE_ACPI		=	0x41435049,	/* 'ACPI' */
 
-	void		*dv_bus_private;
-	bool		(*dv_bus_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_bus_resume)(device_t, const pmf_qual_t *);
-	bool		(*dv_bus_shutdown)(device_t, int);
-	void		(*dv_bus_deregister)(device_t);
+	/* OpenFirmware, FDT */
+	DEVHANDLE_TYPE_OF		=	0x4f504657,	/* 'OPFW' */
 
-	void		*dv_class_private;
-	bool		(*dv_class_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_class_resume)(device_t, const pmf_qual_t *);
-	void		(*dv_class_deregister)(device_t);
+	/* Sun OpenBoot */
+	DEVHANDLE_TYPE_OPENBOOT		=	0x4f504254,	/* 'OPBT' */
 
-	devgen_t		dv_add_gen,
-				dv_del_gen;
+	/* Private (opaque data) */
+	DEVHANDLE_TYPE_PRIVATE		=	0x50525654,	/* 'PRVT' */
 
-	struct device_lock	dv_lock;
-	const device_suspensor_t
-	    *dv_bus_suspensors[DEVICE_SUSPENSORS_MAX],
-	    *dv_driver_suspensors[DEVICE_SUSPENSORS_MAX],
-	    *dv_class_suspensors[DEVICE_SUSPENSORS_MAX];
-	struct device_garbage dv_garbage;
+	/* Max value. */
+	DEVHANDLE_TYPE_MAX		=	0xffffffff
+} devhandle_type_t;
+
+/* Device method call function signature. */
+typedef int (*device_call_t)(device_t, devhandle_t, void *);
+
+struct device_call_descriptor {
+	const char *name;
+	device_call_t call;
 };
 
-/* dv_flags */
-#define	DVF_ACTIVE		0x0001	/* device is activated */
+#define	_DEVICE_CALL_REGISTER(_g_, _c_)					\
+	__link_set_add_rodata(_g_, __CONCAT(_c_,_descriptor));
+#define	DEVICE_CALL_REGISTER(_g_, _n_, _c_)				\
+static const struct device_call_descriptor __CONCAT(_c_,_descriptor) = {\
+	.name = (_n_), .call = (_c_)					\
+};									\
+_DEVICE_CALL_REGISTER(_g_, _c_)
+
+struct devhandle_impl {
+	devhandle_type_t		type;
+	const struct devhandle_impl *	super;
+	device_call_t			(*lookup_device_call)(devhandle_t,
+					    const char *, devhandle_t *);
+};
+
+/* Max size of a device external name (including terminating NUL) */
+#define	DEVICE_XNAME_SIZE	16
+
+struct device;
+
+/*
+ * struct cfattach::ca_flags (must not overlap with device_impl.h
+ * struct device::dv_flags for now)
+ */
 #define	DVF_PRIV_ALLOC		0x0002	/* device private storage != device */
-#define	DVF_POWER_HANDLERS	0x0004	/* device has suspend/resume support */
-#define	DVF_CLASS_SUSPENDED	0x0008	/* device class suspend was called */
-#define	DVF_DRIVER_SUSPENDED	0x0010	/* device driver suspend was called */
-#define	DVF_BUS_SUSPENDED	0x0020	/* device bus suspend was called */
-#define	DVF_ATTACH_INPROGRESS	0x0040	/* device attach is in progress */
 #define	DVF_DETACH_SHUTDOWN	0x0080	/* device detaches safely at shutdown */
 
 #ifdef _KERNEL
@@ -276,8 +335,8 @@ struct cfparent {
 struct cfdata {
 	const char *cf_name;		/* driver name */
 	const char *cf_atname;		/* attachment name */
-	short	cf_unit;		/* unit number */
-	short	cf_fstate;		/* finding state (below) */
+	unsigned int cf_unit:24;	/* unit number */
+	unsigned char cf_fstate;	/* finding state (below) */
 	int	*cf_loc;		/* locators (machine dependent) */
 	int	cf_flags;		/* flags from config */
 	const struct cfparent *cf_pspec;/* parent specification */
@@ -301,6 +360,7 @@ TAILQ_HEAD(cftablelist, cftable);
 #endif
 
 typedef int (*cfsubmatch_t)(device_t, cfdata_t, const int *, void *);
+typedef int (*cfsearch_t)(device_t, cfdata_t, const int *, void *);
 
 /*
  * `configuration' attachment and driver (what the machine-independent
@@ -418,6 +478,43 @@ struct pdevinit {
 /* This allows us to wildcard a device unit. */
 #define	DVUNIT_ANY	-1
 
+#if defined(_KERNEL) || defined(_KMEMUSER) || defined(_STANDALONE)
+/*
+ * Arguments passed to config_search() and config_found().
+ */
+struct cfargs {
+	uintptr_t	cfargs_version;	/* version field */
+
+	/* version 1 fields */
+	cfsubmatch_t	submatch;	/* submatch function (direct config) */
+	cfsearch_t	search;		/* search function (indirect config) */
+	const char *	iattr;		/* interface attribute */
+	const int *	locators;	/* locators array */
+	devhandle_t	devhandle;	/* devhandle_t (by value) */
+
+	/* version 2 fields below here */
+};
+
+#define	CFARGS_VERSION		1	/* current cfargs version */
+
+#define	CFARGS_NONE		NULL	/* no cfargs to pass */
+
+/*
+ * Construct a cfargs with this macro, like so:
+ *
+ *	CFARGS(.submatch = config_stdsubmatch,
+ *	       .devhandle = my_devhandle)
+ *
+ * You must supply at least one field.  If you don't need any, use the
+ * CFARGS_NONE macro.
+ */
+#define	CFARGS(...)							\
+	&((const struct cfargs){					\
+		.cfargs_version = CFARGS_VERSION,			\
+		__VA_ARGS__						\
+	})
+#endif /* _KERNEL || _KMEMUSER || _STANDALONE */
+
 #ifdef _KERNEL
 
 extern struct cfdriverlist allcfdrivers;/* list of all cfdrivers */
@@ -461,26 +558,22 @@ const struct cfiattrdata *cfiattr_lookup(const char *, const struct cfdriver *);
 const char *cfdata_ifattr(const struct cfdata *);
 
 int	config_stdsubmatch(device_t, cfdata_t, const int *, void *);
-cfdata_t config_search_loc(cfsubmatch_t, device_t,
-				 const char *, const int *, void *);
-cfdata_t config_search_ia(cfsubmatch_t, device_t,
-				 const char *, void *);
+cfdata_t config_search(device_t, void *, const struct cfargs *);
 cfdata_t config_rootsearch(cfsubmatch_t, const char *, void *);
-device_t config_found_sm_loc(device_t, const char *, const int *,
-			     void *, cfprint_t, cfsubmatch_t);
-device_t config_found_ia(device_t, const char *, void *, cfprint_t);
-device_t config_found(device_t, void *, cfprint_t);
+device_t config_found(device_t, void *, cfprint_t, const struct cfargs *);
 device_t config_rootfound(const char *, void *);
-device_t config_attach_loc(device_t, cfdata_t, const int *, void *, cfprint_t);
-device_t config_attach(device_t, cfdata_t, void *, cfprint_t);
+device_t config_attach(device_t, cfdata_t, void *, cfprint_t,
+	    const struct cfargs *);
 int	config_match(device_t, cfdata_t, void *);
+int	config_probe(device_t, cfdata_t, void *);
 
-bool ifattr_match(const char *, const char *);
+bool	ifattr_match(const char *, const char *);
 
 device_t config_attach_pseudo(cfdata_t);
 
 int	config_detach(device_t, int);
 int	config_detach_children(device_t, int flags);
+void	config_detach_commit(device_t);
 bool	config_detach_all(int);
 int	config_deactivate(device_t);
 void	config_defer(device_t, void (*)(device_t));
@@ -503,6 +596,10 @@ void	null_childdetached(device_t, device_t);
 
 device_t	device_lookup(cfdriver_t, int);
 void		*device_lookup_private(cfdriver_t, int);
+
+device_t	device_lookup_acquire(cfdriver_t, int);
+void		device_release(device_t);
+
 void		device_register(device_t, void *);
 void		device_register_post_config(device_t, void *);
 
@@ -519,7 +616,20 @@ bool		device_is_enabled(device_t);
 bool		device_has_power(device_t);
 int		device_locator(device_t, u_int);
 void		*device_private(device_t);
+void		device_set_private(device_t, void *);
 prop_dictionary_t device_properties(device_t);
+void		device_set_handle(device_t, devhandle_t);
+devhandle_t	device_handle(device_t);
+
+bool		devhandle_is_valid(devhandle_t);
+devhandle_t	devhandle_invalid(void);
+devhandle_type_t devhandle_type(devhandle_t);
+int		devhandle_compare(devhandle_t, devhandle_t);
+
+device_call_t	devhandle_lookup_device_call(devhandle_t, const char *,
+		    devhandle_t *);
+void		devhandle_impl_inherit(struct devhandle_impl *,
+		    const struct devhandle_impl *);
 
 device_t	deviter_first(deviter_t *, deviter_flags_t);
 void		deviter_init(deviter_t *, deviter_flags_t);
@@ -533,14 +643,43 @@ void		device_active_deregister(device_t,
 				         void (*)(device_t, devactive_t));
 
 bool		device_is_a(device_t, const char *);
+bool		device_attached_to_iattr(device_t, const char *);
 
 device_t	device_find_by_xname(const char *);
 device_t	device_find_by_driver_unit(const char *, int);
 
-int		device_compatible_match(const char **, int,
-				const struct device_compatible_entry *,
-				const struct device_compatible_entry **);
+int		device_enumerate_children(device_t,
+		    bool (*)(device_t, devhandle_t, void *), void *);
 
+int		device_compatible_match(const char **, int,
+				const struct device_compatible_entry *);
+int		device_compatible_pmatch(const char **, int,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup(const char **, int,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_plookup(const char **, int,
+				const struct device_compatible_entry *);
+
+int		device_compatible_match_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+int		device_compatible_pmatch_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_plookup_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+
+int		device_compatible_match_id(uintptr_t const, uintptr_t const,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup_id(uintptr_t const, uintptr_t const,
+				const struct device_compatible_entry *);
+
+bool		device_pmf_is_registered(device_t);
 bool		device_pmf_is_registered(device_t);
 
 bool		device_pmf_driver_suspend(device_t, const pmf_qual_t *);
@@ -590,6 +729,34 @@ void		device_pmf_class_deregister(device_t);
 
 device_t	shutdown_first(struct shutdown_state *);
 device_t	shutdown_next(struct shutdown_state *);
+
+/*
+ * device calls --
+ *
+ * This provides a generic mechanism for invoking special methods on
+ * devices, often dependent on the device tree implementation used
+ * by the platform.
+ *
+ * While individual subsystems may define their own device calls,
+ * the ones prefixed with "device-" are reserved, and defined by
+ * the device autoconfiguration subsystem.  It is the responsibility
+ * of each device tree back end to implement these calls.
+ *
+ * We define a generic interface; individual device calls feature
+ * type checking of the argument structure.  The argument structures
+ * and the call binding data are automatically generated from device
+ * call interface descriptions by gendevcalls.awk.
+ */
+struct device_call_generic {
+	const char *name;
+	void *args;
+};
+
+int	device_call_generic(device_t, const struct device_call_generic *);
+
+#define	device_call(dev, call)						\
+	device_call_generic((dev), &(call)->generic)
+
 #endif /* _KERNEL */
 
 #endif /* !_SYS_DEVICE_H_ */

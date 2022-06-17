@@ -1,4 +1,4 @@
-/*	$NetBSD: ext2fs_inode.c,v 1.88 2017/05/26 14:34:20 riastradh Exp $	*/
+/*	$NetBSD: ext2fs_inode.c,v 1.90 2021/08/17 22:00:33 andvar Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ext2fs_inode.c,v 1.88 2017/05/26 14:34:20 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ext2fs_inode.c,v 1.90 2021/08/17 22:00:33 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -349,7 +349,7 @@ ext2fs_truncate(struct vnode *ovp, off_t length, int ioflag,
 	}
 	/*
 	 * Shorten the size of the file. If the file is not being
-	 * truncated to a block boundry, the contents of the
+	 * truncated to a block boundary, the contents of the
 	 * partial block following the end of the file must be
 	 * zero'ed in case it ever become accessible again because
 	 * of subsequent file growth.
@@ -360,7 +360,7 @@ ext2fs_truncate(struct vnode *ovp, off_t length, int ioflag,
 
 		/* XXXUBC we should handle more than just VREG */
 		ubc_zerorange(&ovp->v_uobj, length, size - offset,
-		    UBC_UNMAP_FLAG(ovp));
+		    UBC_VNODE_FLAGS(ovp));
 	}
 	(void)ext2fs_setsize(oip, length);
 	uvm_vnp_setsize(ovp, length);

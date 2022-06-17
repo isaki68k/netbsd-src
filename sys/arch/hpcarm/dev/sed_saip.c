@@ -1,4 +1,4 @@
-/*	$NetBSD: sed_saip.c,v 1.26 2012/10/27 17:17:52 chs Exp $	*/
+/*	$NetBSD: sed_saip.c,v 1.29 2022/05/28 10:36:22 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999-2001
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sed_saip.c,v 1.26 2012/10/27 17:17:52 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sed_saip.c,v 1.29 2022/05/28 10:36:22 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -185,7 +185,7 @@ sed1356_attach(device_t parent, device_t self, void *aux)
 			    CONFIG_HOOK_SHARE, j720lcd_power, sc);
 	}
 
-	config_found(self, &ha, hpcfbprint);
+	config_found(self, &ha, hpcfbprint, CFARGS_NONE);
 }
 
 static int
@@ -545,7 +545,7 @@ sed1356_ioctl(void *v, u_long cmd, void *data, int flag, struct lwp *l)
 	case HPCFBIO_GOP:
 	case HPCFBIO_SOP:
 		/*
-		 * curently not implemented...
+		 * currently not implemented...
 		 */
 		return EINVAL;
 	}

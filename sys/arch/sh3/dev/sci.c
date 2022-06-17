@@ -1,4 +1,4 @@
-/* $NetBSD: sci.c,v 1.61 2014/11/15 19:20:01 christos Exp $ */
+/* $NetBSD: sci.c,v 1.63 2020/11/21 17:25:52 thorpej Exp $ */
 
 /*-
  * Copyright (C) 1999 T.Horiuchi and SAITOH Masanobu.  All rights reserved.
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sci.c,v 1.61 2014/11/15 19:20:01 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sci.c,v 1.63 2020/11/21 17:25:52 thorpej Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_sci.h"
@@ -107,7 +107,7 @@ __KERNEL_RCSID(0, "$NetBSD: sci.c,v 1.61 2014/11/15 19:20:01 christos Exp $");
 #include <sys/syslog.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kauth.h>
 #include <sys/intr.h>
 
@@ -416,12 +416,7 @@ sci_attach(device_t parent, device_t self, void *aux)
 	tp->t_hwiflow = NULL;
 
 	sc->sc_tty = tp;
-	sc->sc_rbuf = malloc(sci_rbuf_size << 1, M_DEVBUF, M_NOWAIT);
-	if (sc->sc_rbuf == NULL) {
-		printf("%s: unable to allocate ring buffer\n",
-		    device_xname(self));
-		return;
-	}
+	sc->sc_rbuf = kmem_alloc(sci_rbuf_size << 1, KM_SLEEP);
 	sc->sc_ebuf = sc->sc_rbuf + (sci_rbuf_size << 1);
 
 	tty_attach(tp);

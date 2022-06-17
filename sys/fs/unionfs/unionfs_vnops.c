@@ -65,6 +65,42 @@
 #endif
 
 static int
+unionfs_parsepath(void *v)
+{
+	struct vop_parsepath_args /* {
+		struct vnode *a_dvp;
+		const char *a_name;
+		size_t *a_retval;
+	} */ *ap = v;
+	struct unionfs_node *dunp;
+	struct vnode *upperdvp, *lowerdvp;
+	size_t upper, lower;
+	int error;
+
+	dunp = VTOUNIONFS(ap->a_dvp);
+	upperdvp = dunp->un_uppervp;
+	lowerdvp = dunp->un_lowervp;
+
+	error = VOP_PARSEPATH(upperdvp, ap->a_name, &upper);
+	if (error) {
+		return error;
+	}
+
+	error = VOP_PARSEPATH(lowerdvp, ap->a_name, &lower);
+	if (error) {
+		return error;
+	}
+
+	/*
+	 * If they're different, use the larger one. This is not a
+	 * comprehensive solution, but it's sufficient for the
+	 * non-default cases of parsepath that currently exist.
+	 */
+	*ap->a_retval = MAX(upper, lower);
+	return 0;
+}
+
+static int
 unionfs_lookup(void *v)
 {
 	struct vop_lookup_args *ap = v;
@@ -530,7 +566,6 @@ unionfs_close_abort:
 static int
 unionfs_check_corrected_access(u_short mode, struct vattr *va, kauth_cred_t cred)
 {
-	int		result;
 	int		error;
 	uid_t		uid;	/* upper side vnode's uid */
 	gid_t		gid;	/* upper side vnode's gid */
@@ -554,10 +589,7 @@ unionfs_check_corrected_access(u_short mode, struct vattr *va, kauth_cred_t cred
 	}
 
 	/* check group */
-	error = kauth_cred_ismember_gid(cred, gid, &result);
-	if (error != 0)
-		return error;
-	if (result) {
+	if (kauth_cred_groupmember(cred, gid) == 0) {
 		if (mode & VEXEC)
 			mask |= S_IXGRP;
 		if (mode & VREAD)
@@ -857,7 +889,7 @@ unionfs_fsync(void *v)
 static int
 unionfs_remove(void *v)
 {
-	struct vop_remove_v2_args *ap = v;
+	struct vop_remove_v3_args *ap = v;
 	int		error;
 	struct unionfs_node *dunp;
 	struct unionfs_node *unp;
@@ -1748,14 +1780,14 @@ unionfs_putpages(void *v)
 	struct vnode *vp = ap->a_vp, *tvp;
 	struct unionfs_node *unp;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_lock_held(vp->v_uobj.vmobjlock));
 
 	unp = VTOUNIONFS(vp);
 	tvp = (unp->un_uppervp != NULLVP ? unp->un_uppervp : unp->un_lowervp);
-	KASSERT(tvp->v_interlock == vp->v_interlock);
+	KASSERT(tvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 
 	if (ap->a_flags & PGO_RECLAIM) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		return 0;
 	}
 	return VOP_PUTPAGES(tvp, ap->a_offlo, ap->a_offhi, ap->a_flags);
@@ -1777,11 +1809,11 @@ unionfs_getpages(void *v)
 	struct vnode *vp = ap->a_vp, *tvp;
 	struct unionfs_node *unp;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_lock_held(vp->v_uobj.vmobjlock));
 
 	unp = VTOUNIONFS(vp);
 	tvp = (unp->un_uppervp != NULLVP ? unp->un_uppervp : unp->un_lowervp);
-	KASSERT(tvp->v_interlock == vp->v_interlock);
+	KASSERT(tvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 
 	if (ap->a_flags & PGO_LOCKED) {
 		return EBUSY;
@@ -1814,6 +1846,7 @@ unionfs_revoke(void *v)
 int (**unionfs_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc unionfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, unionfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, unionfs_lookup },		/* lookup */
 	{ &vop_create_desc, unionfs_create },		/* create */
 	{ &vop_whiteout_desc, unionfs_whiteout },	/* whiteout */
@@ -1821,6 +1854,7 @@ const struct vnodeopv_entry_desc unionfs_vnodeop_entries[] = {
 	{ &vop_open_desc, unionfs_open },		/* open */
 	{ &vop_close_desc, unionfs_close },		/* close */
 	{ &vop_access_desc, unionfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, unionfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, unionfs_setattr },		/* setattr */
 	{ &vop_read_desc, unionfs_read },		/* read */

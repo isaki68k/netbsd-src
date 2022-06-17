@@ -1,12 +1,12 @@
 /******************************************************************************
  *
  * Name: acnetbsd.h - OS specific defines, etc.
- *       $Revision: 1.19 $
+ *       $Revision: 1.24 $
  *
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -65,9 +65,15 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/reboot.h>
+#include <sys/endian.h>
 #include <dev/acpi/acpica/acpi_func.h>
 
 #define asm         __asm
+
+#if BYTE_ORDER == BIG_ENDIAN
+#define ACPI_BIG_ENDIAN
+#endif
 
 #define ACPI_USE_NATIVE_DIVIDE
 #define ACPI_USE_NATIVE_MATH64
@@ -78,6 +84,12 @@
 #define ACPI_EXTERNAL_XFACE
 #define ACPI_INTERNAL_XFACE
 #define ACPI_INTERNAL_VAR_XFACE
+
+#if defined(_KERNEL)
+/* Suppress ACPI_INFO level log messages in the kernel when this is true */
+#define ACPI_QUIET_BOOT	\
+	((boothowto & (AB_QUIET|AB_SILENT)) != 0)
+#endif
 
 /*
  * XXX: The internal memory tracking of ACPICA, available when

@@ -1,4 +1,4 @@
-/* $NetBSD: aupcmcia.c,v 1.10 2015/08/30 04:09:21 dholland Exp $ */
+/* $NetBSD: aupcmcia.c,v 1.12 2021/08/07 16:18:58 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Itronix Inc.
@@ -35,7 +35,7 @@
 /* #include "pci.h" */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aupcmcia.c,v 1.10 2015/08/30 04:09:21 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aupcmcia.c,v 1.12 2021/08/07 16:18:58 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -270,7 +270,8 @@ aupcm_attach(device_t parent, device_t self, void *aux)
 		paa.pct = sc->sc_pct;
 		paa.pch = (pcmcia_chipset_handle_t)sp;
 
-		sp->as_pcmcia = config_found(self, &paa, aupcm_print);
+		sp->as_pcmcia = config_found(self, &paa, aupcm_print,
+		    CFARGS_NONE);
 
 		/* if no pcmcia, make sure slot is powered down */
 		if (sp->as_pcmcia == NULL) {

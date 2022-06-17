@@ -1,4 +1,4 @@
-/*	$NetBSD: consinit.c,v 1.31 2019/05/31 03:10:31 nonaka Exp $	*/
+/*	$NetBSD: consinit.c,v 1.34 2021/10/07 12:52:27 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1998
@@ -27,10 +27,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.31 2019/05/31 03:10:31 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.34 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_puc.h"
+#include "opt_xen.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -91,11 +92,15 @@ __KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.31 2019/05/31 03:10:31 nonaka Exp $")
 #include <dev/usb/ukbdvar.h>
 #endif
 
-#ifndef XEN
+#ifndef XENPV
 #include "hvkbd.h"
 #if NHVKBD > 0
 #include <dev/hyperv/hvkbdvar.h>
 #endif
+#endif
+
+#ifdef XENPVHVM
+#include <xen/xen.h>
 #endif
 
 #ifndef CONSDEVNAME
@@ -166,6 +171,12 @@ consinit(void)
 	int rv;
 #endif
 
+#ifdef XENPVHVM
+	if (vm_guest == VM_GUEST_XENPVH) {
+		xen_pvh_consinit();
+		return;
+	}
+#endif
 	if (initted)
 		return;
 	initted = 1;
@@ -266,7 +277,7 @@ void
 kgdb_port_init(void)
 {
 #if (NCOM > 0)
-	if(!strcmp(kgdb_devname, "com")) {
+	if (!strcmp(kgdb_devname, "com")) {
 		com_kgdb_attach(x86_bus_space_io, comkgdbaddr, comkgdbrate,
 		    COM_FREQ, COM_TYPE_NORMAL, comkgdbmode);
 	}

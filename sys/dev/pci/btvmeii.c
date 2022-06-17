@@ -1,4 +1,4 @@
-/* $NetBSD: btvmeii.c,v 1.23 2019/03/01 09:26:00 msaitoh Exp $ */
+/* $NetBSD: btvmeii.c,v 1.26 2021/08/07 16:19:14 thorpej Exp $ */
 
 /*
  * Copyright (c) 1999
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: btvmeii.c,v 1.23 2019/03/01 09:26:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: btvmeii.c,v 1.26 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -276,7 +276,7 @@ b3_2706_attach(device_t parent, device_t self, void *aux)
 	vaa.va_bdt = pa->pa_dmat; /* XXX */
 	vaa.va_slaveconfig = 0; /* XXX CSR window? */
 
-	config_found(self, &vaa, 0);
+	config_found(self, &vaa, 0, CFARGS_NONE);
 }
 
 #define sc ((struct b3_2706_softc*)vsc)
@@ -433,10 +433,7 @@ b3_2706_establish_vmeint(void *vsc, vme_intr_handle_t handle, int prior, int (*f
 	long lv;
 	int s;
 
-	/* no point in sleeping unless someone can free memory. */
-	ih = malloc(sizeof *ih, M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (ih == NULL)
-		panic("b3_2706_map_vmeint: can't malloc handler info");
+	ih = malloc(sizeof *ih, M_DEVBUF, M_WAITOK);
 
 	lv = (long)handle; /* XXX */
 

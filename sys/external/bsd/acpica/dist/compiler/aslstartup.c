@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -185,9 +185,17 @@ AslDetectSourceFileType (
         goto Cleanup;
     }
 
-    /* We have some sort of binary table, check for valid ACPI table */
-
-    fseek (Info->Handle, 0, SEEK_SET);
+    /*
+     * We have some sort of binary table; reopen in binary mode, then
+     * check for valid ACPI table
+     */
+    fclose (Info->Handle);
+    Info->Handle = fopen (Info->Filename, "rb");
+    if (!Info->Handle)
+    {
+        fprintf (stderr, "Could not open input file %s\n",
+            Info->Filename);
+    }
 
     Status = AcValidateTableHeader (Info->Handle, 0);
     if (ACPI_SUCCESS (Status))
@@ -338,8 +346,9 @@ AslDoOneFile (
     UtConvertBackslashes (AslGbl_Files[ASL_FILE_INPUT].Filename);
 
     /*
-     * Open the input file. Here, this should be an ASCII source file,
-     * either an ASL file or a Data Table file
+     * Open the input file. Here, this could be an ASCII source file,
+     * either an ASL file or a Data Table file, or a binary AML file
+     * or binary data table file (For disassembly).
      */
     Status = FlOpenInputFile (AslGbl_Files[ASL_FILE_INPUT].Filename);
     if (ACPI_FAILURE (Status))
@@ -349,12 +358,6 @@ AslDoOneFile (
     }
 
     FileNode = FlGetCurrentFileNode();
-    if (!FileNode)
-    {
-        return (AE_ERROR);
-    }
-
-    FileNode->OriginalInputFileSize = FlGetFileSize (ASL_FILE_INPUT);
 
     /* Determine input file type */
 
@@ -364,6 +367,8 @@ AslDoOneFile (
     {
         return (AE_ERROR);
     }
+
+    FileNode->OriginalInputFileSize = FlGetFileSize (ASL_FILE_INPUT);
 
     /*
      * If -p not specified, we will use the input filename as the

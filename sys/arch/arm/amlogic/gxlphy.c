@@ -1,4 +1,4 @@
-/* $NetBSD: gxlphy.c,v 1.1 2019/04/21 11:02:32 jmcneill Exp $ */
+/* $NetBSD: gxlphy.c,v 1.5 2021/06/29 21:03:36 pgoyette Exp $ */
 
 /*
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gxlphy.c,v 1.1 2019/04/21 11:02:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gxlphy.c,v 1.5 2021/06/29 21:03:36 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -70,9 +70,8 @@ __KERNEL_RCSID(0, "$NetBSD: gxlphy.c,v 1.1 2019/04/21 11:02:32 jmcneill Exp $");
 static int	gxlphymatch(device_t, cfdata_t, void *);
 static void	gxlphyattach(device_t, device_t, void *);
 
-CFATTACH_DECL3_NEW(gxlphy, sizeof(struct mii_softc),
-    gxlphymatch, gxlphyattach, mii_phy_detach, mii_phy_activate, NULL, NULL,
-    DVF_DETACH_SHUTDOWN);
+CFATTACH_DECL_NEW(gxlphy, sizeof(struct mii_softc),
+    gxlphymatch, gxlphyattach, mii_phy_detach, mii_phy_activate);
 
 static int	gxlphy_service(struct mii_softc *, struct mii_data *, int);
 static void	gxlphy_status(struct mii_softc *);
@@ -149,9 +148,10 @@ gxlphyattach(device_t parent, device_t self, void *aux)
 	int oui = MII_OUI(ma->mii_id1, ma->mii_id2);
 	int model = MII_MODEL(ma->mii_id2);
 	int rev = MII_REV(ma->mii_id2);
-	const char *descr;
+	char descr[MII_MAX_DESCR_LEN];
 
-	if ((descr = mii_get_descr(oui, model)) != NULL)
+	mii_get_descr(descr, sizeof(descr), oui, model);
+	if (descr[0])
 		aprint_normal(": %s (OUI 0x%06x, model 0x%04x), rev. %d\n",
 		       descr, oui, model, rev);
 	else
@@ -168,7 +168,8 @@ gxlphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &gxlphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -180,13 +181,10 @@ gxlphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -194,6 +192,8 @@ gxlphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -246,6 +246,8 @@ static void
 gxlphy_status(struct mii_softc *sc)
 {
 	uint16_t bmcr, bmsr, wol, lpa, aner;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	PHY_READ(sc, MII_BMCR, &bmcr);
 	if ((bmcr & BMCR_AUTOEN) == 0)

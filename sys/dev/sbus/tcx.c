@@ -1,4 +1,4 @@
-/*	$NetBSD: tcx.c,v 1.58 2018/01/24 05:35:58 riastradh Exp $ */
+/*	$NetBSD: tcx.c,v 1.60 2021/08/07 16:19:15 thorpej Exp $ */
 
 /*
  *  Copyright (c) 1996, 1998, 2009 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcx.c,v 1.58 2018/01/24 05:35:58 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcx.c,v 1.60 2021/08/07 16:19:15 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -423,7 +423,7 @@ tcxattach(device_t parent, device_t self, void *args)
 	aa.accessops = &tcx_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(self, &aa, wsemuldisplaydevprint);
+	config_found(self, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 	/*
 	 * we need to do this again - something overwrites a handful
 	 * palette registers and we end up with white in reg. 0

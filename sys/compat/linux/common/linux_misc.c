@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.c,v 1.245 2019/09/20 15:25:19 kamil Exp $	*/
+/*	$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -57,13 +57,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.245 2019/09/20 15:25:19 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
 #include <sys/dirent.h>
+#include <sys/eventfd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/filedesc.h>
@@ -93,6 +94,7 @@ __KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.245 2019/09/20 15:25:19 kamil Exp $
 #include <sys/swap.h>		/* for SWAP_ON */
 #include <sys/sysctl.h>		/* for KERN_DOMAINNAME */
 #include <sys/kauth.h>
+#include <sys/futex.h>
 
 #include <sys/ptrace.h>
 #include <machine/ptrace.h>
@@ -628,6 +630,8 @@ linux_sys_times(struct lwp *l, const struct linux_sys_times_args *uap, register_
 		struct linux_tms ltms;
 		struct rusage ru;
 
+		memset(&ltms, 0, sizeof(ltms));
+
 		mutex_enter(p->p_lock);
 		calcru(p, &ru.ru_utime, &ru.ru_stime, NULL, NULL);
 		ltms.ltms_utime = CONVTCK(ru.ru_utime);
@@ -648,6 +652,7 @@ linux_sys_times(struct lwp *l, const struct linux_sys_times_args *uap, register_
 
 #undef CONVTCK
 
+#if !defined(__aarch64__)
 /*
  * Linux 'readdir' call. This code is mostly taken from the
  * SunOS getdents call (see compat/sunos/sunos_misc.c), though
@@ -831,7 +836,9 @@ out1:
 	fd_putfile(SCARG(uap, fd));
 	return error;
 }
+#endif
 
+#if !defined(__aarch64__)
 /*
  * Even when just using registers to pass arguments to syscalls you can
  * have 5 of them on the i386. So this newer version of select() does
@@ -929,6 +936,7 @@ linux_select1(struct lwp *l, register_t *retval, int nfds, fd_set *readfds,
 
 	return 0;
 }
+#endif
 
 /*
  * Derived from FreeBSD's sys/compat/linux/linux_misc.c:linux_pselect6()
@@ -1346,6 +1354,7 @@ linux_sys_sysinfo(struct lwp *l, const struct linux_sys_sysinfo_args *uap, regis
 	} */
 	struct linux_sysinfo si;
 	struct loadavg *la;
+	int64_t filepg;
 
 	memset(&si, 0, sizeof(si));
 	si.uptime = time_uptime;
@@ -1354,13 +1363,18 @@ linux_sys_sysinfo(struct lwp *l, const struct linux_sys_sysinfo_args *uap, regis
 	si.loads[1] = la->ldavg[1] * LINUX_SYSINFO_LOADS_SCALE / la->fscale;
 	si.loads[2] = la->ldavg[2] * LINUX_SYSINFO_LOADS_SCALE / la->fscale;
 	si.totalram = ctob((u_long)physmem);
-	si.freeram = (u_long)uvmexp.free * uvmexp.pagesize;
+	/* uvm_availmem() may sync the counters. */
+	si.freeram = (u_long)uvm_availmem(true) * uvmexp.pagesize;
+	filepg = cpu_count_get(CPU_COUNT_FILECLEAN) +
+	    cpu_count_get(CPU_COUNT_FILEDIRTY) +
+	    cpu_count_get(CPU_COUNT_FILEUNKNOWN) -
+	    cpu_count_get(CPU_COUNT_EXECPAGES);
 	si.sharedram = 0;	/* XXX */
-	si.bufferram = (u_long)uvmexp.filepages * uvmexp.pagesize;
+	si.bufferram = (u_long)(filepg * uvmexp.pagesize);
 	si.totalswap = (u_long)uvmexp.swpages * uvmexp.pagesize;
 	si.freeswap = 
 	    (u_long)(uvmexp.swpages - uvmexp.swpginuse) * uvmexp.pagesize;
-	si.procs = nprocs;
+	si.procs = atomic_load_relaxed(&nprocs);
 
 	/* The following are only present in newer Linux kernels. */
 	si.totalbig = 0;
@@ -1392,6 +1406,7 @@ linux_sys_getrlimit(struct lwp *l, const struct linux_sys_getrlimit_args *uap, r
 	if (which < 0)
 		return -which;
 
+	memset(&orl, 0, sizeof(orl));
 	bsd_to_linux_rlimit(&orl, &l->l_proc->p_rlimit[which]);
 
 	return copyout(&orl, SCARG(uap, rlp), sizeof(orl));
@@ -1428,7 +1443,7 @@ linux_sys_setrlimit(struct lwp *l, const struct linux_sys_setrlimit_args *uap, r
 	return dosetrlimit(l, l->l_proc, which, &rl);
 }
 
-# if !defined(__mips__) && !defined(__amd64__)
+# if !defined(__aarch64__) && !defined(__mips__) && !defined(__amd64__)
 /* XXX: this doesn't look 100% common, at least mips doesn't have it */
 int
 linux_sys_ugetrlimit(struct lwp *l, const struct linux_sys_ugetrlimit_args *uap, register_t *retval)
@@ -1436,6 +1451,48 @@ linux_sys_ugetrlimit(struct lwp *l, const struct linux_sys_ugetrlimit_args *uap,
 	return linux_sys_getrlimit(l, (const void *)uap, retval);
 }
 # endif
+
+int
+linux_sys_prlimit64(struct lwp *l, const struct linux_sys_prlimit64_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(pid_t) pid;
+		syscallarg(int) witch;
+		syscallarg(struct rlimit *) new_rlp;
+		syscallarg(struct rlimit *) old_rlp;
+	}; */
+	struct rlimit rl, nrl, orl;
+	struct rlimit *p;
+	int which;
+	int error;
+
+	/* XXX: Cannot operate any process other than its own */
+	if (SCARG(uap, pid) != 0)
+		return EPERM;
+
+	which = linux_to_bsd_limit(SCARG(uap, which));
+	if (which < 0)
+		return -which;
+
+	p = SCARG(uap, old_rlp);
+	if (p != NULL) {
+		memset(&orl, 0, sizeof(orl));
+		bsd_to_linux_rlimit64(&orl, &l->l_proc->p_rlimit[which]);
+		if ((error = copyout(&orl, p, sizeof(orl))) != 0)
+			return error;
+	}
+
+	p = SCARG(uap, new_rlp);
+	if (p != NULL) {
+		if ((error = copyin(p, &nrl, sizeof(nrl))) != 0)
+			return error;
+
+		linux_to_bsd_rlimit(&rl, &nrl);
+		return dosetrlimit(l, l->l_proc, which, &rl);
+	}
+
+	return 0;
+}
 
 /*
  * This gets called for unsupported syscalls. The difference to sys_nosys()
@@ -1516,4 +1573,111 @@ linux_sys_utimensat(struct lwp *l, const struct linux_sys_utimensat_args *uap,
 
 	return linux_do_sys_utimensat(l, SCARG(uap, fd), SCARG(uap, path),
 	    tsp, SCARG(uap, flag), retval);
+}
+
+int
+linux_sys_futex(struct lwp *l, const struct linux_sys_futex_args *uap,
+	register_t *retval)
+{
+	/* {
+		syscallarg(int *) uaddr;
+		syscallarg(int) op;
+		syscallarg(int) val;
+		syscallarg(const struct linux_timespec *) timeout;
+		syscallarg(int *) uaddr2;
+		syscallarg(int) val3;
+	} */
+	struct linux_timespec lts;
+	struct timespec ts, *tsp = NULL;
+	int val2 = 0;
+	int error;
+
+	/*
+	 * Linux overlays the "timeout" field and the "val2" field.
+	 * "timeout" is only valid for FUTEX_WAIT and FUTEX_WAIT_BITSET
+	 * on Linux.
+	 */
+	const int op = (SCARG(uap, op) & FUTEX_CMD_MASK);
+	if ((op == FUTEX_WAIT || op == FUTEX_WAIT_BITSET) &&
+	    SCARG(uap, timeout) != NULL) {
+		if ((error = copyin(SCARG(uap, timeout), 
+		    &lts, sizeof(lts))) != 0) {
+			return error;
+		}
+		linux_to_native_timespec(&ts, &lts);
+		tsp = &ts;
+	} else {
+		val2 = (int)(uintptr_t)SCARG(uap, timeout);
+	}
+
+	return linux_do_futex(SCARG(uap, uaddr), SCARG(uap, op),
+	    SCARG(uap, val), tsp, SCARG(uap, uaddr2), val2,
+	    SCARG(uap, val3), retval);
+}
+
+int
+linux_do_futex(int *uaddr, int op, int val, struct timespec *timeout,
+    int *uaddr2, int val2, int val3, register_t *retval)
+{
+	/*
+	 * Always clear FUTEX_PRIVATE_FLAG for Linux processes.
+	 * NetBSD-native futexes exist in different namespace
+	 * depending on FUTEX_PRIVATE_FLAG.  This appears not
+	 * to be the case in Linux, and some futex users will
+	 * mix private and non-private ops on the same futex
+	 * object.
+	 */
+	return do_futex(uaddr, op & ~FUTEX_PRIVATE_FLAG,
+			val, timeout, uaddr2, val2, val3, retval);
+}
+
+#define	LINUX_EFD_SEMAPHORE	0x0001
+#define	LINUX_EFD_CLOEXEC	LINUX_O_CLOEXEC
+#define	LINUX_EFD_NONBLOCK	LINUX_O_NONBLOCK
+
+static int
+linux_do_eventfd2(struct lwp *l, unsigned int initval, int flags,
+    register_t *retval)
+{
+	int nflags = 0;
+
+	if (flags & ~(LINUX_EFD_SEMAPHORE | LINUX_EFD_CLOEXEC |
+		      LINUX_EFD_NONBLOCK)) {
+		return EINVAL;
+	}
+	if (flags & LINUX_EFD_SEMAPHORE) {
+		nflags |= EFD_SEMAPHORE;
+	}
+	if (flags & LINUX_EFD_CLOEXEC) {
+		nflags |= EFD_CLOEXEC;
+	}
+	if (flags & LINUX_EFD_NONBLOCK) {
+		nflags |= EFD_NONBLOCK;
+	}
+
+	return do_eventfd(l, initval, nflags, retval);
+}
+
+int
+linux_sys_eventfd(struct lwp *l, const struct linux_sys_eventfd_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(unsigned int) initval;
+	} */
+
+	return linux_do_eventfd2(l, SCARG(uap, initval), 0, retval);
+}
+
+int
+linux_sys_eventfd2(struct lwp *l, const struct linux_sys_eventfd2_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(unsigned int) initval;
+		syscallarg(int) flags;
+	} */
+
+	return linux_do_eventfd2(l, SCARG(uap, initval), SCARG(uap, flags),
+				 retval);
 }

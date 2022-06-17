@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -75,6 +75,7 @@ AcpiEvSystemMemoryRegionSetup (
 {
     ACPI_OPERAND_OBJECT     *RegionDesc = (ACPI_OPERAND_OBJECT *) Handle;
     ACPI_MEM_SPACE_CONTEXT  *LocalRegionContext;
+    ACPI_MEM_MAPPING        *Mm;
 
 
     ACPI_FUNCTION_TRACE (EvSystemMemoryRegionSetup);
@@ -86,12 +87,14 @@ AcpiEvSystemMemoryRegionSetup (
         {
             LocalRegionContext = (ACPI_MEM_SPACE_CONTEXT *) *RegionContext;
 
-            /* Delete a cached mapping if present */
+            /* Delete memory mappings if present */
 
-            if (LocalRegionContext->MappedLength)
+            while (LocalRegionContext->FirstMm)
             {
-                AcpiOsUnmapMemory (LocalRegionContext->MappedLogicalAddress,
-                    LocalRegionContext->MappedLength);
+                Mm = LocalRegionContext->FirstMm;
+                LocalRegionContext->FirstMm = Mm->NextMm;
+                AcpiOsUnmapMemory(Mm->LogicalAddress, Mm->Length);
+                ACPI_FREE(Mm);
             }
             ACPI_FREE (LocalRegionContext);
             *RegionContext = NULL;
@@ -255,7 +258,6 @@ AcpiEvPciConfigRegionSetup (
                          * root bridge. Still need to return a context object
                          * for the new PCI_Config operation region, however.
                          */
-                        Status = AE_OK;
                     }
                     else
                     {
@@ -485,6 +487,64 @@ AcpiEvCmosRegionSetup (
     ACPI_FUNCTION_TRACE (EvCmosRegionSetup);
 
 
+    return_ACPI_STATUS (AE_OK);
+}
+
+
+/*******************************************************************************
+ *
+ * FUNCTION:    AcpiEvDataTableRegionSetup
+ *
+ * PARAMETERS:  Handle              - Region we are interested in
+ *              Function            - Start or stop
+ *              HandlerContext      - Address space handler context
+ *              RegionContext       - Region specific context
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Setup a DataTableRegion
+ *
+ * MUTEX:       Assumes namespace is not locked
+ *
+ ******************************************************************************/
+
+ACPI_STATUS
+AcpiEvDataTableRegionSetup (
+    ACPI_HANDLE             Handle,
+    UINT32                  Function,
+    void                    *HandlerContext,
+    void                    **RegionContext)
+{
+    ACPI_OPERAND_OBJECT     *RegionDesc = (ACPI_OPERAND_OBJECT *) Handle;
+    ACPI_DATA_TABLE_MAPPING *LocalRegionContext;
+
+
+    ACPI_FUNCTION_TRACE (EvDataTableRegionSetup);
+
+
+    if (Function == ACPI_REGION_DEACTIVATE)
+    {
+        if (*RegionContext)
+        {
+            ACPI_FREE (*RegionContext);
+            *RegionContext = NULL;
+        }
+        return_ACPI_STATUS (AE_OK);
+    }
+
+    /* Create a new context */
+
+    LocalRegionContext = ACPI_ALLOCATE_ZEROED (sizeof (ACPI_DATA_TABLE_MAPPING));
+    if (!(LocalRegionContext))
+    {
+        return_ACPI_STATUS (AE_NO_MEMORY);
+    }
+
+    /* Save the data table pointer for use in the handler */
+
+    LocalRegionContext->Pointer = RegionDesc->Region.Pointer;
+
+    *RegionContext = LocalRegionContext;
     return_ACPI_STATUS (AE_OK);
 }
 

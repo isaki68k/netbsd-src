@@ -1,4 +1,4 @@
-/*	$NetBSD: signalvar.h,v 1.97 2019/10/12 19:57:09 kamil Exp $	*/
+/*	$NetBSD: signalvar.h,v 1.104 2021/11/01 05:07:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -85,6 +85,7 @@ struct sigctx {
 	void		*ps_sigcode;	/* address of signal trampoline */
 	sigset_t	 ps_sigignore;	/* Signals being ignored. */
 	sigset_t	 ps_sigcatch;	/* Signals being caught by user. */
+	sigset_t	 ps_sigpass;	/* Signals evading the debugger. */
 };
 
 /* additional signal action values, used only temporarily/internally */
@@ -137,6 +138,8 @@ struct coredump_iostate;
  * Machine-independent functions:
  */
 int	coredump_netbsd(struct lwp *, struct coredump_iostate *);
+int	coredump_netbsd32(struct lwp *, struct coredump_iostate *);
+int	real_coredump_netbsd(struct lwp *, struct coredump_iostate *);
 void	execsigs(struct proc *);
 int	issignal(struct lwp *);
 void	pgsignal(struct pgrp *, int, int);
@@ -153,7 +156,7 @@ void	setsigvec(struct proc *, int, struct sigaction *);
 int	killpg1(struct lwp *, struct ksiginfo *, int, int);
 void	proc_unstop(struct proc *p);
 void	eventswitch(int, int, int);
-
+void	eventswitchchild(struct proc *, int, int);
 
 int	sigaction1(struct lwp *, int, const struct sigaction *,
 	    struct sigaction *, const void *, int);
@@ -162,8 +165,7 @@ void	sigpending1(struct lwp *, sigset_t *);
 void	sigsuspendsetup(struct lwp *, const sigset_t *);
 void	sigsuspendteardown(struct lwp *);
 int	sigsuspend1(struct lwp *, const sigset_t *);
-int	sigaltstack1(struct lwp *, const struct sigaltstack *,
-	    struct sigaltstack *);
+int	sigaltstack1(struct lwp *, const stack_t *, stack_t *);
 int	sigismasked(struct lwp *, int);
 
 int	sigget(sigpend_t *, ksiginfo_t *, int, const sigset_t *);
@@ -200,13 +202,6 @@ void	sendsig_sigcontext(const struct ksiginfo *, const sigset_t *);
 void	sendsig_siginfo(const struct ksiginfo *, const sigset_t *);
 
 extern	struct pool ksiginfo_pool;
-
-/*
- * Modularity / compatibility.
- */
-extern void	(*sendsig_sigcontext_vec)(const struct ksiginfo *,
-					  const sigset_t *);
-extern int	(*coredump_vec)(struct lwp *, const char *);
 
 /*
  * firstsig:

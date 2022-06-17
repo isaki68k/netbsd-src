@@ -1,4 +1,4 @@
-/* $NetBSD: if_veth.c,v 1.13 2019/05/29 10:07:29 msaitoh Exp $ */
+/* $NetBSD: if_veth.c,v 1.15 2021/06/16 00:21:18 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_veth.c,v 1.13 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_veth.c,v 1.15 2021/06/16 00:21:18 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -102,7 +102,6 @@ veth_attach(device_t parent, device_t self, void *opaque)
 	struct veth_softc *sc = device_private(self);
 	struct thunkbus_attach_args *taa = opaque;
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
-	int rv;
 
 	sc->sc_dev = self;
 
@@ -138,13 +137,7 @@ veth_attach(device_t parent, device_t self, void *opaque)
 	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
 	IFQ_SET_READY(&ifq->if_snd);
 
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error_dev(self, "if_initialize failed(%d)\n", rv);
-		thunk_close(sc->sc_tapfd);
-		pmf_device_deregister(self);
-		return; /* Error */
-	}
+	if_initialize(ifp);
 	ether_ifattach(ifp, sc->sc_eaddr);
 	if_register(ifp);
 
@@ -225,14 +218,14 @@ veth_softrx(void *priv)
 		MGETHDR(m, M_DONTWAIT, MT_DATA);
 		if (m == NULL) {
 			vethprintf("MGETHDR failed (input error)\n");
-			++ifp->if_ierrors;
+			if_statinc(ifp, if_ierrors);
 			continue;
 		}
 		if (len > MHLEN) {
 			MCLGET(m, M_DONTWAIT);
 			if ((m->m_flags & M_EXT) == 0) {
 				m_freem(m);
-				++ifp->if_ierrors;
+				if_statinc(ifp, if_ierrors);
 				vethprintf("M_EXT not set (input error)\n");
 				continue;
 			}
@@ -297,9 +290,9 @@ veth_start(struct ifnet *ifp)
 		    m0->m_pkthdr.len);
 		vethprintf("write returned %d\n", len);
 		if (len > 0)
-			++ifp->if_opackets;
+			if_statinc(ifp, if_opackets);
 		else
-			++ifp->if_oerrors;
+			if_statinc(ifp, if_oerrors);
 		m_freem(m0);
 	}
 }
@@ -316,7 +309,7 @@ static void
 veth_watchdog(struct ifnet *ifp)
 {
 	vethprintf("%s: %s flags=%x\n", __func__, ifp->if_xname, ifp->if_flags);
-	++ifp->if_oerrors;
+	if_statinc(ifp, if_oerrors);
 	veth_init(ifp);
 }
 

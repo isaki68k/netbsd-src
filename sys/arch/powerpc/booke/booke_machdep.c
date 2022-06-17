@@ -1,4 +1,4 @@
-/*	$NetBSD: booke_machdep.c,v 1.26 2019/04/07 05:25:55 thorpej Exp $	*/
+/*	$NetBSD: booke_machdep.c,v 1.33 2021/03/30 14:29:54 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -38,9 +38,15 @@
 #define	_POWERPC_BUS_DMA_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: booke_machdep.c,v 1.26 2019/04/07 05:25:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: booke_machdep.c,v 1.33 2021/03/30 14:29:54 rin Exp $");
 
+#include "ksyms.h"
+
+#ifdef _KERNEL_OPT
+#include "opt_ddb.h"
 #include "opt_modular.h"
+#include "opt_multiprocessor.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -191,7 +197,7 @@ booke_cpu_startup(const char *model)
 	 * pool pages.
 	 */
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -282,15 +288,6 @@ cpu_reboot(int howto, char *what)
 		cnpollc(1);	/* For proper keyboard command handling */
 		cngetc();
 		cnpollc(0);
-
-		printf("rebooting...\n\n");
-		goto reboot;	/* XXX for now... */
-
-#ifdef DDB
-		printf("dropping to debugger\n");
-		while(1)
-			Debugger();
-#endif
 	}
 
 	printf("rebooting\n\n");
@@ -315,7 +312,6 @@ cpu_reboot(int howto, char *what)
 	/* flush cache for msgbuf */
 	dcache_wb(msgbuf_paddr, round_page(MSGBUFSIZE));
 
- reboot:
 	__asm volatile("msync; isync");
 	(*cpu_md_ops.md_cpu_reset)();
 
@@ -515,7 +511,7 @@ cpu_boot_secondary_processors(void)
 
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		/*
-		 * Skip this CPU if it didn't sucessfully hatch.
+		 * Skip this CPU if it didn't successfully hatch.
 		 */
 		if (!kcpuset_isset(csi->cpus_hatched, cpu_index(ci)))
 			continue;

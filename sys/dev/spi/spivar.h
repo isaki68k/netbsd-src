@@ -1,4 +1,4 @@
-/* $NetBSD: spivar.h,v 1.8 2019/08/13 16:37:15 tnn Exp $ */
+/* $NetBSD: spivar.h,v 1.12 2022/01/19 13:33:11 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -87,6 +87,8 @@ struct spi_attach_args {
 					   ia_compat array */
 	const char **	sa_compat;	/* chip names */
 	prop_dictionary_t sa_prop;	/* dictionary for this device */
+
+	uintptr_t	sa_cookie;	/* OF node in openfirmware machines */
 };
 
 /*
@@ -109,7 +111,7 @@ struct spi_chunk {
 struct spi_transfer {
 	struct spi_chunk *st_chunks;		/* chained bufs */
 	SIMPLEQ_ENTRY(spi_transfer) st_chain;	/* chain of submitted jobs */
-	int		st_flags;
+	volatile int	st_flags;
 	int		st_errno;
 	int		st_slave;
 	void		*st_private;
@@ -140,7 +142,10 @@ SIMPLEQ_HEAD(spi_transq, spi_transfer);
 
 int spi_compatible_match(const struct spi_attach_args *, const cfdata_t,
 			  const struct device_compatible_entry *);
-int spi_configure(struct spi_handle *, int, int);
+const struct device_compatible_entry *
+    spi_compatible_lookup(const struct spi_attach_args *,
+			  const struct device_compatible_entry *);
+int spi_configure(device_t, struct spi_handle *, int, int);
 int spi_transfer(struct spi_handle *, struct spi_transfer *);
 void spi_transfer_init(struct spi_transfer *);
 void spi_chunk_init(struct spi_chunk *, int, const uint8_t *, uint8_t *);

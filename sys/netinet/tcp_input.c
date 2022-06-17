@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.416 2019/09/25 19:06:30 jnemeth Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.433 2022/05/24 20:50:20 andvar Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.416 2019/09/25 19:06:30 jnemeth Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.433 2022/05/24 20:50:20 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -186,6 +186,9 @@ __KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.416 2019/09/25 19:06:30 jnemeth Exp 
 #include <netinet/ip_var.h>
 #include <netinet/in_offload.h>
 
+#if NARP > 0
+#include <netinet/if_inarp.h>
+#endif
 #ifdef INET6
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
@@ -253,23 +256,52 @@ static void syn_cache_timer(void *);
 /*
  * Neighbor Discovery, Neighbor Unreachability Detection Upper layer hint.
  */
-#ifdef INET6
-static inline void
-nd6_hint(struct tcpcb *tp)
+static void
+nd_hint(struct tcpcb *tp)
 {
-	struct rtentry *rt = NULL;
+	struct route *ro = NULL;
+	struct rtentry *rt;
 
-	if (tp != NULL && tp->t_in6pcb != NULL && tp->t_family == AF_INET6 &&
-	    (rt = rtcache_validate(&tp->t_in6pcb->in6p_route)) != NULL)
-		nd6_nud_hint(rt);
-	rtcache_unref(rt, &tp->t_in6pcb->in6p_route);
-}
-#else
-static inline void
-nd6_hint(struct tcpcb *tp)
-{
-}
+	if (tp == NULL)
+		return;
+
+	switch (tp->t_family) {
+#if NARP > 0
+	case AF_INET:
+		if (tp->t_inpcb != NULL)
+			ro = &tp->t_inpcb->inp_route;
+		break;
 #endif
+#ifdef INET6
+	case AF_INET6:
+		if (tp->t_in6pcb != NULL)
+			ro = &tp->t_in6pcb->in6p_route;
+		break;
+#endif
+	}
+
+	if (ro == NULL)
+		return;
+
+	rt = rtcache_validate(ro);
+	if (rt == NULL)
+		return;
+
+	switch (tp->t_family) {
+#if NARP > 0
+	case AF_INET:
+		arp_nud_hint(rt);
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		nd6_nud_hint(rt);
+		break;
+#endif
+	}
+
+	rtcache_unref(rt, ro);
+}
 
 /*
  * Compute ACK transmission behavior.  Delay the ACK unless
@@ -768,7 +800,7 @@ present:
 
 	tp->rcv_nxt += q->ipqe_len;
 	pkt_flags = q->ipqe_flags & TH_FIN;
-	nd6_hint(tp);
+	nd_hint(tp);
 
 	TAILQ_REMOVE(&tp->segq, q, ipqe_q);
 	TAILQ_REMOVE(&tp->timeq, q, ipqe_timeq);
@@ -1239,15 +1271,29 @@ tcp_input(struct mbuf *m, int off, int proto)
 	}
 
 	/*
+	 * Enforce alignment requirements that are violated in
+	 * some cases, see kern/50766 for details.
+	 */
+	if (ACCESSIBLE_POINTER(th, struct tcphdr) == 0) {
+		m = m_copyup(m, off + sizeof(struct tcphdr), 0);
+		if (m == NULL) {
+			TCP_STATINC(TCP_STAT_RCVSHORT);
+			return;
+		}
+		th = (struct tcphdr *)(mtod(m, char *) + off);
+	}
+	KASSERT(ACCESSIBLE_POINTER(th, struct tcphdr));
+
+	/*
 	 * Get IP and TCP header.
 	 * Note: IP leaves IP header in first mbuf.
 	 */
 	ip = mtod(m, struct ip *);
+#ifdef INET6
+	ip6 = mtod(m, struct ip6_hdr *);
+#endif
 	switch (ip->ip_v) {
 	case 4:
-#ifdef INET6
-		ip6 = NULL;
-#endif
 		af = AF_INET;
 		iphlen = sizeof(struct ip);
 
@@ -1262,10 +1308,8 @@ tcp_input(struct mbuf *m, int off, int proto)
 		break;
 #ifdef INET6
 	case 6:
-		ip = NULL;
 		iphlen = sizeof(struct ip6_hdr);
 		af = AF_INET6;
-		ip6 = mtod(m, struct ip6_hdr *);
 
 		/*
 		 * Be proactive about unspecified IPv6 address in source.
@@ -1300,23 +1344,6 @@ tcp_input(struct mbuf *m, int off, int proto)
 		return;
 	}
 
-	/*
-	 * Enforce alignment requirements that are violated in
-	 * some cases, see kern/50766 for details.
-	 */
-	if (TCP_HDR_ALIGNED_P(th) == 0) {
-		m = m_copyup(m, off + sizeof(struct tcphdr), 0);
-		if (m == NULL) {
-			TCP_STATINC(TCP_STAT_RCVSHORT);
-			return;
-		}
-		ip = mtod(m, struct ip *);
-#ifdef INET6
-		ip6 = mtod(m, struct ip6_hdr *);
-#endif
-		th = (struct tcphdr *)(mtod(m, char *) + off);
-	}
-	KASSERT(TCP_HDR_ALIGNED_P(th));
 
 	/*
 	 * Check that TCP offset makes sense, pull out TCP options and
@@ -1335,7 +1362,7 @@ tcp_input(struct mbuf *m, int off, int proto)
 			TCP_STATINC(TCP_STAT_RCVSHORT);
 			return;
 		}
-		KASSERT(TCP_HDR_ALIGNED_P(th));
+		KASSERT(ACCESSIBLE_POINTER(th, struct tcphdr));
 		optlen = thlen - sizeof(struct tcphdr);
 		optp = ((u_int8_t *)th) + sizeof(struct tcphdr);
 
@@ -1514,7 +1541,6 @@ findpcb:
 			m_freem(in6p->in6p_options);
 			in6p->in6p_options = NULL;
 		}
-		KASSERT(ip6 != NULL);
 		ip6_savecontrol(in6p, &in6p->in6p_options, ip6, m);
 	}
 #endif
@@ -1889,7 +1915,7 @@ after_listen:
 				tcps[TCP_STAT_RCVACKPACK]++;
 				tcps[TCP_STAT_RCVACKBYTE] += acked;
 				TCP_STAT_PUTREF();
-				nd6_hint(tp);
+				nd_hint(tp);
 
 				if (acked > (tp->t_lastoff - tp->t_inoff))
 					tp->t_lastm = NULL;
@@ -1902,6 +1928,19 @@ after_listen:
 				tp->snd_fack = tp->snd_una;
 				if (SEQ_LT(tp->snd_high, tp->snd_una))
 					tp->snd_high = tp->snd_una;
+				/*
+				 * drag snd_wl2 along so only newer
+				 * ACKs can update the window size.
+				 * also avoids the state where snd_wl2
+				 * is eventually larger than th_ack and thus
+				 * blocking the window update mechanism and
+				 * the connection gets stuck for a loooong
+				 * time in the zero sized send window state.
+				 *
+				 * see PR/kern 55567
+				 */
+				tp->snd_wl2 = tp->snd_una;
+
 				m_freem(m);
 
 				/*
@@ -1941,13 +1980,25 @@ after_listen:
 			 * we have enough buffer space to take it.
 			 */
 			tp->rcv_nxt += tlen;
+
+			/*
+			 * Pull rcv_up up to prevent seq wrap relative to
+			 * rcv_nxt.
+			 */
+			tp->rcv_up = tp->rcv_nxt;
+
+			/*
+			 * Pull snd_wl1 up to prevent seq wrap relative to
+			 * th_seq.
+			 */
+			tp->snd_wl1 = th->th_seq;
+
 			tcps = TCP_STAT_GETREF();
 			tcps[TCP_STAT_PREDDAT]++;
 			tcps[TCP_STAT_RCVPACK]++;
 			tcps[TCP_STAT_RCVBYTE] += tlen;
 			TCP_STAT_PUTREF();
-			nd6_hint(tp);
-
+			nd_hint(tp);
 		/*
 		 * Automatic sizing enables the performance of large buffers
 		 * and most of the efficiency of small ones by only allocating
@@ -2484,7 +2535,7 @@ after_listen:
 				 * duplicate ack (ie, window info didn't
 				 * change), the ack is the biggest we've
 				 * seen and we've seen exactly our rexmt
-				 * threshhold of them, assume a packet
+				 * threshold of them, assume a packet
 				 * has been dropped and retransmit it.
 				 * Kludge snd_nxt & the congestion
 				 * window so we send only this one
@@ -2498,7 +2549,7 @@ after_listen:
 				     TCP_FACK_FASTRECOV(tp))) {
 					/*
 					 * Do the fast retransmit, and adjust
-					 * congestion control paramenters.
+					 * congestion control parameters.
 					 */
 					if (tp->t_congctl->fast_retransmit(tp, th)) {
 						/* False fast retransmit */
@@ -2575,7 +2626,7 @@ after_listen:
 		 */
 		tp->t_congctl->newack(tp, th);
 
-		nd6_hint(tp);
+		nd_hint(tp);
 		if (acked > so->so_snd.sb_cc) {
 			tp->snd_wnd -= so->so_snd.sb_cc;
 			sbdrop(&so->so_snd, (int)so->so_snd.sb_cc);
@@ -2781,7 +2832,7 @@ dodata:
 			tcps[TCP_STAT_RCVPACK]++;
 			tcps[TCP_STAT_RCVBYTE] += tlen;
 			TCP_STAT_PUTREF();
-			nd6_hint(tp);
+			nd_hint(tp);
 			if (so->so_state & SS_CANTRCVMORE) {
 				m_freem(m);
 			} else {
@@ -3328,7 +3379,7 @@ tcp_xmit_timer(struct tcpcb *tp, uint32_t rtt)
 		 * *alpha, or 2^(-TCP_RTT_SHIFT).  Because
 		 * srtt is stored in 1/32 slow ticks, we conceptually
 		 * shift left 5 bits, subtract srtt to get the
-		 * diference, and then shift right by TCP_RTT_SHIFT
+		 * difference, and then shift right by TCP_RTT_SHIFT
 		 * (3) to obtain 1/8 of the difference.
 		 */
 		delta = (rtt << 2) - (tp->t_srtt >> TCP_RTT_SHIFT);
@@ -3993,7 +4044,7 @@ syn_cache_get(struct sockaddr *src, struct sockaddr *dst,
 	tp->rcv_up = sc->sc_irs + 1;
 
 	/*
-	 * This is what whould have happened in tcp_output() when
+	 * This is what would have happened in tcp_output() when
 	 * the SYN,ACK was sent.
 	 */
 	tp->snd_up = tp->snd_una;
@@ -4207,7 +4258,7 @@ syn_cache_add(struct sockaddr *src, struct sockaddr *dst, struct tcphdr *th,
 
 		sc->sc_iss = tcp_new_iss1(&dstin->sin_addr,
 		    &srcin->sin_addr, dstin->sin_port,
-		    srcin->sin_port, sizeof(dstin->sin_addr), 0);
+		    srcin->sin_port, sizeof(dstin->sin_addr));
 		break;
 	    }
 #ifdef INET6
@@ -4218,7 +4269,7 @@ syn_cache_add(struct sockaddr *src, struct sockaddr *dst, struct tcphdr *th,
 
 		sc->sc_iss = tcp_new_iss1(&dstin6->sin6_addr,
 		    &srcin6->sin6_addr, dstin6->sin6_port,
-		    srcin6->sin6_port, sizeof(dstin6->sin6_addr), 0);
+		    srcin6->sin6_port, sizeof(dstin6->sin6_addr));
 		break;
 	    }
 #endif
@@ -4251,7 +4302,7 @@ syn_cache_add(struct sockaddr *src, struct sockaddr *dst, struct tcphdr *th,
 		 * With the default sbmax of 256K, a scale factor
 		 * of 3 will be chosen by this algorithm.  Those who
 		 * choose a larger sbmax should watch out
-		 * for the compatiblity problems mentioned above.
+		 * for the compatibility problems mentioned above.
 		 *
 		 * RFC1323: The Window field in a SYN (i.e., a <SYN>
 		 * or <SYN,ACK>) segment itself is never scaled.
@@ -4341,7 +4392,7 @@ syn_cache_respond(struct syn_cache *sc)
 		return EAFNOSUPPORT;
 	}
 
-	/* Worst case scanario, since we don't know the option size yet. */
+	/* Worst case scenario, since we don't know the option size yet. */
 	tlen = hlen + sizeof(struct tcphdr) + MAX_TCPOPTLEN;
 	KASSERT(max_linkhdr + tlen <= MCLBYTES);
 
@@ -4488,7 +4539,7 @@ syn_cache_respond(struct syn_cache *sc)
 
 	/*
 	 * Send ECN SYN-ACK setup packet.
-	 * Routes can be asymetric, so, even if we receive a packet
+	 * Routes can be asymmetric, so, even if we receive a packet
 	 * with ECE and CWR set, we must not assume no one will block
 	 * the ECE packet we are about to send.
 	 */
@@ -4513,7 +4564,7 @@ syn_cache_respond(struct syn_cache *sc)
 		 * Congestion is  most likely to occur in
 		 * the server-to-client direction.  As a result,
 		 * setting an ECN-capable codepoint in SYN/ACK
-		 * packets can reduce the occurence of three-second
+		 * packets can reduce the occurrence of three-second
 		 * retransmit timeouts resulting from the drop
 		 * of SYN/ACK packets."
 		 *

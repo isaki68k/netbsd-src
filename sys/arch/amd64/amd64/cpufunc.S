@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.46 2019/10/30 17:06:57 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.65 2020/11/30 17:02:27 bouyer Exp $	*/
 
 /*
- * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -153,6 +153,7 @@ END(setusergs)
 ENTRY(x86_read_flags)
 	pushfq
 	popq	%rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_read_flags)
 
@@ -166,19 +167,112 @@ END(x86_write_flags)
 
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 
-ENTRY(tsc_get_timecount)
-	movq	CPUVAR(CURLWP), %rcx
-1:
-	movq	L_NCSW(%rcx), %rdi
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	cmpq	%rdi, L_NCSW(%rcx)
-	jne	2f
+ENTRY(smap_enable)
+	SMAP_ENABLE
 	ret
-2:
-	jmp	1b
-END(tsc_get_timecount)
+END(smap_enable)
+
+ENTRY(smap_disable)
+	SMAP_DISABLE
+	ret
+END(smap_disable)
+
+/*
+ * %rdi = name
+ * %rsi = sel
+ */
+ENTRY(x86_hotpatch)
+	/* save RFLAGS, and disable intrs */
+	pushfq
+	cli
+
+	/* save CR0, and disable WP */
+	movq	%cr0,%rcx
+	pushq	%rcx
+	andq	$~CR0_WP,%rcx
+	movq	%rcx,%cr0
+
+	callq	_C_LABEL(x86_hotpatch_apply)
+
+	/* write back and invalidate cache */
+	wbinvd
+
+	/* restore CR0 */
+	popq	%rcx
+	movq	%rcx,%cr0
+
+	/* flush instruction pipeline */
+	pushq	%rax
+	callq	x86_flush
+	popq	%rax
+
+	/* clean up */
+	movq	%rax,%rdi
+	callq	_C_LABEL(x86_hotpatch_cleanup)
+
+	/* restore RFLAGS */
+	popfq
+	ret
+END(x86_hotpatch)
 #endif /* !XENPV */
+
+/*
+ * cpu_counter and cpu_counter32 could be exact same, but KMSAN needs to have
+ * the correct size of the return value.
+ */
+#define SERIALIZE_lfence	lfence
+#define SERIALIZE_mfence	mfence
+
+#define ADD_counter32	addl	CPUVAR(CC_SKEW), %eax
+#define ADD_counter	shlq	$32, %rdx		;\
+			orq	%rdx, %rax		;\
+			addq	CPUVAR(CC_SKEW), %rax
+
+#define RSIZE_counter32	4
+#define RSIZE_counter	8
+
+#define CPU_COUNTER_FENCE(counter, fence)	\
+ENTRY(cpu_ ## counter ## _ ## fence)		;\
+	movq	CPUVAR(CURLWP), %rcx		;\
+1:						;\
+	movq	L_NCSW(%rcx), %rdi		;\
+	SERIALIZE_ ## fence			;\
+	rdtsc					;\
+	ADD_ ## counter				;\
+	cmpq	%rdi, L_NCSW(%rcx)		;\
+	jne	2f				;\
+	KMSAN_INIT_RET(RSIZE_ ## counter)	;\
+	ret					;\
+2:						;\
+	jmp	1b				;\
+END(cpu_ ## counter ## _ ## fence)
+
+CPU_COUNTER_FENCE(counter, lfence)
+CPU_COUNTER_FENCE(counter, mfence)
+CPU_COUNTER_FENCE(counter32, lfence)
+CPU_COUNTER_FENCE(counter32, mfence)
+
+#define CPU_COUNTER_CPUID(counter)		\
+ENTRY(cpu_ ## counter ## _cpuid)		;\
+	movq	%rbx, %r9			;\
+	movq	CPUVAR(CURLWP), %r8		;\
+1:						;\
+	movq	L_NCSW(%r8), %rdi		;\
+	xor	%eax, %eax			;\
+	cpuid					;\
+	rdtsc					;\
+	ADD_ ## counter				;\
+	cmpq	%rdi, L_NCSW(%r8)		;\
+	jne	2f				;\
+	movq	%r9, %rbx			;\
+	KMSAN_INIT_RET(RSIZE_ ## counter)	;\
+	ret					;\
+2:						;\
+	jmp	1b				;\
+END(cpu_ ## counter ## _cpuid)
+
+CPU_COUNTER_CPUID(counter)
+CPU_COUNTER_CPUID(counter32)
 
 ENTRY(rdmsr_safe)
 	movq	CPUVAR(CURLWP), %r8
@@ -194,6 +288,13 @@ ENTRY(rdmsr_safe)
 
 	xorq	%rax, %rax
 	movq	%rax, PCB_ONFAULT(%r8)
+#ifdef KMSAN
+	movq	%rsi,%rdi
+	movq	$8,%rsi
+	xorq	%rdx,%rdx
+	callq	_C_LABEL(kmsan_mark)
+#endif
+	KMSAN_INIT_RET(4)
 	ret
 END(rdmsr_safe)
 
@@ -205,21 +306,6 @@ ENTRY(msr_onfault)
 	ret
 END(msr_onfault)
 
-ENTRY(cpu_counter)
-	xorq	%rax, %rax
-	rdtsc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	addq	CPUVAR(CC_SKEW), %rax
-	ret
-END(cpu_counter)
-
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	ret
-END(cpu_counter32)
-
 ENTRY(breakpoint)
 	pushq	%rbp
 	movq	%rsp, %rbp
@@ -230,28 +316,27 @@ END(breakpoint)
 
 ENTRY(x86_curcpu)
 	movq	%gs:(CPU_INFO_SELF), %rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_curcpu)
 
 ENTRY(x86_curlwp)
 	movq	%gs:(CPU_INFO_CURLWP), %rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_curlwp)
-
-ENTRY(cpu_set_curpri)
-	movl	%edi, %gs:(CPU_INFO_CURPRIORITY)
-	ret
-END(cpu_set_curpri)
 
 ENTRY(__byte_swap_u32_variable)
 	movl	%edi, %eax
 	bswapl	%eax
+	KMSAN_INIT_RET(4)
 	ret
 END(__byte_swap_u32_variable)
 
 ENTRY(__byte_swap_u16_variable)
 	movl	%edi, %eax
 	xchgb	%al, %ah
+	KMSAN_INIT_RET(2)
 	ret
 END(__byte_swap_u16_variable)
 
@@ -330,49 +415,25 @@ ENTRY(inb)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inb	%dx, %al
+	KMSAN_INIT_RET(1)
 	ret
 END(inb)
-
-ENTRY(insb)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insb
-	ret
-END(insb)
 
 ENTRY(inw)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inw	%dx, %ax
+	KMSAN_INIT_RET(2)
 	ret
 END(inw)
-
-ENTRY(insw)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insw
-	ret
-END(insw)
 
 ENTRY(inl)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inl	%dx, %eax
+	KMSAN_INIT_RET(4)
 	ret
 END(inl)
-
-ENTRY(insl)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insl
-	ret
-END(insl)
 
 ENTRY(outb)
 	movq	%rdi, %rdx
@@ -381,28 +442,12 @@ ENTRY(outb)
 	ret
 END(outb)
 
-ENTRY(outsb)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	rep
-	outsb
-	ret
-END(outsb)
-
 ENTRY(outw)
 	movq	%rdi, %rdx
 	movq	%rsi, %rax
 	outw	%ax, %dx
 	ret
 END(outw)
-
-ENTRY(outsw)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	rep
-	outsw
-	ret
-END(outsw)
 
 ENTRY(outl)
 	movq	%rdi, %rdx
@@ -411,10 +456,13 @@ ENTRY(outl)
 	ret
 END(outl)
 
-ENTRY(outsl)
-	movl	%edx, %ecx
-	movl	%edi, %edx
+/*
+ * Used by SVS only, to make an atomic but fast copy. Doesn't have
+ * sanitizer instrumentation, but sanitizers disable SVS, so no problem.
+ */
+ENTRY(svs_quad_copy)
+	movq	%rdx,%rcx
 	rep
-	outsl
+	movsq
 	ret
-END(outsl)
+END(svs_quad_copy)

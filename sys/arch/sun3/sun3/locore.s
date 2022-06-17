@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.99 2019/08/06 05:37:30 msaitoh Exp $	*/
+/*	$NetBSD: locore.s,v 1.101 2022/03/16 20:31:02 andvar Exp $	*/
 
 /*
  * Copyright (c) 1980, 1990, 1993
@@ -500,7 +500,7 @@ GLOBAL(eintrnames)
 	.data
 	.even
 GLOBAL(intrcnt)
-	.long	0,0,0,0,0,0,0,0,0,0
+	.long	0,0,0,0,0,0,0,0
 GLOBAL(eintrcnt)
 	.text
 
@@ -524,7 +524,7 @@ GLOBAL(eintrcnt)
 
 ASGLOBAL(rei)
 #ifdef	DIAGNOSTIC
-	tstl	_C_LABEL(panicstr)	| have we paniced?
+	tstl	_C_LABEL(panicstr)	| have we panicked?
 	jne	Ldorte			| yes, do not make matters worse
 #endif
 	tstl	_C_LABEL(astpending)	| AST pending?

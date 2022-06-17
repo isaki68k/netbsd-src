@@ -1,4 +1,4 @@
-/* $NetBSD: dwlpx.c,v 1.38 2012/02/06 02:14:14 matt Exp $ */
+/* $NetBSD: dwlpx.c,v 1.43 2021/08/07 16:18:41 thorpej Exp $ */
 
 /*
  * Copyright (c) 1997 by Matthew Jacob
@@ -32,12 +32,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: dwlpx.c,v 1.38 2012/02/06 02:14:14 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwlpx.c,v 1.43 2021/08/07 16:18:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/cpu.h>
 
 #include <machine/autoconf.h>
 
@@ -49,7 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD: dwlpx.c,v 1.38 2012/02/06 02:14:14 matt Exp $");
 #include <alpha/tlsb/kftxxreg.h>
 #include <alpha/pci/dwlpxreg.h>
 #include <alpha/pci/dwlpxvar.h>
-#include <alpha/pci/pci_kn8ae.h>
 
 #define	KV(_addr)	((void *)ALPHA_PHYS_TO_K0SEG((_addr)))
 #define	DWLPX_SYSBASE(sc)	\
@@ -105,7 +105,6 @@ dwlpxmatch(device_t parent, cfdata_t cf, void *aux)
 static void
 dwlpxattach(device_t parent, device_t self, void *aux)
 {
-	static int once = 0;
 	struct dwlpx_softc *sc = device_private(self);
 	struct dwlpx_config *ccp = &sc->dwlpx_cc;
 	struct kft_dev_attach_args *ka = aux;
@@ -157,15 +156,11 @@ dwlpxattach(device_t parent, device_t self, void *aux)
 	}
 #endif
 
-	if (once == 0) {
-		/*
-		 * Set up interrupts
-		 */
-		pci_kn8ae_pickintr(&sc->dwlpx_cc, 1);
-		once++;
-	} else {
-		pci_kn8ae_pickintr(&sc->dwlpx_cc, 0);
-	}
+	/*
+	 * Set up interrupts
+	 */
+	alpha_pci_intr_init(&sc->dwlpx_cc, &sc->dwlpx_cc.cc_iot,
+	    &sc->dwlpx_cc.cc_memt, &sc->dwlpx_cc.cc_pc);
 
 	/*
 	 * Attach PCI bus
@@ -180,7 +175,7 @@ dwlpxattach(device_t parent, device_t self, void *aux)
 	pba.pba_bridgetag = NULL;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY |
 	    PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARGS_NONE);
 }
 
 void
@@ -251,7 +246,9 @@ dwlpx_init(struct dwlpx_softc *sc)
 	 * Do this even for all HPCs- even for the nonexistent
 	 * one on hose zero of a KFTIA.
 	 */
+	mutex_enter(&cpu_lock);
 	vec = scb_alloc(dwlpx_errintr, sc);
+	mutex_exit(&cpu_lock);
 	if (vec == SCB_ALLOC_FAILED)
 		panic("%s: unable to allocate error vector",
 		    device_xname(sc->dwlpx_dev));

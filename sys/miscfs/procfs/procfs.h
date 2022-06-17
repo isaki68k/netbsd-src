@@ -1,4 +1,4 @@
-/*	$NetBSD: procfs.h,v 1.77 2019/09/26 17:33:18 christos Exp $	*/
+/*	$NetBSD: procfs.h,v 1.82 2022/01/19 10:23:00 martin Exp $	*/
 
 /*
  * Copyright (c) 1993
@@ -75,6 +75,8 @@
 #include <sys/ptrace.h>
 
 #ifdef _KERNEL
+#include <sys/proc.h>
+
 /*
  * The different types of node in a procfs filesystem
  */
@@ -209,9 +211,20 @@ struct vfs_namemap {
 int vfs_getuserstr(struct uio *, char *, int *);
 const vfs_namemap_t *vfs_findname(const vfs_namemap_t *, const char *, int);
 
-int procfs_proc_lock(int, struct proc **, int);
-void procfs_proc_unlock(struct proc *);
 struct mount;
+
+struct proc *procfs_proc_find(struct mount *, pid_t);
+bool procfs_use_linux_compat(struct mount *);
+
+static inline bool
+procfs_proc_is_linux_compat(void)
+{
+	const char *emulname = curlwp->l_proc->p_emul->e_name;
+	return (strncmp(emulname, "linux", 5) == 0);
+}
+
+int procfs_proc_lock(struct mount *, int, struct proc **, int);
+void procfs_proc_unlock(struct proc *);
 int procfs_allocvp(struct mount *, struct vnode **, pid_t, pfstype, int);
 int procfs_donote(struct lwp *, struct proc *, struct pfsnode *,
     struct uio *);
@@ -276,7 +289,7 @@ int procfs_getcpuinfstr(char *, size_t *);
 extern int (**procfs_vnodeop_p)(void *);
 extern struct vfsops procfs_vfsops;
 
-int	procfs_root(struct mount *, struct vnode **);
+int	procfs_root(struct mount *, int, struct vnode **);
 
 #ifdef __HAVE_PROCFS_MACHDEP
 struct vattr;

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gif.c,v 1.150 2019/10/30 03:45:59 knakahara Exp $	*/
+/*	$NetBSD: if_gif.c,v 1.156 2021/10/11 05:13:11 knakahara Exp $	*/
 /*	$KAME: if_gif.c,v 1.76 2001/08/20 02:01:02 kjc Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.150 2019/10/30 03:45:59 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.156 2021/10/11 05:13:11 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.150 2019/10/30 03:45:59 knakahara Exp $
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
 #include <sys/socket.h>
@@ -103,6 +104,8 @@ static struct {
 } gif_softcs __cacheline_aligned;
 
 struct psref_class *gv_psref_class __read_mostly;
+
+static pktq_rps_hash_func_t gif_pktq_rps_hash_p;
 
 static int	gifattach0(struct gif_softc *);
 static int	gif_output(struct ifnet *, struct mbuf *,
@@ -197,6 +200,8 @@ sysctl_gif_pmtu_perif(SYSCTLFN_ARGS)
 static void
 gif_sysctl_setup(void)
 {
+	const struct sysctlnode *node = NULL;
+
 	gif_sysctl = NULL;
 
 #ifdef INET
@@ -257,6 +262,21 @@ gif_sysctl_setup(void)
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_GIF_PMTU, CTL_EOL);
 #endif
+
+	sysctl_createv(&gif_sysctl, 0, NULL, &node,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, "gif",
+		       SYSCTL_DESCR("gif global control"),
+		       NULL, 0, NULL, 0,
+		       CTL_NET, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(&gif_sysctl, 0, &node, NULL,
+		       CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+		       CTLTYPE_STRING, "rps_hash",
+		       SYSCTL_DESCR("Interface rps hash function control"),
+		       sysctl_pktq_rps_hash_handler, 0, (void *)&gif_pktq_rps_hash_p,
+		       PKTQ_RPS_HASH_NAME_LEN,
+		       CTL_CREATE, CTL_EOL);
 }
 
 static void
@@ -317,28 +337,27 @@ gifinit(void)
 
 	gv_psref_class = psref_class_create("gifvar", IPL_SOFTNET);
 
+	gif_pktq_rps_hash_p = pktq_rps_hash_default;
 	gif_sysctl_setup();
 }
 
 static int
 gifdetach(void)
 {
-	int error = 0;
 
 	mutex_enter(&gif_softcs.lock);
 	if (!LIST_EMPTY(&gif_softcs.list)) {
 		mutex_exit(&gif_softcs.lock);
-		error = EBUSY;
+		return EBUSY;
 	}
 
-	if (error == 0) {
-		psref_class_destroy(gv_psref_class);
+	psref_class_destroy(gv_psref_class);
 
-		if_clone_detach(&gif_cloner);
-		sysctl_teardown(&gif_sysctl);
-	}
-
-	return error;
+	if_clone_detach(&gif_cloner);
+	sysctl_teardown(&gif_sysctl);
+	mutex_exit(&gif_softcs.lock);
+	mutex_destroy(&gif_softcs.lock);
+	return 0;
 }
 
 static int
@@ -380,12 +399,10 @@ gif_clone_create(struct if_clone *ifc, int unit)
 static int
 gifattach0(struct gif_softc *sc)
 {
-	int rv;
 
 	sc->gif_if.if_addrlen = 0;
 	sc->gif_if.if_mtu    = GIF_MTU;
 	sc->gif_if.if_flags  = IFF_POINTOPOINT | IFF_MULTICAST;
-	sc->gif_if.if_extflags  = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef GIF_MPSAFE
 	sc->gif_if.if_extflags  |= IFEF_MPSAFE;
 #endif
@@ -397,10 +414,9 @@ gifattach0(struct gif_softc *sc)
 	sc->gif_if.if_dlt    = DLT_NULL;
 	sc->gif_if.if_softc  = sc;
 	IFQ_SET_READY(&sc->gif_if.if_snd);
-	rv = if_initialize(&sc->gif_if);
-	if (rv != 0)
-		return rv;
+	if_initialize(&sc->gif_if);
 
+	sc->gif_if.if_link_state = LINK_STATE_DOWN;
 	if_alloc_sadl(&sc->gif_if);
 	bpf_attach(&sc->gif_if, DLT_NULL, sizeof(u_int));
 	if_register(&sc->gif_if);
@@ -563,7 +579,7 @@ end:
 	if (var != NULL)
 		gif_putref_variant(var, &psref);
 	if (error)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 	return error;
 }
 
@@ -593,7 +609,7 @@ gif_start(struct ifnet *ifp)
 		if (sizeof(int) > m->m_len) {
 			m = m_pullup(m, sizeof(int));
 			if (!m) {
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 				continue;
 			}
 		}
@@ -605,11 +621,9 @@ gif_start(struct ifnet *ifp)
 
 		error = var->gv_output(var, family, m);
 		if (error)
-			ifp->if_oerrors++;
-		else {
-			ifp->if_opackets++;
-			ifp->if_obytes += len;
-		}
+			if_statinc(ifp, if_oerrors);
+		else
+			if_statadd2(ifp, if_opackets, 1, if_obytes, len);
 	}
 
 	gif_putref_variant(var, &psref);
@@ -651,7 +665,7 @@ gif_transmit_direct(struct gif_variant *var, struct mbuf *m)
 	if (sizeof(int) > m->m_len) {
 		m = m_pullup(m, sizeof(int));
 		if (!m) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return ENOBUFS;
 		}
 	}
@@ -663,11 +677,9 @@ gif_transmit_direct(struct gif_variant *var, struct mbuf *m)
 
 	error = var->gv_output(var, family, m);
 	if (error)
-		ifp->if_oerrors++;
-	else {
-		ifp->if_opackets++;
-		ifp->if_obytes += len;
-	}
+		if_statinc(ifp, if_oerrors);
+	else
+		if_statadd2(ifp, if_opackets, 1, if_obytes, len);
 
 	return error;
 }
@@ -711,14 +723,9 @@ gif_input(struct mbuf *m, int af, struct ifnet *ifp)
 		return;
 	}
 
-#ifdef GIF_MPSAFE
-	const u_int h = curcpu()->ci_index;
-#else
-	const uint32_t h = pktq_rps_hash(m);
-#endif
+	const uint32_t h = pktq_rps_hash(&gif_pktq_rps_hash_p, m);
 	if (__predict_true(pktq_enqueue(pktq, m, h))) {
-		ifp->if_ibytes += pktlen;
-		ifp->if_ipackets++;
+		if_statadd2(ifp, if_ibytes, pktlen, if_ipackets, 1);
 	} else {
 		m_freem(m);
 	}
@@ -854,19 +861,24 @@ gif_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			/* checks done in the above */
 			break;
 		}
+
 		/*
 		 * calls gif_getref_variant() for other softcs to check
 		 * address pair duplicattion
 		 */
 		bound = curlwp_bind();
 		error = gif_set_tunnel(&sc->gif_if, src, dst);
+		if (error == 0)
+			if_link_state_change(&sc->gif_if, LINK_STATE_UP);
 		curlwp_bindx(bound);
+
 		break;
 
 #ifdef SIOCDIFPHYADDR
 	case SIOCDIFPHYADDR:
 		bound = curlwp_bind();
 		gif_delete_tunnel(&sc->gif_if);
+		if_link_state_change(&sc->gif_if, LINK_STATE_DOWN);
 		curlwp_bindx(bound);
 		break;
 #endif
@@ -1130,7 +1142,6 @@ gif_set_tunnel(struct ifnet *ifp, struct sockaddr *src, struct sockaddr *dst)
 	if (error)
 		goto out;
 	psref_target_init(&nvar->gv_psref, gv_psref_class);
-	membar_producer();
 	gif_update_variant(sc, nvar);
 
 	mutex_exit(&sc->gif_lock);
@@ -1207,7 +1218,6 @@ gif_delete_tunnel(struct ifnet *ifp)
 	nvar->gv_encap_cookie6 = NULL;
 	nvar->gv_output = NULL;
 	psref_target_init(&nvar->gv_psref, gv_psref_class);
-	membar_producer();
 	gif_update_variant(sc, nvar);
 
 	mutex_exit(&sc->gif_lock);
@@ -1240,7 +1250,7 @@ gif_update_variant(struct gif_softc *sc, struct gif_variant *nvar)
 
 	KASSERT(mutex_owned(&sc->gif_lock));
 
-	sc->gif_var = nvar;
+	atomic_store_release(&sc->gif_var, nvar);
 	pserialize_perform(sc->gif_psz);
 	psref_target_destroy(&ovar->gv_psref, gv_psref_class);
 

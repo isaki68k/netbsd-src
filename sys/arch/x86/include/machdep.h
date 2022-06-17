@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.h,v 1.9 2016/12/26 17:54:07 cherry Exp $ */
+/* $NetBSD: machdep.h,v 1.12 2021/10/28 10:45:48 riastradh Exp $ */
 /*
  * Copyright (c) 2000, 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -51,6 +51,11 @@ void	x86_cpu_idle_init(void);
 void	x86_cpu_idle_get(void (**)(void), char *, size_t);
 void	x86_cpu_idle_set(void (*)(void), const char *, bool);
 
+extern u_long x86_rtclock_tval;
+extern void (*x86_initclock_func)(void);
+
+void x86_dummy_initclock(void);
+
 int	x86_select_freelist(uint64_t);
 
 void	init_x86_clusters(void);
@@ -59,5 +64,7 @@ void	init_x86_msgbuf(void);
 
 void	x86_startup(void);
 void	x86_sysctl_machdep_setup(struct sysctllog **);
+
+void	x86_rndseed(void);
 
 #endif	/* _X86_MACHDEP_H_ */

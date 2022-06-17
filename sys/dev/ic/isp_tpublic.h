@@ -1,4 +1,4 @@
-/* $NetBSD: isp_tpublic.h,v 1.19 2010/01/03 02:47:09 mjacob Exp $ */
+/* $NetBSD: isp_tpublic.h,v 1.21 2021/12/12 13:05:14 andvar Exp $ */
 /*-
  *  Copyright (c) 1997-2008 by Matthew Jacob
  *  All rights reserved.
@@ -82,7 +82,7 @@ typedef enum {
 /*
  * This structure is used to register to the outer layer the
  * binding of an HBA identifier, driver name and instance and the
- * lun width capapbilities of this inner layer. It's up to each
+ * lun width capabilities of this inner layer. It's up to each
  * platform to figure out how it wants to actually implement this.
  * A typical sequence would be for the MD layer to find some external
  * module's entry point and start by sending a QOUT_HBA_REG with info
@@ -260,7 +260,7 @@ typedef struct tmd_xact {
  * must be inferred from the CDB.
  *
  * The tag cd_moved is the total amount of data moved so far. It is the
- * responsibilty of the inner layer to set this for every transaction and
+ * responsibility of the inner layer to set this for every transaction and
  * to keep track of it so that transport level residuals may be correctly
  * set.
  *
@@ -359,12 +359,12 @@ struct tmd_cmd {
  * Inner Layer Handler Function.
  *
  * The inner layer target handler function (the outer layer calls this)
- * should be be prototyped like so:
+ * should be prototyped like so:
  *
  *    void target_action(qact_e, void *arg)
  *
  * The outer layer target handler function (the inner layer calls this)
- * should be be prototyped like:
+ * should be prototyped like:
  *
  *    void scsi_target_handler(tact_e, void *arg)
  */

@@ -1,4 +1,4 @@
-/*	$NetBSD: hvs.c,v 1.2 2019/10/01 18:00:08 chs Exp $	*/
+/*	$NetBSD: hvs.c,v 1.7 2021/08/07 16:19:11 thorpej Exp $	*/
 /*	$OpenBSD: hvs.c,v 1.17 2017/08/10 17:22:48 mikeb Exp $	*/
 
 /*-
@@ -37,7 +37,7 @@
 /* #define HVS_DEBUG_IO */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hvs.c,v 1.2 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hvs.c,v 1.7 2021/08/07 16:19:11 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -180,7 +180,7 @@ union hvs_cmd {
 
 #define HVS_RING_SIZE			(20 * PAGE_SIZE)
 #define HVS_MAX_CCB			128
-#define HVS_MAX_SGE			(MAXPHYS / PAGE_SIZE + 1)
+#define HVS_MAX_SGE			(howmany(MAXPHYS, PAGE_SIZE) + 1)
 
 struct hvs_softc;
 
@@ -391,7 +391,8 @@ hvs_attach(device_t parent, device_t self, void *aux)
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
 	chan->chan_defquirks |= PQUIRK_ONLYBIG;
 
-	sc->sc_scsibus = config_found(self, &sc->sc_channel, scsiprint);
+	sc->sc_scsibus = config_found(self, &sc->sc_channel, scsiprint,
+	    CFARGS_NONE);
 
 	/*
 	 * If the driver has successfully attached to an IDE device,
@@ -832,7 +833,7 @@ hvs_scsi_probe(void *arg)
 	struct hvs_softc *sc = arg;
 
 	if (sc->sc_scsibus != NULL)
-		scsi_probe_bus((void *)sc->sc_scsibus, -1, -1);
+		scsi_probe_bus(device_private(sc->sc_scsibus), -1, -1);
 }
 
 static void
@@ -1084,7 +1085,8 @@ hvs_free_ccbs(struct hvs_softc *sc)
 		if (ccb->ccb_dmap == NULL)
 			continue;
 
-		bus_dmamap_sync(sc->sc_dmat, ccb->ccb_dmap, 0, 0,
+		bus_dmamap_sync(sc->sc_dmat, ccb->ccb_dmap,
+		    0, ccb->ccb_dmap->dm_mapsize,
 		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat, ccb->ccb_dmap);
 		bus_dmamap_destroy(sc->sc_dmat, ccb->ccb_dmap);

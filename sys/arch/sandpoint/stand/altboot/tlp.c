@@ -1,4 +1,4 @@
-/* $NetBSD: tlp.c,v 1.1 2011/01/23 01:05:30 nisimura Exp $ */
+/* $NetBSD: tlp.c,v 1.3 2021/12/05 07:56:10 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -79,7 +79,7 @@ struct desc {
 #define RDR_CSR2	0x10		/* R0_OWN poll demand */
 #define RDB_CSR3	0x18		/* Rx descriptor base */
 #define TDB_CSR4	0x20		/* Tx descriptor base */
-#define SR_CSR5		0x28		/* interrupt stauts */
+#define SR_CSR5		0x28		/* interrupt status */
 #define NAR_CSR6	0x30		/* operation mode */
 #define  NAR_NOSQE	(1U<<19)	/* _not_ use SQE signal */
 #define  NAR_TEN	(1U<<13)	/* instruct start/stop Tx */
@@ -186,7 +186,7 @@ tlp_init(unsigned tag, void *data)
 	rxd[1].xd2 = htole32(VTOPHYS(l->rxstore[1]));
 	l->tx = l->rx = 0;
 
-	/* make sure the entire descriptors transfered to memory */
+	/* make sure the entire descriptors transferred to memory */
 	wbinv(l, sizeof(struct local));
 
 	CSR_WRITE(l, TDB_CSR4, VTOPHYS(txd));

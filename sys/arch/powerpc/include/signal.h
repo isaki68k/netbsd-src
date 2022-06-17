@@ -1,4 +1,4 @@
-/*	$NetBSD: signal.h,v 1.21 2017/11/29 17:36:16 christos Exp $	*/
+/*	$NetBSD: signal.h,v 1.26 2021/10/29 21:42:02 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -30,26 +30,37 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef	_POWERPC_SIGNAL_H_
 #define	_POWERPC_SIGNAL_H_
 
 #ifndef _LOCORE
 #include <sys/featuretest.h>
 
+/*
+ * This is needed natively for 32-bit, and for 32-bit compatibility only
+ * in the 64-bit environment.
+ */
+#if !defined(__LP64__) || defined(_KERNEL)
+#define	__HAVE_STRUCT_SIGCONTEXT
+#endif
+
 typedef int sig_atomic_t;
 
+#ifndef __LP64__
 #if defined(_NETBSD_SOURCE)
 #include <sys/sigtypes.h>
 #include <machine/frame.h>
 
-#if defined(__LIBC12_SOURCE__) || defined(_KERNEL)
+#if defined(_KERNEL)
 struct sigcontext13 {
 	int sc_onstack;			/* saved onstack flag */
 	int sc_mask;			/* saved signal mask (old style) */
 	struct utrapframe sc_frame;	/* saved registers */
 };
-#endif /* __LIBC12_SOURCE__ || _KERNEL */
+#endif /* _KERNEL */
 
+#if defined(_LIBC) || defined(_KERNEL)
 /*
  * struct sigcontext introduced in NetBSD 1.4
  */
@@ -59,7 +70,9 @@ struct sigcontext {
 	struct utrapframe sc_frame;	/* saved registers */
 	sigset_t sc_mask;		/* saved signal mask (new style) */
 };
+#endif /* _LIBC || _KERNEL */
 
 #endif	/* _NETBSD_SOURCE */
+#endif /* __LP64__ */
 #endif	/* !_LOCORE */
 #endif	/* !_POWERPC_SIGNAL_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.147 2018/09/08 02:33:33 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.152 2021/08/12 20:53:18 andvar Exp $	*/
 
 /*
  * Copyright (c) 2000 Soren S. Jorvang
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.147 2018/09/08 02:33:33 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.152 2021/08/12 20:53:18 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -372,7 +372,7 @@ mach_init(int argc, int32_t argv32[], uintptr_t magic, int32_t bip32)
 		panic("invalid architecture");
 
 	/*
-	 * Get boot device infomation.
+	 * Get boot device information.
 	 */
 
 	/* Try to get the boot device information from bootinfo first. */
@@ -402,8 +402,8 @@ mach_init(int argc, int32_t argv32[], uintptr_t magic, int32_t bip32)
 	}
 
 	/*
-	 * Also try to get the default bootpath from ARCBIOS envronment
-	 * bacause bootpath is not set properly by old bootloaders and
+	 * Also try to get the default bootpath from ARCBIOS environment
+	 * because bootpath is not set properly by old bootloaders and
 	 * argv[0] might be invalid on some machine.
 	 */
 	osload = arcbios_GetEnvironmentVariable("OSLoadPartition");
@@ -730,7 +730,7 @@ cpu_startup(void)
 	 * are allocated via the pool allocator, and we use KSEG to
 	 * map those pages.)
 	 */
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 }
 

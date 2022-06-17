@@ -1,4 +1,4 @@
-/*	$NetBSD: iwm_fd.c,v 1.56 2015/04/26 15:15:19 mlelstv Exp $	*/
+/*	$NetBSD: iwm_fd.c,v 1.61 2021/08/07 16:18:57 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998 Hauke Fath.  All rights reserved.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: iwm_fd.c,v 1.56 2015/04/26 15:15:19 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: iwm_fd.c,v 1.61 2021/08/07 16:18:57 thorpej Exp $");
 
 #include "locators.h"
 
@@ -42,7 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: iwm_fd.c,v 1.56 2015/04/26 15:15:19 mlelstv Exp $");
 #include <sys/kernel.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/event.h>
 
@@ -65,11 +65,6 @@ __KERNEL_RCSID(0, "$NetBSD: iwm_fd.c,v 1.56 2015/04/26 15:15:19 mlelstv Exp $");
 #include <mac68k/obio/iwmreg.h>
 #include <mac68k/obio/iwm_fdvar.h>
 
-/**
- **	Private functions
- **/
-static int map_iwm_base(vm_offset_t);
-
 /* Autoconfig */
 int	iwm_match(device_t, cfdata_t, void *);
 void	iwm_attach(device_t, device_t, void *);
@@ -77,6 +72,10 @@ int	iwm_print(void *, const char *);
 int	fd_match(device_t, cfdata_t, void *);
 void	fd_attach(device_t, device_t, void *);
 int	fd_print(void *, const char *);
+
+/**
+ **	Private functions
+ **/
 
 /* Disklabel stuff */
 static void fdGetDiskLabel(fd_softc_t *, dev_t);
@@ -164,7 +163,7 @@ int     iwmDebugging = 0 /* | M_TRACE_OPEN | M_TRACE_STRAT | M_TRACE_IOCTL */ ;
  ** Module-global Variables
  **/
 
-/* The IWM base address */
+/* The controller base address */
 u_long IWMBase;
 
 /*
@@ -273,30 +272,71 @@ struct dkdriver fd_dkDriver = {
  * to match against. After all, that's what the obio concept is 
  * about: Onboard components that are present depending (only) 
  * on machine type.
+ *
+ * While here, map the machine-dependent physical IO address of IWM
+ * to VM address.
+ *
+ * We do not match, nor return an IWMBase address for machines whose
+ * SWIM does not support the IWM register set used by this driver
+ * (SWIM II/III, SWIM behind IOP, AV models' DMA based controllers).
+ * Unfortunately, this distinction does not run cleanly along
+ * MACH_CLASS* lines, and we will have to look at MACH_MAC{model} tags.
+ *
+ * See also "What chips are in what Macs?" at
+ * <http://bitsavers.org/pdf/apple/mac/mess/Mac_Technical_Notes.html>,
  */
 int
 iwm_match(device_t parent, cfdata_t match, void *aux)
 {
-	int matched;
+	int matched = 0;
 	extern u_long IOBase;		/* from mac68k/machdep.c */
 	extern u_long IWMBase;
-	
-	if (0 == map_iwm_base(IOBase)) {
-		/* 
-		 * Unknown machine HW:
-		 * The SWIM II/III chips that are present in post-Q700
-		 * '040 Macs have dropped the IWM register structure.
-		 * We know next to nothing about the SWIM.
-		 */
-		matched = 0;
-		if (TRACE_CONFIG)
-			printf("IWM or SWIM not found: Unknown location (SWIM II?).\n");
-	} else {
+
+	IWMBase = 0L;
+
+	switch (current_mac_model->class) {
+	case MACH_CLASSPB:	/* Not: 5x0, 190x */
+		if (current_mac_model->machineid == MACH_MACPB500 ||
+		    current_mac_model->machineid == MACH_MACPB190 ||
+		    current_mac_model->machineid == MACH_MACPB190CS)
+			break;
+		/* FALLTHROUGH */
+	case MACH_CLASSLC:	/* Only: LC II, Classic II */
+		if (current_mac_model->machineid != MACH_MACLCII &&
+		    current_mac_model->machineid != MACH_MACCLASSICII)
+			break;
+		/* FALLTHROUGH */
+	case MACH_CLASSII:	/* All */
+	case MACH_CLASSIIci:	/* All */
+	case MACH_CLASSIIsi:	/* All */
+	case MACH_CLASSIIvx:	/* All */
+	case MACH_CLASSDUO:	/* All */
+		IWMBase = IOBase + 0x16000;
 		matched = 1;
-		if (TRACE_CONFIG) {
-			printf("iwm: IWMBase mapped to 0x%lx in VM.\n", 
-			    IWMBase);
+		break;
+	case MACH_CLASSQ:	/* Only: 700 */
+		if (current_mac_model->machineid == MACH_MACQ700) {
+			IWMBase = IOBase + 0x1E000;
+			matched = 1;
+			break;
 		}
+		/* FALLTHROUGH */
+	case MACH_CLASSQ2:	/* None */
+	case MACH_CLASSP580:	/* None */
+	case MACH_CLASSIIfx:	/* None */
+	case MACH_CLASSAV:	/* None */
+	default:
+		IWMBase = 0L;
+		matched = 0;
+		break;
+	}
+
+	if (TRACE_CONFIG) {
+		if (matched == 0)
+			printf("IWM or original SWIM not found.\n");
+		else
+			printf("IWMBase mapped to VM addr 0x%lx.\n",
+			    IWMBase);
 	}
 	return matched;
 }
@@ -332,12 +372,12 @@ iwm_attach(device_t parent, device_t self, void *aux)
 			ia.driveType = getFDType(ia.unit);
 			if (NULL != ia.driveType)
 				config_found(self, (void *)&ia,
-				    fd_print);
+				    fd_print, CFARGS_NONE);
 		}
 		if (TRACE_CONFIG)
 			printf("iwm: Initialization completed.\n");
 	} else {
-		printf("iwm: Chip revision not supported (%d)\n", iwmErr);
+		printf("iwm: Initialization failed (%d)\n", iwmErr);
 	}
 }
 
@@ -355,50 +395,6 @@ iwm_print(void *aux, const char *controller)
 	return UNCONF;
 }
 
-
-/*
- * map_iwm_base
- *
- * Map physical IO address of IWM to VM address
- */
-static int
-map_iwm_base(vm_offset_t base)
-{
-	int known;
-	extern u_long IWMBase;
-	
-	switch (current_mac_model->class) {
-	case MACH_CLASSQ:
-	case MACH_CLASSQ2:
-	case MACH_CLASSP580:
-		IWMBase = base + 0x1E000;
-		known = 1;
-		break;
-	case MACH_CLASSII:
-	case MACH_CLASSPB:
-	case MACH_CLASSDUO:
-	case MACH_CLASSIIci:
-	case MACH_CLASSIIsi:
-	case MACH_CLASSIIvx:
-	case MACH_CLASSLC:
-		IWMBase = base + 0x16000;
-		known = 1;
-		break;
-	case MACH_CLASSIIfx:
-	case MACH_CLASSAV:
-	default:
-		/* 
-		 * Neither IIfx/Q9[05]0 style IOP controllers nor 
-		 * Q[68]40AV DMA based controllers are supported. 
-		 */
-		if (TRACE_CONFIG)
-			printf("Unknown floppy controller chip.\n");
-		IWMBase = 0L;
-		known = 0;
-		break;
-	}
-	return known;
-}
 
 
 /***  Configure Sony disk drive(s)  ***/
@@ -441,6 +437,7 @@ fd_attach(device_t parent, device_t self, void *aux)
 
 	iwm = device_private(parent);
 	fd = device_private(self);
+	fd->sc_dev = self;
 	ia = aux;
 
 	driveInfo = iwmCheckDrive(ia->unit);
@@ -668,9 +665,11 @@ fdclose(dev_t dev, int flags, int devType, struct lwp *l)
 	fdType = minor(dev) % MAXPARTITIONS;
 	fd = iwm->fd[fdUnit];
 	/* release cylinder cache memory */
-	if (fd->cbuf != NULL)
-		     free(fd->cbuf, M_DEVBUF);
-	
+	if (fd->cbuf != NULL) {
+		     kmem_free(fd->cbuf,
+		         IWM_MAX_GCR_SECTORS * fd->currentType->sectorSize);
+	}
+
 	partitionMask = (1 << fdType);
 
 	/* Set state flag. */
@@ -1501,9 +1500,9 @@ remap_geometry(daddr_t block, int heads, diskPosition_t *loc)
 	int zone, spt;
 	extern diskZone_t diskZones[];
 
-	spt = 0;		/* XXX Shut up egcs warning */
 	loc->oldTrack = loc->track;
 	loc->track = 0;
+	spt = 0;
 
 	for (zone = 0; zone < IWM_GCR_DISK_ZONES; zone++) {
 		if (block >= heads * (diskZones[zone].lastBlock + 1)) {
@@ -1635,8 +1634,7 @@ initCylinderCache(fd_softc_t *fd)
 	secsize = fd->currentType->sectorSize;
 	fd->cachedSide = 0;
 	
-	fd->cbuf = (unsigned char *) malloc(IWM_MAX_GCR_SECTORS
-	    * secsize, M_DEVBUF, M_WAITOK);
+	fd->cbuf = kmem_alloc(IWM_MAX_GCR_SECTORS * secsize, KM_SLEEP);
 	if (NULL == fd->cbuf) 
 		err = ENOMEM;
 	else

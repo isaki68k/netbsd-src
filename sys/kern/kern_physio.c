@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_physio.c,v 1.95 2019/04/04 12:26:45 mlelstv Exp $	*/
+/*	$NetBSD: kern_physio.c,v 1.100 2022/03/13 18:37:10 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1990, 1993
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_physio.c,v 1.95 2019/04/04 12:26:45 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_physio.c,v 1.100 2022/03/13 18:37:10 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -283,7 +283,7 @@ physio(void (*strategy)(struct buf *), struct buf *obp, dev_t dev, int flags,
 				bp = obp;
 			} else {
 				bp = getiobuf(NULL, true);
-				bp->b_cflags = BC_BUSY;
+				bp->b_cflags |= BC_BUSY;
 			}
 			bp->b_dev = dev;
 			bp->b_proc = p;
@@ -296,7 +296,7 @@ physio(void (*strategy)(struct buf *), struct buf *obp, dev_t dev, int flags,
 			 * raw transfers".
 			 */
 			bp->b_oflags = 0;
-			bp->b_cflags = BC_BUSY;
+			bp->b_cflags |= BC_BUSY;
 			bp->b_flags = flags | B_PHYS | B_RAW;
 			bp->b_iodone = physio_biodone;
 
@@ -317,7 +317,7 @@ physio(void (*strategy)(struct buf *), struct buf *obp, dev_t dev, int flags,
 				 */
 				bp->b_bcount = MIN(MAXPHYS, iovp->iov_len);
 			} else {
-				bp->b_bcount = iovp->iov_len;
+				bp->b_bcount = MIN(INT_MAX, iovp->iov_len);
 			}
 			bp->b_data = iovp->iov_base;
 
@@ -355,7 +355,7 @@ physio(void (*strategy)(struct buf *), struct buf *obp, dev_t dev, int flags,
 			}
 
 			/*
-			 * Beware vmapbuf(); if succesful it clobbers
+			 * Beware vmapbuf(); if successful it clobbers
 			 * b_data and saves it in b_saveaddr.
 			 * However, vunmapbuf() restores b_data.
 			 */

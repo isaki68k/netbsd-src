@@ -1,4 +1,4 @@
-/*	$NetBSD: if_types.h,v 1.29 2018/07/31 16:44:30 khorben Exp $	*/
+/*	$NetBSD: if_types.h,v 1.34 2022/03/20 20:37:59 andvar Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -174,7 +174,7 @@
 #define IFT_A12MPPSWITCH	   0x82	/* Avalon Parallel Processor */
 #define IFT_TUNNEL		   0x83	/* Encapsulation interface */
 #define IFT_COFFEE		   0x84	/* coffee pot */
-#define IFT_CES			   0x85	/* Circiut Emulation Service */
+#define IFT_CES			   0x85	/* Circuit Emulation Service */
 #define IFT_ATMSUBINTERFACE	   0x86	/* (x)  ATM Sub Interface */
 #define IFT_L2VLAN		   0x87	/* Layer 2 Virtual LAN using 802.1Q */
 #define IFT_L3IPVLAN		   0x88	/* Layer 3 Virtual LAN - IP Protocol */
@@ -204,7 +204,7 @@
 #define IFT_USB			   0xa0	/* USB Interface */
 #define IFT_IEEE8023ADLAG	   0xa1	/* IEEE 802.3ad Link Aggregate*/
 #define IFT_BGPPOLICYACCOUNTING	   0xa2	/* BGP Policy Accounting */
-#define IFT_FRF16MFRBUNDLE	   0xa3	/* FRF.16 Multilik Frame Relay*/
+#define IFT_FRF16MFRBUNDLE	   0xa3	/* FRF.16 Multilink Frame Relay*/
 #define IFT_H323GATEKEEPER	   0xa4	/* H323 Gatekeeper */
 #define IFT_H323PROXY		   0xa5	/* H323 Voice and Video Proxy */
 #define IFT_MPLS		   0xa6	/* MPLS */
@@ -248,8 +248,8 @@
 #define IFT_SIPSIG		   0xcc /* SIP Signaling */
 #define IFT_DOCSCABLEUPSTREAMCHANNEL 0xcd /* CATV Upstream Channel */
 #define IFT_ECONET		   0xce /* Acorn Econet */
-#define IFT_PON155		   0xcf /* FSAN 155Mb Symetrical PON interface */
-#define IFT_PON622		   0xd0 /* FSAN 622Mb Symetrical PON interface */
+#define IFT_PON155		   0xcf /* FSAN 155Mb Symmetrical PON interface */
+#define IFT_PON622		   0xd0 /* FSAN 622Mb Symmetrical PON interface */
 #define IFT_BRIDGE		   0xd1 /* Transparent bridge interface */
 #define IFT_LINEGROUP		   0xd2 /* Interface common to multiple lines */
 #define IFT_VOICEEMFGD		   0xd3 /* voice E&M Feature Group D */

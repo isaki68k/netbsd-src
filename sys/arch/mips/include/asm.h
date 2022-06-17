@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.55 2018/09/04 00:01:41 mrg Exp $	*/
+/*	$NetBSD: asm.h,v 1.71 2022/04/21 12:06:31 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -57,29 +57,80 @@
 #include <sys/cdefs.h>		/* for API selection */
 #include <mips/regdef.h>
 
+#if defined(_KERNEL_OPT)
+#include "opt_gprof.h"
+#endif
+
+#ifdef __ASSEMBLER__
+#define	__BIT(n)	(1 << (n))
+#define	__BITS(hi,lo)	((~((~0)<<((hi)+1)))&((~0)<<(lo)))
+
+#define	__LOWEST_SET_BIT(__mask) ((((__mask) - 1) & (__mask)) ^ (__mask))
+#define	__SHIFTOUT(__x, __mask) (((__x) & (__mask)) / __LOWEST_SET_BIT(__mask))
+#define	__SHIFTIN(__x, __mask) ((__x) * __LOWEST_SET_BIT(__mask))
+#endif	/* __ASSEMBLER__ */
+
 /*
  * Define -pg profile entry code.
- * Must always be noreorder, must never use a macro instruction
- * Final addiu to t9 must always equal the size of this _KERN_MCOUNT
+ * Must always be noreorder, must never use a macro instruction.
  */
-#define	_KERN_MCOUNT						\
+#if defined(__mips_o32)		/* Old 32-bit ABI */
+/*
+ * The old ABI version must also decrement two less words off the
+ * stack and the final addiu to t9 must always equal the size of this
+ * _MIPS_ASM_MCOUNT.
+ */
+#define	_MIPS_ASM_MCOUNT					\
 	.set	push;						\
 	.set	noreorder;					\
 	.set	noat;						\
-	subu	sp,sp,16;					\
+	subu	sp,16;						\
 	sw	t9,12(sp);					\
 	move	AT,ra;						\
 	lui	t9,%hi(_mcount); 				\
 	addiu	t9,t9,%lo(_mcount);				\
 	jalr	t9;						\
-	nop;							\
+	 nop;							\
 	lw	t9,4(sp);					\
-	addiu	sp,sp,8;					\
-	addiu	t9,t9,40;					\
+	addiu	sp,8;						\
+	addiu	t9,40;						\
 	.set	pop;
+#elif defined(__mips_o64)	/* Old 64-bit ABI */
+# error yeahnah
+#else				/* New (n32/n64) ABI */
+/*
+ * The new ABI version just needs to put the return address in AT and
+ * call _mcount().  For the no abicalls case, skip the reloc dance.
+ */
+#ifdef __mips_abicalls
+#define	_MIPS_ASM_MCOUNT					\
+	.set	push;						\
+	.set	noreorder;					\
+	.set	noat;						\
+	subu	sp,16;						\
+	sw	t9,8(sp);					\
+	move	AT,ra;						\
+	lui	t9,%hi(_mcount); 				\
+	addiu	t9,t9,%lo(_mcount);				\
+	jalr	t9;						\
+	 nop;							\
+	lw	t9,8(sp);					\
+	addiu	sp,16;						\
+	.set	pop;
+#else /* !__mips_abicalls */
+#define	_MIPS_ASM_MCOUNT					\
+	.set	push;						\
+	.set	noreorder;					\
+	.set	noat;						\
+	move	AT,ra;						\
+	jal	_mcount;					\
+	 nop;							\
+	.set	pop;
+#endif /* !__mips_abicalls */
+#endif /* n32/n64 */
 
 #ifdef GPROF
-#define	MCOUNT _KERN_MCOUNT
+#define	MCOUNT _MIPS_ASM_MCOUNT
 #else
 #define	MCOUNT
 #endif
@@ -230,6 +281,14 @@ _C_LABEL(x):
 _C_LABEL(x):
 
 /*
+ * EXPORT_OBJECT -- export definition of symbol of symbol
+ * type Object, visible to ksyms(4) address search.
+ */
+#define	EXPORT_OBJECT(x)		\
+	EXPORT(x);			\
+	.type	_C_LABEL(x), @object;
+
+/*
  * VECTOR
  *	exception vector entrypoint
  *	XXX: regmask should be used to generate .mask
@@ -267,7 +326,9 @@ _C_LABEL(x):
 	.asciz str;			\
 	.align	3
 
-#define	RCSID(name)	.pushsection ".ident"; .asciz name; .popsection
+#define	RCSID(x)	.pushsection ".ident","MS",@progbits,1;		\
+			.asciz x;					\
+			.popsection
 
 /*
  * XXX retain dialects XXX
@@ -511,11 +572,48 @@ _C_LABEL(x):
 #define	NOP_L		/* nothing */
 #endif
 
+/* compiler define */
+#if defined(__OCTEON__)
+/*
+ * See common/lib/libc/arch/mips/atomic/membar_ops.S for notes on
+ * Octeon memory ordering guarantees and barriers.
+ *
+ * cnMIPS also has a quirk where the store buffer can get clogged and
+ * we need to apply a plunger to it _after_ releasing a lock or else
+ * other CPUs may spin for hundreds of thousands of cycles before they
+ * see the lock is released.  So we also have the quirky SYNC_PLUNGER
+ * barrier as syncw.
+ */
+#define	LLSCSYNC	/* nothing */
+#define	BDSYNC		sync
+#define	BDSYNC_ACQ	nop
+#define	SYNC_ACQ	/* nothing */
+#define	SYNC_REL	sync 4
+#define	BDSYNC_PLUNGER	sync 4
+#define	SYNC_PLUNGER	sync 4
+#elif __mips >= 3 || !defined(__mips_o32)
+#define	LLSCSYNC	/* nothing */
+#define	BDSYNC		sync
+#define	BDSYNC_ACQ	sync
+#define	SYNC_ACQ	sync
+#define	SYNC_REL	sync
+#define	BDSYNC_PLUNGER	nop
+#define	SYNC_PLUNGER	/* nothing */
+#else
+#define	LLSCSYNC	/* nothing */
+#define	BDSYNC		nop
+#define	BDSYNC_ACQ	nop
+#define	SYNC_ACQ	/* nothing */
+#define	SYNC_REL	/* nothing */
+#define	BDSYNC_PLUNGER	nop
+#define	SYNC_PLUNGER	/* nothing */
+#endif
+
 /* CPU dependent hook for cp0 load delays */
 #if defined(MIPS1) || defined(MIPS2) || defined(MIPS3)
-#define MFC0_HAZARD	sll $0,$0,1	/* super scalar nop */
+#define	MFC0_HAZARD	sll $0,$0,1	/* super scalar nop */
 #else
-#define MFC0_HAZARD	/* nothing */
+#define	MFC0_HAZARD	/* nothing */
 #endif
 
 #if _MIPS_ISA == _MIPS_ISA_MIPS1 || _MIPS_ISA == _MIPS_ISA_MIPS2 || \
@@ -586,7 +684,7 @@ _C_LABEL(x):
 #define	SETUP_GPX(r)		/* o32 specific */
 #define	SETUP_GPX_L(r,lbl)	/* o32 specific */
 #define	SAVE_GP(x)		/* o32 specific */
-#define	SETUP_GP64(a,b)		.cpsetup $25, a, b
+#define	SETUP_GP64(a,b)		.cpsetup t9, a, b
 #define	SETUP_GPX64(a,b)	\
 				.set push;			\
 				move	b,ra;			\

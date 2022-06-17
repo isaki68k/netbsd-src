@@ -1,4 +1,4 @@
-/*	$NetBSD: oboe.c,v 1.46 2018/12/09 11:14:02 jdolecek Exp $	*/
+/*	$NetBSD: oboe.c,v 1.51 2021/09/26 14:56:36 thorpej Exp $	*/
 
 /*	XXXXFVDL THIS DRIVER IS BROKEN FOR NON-i386 -- vtophys() usage	*/
 
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oboe.c,v 1.46 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oboe.c,v 1.51 2021/09/26 14:56:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -96,7 +96,6 @@ struct oboe_softc {
 	bus_space_handle_t	sc_ioh;
 	bus_dma_tag_t		sc_dmatag;
 	struct selinfo		sc_rsel;
-	struct selinfo		sc_wsel;
 
 	int			sc_state;
 #define	OBOE_RSLP		0x01	/* waiting for data (read) */
@@ -227,7 +226,6 @@ oboe_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "interrupting at %s\n", intrstring);
 
 	selinit(&sc->sc_rsel);
-	selinit(&sc->sc_wsel);
 
 	sc->sc_txs = 0;
 	sc->sc_rxs = 0;
@@ -239,7 +237,7 @@ oboe_attach(device_t parent, device_t self, void *aux)
 
 	oboe_alloc_taskfile(sc);
 
-	sc->sc_child = config_found(self, &ia, ir_print);
+	sc->sc_child = config_found(self, &ia, ir_print, CFARGS_NONE);
 }
 
 static int
@@ -252,7 +250,6 @@ oboe_detach(device_t self, int flags)
 	DPRINTF(("%s: sc=%p\n", __func__, sc));
 #endif
 	seldestroy(&sc->sc_rsel);
-	seldestroy(&sc->sc_wsel);
 	return (0);
 }
 
@@ -470,7 +467,7 @@ filt_oboerdetach(struct knote *kn)
 	int s;
 
 	s = splir();
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	splx(s);
 }
 
@@ -483,56 +480,34 @@ filt_oboeread(struct knote *kn, long hint)
 	return (kn->kn_data > 0);
 }
 
-static void
-filt_oboewdetach(struct knote *kn)
-{
-	struct oboe_softc *sc = kn->kn_hook;
-	int s;
-
-	s = splir();
-	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
-	splx(s);
-}
-
 static const struct filterops oboeread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_oboerdetach,
 	.f_event = filt_oboeread,
-};
-
-static const struct filterops oboewrite_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_oboewdetach,
-	.f_event = filt_seltrue,
 };
 
 static int
 oboe_kqfilter(void *h, struct knote *kn)
 {
 	struct oboe_softc *sc = h;
-	struct klist *klist;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
 		kn->kn_fop = &oboeread_filtops;
+		kn->kn_hook = sc;
+		s = splir();
+		selrecord_knote(&sc->sc_rsel, kn);
+		splx(s);
 		break;
+
 	case EVFILT_WRITE:
-		klist = &sc->sc_wsel.sel_klist;
-		kn->kn_fop = &oboewrite_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
 	default:
 		return (EINVAL);
 	}
-
-	kn->kn_hook = sc;
-
-	s = splir();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
-	splx(s);
 
 	return (0);
 }
@@ -613,7 +588,6 @@ oboe_intr(void *p)
 			DPRINTF(("oboe_intr: waking up writer\n"));
 			wakeup(&sc->sc_txs);
 		}
-		selnotify(&sc->sc_wsel, 0, 0);
 	}
 	return (1);
 }

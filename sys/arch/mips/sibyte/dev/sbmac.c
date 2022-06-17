@@ -1,4 +1,4 @@
-/* $NetBSD: sbmac.c,v 1.61 2019/09/13 07:55:06 msaitoh Exp $ */
+/* $NetBSD: sbmac.c,v 1.63 2021/12/05 07:21:59 msaitoh Exp $ */
 
 /*
  * Copyright 2000, 2001, 2004
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbmac.c,v 1.61 2019/09/13 07:55:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbmac.c,v 1.63 2021/12/05 07:21:59 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "opt_ns.h"
@@ -1016,7 +1016,7 @@ sbdma_tx_process(struct sbmac_softc *sc, sbmacdma_t *d)
 		/*
 		 * for transmits we just free buffers and count packets.
 		 */
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		m_freem(m);
 
 		/*
@@ -1883,7 +1883,7 @@ sbmac_setmulti(struct sbmac_softc *sc)
 	}
 
 	/*
-	 * Progam new multicast entries.  For now, only use the
+	 * Program new multicast entries.  For now, only use the
 	 * perfect filter.  In the future we'll need to use the
 	 * hash filter if the perfect filter overflows
 	 */

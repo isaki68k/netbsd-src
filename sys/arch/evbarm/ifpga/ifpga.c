@@ -1,4 +1,4 @@
-/*	$NetBSD: ifpga.c,v 1.26 2013/02/19 10:57:10 skrll Exp $ */
+/*	$NetBSD: ifpga.c,v 1.30 2021/08/07 16:18:49 thorpej Exp $ */
 
 /*
  * Copyright (c) 2001 ARM Ltd
@@ -38,13 +38,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ifpga.c,v 1.26 2013/02/19 10:57:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ifpga.c,v 1.30 2021/08/07 16:18:49 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/device.h>
 #include <sys/systm.h>
-#include <sys/extent.h>
 #include <sys/malloc.h>
 #include <sys/null.h>
 
@@ -124,8 +123,8 @@ ifpga_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		ifa.ifa_sc_ioh = sc->sc_sc_ioh;
 
 		tryagain = 0;
-		if (config_match(parent, cf, &ifa) > 0) {
-			config_attach(parent, cf, &ifa, ifpga_print);
+		if (config_probe(parent, cf, &ifa)) {
+			config_attach(parent, cf, &ifa, ifpga_print, CFARGS_NONE);
 			tryagain = (cf->cf_fstate == FSTATE_STAR);
 		}
 	} while (tryagain);
@@ -158,7 +157,7 @@ ifpga_attach(device_t parent, device_t self, void *aux)
 	u_int id, sysclk;
 	extern struct bus_space ifpga_common_bs_tag;
 #if defined(PCI_NETBSD_CONFIGURE) && NPCI > 0
-	struct extent *ioext, *memext, *pmemext;
+	struct pciconf_resources *pcires;
 	struct ifpga_pci_softc *pci_sc;
 	struct pcibus_attach_args pci_pba;
 #endif
@@ -295,27 +294,28 @@ ifpga_attach(device_t parent, device_t self, void *aux)
 	}
 
 #if defined(PCI_NETBSD_CONFIGURE)
-	ioext = extent_create("pciio", 0x00000000,
-	    0x00000000 + IFPGA_PCI_IO_VSIZE, NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", IFPGA_PCI_APP0_BASE,
-	    IFPGA_PCI_APP0_BASE + IFPGA_PCI_APP0_SIZE,
-	    NULL, 0, EX_NOWAIT);
-	pmemext = extent_create("pcipmem", IFPGA_PCI_APP1_BASE,
-	    IFPGA_PCI_APP1_BASE + IFPGA_PCI_APP1_SIZE,
-	    NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
+
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    0x00000000, IFPGA_PCI_IO_VSIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    IFPGA_PCI_APP0_BASE, IFPGA_PCI_APP0_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_PREFETCHABLE_MEM,
+	    IFPGA_PCI_APP1_BASE, IFPGA_PCI_APP1_SIZE);
+
 	ifpga_pci_chipset.pc_conf_v = (void *)pci_sc;
-	pci_configure_bus(&ifpga_pci_chipset, ioext, memext, pmemext, 0,
+	pci_configure_bus(&ifpga_pci_chipset, pcires, 0,
 	    arm_dcache_align);
-	extent_destroy(pmemext);
-	extent_destroy(memext);
-	extent_destroy(ioext);
+	pciconf_resource_fini(pcires);
 
 	printf("pci_configure_bus done\n");
 #endif /* PCI_NETBSD_CONFIGURE */
 #endif /* NPCI > 0 */
 
 	/* Finally, search for children.  */
-	config_search_ia(ifpga_search, self, "ifpga", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = ifpga_search,
+		   .iattr = "ifpga"));
 
 #if NPCI > 0
 	integrator_pci_dma_init(&ifpga_pci_bus_dma_tag);
@@ -329,7 +329,8 @@ ifpga_attach(device_t parent, device_t self, void *aux)
 	pci_pba.pba_bus = 0;
 	pci_pba.pba_bridgetag = NULL;
 	
-	config_found_ia(self, "pcibus", &pci_pba, pcibusprint);
+	config_found(self, &pci_pba, pcibusprint,
+	    CFARGS(.iattr = "pcibus"));
 #endif
 }
 

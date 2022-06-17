@@ -1,4 +1,4 @@
-/*	$NetBSD: idt.c,v 1.11 2019/06/17 06:38:30 msaitoh Exp $	*/
+/*	$NetBSD: idt.c,v 1.16 2022/02/13 19:21:21 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2000, 2009 The NetBSD Foundation, Inc.
@@ -65,7 +65,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: idt.c,v 1.11 2019/06/17 06:38:30 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: idt.c,v 1.16 2022/02/13 19:21:21 riastradh Exp $");
+
+#include "opt_pcpu_idt.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -81,9 +83,6 @@ __KERNEL_RCSID(0, "$NetBSD: idt.c,v 1.11 2019/06/17 06:38:30 msaitoh Exp $");
  * XEN PV and native have a different idea of what idt entries should
  * look like.
  */
-idt_descriptor_t *idt;
-
-static char idt_allocmap[NIDT];
 
 /* Normalise across XEN PV and native */
 #if defined(XENPV)
@@ -132,7 +131,7 @@ void
 unset_idtgate(struct trap_info *xen_idd)
 {
 #if defined(__x86_64__)
-	vaddr_t xen_idt_vaddr = ((vaddr_t) xen_idd) & PAGE_MASK;
+	vaddr_t xen_idt_vaddr = ((vaddr_t) xen_idd) & ~PAGE_MASK;
 
 	/* Make it writeable, so we can update the values. */
 	pmap_changeprot_local(xen_idt_vaddr, VM_PROT_READ | VM_PROT_WRITE);
@@ -164,41 +163,54 @@ unset_idtgate(struct gate_descriptor *idd)
  * cpu_lock will be held unless single threaded during early boot.
  */
 int
-idt_vec_alloc(int low, int high)
+idt_vec_alloc(struct idt_vec *iv, int low, int high)
 {
 	int vec;
+	char *idt_allocmap = iv->iv_allocmap;
 
 	KASSERT(mutex_owned(&cpu_lock) || !mp_online);
 
+	if (low < 0 || high >= __arraycount(iv->iv_allocmap))
+		return -1;
+
 	for (vec = low; vec <= high; vec++) {
-		if (idt_allocmap[vec] == 0) {
-			/* idt_vec_free() can be unlocked, so membar. */
-			membar_sync();
-			idt_allocmap[vec] = 1;
+		/* pairs with atomic_store_release in idt_vec_free */
+		if (atomic_load_acquire(&idt_allocmap[vec]) == 0) {
+			/*
+			 * No ordering needed here (`relaxed') because
+			 * access to free entries is serialized by
+			 * cpu_lock or single-threaded operation.
+			 */
+			atomic_store_relaxed(&idt_allocmap[vec], 1);
 			return vec;
 		}
 	}
-	return 0;
+
+	return -1;
 }
 
 void
-idt_vec_reserve(int vec)
+idt_vec_reserve(struct idt_vec *iv, int vec)
 {
 	int result;
 
 	KASSERT(mutex_owned(&cpu_lock) || !mp_online);
 
-	result = idt_vec_alloc(vec, vec);
-	if (result != vec) {
+	result = idt_vec_alloc(iv, vec, vec);
+	if (result < 0) {
 		panic("%s: failed to reserve vec %d", __func__, vec);
 	}
 }
 
 void
-idt_vec_set(int vec, void (*function)(void))
+idt_vec_set(struct idt_vec *iv, int vec, void (*function)(void))
 {
+	idt_descriptor_t *idt;
+	char *idt_allocmap __diagused = iv->iv_allocmap;
 
-	KASSERT(idt_allocmap[vec] == 1);
+	KASSERT(atomic_load_relaxed(&idt_allocmap[vec]) == 1);
+
+	idt = iv->iv_idt;
 	set_idtgate(&idt[vec], function, 0, SDT_SYS386IGT, SEL_KPL,
 	       GSEL(GCODE_SEL, SEL_KPL));
 }
@@ -207,10 +219,35 @@ idt_vec_set(int vec, void (*function)(void))
  * Free IDT vector.  No locking required as release is atomic.
  */
 void
-idt_vec_free(int vec)
+idt_vec_free(struct idt_vec *iv, int vec)
 {
+	idt_descriptor_t *idt;
+	char *idt_allocmap = iv->iv_allocmap;
 
+	KASSERT(atomic_load_relaxed(&idt_allocmap[vec]) == 1);
+
+	idt = iv->iv_idt;
 	unset_idtgate(&idt[vec]);
-	idt_allocmap[vec] = 0;
+	/* pairs with atomic_load_acquire in idt_vec_alloc */
+	atomic_store_release(&idt_allocmap[vec], 0);
 }
 
+bool
+idt_vec_is_pcpu(void)
+{
+
+#ifdef PCPU_IDT
+	return true;
+#else
+	return false;
+#endif
+}
+
+struct idt_vec *
+idt_vec_ref(struct idt_vec *iv)
+{
+	if (idt_vec_is_pcpu())
+		return iv;
+
+	return &(cpu_info_primary.ci_idtvec);
+}

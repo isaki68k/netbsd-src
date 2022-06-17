@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.36 2019/10/30 17:06:57 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.49 2020/07/19 07:35:08 maxv Exp $	*/
 
 /*-
- * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.36 2019/10/30 17:06:57 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.49 2020/07/19 07:35:08 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -71,6 +71,44 @@ ENTRY(lidt)
 	lidt	(%eax)
 	ret
 END(lidt)
+
+ENTRY(x86_hotpatch)
+	/* save EFLAGS, and disable intrs */
+	pushfl
+	cli
+
+	/* save CR0, and disable WP */
+	movl	%cr0,%ecx
+	pushl	%ecx
+	andl	$~CR0_WP,%ecx
+	movl	%ecx,%cr0
+
+	pushl	4*4(%esp) /* arg2 */
+	pushl	4*4(%esp) /* arg1 */
+	call	_C_LABEL(x86_hotpatch_apply)
+	addl	$2*4,%esp
+
+	/* write back and invalidate cache */
+	wbinvd
+
+	/* restore CR0 */
+	popl	%ecx
+	movl	%ecx,%cr0
+
+	/* flush instruction pipeline */
+	pushl	%eax
+	call	x86_flush
+	popl	%eax
+
+	/* clean up */
+	pushl	%eax
+	call	_C_LABEL(x86_hotpatch_cleanup)
+	addl	$4,%esp
+
+	/* restore RFLAGS */
+	popfl
+	ret
+END(x86_hotpatch)
 #endif /* XENPV */
 
 ENTRY(x86_read_flags)
@@ -125,18 +163,59 @@ ENTRY(msr_onfault)
 	ret
 END(msr_onfault)
 
-ENTRY(cpu_counter)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	adcl	CPUVAR(CC_SKEW+4), %edx
-	ret
-END(cpu_counter)
+#define ADD_counter32	addl	CPUVAR(CC_SKEW), %eax
+#define ADD_counter	ADD_counter32			;\
+			adcl	CPUVAR(CC_SKEW+4), %edx
 
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	ret
-END(cpu_counter32)
+#define SERIALIZE_lfence	lfence
+#define SERIALIZE_mfence	mfence
+
+#define CPU_COUNTER_FENCE(counter, fence) \
+ENTRY(cpu_ ## counter ## _ ## fence)	;\
+	pushl	%ebx			;\
+	movl	CPUVAR(CURLWP), %ecx	;\
+1:					;\
+	movl	L_NCSW(%ecx), %ebx	;\
+	SERIALIZE_ ## fence		;\
+	rdtsc				;\
+	ADD_ ## counter			;\
+	cmpl	%ebx, L_NCSW(%ecx)	;\
+	jne	2f			;\
+	popl	%ebx			;\
+	ret				;\
+2:					;\
+	jmp	1b			;\
+END(cpu_ ## counter ## _ ## fence)
+
+CPU_COUNTER_FENCE(counter, lfence)
+CPU_COUNTER_FENCE(counter, mfence)
+CPU_COUNTER_FENCE(counter32, lfence)
+CPU_COUNTER_FENCE(counter32, mfence)
+
+#define CPU_COUNTER_CPUID(counter)	\
+ENTRY(cpu_ ## counter ## _cpuid)	;\
+	pushl	%ebx			;\
+	pushl	%esi			;\
+	movl	CPUVAR(CURLWP), %ecx	;\
+1:					;\
+	movl	L_NCSW(%ecx), %esi	;\
+	pushl	%ecx			;\
+	xor	%eax, %eax		;\
+	cpuid				;\
+	rdtsc				;\
+	ADD_ ## counter			;\
+	popl	%ecx			;\
+	cmpl	%esi, L_NCSW(%ecx)	;\
+	jne	2f			;\
+	popl	%esi			;\
+	popl	%ebx			;\
+	ret				;\
+2:					;\
+	jmp	1b			;\
+END(cpu_ ## counter ##_cpuid)
+
+CPU_COUNTER_CPUID(counter)
+CPU_COUNTER_CPUID(counter32)
 
 ENTRY(breakpoint)
 	pushl	%ebp
@@ -155,12 +234,6 @@ ENTRY(x86_curlwp)
 	movl	%fs:(CPU_INFO_CURLWP), %eax
 	ret
 END(x86_curlwp)
-
-ENTRY(cpu_set_curpri)
-	movl	4(%esp), %eax
-	movl	%eax, %fs:(CPU_INFO_CURPRIORITY)
-	ret
-END(cpu_set_curpri)
 
 ENTRY(__byte_swap_u32_variable)
 	movl	4(%esp), %eax
@@ -247,17 +320,6 @@ ENTRY(inb)
 	ret
 END(inb)
 
-ENTRY(insb)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insb
-	popl	%edi
-	ret
-END(insb)
-
 ENTRY(inw)
 	movl	4(%esp), %edx
 	xorl	%eax, %eax
@@ -265,33 +327,11 @@ ENTRY(inw)
 	ret
 END(inw)
 
-ENTRY(insw)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insw
-	popl	%edi
-	ret
-END(insw)
-
 ENTRY(inl)
 	movl	4(%esp), %edx
 	inl	%dx, %eax
 	ret
 END(inl)
-
-ENTRY(insl)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insl
-	popl	%edi
-	ret
-END(insl)
 
 ENTRY(outb)
 	movl	4(%esp), %edx
@@ -300,17 +340,6 @@ ENTRY(outb)
 	ret
 END(outb)
 
-ENTRY(outsb)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsb
-	popl	%esi
-	ret
-END(outsb)
-
 ENTRY(outw)
 	movl	4(%esp), %edx
 	movl	8(%esp), %eax
@@ -318,31 +347,9 @@ ENTRY(outw)
 	ret
 END(outw)
 
-ENTRY(outsw)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsw
-	popl	%esi
-	ret
-END(outsw)
-
 ENTRY(outl)
 	movl	4(%esp), %edx
 	movl	8(%esp), %eax
 	outl	%eax, %dx
 	ret
 END(outl)
-
-ENTRY(outsl)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsl
-	popl	%esi
-	ret
-END(outsl)

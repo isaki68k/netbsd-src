@@ -1,4 +1,4 @@
-/*	$NetBSD: imx51_ipuv3.c,v 1.7 2018/03/17 18:34:09 ryo Exp $	*/
+/*	$NetBSD: imx51_ipuv3.c,v 1.11 2021/08/07 16:18:44 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2011, 2012  Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx51_ipuv3.c,v 1.7 2018/03/17 18:34:09 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx51_ipuv3.c,v 1.11 2021/08/07 16:18:44 thorpej Exp $");
 
 #include "opt_imx51_ipuv3.h"
 
@@ -35,7 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx51_ipuv3.c,v 1.7 2018/03/17 18:34:09 ryo Exp $");
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/uio.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kernel.h>			/* for cold */
 
 #include <sys/bus.h>
@@ -658,7 +658,7 @@ imx51_ipuv3_attach_sub(struct imx51_ipuv3_softc *sc,
 		.ifb_outputdev = sc->dev,
 	};
 
-	sc->fbdev = config_found_ia(sc->dev, "ipu", &ifb, imx51_ipuv3_print);
+	sc->fbdev = config_found(sc->dev, &ifb, imx51_ipuv3_print, CFARGS_NONE);
 
 	return;
 
@@ -932,12 +932,7 @@ imx51_ipuv3_new_screen(struct imx51_ipuv3_softc *sc,
 	width = geometry->panel_width;
 	height = geometry->panel_height;
 
-	scr = malloc(sizeof(*scr), M_DEVBUF, M_NOWAIT);
-	if (scr == NULL)
-		return ENOMEM;
-
-	memset(scr, 0, sizeof(*scr));
-
+	scr = kmem_zalloc(sizeof(*scr), KM_SLEEP);
 	scr->nsegs = 0;
 	scr->depth = depth;
 	scr->stride = width * depth / 8;
@@ -949,7 +944,7 @@ imx51_ipuv3_new_screen(struct imx51_ipuv3_softc *sc,
 		aprint_error_dev(sc->dev,
 		    "failed to allocate %u bytes of video memory: %d\n",
 		    scr->stride * height, error);
-		free(scr, M_DEVBUF);
+		kmem_free(scr, sizeof(*scr));
 		return error;
 	}
 

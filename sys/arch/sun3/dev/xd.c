@@ -1,4 +1,4 @@
-/*	$NetBSD: xd.c,v 1.73 2015/04/26 15:15:19 mlelstv Exp $	*/
+/*	$NetBSD: xd.c,v 1.77 2021/08/07 16:19:06 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 Charles D. Cranor
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xd.c,v 1.73 2015/04/26 15:15:19 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xd.c,v 1.77 2021/08/07 16:19:06 thorpej Exp $");
 
 #undef XDC_DEBUG		/* full debug */
 #define XDC_DIAG		/* extra sanity checks */
@@ -64,7 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: xd.c,v 1.73 2015/04/26 15:15:19 mlelstv Exp $");
 #include <sys/buf.h>
 #include <sys/bufq.h>
 #include <sys/uio.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/disklabel.h>
 #include <sys/disk.h>
@@ -446,10 +446,8 @@ xdcattach(device_t parent, device_t self, void *aux)
 	memset(xdc->iopbase, 0, XDC_MAXIOPB * sizeof(struct xd_iopb));
 	xdc->dvmaiopb = (struct xd_iopb *)dvma_kvtopa(xdc->iopbase,
 	    xdc->bustype);
-	xdc->reqs = malloc(XDC_MAXIOPB * sizeof(struct xd_iorq),
-	    M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (xdc->reqs == NULL)
-		panic("xdc malloc");
+	xdc->reqs = kmem_zalloc(XDC_MAXIOPB * sizeof(struct xd_iorq),
+	    KM_SLEEP);
 
 	/* init free list, iorq to iopb pointers, and non-zero fields in the
 	 * iopb which never change. */
@@ -515,7 +513,7 @@ xdcattach(device_t parent, device_t self, void *aux)
 	/* now we must look for disks using autoconfig */
 	xa.booting = 1;
 	for (xa.driveno = 0; xa.driveno < XDC_MAXDEV; xa.driveno++)
-		(void)config_found(self, (void *)&xa, xdc_print);
+		(void)config_found(self, (void *)&xa, xdc_print, CFARGS_NONE);
 
 	/* start the watchdog clock */
 	callout_reset(&xdc->sc_tick_ch, XDC_TICKCNT, xdc_tick, xdc);

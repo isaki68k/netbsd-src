@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.213 2018/05/28 21:04:35 chs Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.232 2021/05/31 10:57:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -71,6 +71,8 @@
  *
  * NOTE: vm system calls are prototyped in syscallargs.h
  */
+
+#include <sys/types.h>
 
 /*
  * defines
@@ -210,6 +212,7 @@ b\32UNMAP\0\
 #define	UVM_PGA_STRAT_NORMAL	0	/* priority (low id to high) walk */
 #define	UVM_PGA_STRAT_ONLY	1	/* only specified free list */
 #define	UVM_PGA_STRAT_FALLBACK	2	/* ONLY falls back on NORMAL */
+#define	UVM_PGA_STRAT_NUMA	3	/* strongly prefer ideal bucket */
 
 /*
  * flags for uvm_pagealloc_strat()
@@ -225,6 +228,7 @@ b\32UNMAP\0\
 #define UBC_FAULTBUSY	0x004	/* nobody else is using these pages, so busy
 				 * them at alloc and unbusy at release (e.g.,
 				 * for writes extending a file) */
+#define	UBC_ISMAPPED	0x008	/* object may be mapped by a process */
 
 /*
  * flags for ubc_release()
@@ -248,6 +252,7 @@ b\32UNMAP\0\
 #define UFP_NORDONLY	0x08
 #define UFP_DIRTYONLY	0x10
 #define UFP_BACKWARD	0x20
+#define UFP_NOBUSY	0x40
 
 /*
  * lockflags that control the locking behavior of various functions.
@@ -346,12 +351,12 @@ struct uvmexp {
 	int nswget;	/* number of times fault calls uvm_swap_get() */
 
 	/* stat counters.  XXX: should be 64-bit counters */
-	int _unused_faults;	/* page fault count */
-	int _unused_traps;	/* trap count */
-	int _unused_intrs;	/* interrupt count */
-	int _unused_swtch;	/* context switch count */
-	int _unused_softs;	/* software interrupt count */
-	int _unused_syscalls;	/* system calls */
+	int faults;		/* page fault count */
+	int traps;		/* trap count */
+	int intrs;		/* interrupt count */
+	int swtch;		/* context switch count */
+	int softs;		/* software interrupt count */
+	int syscalls;		/* system calls */
 	int pageins;		/* pagein operation count */
 				/* pageouts are in pdpageouts below */
 	int _unused1;
@@ -451,7 +456,7 @@ struct uvmexp_sysctl {
 	int64_t	pageins;
 	int64_t	swapins;		/* unused */
 	int64_t	swapouts;		/* unused */
-	int64_t	pgswapin;
+	int64_t	pgswapin;		/* unused */
 	int64_t	pgswapout;
 	int64_t	forks;
 	int64_t	forks_ppwait;
@@ -497,13 +502,21 @@ struct uvmexp_sysctl {
 	int64_t ncolors;
 	int64_t bootpages;
 	int64_t poolpages;
+	int64_t countsyncone;
+	int64_t countsyncall;
+	int64_t anonunknown;
+	int64_t anonclean;
+	int64_t anondirty;
+	int64_t fileunknown;
+	int64_t fileclean;
+	int64_t filedirty;
+	int64_t fltup;
+	int64_t fltnoup;
 };
 
 #ifdef _KERNEL
 /* we need this before including uvm_page.h on some platforms */
 extern struct uvmexp uvmexp;
-/* MD code needs this without including <uvm/uvm.h> */
-extern bool vm_page_zero_enable;
 #endif
 
 /*
@@ -537,11 +550,13 @@ extern bool vm_page_zero_enable;
  * helpers for calling ubc_release()
  */
 #ifdef PMAP_CACHE_VIVT
-#define UBC_WANT_UNMAP(vp) (((vp)->v_iflag & VI_TEXT) != 0)
+#define UBC_VNODE_FLAGS(vp) \
+    ((((vp)->v_iflag & VI_TEXT) != 0 ? UBC_UNMAP : 0) | \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0))
 #else
-#define UBC_WANT_UNMAP(vp) false
+#define UBC_VNODE_FLAGS(vp) \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0)
 #endif
-#define UBC_UNMAP_FLAG(vp) (UBC_WANT_UNMAP(vp) ? UBC_UNMAP : 0)
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 /*
@@ -551,8 +566,7 @@ extern bool vm_page_zero_enable;
  */
 struct vmspace {
 	struct	vm_map vm_map;	/* VM address map */
-	int	vm_refcnt;	/* number of references *
-				 * note: protected by vm_map.misc_lock */
+	volatile int vm_refcnt;	/* number of references */
 	void *	vm_shm;		/* SYS5 shared memory private data XXX */
 /* we copy from vm_startcopy to the end of the structure on fork */
 #define vm_startcopy vm_rssize
@@ -592,6 +606,32 @@ struct uvm_coredump_state {
  */
 extern struct vm_map *kernel_map;
 extern struct vm_map *phys_map;
+
+/*
+ *	uvm_voaddr:
+ *
+ *	This structure encapsulates UVM's unique virtual object address
+ *	for an individual byte inside a pageable page. Pageable pages can
+ *	be owned by either a uvm_object or a vm_anon.
+ *
+ *	In each case, the byte offset into the owning object
+ *	(uvm_object or vm_anon) is included in the ID, so that
+ *	two different offsets into the same page have distinct
+ *	IDs.
+ *
+ *	Note that the page does not necessarily have to be resident
+ *	in order to know the virtual object address.  However, it
+ *	is required that any pending copy-on-write is resolved.
+ *
+ *	When someone wants a virtual object address, an extra reference
+ *	is taken on the owner while the caller uses the ID.  This
+ *	ensures that the identity is stable for the duration of its
+ *	use.
+ */
+struct uvm_voaddr {
+	uintptr_t object;
+	voff_t offset;
+};
 
 /*
  * macros
@@ -636,6 +676,7 @@ int			uvm_coredump_walkmap(struct proc *,
 int			uvm_coredump_count_segs(struct proc *);
 void			uvm_proc_exit(struct proc *);
 void			uvm_lwp_exit(struct lwp *);
+void			uvm_idle(void);
 void			uvm_init_limits(struct proc *);
 bool			uvm_kernacc(void *, size_t, vm_prot_t);
 __dead void		uvm_scheduler(void);
@@ -697,6 +738,12 @@ void			uvmspace_free(struct vmspace *);
 void			uvmspace_share(struct proc *, struct proc *);
 void			uvmspace_unshare(struct lwp *);
 
+bool			uvm_voaddr_acquire(struct vm_map *, vaddr_t,
+			    struct uvm_voaddr *);
+void			uvm_voaddr_release(struct uvm_voaddr *);
+int			uvm_voaddr_compare(const struct uvm_voaddr *,
+			    const struct uvm_voaddr *);
+
 void			uvm_whatis(uintptr_t, void (*)(const char *, ...));
 
 /* uvm_meter.c */
@@ -709,6 +756,7 @@ void			uvm_pctparam_init(struct uvm_pctparam *, int,
 			    int (*)(struct uvm_pctparam *, int));
 int			uvm_pctparam_createsysctlnode(struct uvm_pctparam *,
 			    const char *, const char *);
+void			uvm_update_uvmexp(void);
 
 /* uvm_mmap.c */
 int			uvm_mmap_dev(struct proc *, void **, size_t, dev_t,
@@ -725,13 +773,23 @@ int			uvm_mremap(struct vm_map *, vaddr_t, vsize_t,
 /* uvm_object.c */
 void			uvm_obj_init(struct uvm_object *,
 			    const struct uvm_pagerops *, bool, u_int);
-void			uvm_obj_setlock(struct uvm_object *, kmutex_t *);
+void			uvm_obj_setlock(struct uvm_object *, krwlock_t *);
 void			uvm_obj_destroy(struct uvm_object *, bool);
 int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 			    struct pglist *);
 void			uvm_obj_unwirepages(struct uvm_object *, off_t, off_t);
+bool			uvm_obj_clean_p(struct uvm_object *);
+bool			uvm_obj_nowriteback_p(struct uvm_object *);
+bool			uvm_obj_page_dirty_p(struct vm_page *);
+void			uvm_obj_page_set_dirty(struct vm_page *);
+void			uvm_obj_page_clear_dirty(struct vm_page *);
+bool			uvm_obj_page_writeback_p(struct vm_page *);
+void			uvm_obj_page_set_writeback(struct vm_page *);
+void			uvm_obj_page_clear_writeback(struct vm_page *);
 
 /* uvm_page.c */
+int			uvm_availmem(bool);
+void			uvm_page_numa_load(paddr_t, paddr_t, u_int);
 struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 			    voff_t, struct vm_anon *, int, int, int);
 #define	uvm_pagealloc(obj, off, anon, flags) \
@@ -739,12 +797,11 @@ struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 				UVM_PGA_STRAT_NORMAL, 0)
 void			uvm_pagereplace(struct vm_page *,
 			    struct vm_page *);
-void			uvm_pagerealloc(struct vm_page *,
+int			uvm_pagerealloc(struct vm_page *,
 			    struct uvm_object *, voff_t);
 void			uvm_setpagesize(void);
 
 /* uvm_pager.c */
-void			uvm_aio_biodone(struct buf *);
 void			uvm_aio_aiodone(struct buf *);
 void			uvm_aio_aiodone_pages(struct vm_page **, int, bool,
 			    int);
@@ -772,12 +829,13 @@ int			uvm_grow(struct proc *, vaddr_t);
 void			uvm_deallocate(struct vm_map *, vaddr_t, vsize_t);
 
 /* uvm_vnode.c */
+struct uvm_page_array;
 void			uvm_vnp_setsize(struct vnode *, voff_t);
 void			uvm_vnp_setwritesize(struct vnode *, voff_t);
 int			uvn_findpages(struct uvm_object *, voff_t,
-			    int *, struct vm_page **, int);
+			    unsigned int *, struct vm_page **,
+			    struct uvm_page_array *, unsigned int);
 bool			uvn_text_p(struct uvm_object *);
-bool			uvn_clean_p(struct uvm_object *);
 bool			uvn_needs_writefault_p(struct uvm_object *);
 
 /* kern_malloc.c */

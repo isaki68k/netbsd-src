@@ -1,17 +1,25 @@
-# $NetBSD: Makefile,v 1.6 2019/09/23 13:42:37 christos Exp $
+# $NetBSD: Makefile,v 1.12 2022/04/02 11:16:07 skrll Exp $
 
 PROG=		bootaa64.efi
 OBJFMT=		binary
-NEWVERSWHAT=	"EFI Boot (aarch64)"
+NEWVERSWHAT=	"efiboot (arm64)"
+GNUEFIARCH=	aarch64
+LIBGNUEFI_ARCH=	aarch64
+OBJCOPY_FORMAT=	-O binary
+
+EFIBOOT_ACPI=	yes
+EFIBOOT_FDT=	yes
 
 EXTRA_SOURCES=	efibootaa64.c
 EXTRA_SOURCES+=	cache.S
 
-COPTS+=		-mgeneral-regs-only -fno-jump-tables
+COPTS+=		-mgeneral-regs-only -mlittle-endian -fno-jump-tables
+AFLAGS+=	-mlittle-endian
 CFLAGS+=	-DEFIBOOT_ALIGN=0x200000
-CFLAGS+=	-DEFIBOOT_RUNTIME_ADDRESS=0xffff800000000000L
-CFLAGS+=	-DEFIBOOT_RUNTIME_SIZE=0x40000000UL
-CFLAGS+=	-DEFIBOOT_ACPI
+CFLAGS+=	-DEFIBOOT_RUNTIME_ADDRESS=0x0000000200200000UL
+CFLAGS+=	-DEFIBOOT_RUNTIME_SIZE=0xfe00000UL
+CFLAGS+=	-DEFIBOOT_MODULE_MACHINE=\"evbarm\"
+LDFLAGS+=	-EL
 
 .include "${.CURDIR}/../Makefile.efiboot"
 

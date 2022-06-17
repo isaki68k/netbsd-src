@@ -1,4 +1,4 @@
-/*	$NetBSD: usbhist.h,v 1.6 2019/08/22 00:24:07 mrg Exp $	*/
+/*	$NetBSD: usbhist.h,v 1.8 2021/12/11 19:24:21 mrg Exp $	*/
 
 /*
  * Copyright (c) 2012 Matthew R. Green
@@ -12,8 +12,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -51,7 +49,6 @@ extern int usbdebug;
 #define USBHIST_DECL(NAME)		KERNHIST_DECL(NAME)
 #define USBHIST_DEFINE(NAME)		KERNHIST_DEFINE(NAME)
 #define USBHIST_INIT(NAME,N)		KERNHIST_INIT(NAME,N)
-#define USBHIST_INIT_STATIC(NAME,BUF)	KERNHIST_INIT_STATIC(NAME,BUF)
 #define USBHIST_LINK_STATIC(NAME)	KERNHIST_LINK_STATIC(NAME)
 #define USBHIST_LOGN(NAME,N,FMT,A,B,C,D)	do {		\
 	if ((NAME) >= (N)) {					\
@@ -88,7 +85,6 @@ USBHIST_DECL(usbhist);
 #define USBHIST_DECL(NAME)
 #define USBHIST_DEFINE(NAME)
 #define USBHIST_INIT(NAME,N)
-#define USBHIST_INIT_STATIC(NAME,BUF)
 #define USBHIST_LINK_STATIC(NAME)
 #define USBHIST_LOGN(N,NAME,FMT,A,B,C,D)	do { } while(0)
 #define USBHIST_LOGM(N,NAME,FMT,A,B,C,D)	do { } while(0)

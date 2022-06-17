@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.230 2019/03/14 16:59:09 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.236 2021/10/09 20:00:41 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.230 2019/03/14 16:59:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.236 2021/10/09 20:00:41 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -324,7 +324,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -433,6 +433,7 @@ identifycpu(void)
 	/*
 	 * ...and the FPU type.
 	 */
+	fpu[0] = '\0';
 	switch (fputype) {
 	case FPU_68040:
 		strlcpy(fpu, "+FPU", sizeof(fpu));
@@ -458,6 +459,7 @@ identifycpu(void)
 	/*
 	 * ...and finally, the cache type.
 	 */
+	cache[0] = '\0';
 	if (cputype == CPU_68040)
 		snprintf(cache, sizeof(cache),
 		    ", 4k on-chip physical I/D caches");
@@ -610,7 +612,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 		printf("\n");
 	}
 #endif
@@ -618,7 +622,9 @@ cpu_reboot(int howto, char *bootstr)
 	/* Finally, halt/reboot the system. */
 	if (howto & RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 	}
 
 	printf("rebooting...\n");
@@ -1162,6 +1168,10 @@ int
 mm_md_physacc(paddr_t pa, vm_prot_t prot)
 {
 
+	/*
+	 * On the hp300, physical RAM is always located at the end of
+	 * the physical address space, i.e. from 0xffffffff to lowram.
+	 */
 	return (pa < lowram || pa >= 0xfffffffc) ? EFAULT : 0;
 }
 

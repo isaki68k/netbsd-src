@@ -1,4 +1,4 @@
-/*	$NetBSD: ym.c,v 1.46 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: ym.c,v 1.50 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999-2002, 2008 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ym.c,v 1.46 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ym.c,v 1.50 2021/08/07 16:19:12 thorpej Exp $");
 
 #include "mpu_ym.h"
 #include "opt_ym.h"
@@ -172,7 +172,6 @@ const struct audio_hw_if ym_hw_if = {
 	.close			= ad1848_isa_close,
 	.query_format		= ad1848_query_format,
 	.set_format		= ad1848_set_format,
-	.round_blocksize	= ad1848_round_blocksize,
 	.commit_settings	= ad1848_commit_settings,
 	.halt_output		= ad1848_isa_halt_output,
 	.halt_input		= ad1848_isa_halt_input,
@@ -259,7 +258,8 @@ ym_attach(struct ym_softc *sc)
 		arg.type = AUDIODEV_TYPE_OPL;
 		arg.hwif = 0;
 		arg.hdl = 0;
-		(void)config_found(ac->sc_dev, &arg, audioprint);
+		(void)config_found(ac->sc_dev, &arg, audioprint,
+		    CFARGS(.iattr = "ym"));
 	}
 
 #if NMPU_YM > 0
@@ -268,7 +268,8 @@ ym_attach(struct ym_softc *sc)
 		arg.type = AUDIODEV_TYPE_MPU;
 		arg.hwif = 0;
 		arg.hdl = 0;
-		sc->sc_mpudev = config_found(ac->sc_dev, &arg, audioprint);
+		sc->sc_mpudev = config_found(ac->sc_dev, &arg, audioprint,
+		    CFARGS(.iattr = "ym"));
 	}
 #endif
 

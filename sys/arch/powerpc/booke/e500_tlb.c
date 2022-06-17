@@ -1,4 +1,4 @@
-/*	$NetBSD: e500_tlb.c,v 1.19 2018/09/03 16:29:26 riastradh Exp $	*/
+/*	$NetBSD: e500_tlb.c,v 1.24 2022/05/31 08:43:15 andvar Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,13 +34,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_ppcparam.h"
-
 #define	__PMAP_PRIVATE
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: e500_tlb.c,v 1.24 2022/05/31 08:43:15 andvar Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: e500_tlb.c,v 1.19 2018/09/03 16:29:26 riastradh Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_multiprocessor.h"
+#include "opt_pmap.h"
+#include "opt_ppcparam.h"
+#endif
 
 #include <sys/param.h>
 
@@ -848,7 +851,7 @@ e500_tlbmemmap(paddr_t memstart, psize_t memsize, struct e500_tlb1 *tlb1)
 		if (slots > tlb1->tlb1_numfree - 1)
 			panic("%s: %d: can't map memory (%#lx) into TLB1: %s",
 			    __func__, __LINE__, memsize,
-			    "insufficent TLB entries");
+			    "insufficient TLB entries");
 		for (; nextslot < slots; nextslot++) {
 			const u_int freeslot = e500_alloc_tlb1_entry();
 			struct e500_xtlb * const xtlb =

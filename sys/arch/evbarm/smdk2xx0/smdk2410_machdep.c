@@ -1,4 +1,4 @@
-/*	$NetBSD: smdk2410_machdep.c,v 1.41 2019/07/16 14:41:48 skrll Exp $ */
+/*	$NetBSD: smdk2410_machdep.c,v 1.45 2021/08/17 22:00:29 andvar Exp $ */
 
 /*
  * Copyright (c) 2002, 2003 Fujitsu Component Limited
@@ -105,13 +105,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: smdk2410_machdep.c,v 1.41 2019/07/16 14:41:48 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: smdk2410_machdep.c,v 1.45 2021/08/17 22:00:29 andvar Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_pmap_debug.h"
 #include "opt_md.h"
 
 #include <sys/param.h>
@@ -200,10 +199,6 @@ int max_processes = 64;		/* Default number */
 #endif				/* !PMAP_STATIC_L1S */
 
 paddr_t msgbufphys;
-
-#ifdef PMAP_DEBUG
-extern int pmap_debug_level;
-#endif
 
 #define KERNEL_PT_SYS		0	/* L2 table for mapping zero page */
 #define KERNEL_PT_KERNEL	1	/* L2 table for mapping kernel */
@@ -438,9 +433,9 @@ initarm(void *arg)
 	 * memory controller is set correctly.  (USB download firmware
 	 * doesn't do this right) Also, we use WAIT signal for them.
 	 */
-	ioreg_write32(S3C2410_MEMCTL_BASE + MEMCTL_BWSCON, 
+	ioreg_write32(S3C2410_MEMCTL_BASE + MEMCTL_BWSCON,
 	    (BWSCON_ST|BWSCON_WS) << BWSCON_BANK_SHIFT(2) |
-	    (BWSCON_ST|BWSCON_WS) << BWSCON_BANK_SHIFT(3) | 
+	    (BWSCON_ST|BWSCON_WS) << BWSCON_BANK_SHIFT(3) |
 	    ioreg_read32(S3C2410_MEMCTL_BASE + MEMCTL_BWSCON));
 	/* tweak access timing for CS8900A */
 	ioreg_write32(S3C2410_MEMCTL_BASE + MEMCTL_BANKCON(3),
@@ -518,7 +513,7 @@ initarm(void *arg)
 	bootconfig.dram[0].pages = SDRAM_SIZE / PAGE_SIZE;
 
 	/*
-	 * Set up the variables that define the availablilty of
+	 * Set up the variables that define the availability of
 	 * physical memory.  For now, we're going to set
 	 * physical_freestart to 0x08200000 (where the kernel
 	 * was loaded), and allocate the memory we need downwards.
@@ -539,7 +534,7 @@ initarm(void *arg)
 #else
 	/* Reserve physmem for ram disk */
 	md_root_start = ((physical_end - MD_ROOT_SIZE) & ~(L1_S_SIZE-1));
-	printf("Reserve %ld bytes for memory disk\n",  
+	printf("Reserve %ld bytes for memory disk\n",
 	    physical_end - md_root_start);
 	/* copy fs contents */
 	memcpy((void *)md_root_start, (void *)MEMORY_DISK_ROOT_ADDR,
@@ -875,7 +870,7 @@ initarm(void *arg)
 #endif
 	{
 		uint8_t  gpio = ~gpio_read8(GPIO_PFDAT);
-		
+
 		if (gpio & (1<<0)) /* SW1 (EINT0) */
 			boothowto ^= RB_SINGLE;
 		if (gpio & (1<<2)) /* SW2 (EINT2) */
@@ -993,9 +988,7 @@ s3c2xx0_bus_dma_init(struct arm32_bus_dma_tag *dma_tag_template)
 #if 1
 	dmat = dma_tag_template;
 #else
-	dmat = malloc(sizeof *dmat, M_DEVBUF, M_NOWAIT);
-	if (dmat == NULL)
-		return NULL;
+	dmat = malloc(sizeof *dmat, M_DEVBUF, M_WAITOK);
 	*dmat =  *dma_tag_template;
 #endif
 

@@ -1,4 +1,4 @@
-/* $NetBSD: ieee80211_netbsd.h,v 1.22 2018/12/22 13:55:56 maxv Exp $ */
+/* $NetBSD: ieee80211_netbsd.h,v 1.24 2022/03/18 23:32:25 riastradh Exp $ */
 /*-
  * Copyright (c) 2003-2005 Sam Leffler, Errno Consulting
  * All rights reserved.
@@ -153,6 +153,11 @@ typedef kmutex_t acl_lock_t;
 #define	ACL_UNLOCK(_as)			IEEE80211_UNLOCK_IMPL(_as, as_lock)
 #define	ACL_LOCK_ASSERT(_as)		IEEE80211_LOCK_ASSERT_IMPL(_as, as_lock)
 
+/*
+ * Media locking definitions.
+ */
+typedef kmutex_t ieee80211_media_lock_t;
+
 struct ifqueue;
 void	ieee80211_drain_ifq(struct ifqueue *);
 
@@ -230,7 +235,7 @@ struct ieee80211_michael_event {
 #define	RTM_IEEE80211_REJOIN	108	/* station re-associate (ap mode) */
 
 #ifdef _KERNEL
-#define	ticks	hardclock_ticks
+#define	ticks	getticks()
 
 void	if_printf(struct ifnet *, const char *, ...);
 void	get_random_bytes(void *, size_t);

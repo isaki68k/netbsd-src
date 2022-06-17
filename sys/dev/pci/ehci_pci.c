@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci_pci.c,v 1.70 2019/06/13 17:33:34 maxv Exp $	*/
+/*	$NetBSD: ehci_pci.c,v 1.74 2022/03/13 11:29:21 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci_pci.c,v 1.70 2019/06/13 17:33:34 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci_pci.c,v 1.74 2022/03/13 11:29:21 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -144,7 +144,22 @@ ehci_pci_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_pc = pc;
 	sc->sc_tag = tag;
-	sc->sc.sc_bus.ub_dmatag = pa->pa_dmat;
+
+	const uint32_t hccparams = EREAD4(&sc->sc, EHCI_HCCPARAMS);
+
+	if (EHCI_HCC_64BIT(hccparams)) {
+		aprint_verbose_dev(self, "64-bit DMA");
+		if (pci_dma64_available(pa)) {
+			sc->sc.sc_bus.ub_dmatag = pa->pa_dmat64;
+			aprint_verbose("\n");
+		} else {
+			aprint_verbose(" - limited\n");
+			sc->sc.sc_bus.ub_dmatag = pa->pa_dmat;
+		}
+	} else {
+		aprint_verbose_dev(self, "32-bit DMA\n");
+		sc->sc.sc_bus.ub_dmatag = pa->pa_dmat;
+	}
 
 	/* Disable interrupts, so we don't get any spurious ones. */
 	sc->sc.sc_offs = EREAD1(&sc->sc, EHCI_CAPLENGTH);
@@ -255,7 +270,8 @@ ehci_pci_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
 	/* Attach usb device. */
-	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint);
+	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint,
+	    CFARGS_NONE);
 	return;
 
 fail:
@@ -309,6 +325,7 @@ ehci_pci_detach(device_t self, int flags)
 #if 1
 	/* XXX created in ehci.c */
 	if (sc->sc_init_state >= EHCI_INIT_INITED) {
+		mutex_destroy(&sc->sc.sc_rhlock);
 		mutex_destroy(&sc->sc.sc_lock);
 		mutex_destroy(&sc->sc.sc_intr_lock);
 		softint_disestablish(sc->sc.sc_doorbell_si);

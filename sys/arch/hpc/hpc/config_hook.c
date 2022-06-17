@@ -1,4 +1,4 @@
-/*	$NetBSD: config_hook.c,v 1.10 2013/11/27 17:24:43 christos Exp $	*/
+/*	$NetBSD: config_hook.c,v 1.12 2020/11/21 21:08:32 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999-2001
@@ -35,11 +35,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: config_hook.c,v 1.10 2013/11/27 17:24:43 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: config_hook.c,v 1.12 2020/11/21 21:08:32 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 
@@ -118,10 +118,7 @@ config_hook(int type, long id, enum config_hook_mode mode,
 	}
 
 	/* allocate new record */
-	hr = malloc(sizeof(*hr), M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (hr == NULL)
-		panic("config_hook: malloc failed");
-
+	hr = kmem_alloc(sizeof(*hr), KM_SLEEP);
 	hr->hr_ctx = ctx;
 	hr->hr_type = type;
 	hr->hr_id = id;
@@ -168,7 +165,7 @@ config_unhook(config_hook_tag hrx)
 		}
 		splx(s);
 	}
-	free(hr, M_DEVBUF);
+	kmem_free(hr, sizeof(*hr));
 }
 
 int
@@ -211,10 +208,7 @@ config_connect(int type, long id)
 	}
 
 	/* allocate new record */
-	cr = malloc(sizeof(*hr), M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (cr == NULL)
-		panic("config_connect: malloc failed");
-
+	cr = kmem_alloc(sizeof(*hr), KM_SLEEP);
 	cr->hr_func = NULL;
 	cr->hr_type = type;
 	cr->hr_id = id;
@@ -249,7 +243,7 @@ config_disconnect(config_call_tag crx)
 	TAILQ_REMOVE(&call_list, cr, hr_link);
 	splx(s);
 
-	free(cr, M_DEVBUF);
+	kmem_free(cr, sizeof(*cr));
 }
 
 int

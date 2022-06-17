@@ -1,4 +1,4 @@
-/*      $NetBSD: param.h,v 1.62 2019/01/07 22:00:33 jdolecek Exp $    */
+/*      $NetBSD: param.h,v 1.64 2021/05/31 14:38:56 simonb Exp $    */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -35,6 +35,10 @@
 
 #ifndef _VAX_PARAM_H_
 #define _VAX_PARAM_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
 
 /*
  * Machine dependent constants for VAX.
@@ -118,6 +122,10 @@ void	delay(int);
 
 #define	DELAY(x) delay(x)
 #define	MAXEXEC	1
+
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#define	__AUDIO_BLK_MS (40)
+
 #endif /* _KERNEL */
 
 #endif /* _VAX_PARAM_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: ss.c,v 1.89 2017/06/17 22:35:50 mlelstv Exp $	*/
+/*	$NetBSD: ss.c,v 1.91 2022/02/23 21:54:41 andvar Exp $	*/
 
 /*
  * Copyright (c) 1995 Kenneth Stailey.  All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ss.c,v 1.89 2017/06/17 22:35:50 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ss.c,v 1.91 2022/02/23 21:54:41 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -298,7 +298,7 @@ bad:
 
 /*
  * close the device.. only called if we are the LAST
- * occurence of an open device
+ * occurrence of an open device
  */
 static int
 ssclose(dev_t dev, int flag, int mode, struct lwp *l)
@@ -414,7 +414,7 @@ ssstrategy(struct buf *bp)
 	if (bp->b_bcount > ss->sio.scan_window_size)
 		bp->b_bcount = ss->sio.scan_window_size;
 
-	/* If it's a null transfer, return immediatly */
+	/* If it's a null transfer, return immediately */
 	if (bp->b_bcount == 0)
 		goto done;
 

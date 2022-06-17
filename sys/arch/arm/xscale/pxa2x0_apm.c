@@ -1,4 +1,4 @@
-/*	$NetBSD: pxa2x0_apm.c,v 1.4 2012/11/12 18:00:38 skrll Exp $	*/
+/*	$NetBSD: pxa2x0_apm.c,v 1.8 2022/02/12 15:51:28 thorpej Exp $	*/
 /*	$OpenBSD: pxa2x0_apm.c,v 1.28 2007/03/29 18:42:38 uwe Exp $	*/
 
 /*-
@@ -104,8 +104,12 @@ void	filt_apmrdetach(struct knote *kn);
 int	filt_apmread(struct knote *kn, long hint);
 int	apmkqfilter(dev_t dev, struct knote *kn);
 
-struct filterops apmread_filtops =
-	{ 1, NULL, filt_apmrdetach, filt_apmread};
+static const struct filterops apmread_filtops = {
+	.f_flags = FILTEROP_ISFD,
+	.f_attach = NULL,
+	.f_detach = filt_apmrdetach,
+	.f_event = filt_apmread,
+};
 #endif
 
 /*
@@ -597,7 +601,7 @@ filt_apmrdetach(struct knote *kn)
 	struct pxa2x0_apm_softc *sc =
 	    (struct pxa2x0_apm_softc *)kn->kn_hook;
 
-	SLIST_REMOVE(&sc->sc_note, kn, knote, kn_selnext);
+	klist_remove(&sc->sc_note, kn);
 }
 
 int
@@ -625,11 +629,11 @@ apmkqfilter(dev_t dev, struct knote *kn)
 		kn->kn_fop = &apmread_filtops;
 		break;
 	default:
-		return (1);
+		return (EINVAL);
 	}
 
 	kn->kn_hook = (caddr_t)sc;
-	SLIST_INSERT_HEAD(&sc->sc_note, kn, kn_selnext);
+	klist_insert(&sc->sc_note, kn);
 
 	return (0);
 }
@@ -647,6 +651,7 @@ pxa2x0_apm_attach_sub(struct pxa2x0_apm_softc *sc)
 	}
 
 	lockinit(&sc->sc_lock, PWAIT, "apmlk", 0, 0);
+	klist_init(&sc->sc_note);
 
 	kthread_create_deferred(apm_thread_create, sc);
 

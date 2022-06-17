@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_lock.c,v 1.163 2019/05/09 05:00:31 ozaki-r Exp $	*/
+/*	$NetBSD: kern_lock.c,v 1.173 2021/10/31 16:26:26 skrll Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -31,7 +31,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lock.c,v 1.163 2019/05/09 05:00:31 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lock.c,v 1.173 2021/10/31 16:26:26 skrll Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_lockdebug.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -44,6 +48,10 @@ __KERNEL_RCSID(0, "$NetBSD: kern_lock.c,v 1.163 2019/05/09 05:00:31 ozaki-r Exp 
 #include <sys/atomic.h>
 #include <sys/lwp.h>
 #include <sys/pserialize.h>
+
+#if defined(DIAGNOSTIC) && !defined(LOCKDEBUG)
+#include <sys/ksyms.h>
+#endif
 
 #include <machine/lock.h>
 
@@ -75,12 +83,13 @@ assert_sleepable(void)
 	 */
 	do {
 		pctr = lwp_pctr();
+		__insn_barrier();
 		idle = CURCPU_IDLE_P();
+		__insn_barrier();
 	} while (pctr != lwp_pctr());
 
 	reason = NULL;
-	if (idle && !cold &&
-	    kcpuset_isset(kcpuset_running, cpu_index(curcpu()))) {
+	if (idle && !cold) {
 		reason = "idle";
 	}
 	if (cpu_intr_p()) {
@@ -154,6 +163,11 @@ _kernel_lock_dump(const volatile void *junk, lockop_printer_t pr)
 
 /*
  * Acquire 'nlocks' holds on the kernel lock.
+ *
+ * Although it may not look it, this is one of the most central, intricate
+ * routines in the kernel, and tons of code elsewhere depends on its exact
+ * behaviour.  If you change something in here, expect it to bite you in the
+ * rear.
  */
 void
 _kernel_lock(int nlocks)
@@ -162,7 +176,9 @@ _kernel_lock(int nlocks)
 	LOCKSTAT_TIMER(spintime);
 	LOCKSTAT_FLAG(lsflag);
 	struct lwp *owant;
-	u_int spins;
+#ifdef LOCKDEBUG
+	u_int spins = 0;
+#endif
 	int s;
 	struct lwp *l = curlwp;
 
@@ -182,7 +198,7 @@ _kernel_lock(int nlocks)
 	LOCKDEBUG_WANTLOCK(kernel_lock_dodebug, kernel_lock, RETURN_ADDRESS,
 	    0);
 
-	if (__cpu_simple_lock_try(kernel_lock)) {
+	if (__predict_true(__cpu_simple_lock_try(kernel_lock))) {
 		ci->ci_biglock_count = nlocks;
 		l->l_blcnt = nlocks;
 		LOCKDEBUG_LOCKED(kernel_lock_dodebug, kernel_lock, NULL,
@@ -202,6 +218,9 @@ _kernel_lock(int nlocks)
 	membar_producer();
 	owant = ci->ci_biglock_wanted;
 	ci->ci_biglock_wanted = l;
+#if defined(DIAGNOSTIC) && !defined(LOCKDEBUG)
+	l->l_ld_wanted = __builtin_return_address(0);
+#endif
 
 	/*
 	 * Spin until we acquire the lock.  Once we have it, record the
@@ -210,17 +229,18 @@ _kernel_lock(int nlocks)
 	LOCKSTAT_ENTER(lsflag);
 	LOCKSTAT_START_TIMER(lsflag, spintime);
 
-	spins = 0;
 	do {
 		splx(s);
 		while (__SIMPLELOCK_LOCKED_P(kernel_lock)) {
+#ifdef LOCKDEBUG
 			if (SPINLOCK_SPINOUT(spins)) {
 				extern int start_init_exec;
-				if (!start_init_exec)
+				if (start_init_exec)
 					_KERNEL_LOCK_ABORT("spinout");
 			}
 			SPINLOCK_BACKOFF_HOOK;
 			SPINLOCK_SPIN_HOOK;
+#endif
 		}
 		s = splvm();
 	} while (!__cpu_simple_lock_try(kernel_lock));
@@ -255,7 +275,9 @@ _kernel_lock(int nlocks)
 	 * prevents stores from a following mutex_exit() being reordered
 	 * to occur before our store to ci_biglock_wanted above.
 	 */
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
 	membar_enter();
+#endif
 }
 
 /*

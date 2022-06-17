@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.c,v 1.74 2019/09/13 02:19:46 manu Exp $	 */
+/*	$NetBSD: exec.c,v 1.77 2021/05/30 05:59:23 mlelstv Exp $	 */
 
 /*
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -122,6 +122,7 @@
 #define MAXMODNAME	32	/* from <sys/module.h> */
 
 extern struct btinfo_console btinfo_console;
+extern struct btinfo_rootdevice bi_root;
 
 boot_module_t *boot_modules;
 bool boot_modules_enabled = true;
@@ -151,7 +152,7 @@ static void	module_add_common(const char *, uint8_t);
 static void	userconf_init(void);
 
 static void	extract_device(const char *, char *, size_t);
-static void	module_base_path(char *, size_t);
+static void	module_base_path(char *, size_t, const char *);
 static int	module_open(boot_module_t *, int, const char *, const char *,
 		    bool);
 
@@ -321,7 +322,7 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 	/* Load the prekern (static) */
 	flags = LOAD_KERNEL & ~(LOAD_HDR|LOAD_SYM);
 	if ((fd = loadfile(prekernpath, marks, flags)) == -1)
-		return EIO;
+		return errno;
 	close(fd);
 
 	prekern_start = marks[MARK_START];
@@ -334,7 +335,7 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 	/* Load the kernel (dynamic) */
 	flags = (LOAD_KERNEL | LOAD_DYN) & ~(floppy ? LOAD_BACKWARDS : 0);
 	if ((fd = loadfile(file, marks, flags)) == -1)
-		return EIO;
+		return errno;
 	close(fd);
 
 	kernpa_end = marks[MARK_END] - loadaddr;
@@ -399,7 +400,7 @@ common_load_kernel(const char *file, u_long *basemem, u_long *extmem,
 		 */
 		marks[MARK_START] = loadaddr;
 		if ((fd = loadfile(file, marks, COUNT_KERNEL)) == -1)
-			return EIO;
+			return errno;
 		close(fd);
 
 		kernsize = marks[MARK_END];
@@ -413,7 +414,7 @@ common_load_kernel(const char *file, u_long *basemem, u_long *extmem,
 	marks[MARK_START] = loadaddr;
 	if ((fd = loadfile(file, marks,
 	    LOAD_KERNEL & ~(floppy ? LOAD_BACKWARDS : 0))) == -1)
-		return EIO;
+		return errno;
 
 	close(fd);
 
@@ -477,6 +478,8 @@ exec_netbsd(const char *file, physaddr_t loadaddr, int boothowto, int floppy,
 	BI_ALLOC(BTINFO_MAX);
 
 	BI_ADD(&btinfo_console, BTINFO_CONSOLE, sizeof(struct btinfo_console));
+	if (bi_root.devname[0])
+		BI_ADD(&bi_root, BTINFO_ROOTDEVICE, sizeof(struct btinfo_rootdevice));
 
 	howto = boothowto;
 
@@ -653,8 +656,15 @@ module_open(boot_module_t *bm, int mode, const char *kdev,
 }
 
 static void
-module_base_path(char *buf, size_t bufsize)
+module_base_path(char *buf, size_t bufsize, const char *kernel_path)
 {
+#ifdef KERNEL_DIR
+	/* we cheat here, because %.* does not work with the mini printf */
+	char *ptr = strrchr(kernel_path, '/');
+	if (ptr) *ptr = '\0';
+	snprintf(buf, bufsize, "%s/modules", kernel_path);
+	if (ptr) *ptr = '/';
+#else
 	const char *machine;
 
 	switch (netbsd_elf_class) {
@@ -682,6 +692,7 @@ module_base_path(char *buf, size_t bufsize)
 		    netbsd_version / 100000000,
 		    netbsd_version / 1000000 % 100);
 	}
+#endif
 }
 
 static void
@@ -697,7 +708,7 @@ module_init(const char *kernel_path)
 	int err, fd, nfail = 0;
 
 	extract_device(kernel_path, kdev, sizeof(kdev));
-	module_base_path(module_base, sizeof(module_base));
+	module_base_path(module_base, sizeof(module_base), kernel_path);
 
 	/* First, see which modules are valid and calculate btinfo size */
 	len = sizeof(struct btinfo_modulelist);

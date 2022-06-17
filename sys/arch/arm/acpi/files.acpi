@@ -1,4 +1,4 @@
-#	$NetBSD: files.acpi,v 1.8 2019/10/14 11:00:13 jmcneill Exp $
+#	$NetBSD: files.acpi,v 1.13 2021/08/07 21:27:53 jmcneill Exp $
 #
 # Configuration info for ACPI compliant ARM boards.
 #
@@ -13,8 +13,11 @@ include "dev/acpi/files.acpi"
 file	arch/arm/acpi/acpi_iort.c		acpi
 file	arch/arm/acpi/acpi_machdep.c		acpi
 file	arch/arm/acpi/acpi_pci_machdep.c	acpi & pci
+file	arch/arm/acpi/acpi_pci_graviton.c	acpi & pci
+file	arch/arm/acpi/acpi_pci_layerscape_gen4.c	acpi & pci
+file	arch/arm/acpi/acpi_pci_n1sdp.c		acpi & pci
+file	arch/arm/acpi/acpi_pci_smccc.c		acpi & pci & pci_smccc
 file	arch/arm/acpi/acpi_platform.c		acpi
-file	arch/arm/acpi/acpi_simplefb.c		acpi & wsdisplay & genfb
 file	arch/arm/acpi/acpi_table.c		acpi
 
 attach	cpu at acpimadtbus with cpu_acpi
@@ -37,6 +40,14 @@ file	arch/arm/acpi/sbsawdt_acpi.c		sbsawdt_acpi
 
 attach	plcom at acpinodebus with plcom_acpi
 file	arch/arm/acpi/plcom_acpi.c		plcom_acpi
+
+device	acpicpu: acpi
+attach	acpicpu at acpinodebus
+file	dev/acpi/acpi_cpu.c			acpicpu
+file	dev/acpi/acpi_cpu_cstate.c		acpicpu
+file	dev/acpi/acpi_cpu_pstate.c		acpicpu
+file	dev/acpi/acpi_cpu_tstate.c		acpicpu
+file	arch/arm/acpi/acpi_cpu_md.c		acpicpu
 
 device	acpipchb: pcibus
 attach	acpipchb at acpinodebus

@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee80211_output.c,v 1.64 2018/12/22 13:11:37 maxv Exp $	*/
+/*	$NetBSD: ieee80211_output.c,v 1.66 2021/07/24 21:31:38 andvar Exp $	*/
 
 /*
  * Copyright (c) 2001 Atsushi Onoe
@@ -37,7 +37,7 @@
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_output.c,v 1.34 2005/08/10 16:22:29 sam Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_output.c,v 1.64 2018/12/22 13:11:37 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_output.c,v 1.66 2021/07/24 21:31:38 andvar Exp $");
 #endif
 
 #ifdef _KERNEL_OPT
@@ -436,7 +436,7 @@ ieee80211_mbuf_adjust(struct ieee80211com *ic, int hdrsize,
 		}
 
 		IASSERT(needed_space <= MHLEN,
-		    ("not enough room, need %u got %zu\n", needed_space, MHLEN));
+		    ("not enough room, need %u got %lu\n", needed_space, (u_long)MHLEN));
 
 		/*
 		 * Setup new mbuf to have leading space to prepend the
@@ -2001,10 +2001,10 @@ ieee80211_beacon_update(struct ieee80211com *ic, struct ieee80211_node *ni,
 		struct ieee80211_wme_state *wme = &ic->ic_wme;
 
 		/*
-		 * Check for agressive mode change.  When there is
+		 * Check for aggressive mode change.  When there is
 		 * significant high priority traffic in the BSS
 		 * throttle back BE traffic by using conservative
-		 * parameters.  Otherwise BE uses agressive params
+		 * parameters.  Otherwise BE uses aggressive params
 		 * to optimize performance of legacy/non-QoS traffic.
 		 */
 		if (wme->wme_flags & WME_F_AGGRMODE) {

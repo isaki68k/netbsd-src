@@ -1,7 +1,7 @@
-/*	$NetBSD: aicasm_symbol.c,v 1.6 2009/03/18 10:22:40 cegger Exp $	*/
+/*	$NetBSD: aicasm_symbol.c,v 1.9 2022/05/24 20:50:19 andvar Exp $	*/
 
 /*
- * Aic7xxx SCSI host adapter firmware asssembler symbol table implementation
+ * Aic7xxx SCSI host adapter firmware assembler symbol table implementation
  *
  * Copyright (c) 1997 Justin T. Gibbs.
  * Copyright (c) 2002 Adaptec Inc.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: aicasm_symbol.c,v 1.6 2009/03/18 10:22:40 cegger Exp $");
+__RCSID("$NetBSD: aicasm_symbol.c,v 1.9 2022/05/24 20:50:19 andvar Exp $");
 
 #include <sys/types.h>
 
@@ -59,6 +59,7 @@ __RCSID("$NetBSD: aicasm_symbol.c,v 1.6 2009/03/18 10:22:40 cegger Exp $");
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
+#include <ctype.h>
 
 #include "aicasm_symbol.h"
 #include "aicasm.h"
@@ -527,7 +528,7 @@ symtable_dump(FILE *ofile, FILE *dfile)
 		flag = R_NEXT;
 	}
 
-	/* Register dianostic functions/declarations first. */
+	/* Register diagnostic functions/declarations first. */
 	aic_print_file_prologue(ofile);
 	aic_print_reg_dump_types(ofile);
 	aic_print_file_prologue(dfile);

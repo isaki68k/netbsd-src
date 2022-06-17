@@ -1,4 +1,4 @@
-/*	$NetBSD: hilms.c,v 1.2 2011/02/15 11:05:51 tsutsui Exp $	*/
+/*	$NetBSD: hilms.c,v 1.5 2021/09/19 04:55:58 tsutsui Exp $	*/
 /*	$OpenBSD: hilms.c,v 1.5 2007/04/10 22:37:17 miod Exp $	*/
 /*
  * Copyright (c) 2003, Miodrag Vallat.
@@ -67,9 +67,9 @@ static int	hilms_ioctl(void *, u_long, void *, int, struct lwp *);
 static void	hilms_disable(void *);
 
 static const struct wsmouse_accessops hilms_accessops = {
-	hilms_enable,
-	hilms_ioctl,
-	hilms_disable,
+	.enable  = hilms_enable,
+	.ioctl   = hilms_ioctl,
+	.disable = hilms_disable,
 };
 
 static void	hilms_callback(struct hildev_softc *, u_int, uint8_t *);
@@ -161,7 +161,7 @@ hilmsattach(device_t parent, device_t self, void *aux)
 	a.accessops = &hilms_accessops;
 	a.accesscookie = sc;
 
-	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint);
+	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint, CFARGS_NONE);
 }
 
 int

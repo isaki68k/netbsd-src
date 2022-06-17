@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.7 2012/10/02 23:51:39 christos Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.10 2021/09/11 20:28:04 andvar Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -38,7 +38,7 @@
 #define _POWERPC_BOOKE_VMPARAM_H_
 
 /*
- * Most of the definitions in this can be overriden by a machine-specific
+ * Most of the definitions in this can be overridden by a machine-specific
  * vmparam.h if required.  Otherwise a port can just include this file
  * get the right thing to happen.
  */
@@ -56,15 +56,15 @@
 #endif
 
 #ifndef	MAXTSIZ
-#define	MAXTSIZ		(2*256*1024*1024)	/* maximum text size */
+#define	MAXTSIZ		(128*1024*1024)		/* maximum text size */
 #endif
 
 #ifndef	MAXDSIZ
-#define	MAXDSIZ		(13*256*1024*1024U)	/* maximum data size */
+#define	MAXDSIZ		(1024*1024*1024)	/* maximum data size */
 #endif
 
 #ifndef	MAXSSIZ
-#define	MAXSSIZ		(1*256*1024*1024-PAGE_SIZE) /* maximum stack size */
+#define	MAXSSIZ		(32*1024*1024)		/* maximum stack size */
 #endif
 
 #ifndef	DFLDSIZ

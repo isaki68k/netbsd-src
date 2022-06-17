@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.3 2019/06/01 12:42:28 maxv Exp $ */
+/* $NetBSD: param.h,v 1.6 2021/07/19 10:28:58 christos Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,6 +31,10 @@
 
 #ifndef	_RISCV_PARAM_H_
 #define	_RISCV_PARAM_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
 
 /*
  * Machine dependent constants for all OpenRISC processors
@@ -87,6 +91,12 @@
 #endif	/* MCLSHIFT */
 
 #define	MCLBYTES	(1 << MCLSHIFT)	/* size of a m_buf cluster */
+
+#ifndef MSGBUFSIZE
+#define MSGBUFSIZE		65536	/* default message buffer size */
+#endif
+
+#define MAXCPUS			32
 
 #ifdef _KERNEL
 void delay(unsigned long);

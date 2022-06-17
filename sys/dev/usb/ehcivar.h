@@ -1,4 +1,4 @@
-/*	$NetBSD: ehcivar.h,v 1.46 2018/09/18 02:00:06 mrg Exp $ */
+/*	$NetBSD: ehcivar.h,v 1.51 2022/03/13 11:29:21 riastradh Exp $ */
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -44,7 +44,7 @@ typedef struct ehci_soft_qtd {
 	uint16_t len;
 } ehci_soft_qtd_t;
 #define EHCI_SQTD_ALIGN	MAX(EHCI_QTD_ALIGN, CACHE_LINE_SIZE)
-#define EHCI_SQTD_SIZE ((sizeof(struct ehci_soft_qtd) + EHCI_SQTD_ALIGN - 1) & -EHCI_SQTD_ALIGN)
+#define EHCI_SQTD_SIZE (roundup(sizeof(struct ehci_soft_qtd), EHCI_SQTD_ALIGN))
 #define EHCI_SQTD_CHUNK (EHCI_PAGE_SIZE / EHCI_SQTD_SIZE)
 
 typedef struct ehci_soft_qh {
@@ -56,7 +56,7 @@ typedef struct ehci_soft_qh {
 	int offs;			/* QH's offset in usb_dma_t */
 	int islot;
 } ehci_soft_qh_t;
-#define EHCI_SQH_SIZE ((sizeof(struct ehci_soft_qh) + EHCI_QH_ALIGN - 1) / EHCI_QH_ALIGN * EHCI_QH_ALIGN)
+#define EHCI_SQH_SIZE (roundup(sizeof(struct ehci_soft_qh), EHCI_QH_ALIGN))
 #define EHCI_SQH_CHUNK (EHCI_PAGE_SIZE / EHCI_SQH_SIZE)
 
 typedef struct ehci_soft_itd {
@@ -80,13 +80,13 @@ typedef struct ehci_soft_itd {
 	int slot;
 	struct timeval t; /* store free time */
 } ehci_soft_itd_t;
-#define EHCI_ITD_SIZE ((sizeof(struct ehci_soft_itd) + EHCI_QH_ALIGN - 1) / EHCI_ITD_ALIGN * EHCI_ITD_ALIGN)
+#define EHCI_ITD_SIZE (roundup(sizeof(struct ehci_soft_itd), EHCI_ITD_ALIGN))
 #define EHCI_ITD_CHUNK (EHCI_PAGE_SIZE / EHCI_ITD_SIZE)
 
 #define ehci_soft_sitd_t ehci_soft_itd_t
 #define ehci_soft_sitd ehci_soft_itd
 #define sc_softsitds sc_softitds
-#define EHCI_SITD_SIZE ((sizeof(struct ehci_soft_sitd) + EHCI_QH_ALIGN - 1) / EHCI_SITD_ALIGN * EHCI_SITD_ALIGN)
+#define EHCI_SITD_SIZE (roundup(sizeof(struct ehci_soft_sitd), EHCI_SITD_ALIGN))
 #define EHCI_SITD_CHUNK (EHCI_PAGE_SIZE / EHCI_SITD_SIZE)
 
 struct ehci_xfer {
@@ -162,15 +162,18 @@ struct ehci_soft_islot {
 
 typedef struct ehci_softc {
 	device_t sc_dev;
+	kmutex_t sc_rhlock;
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
 	kcondvar_t sc_doorbell;
 	void *sc_doorbell_si;
+	struct lwp *sc_doorbelllwp;
 	void *sc_pcd_si;
 	struct usbd_bus sc_bus;
 	bus_space_tag_t iot;
 	bus_space_handle_t ioh;
 	bus_size_t sc_size;
+	bus_dma_tag_t sc_dmatag;	/* for control data structures */
 	u_int sc_offs;			/* offset to operational regs */
 	int sc_flags;			/* misc flags */
 #define EHCIF_DROPPED_INTR_WORKAROUND	0x01

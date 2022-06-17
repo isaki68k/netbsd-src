@@ -1,4 +1,4 @@
-/*	$NetBSD: ixp425_npe.c,v 1.11 2014/08/14 16:55:02 joerg Exp $	*/
+/*	$NetBSD: ixp425_npe.c,v 1.15 2021/08/07 16:18:46 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2006 Sam Leffler, Errno Consulting
@@ -62,7 +62,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/arm/xscale/ixp425/ixp425_npe.c,v 1.1 2006/11/19 23:55:23 sam Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: ixp425_npe.c,v 1.11 2014/08/14 16:55:02 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixp425_npe.c,v 1.15 2021/08/07 16:18:46 thorpej Exp $");
 
 /*
  * Intel XScale Network Processing Engine (NPE) support.
@@ -317,7 +317,8 @@ ixpnpe_attach(device_t parent, device_t self, void *arg)
     npe_reg_write(sc, IX_NPECTL,
 	npe_reg_read(sc, IX_NPECTL) | (IX_NPECTL_OFE | IX_NPECTL_OFWE));
 
-    config_search_ia(ixpnpe_search, self, "ixpnpe", ixa);
+    config_search(self, ixa,
+	CFARGS(.search = ixpnpe_search));
 }
 
 static int
@@ -340,8 +341,8 @@ ixpnpe_search(device_t parent, cfdata_t cf, const int *ldesc, void *arg)
 	na.na_iot = ixa->ixa_iot;
 	na.na_dt = ixa->ixa_dt;
 
-	if (config_match(parent, cf, &na) > 0) {
-		config_attach(parent, cf, &na, ixpnpe_print);
+	if (config_probe(parent, cf, &na)) {
+		config_attach(parent, cf, &na, ixpnpe_print, CFARGS_NONE);
 		return (1);
 	}
 
@@ -409,7 +410,7 @@ ixpnpe_stop(struct ixpnpe_softc *sc)
 
 /*
  * Indicates the start of an NPE Image, in new NPE Image Library format.
- * 2 consecutive occurances indicates the end of the NPE Image Library
+ * 2 consecutive occurrences indicates the end of the NPE Image Library
  */
 #define NPE_IMAGE_MARKER 0xfeedf00d
 
@@ -486,7 +487,7 @@ ixpnpe_init(struct ixpnpe_softc *sc, const char *imageName, uint32_t imageId)
 
     /*
      * If download was successful, store image Id in list of
-     * currently loaded images. If a critical error occured
+     * currently loaded images. If a critical error occurred
      * during download, record that the NPE has an invalid image
      */
     mutex_enter(&sc->sc_lock);
@@ -749,7 +750,7 @@ npe_cpu_reset(struct ixpnpe_softc *sc)
     while (npe_checkbits(sc,
 	  IX_NPEDL_REG_OFFSET_STAT, IX_NPEDL_MASK_STAT_IFNE)) {
 	/*
-	 * Step execution of the NPE intruction to read inFIFO using
+	 * Step execution of the NPE instruction to read inFIFO using
 	 * the Debug Executing Context stack.
 	 */
 	error = npe_cpu_step(sc, IX_NPEDL_INSTR_RD_FIFO, 0, 0);
@@ -842,7 +843,7 @@ npe_cpu_reset(struct ixpnpe_softc *sc)
      * sense based on the documentation.  The feature control
      * register always reads back as 0 on the ixp425 and further
      * the bit definition of NPEA/NPEB is off by 1 according to
-     * the Intel documention--so we're blindly following the
+     * the Intel documentation--so we're blindly following the
      * Intel code w/o any real understanding.
      */
     regVal = EXP_BUS_READ_4(ixp425_softc, EXP_FCTRL_OFFSET);
@@ -1133,7 +1134,7 @@ npe_logical_reg_read(struct ixpnpe_softc *sc,
     npeInstruction |= (regAddr << IX_NPEDL_OFFSET_INSTR_SRC) |
 	(regAddr << IX_NPEDL_OFFSET_INSTR_DEST);
 
-    /* step execution of NPE intruction using Debug Executing Context stack */
+    /* step execution of NPE instruction using Debug Executing Context stack */
     error = npe_cpu_step(sc, npeInstruction, ctxtNum, IX_NPEDL_RD_INSTR_LDUR);
     if (error != 0) {
 	DPRINTF(sc->sc_dev, "%s(0x%x, %u, %u), cannot step, error %d\n",
@@ -1186,7 +1187,7 @@ npe_logical_reg_write(struct ixpnpe_softc *sc, uint32_t regAddr, uint32_t regVal
 	default:
 	    return EINVAL;
 	}
-	/* fill dest operand field of  instruction with destination reg addr */
+	/* fill dest operand field of instruction with destination reg addr */
 	npeInstruction |= (regAddr << IX_NPEDL_OFFSET_INSTR_DEST);
 
 	/* fill src operand field of instruction with least-sig 5 bits of val*/
@@ -1197,7 +1198,7 @@ npe_logical_reg_write(struct ixpnpe_softc *sc, uint32_t regAddr, uint32_t regVal
 	npeInstruction |= ((regVal & IX_NPEDL_MASK_IMMED_INSTR_COPROC_DATA) <<
 			   IX_NPEDL_DISPLACE_IMMED_INSTR_COPROC_DATA);
 
-	/* step execution of NPE intruction using Debug ECS */
+	/* step execution of NPE instruction using Debug ECS */
 	error = npe_cpu_step(sc, npeInstruction,
 					  ctxtNum, IX_NPEDL_WR_INSTR_LDUR);
     }

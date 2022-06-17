@@ -1,4 +1,4 @@
-/*	$NetBSD: cpunode.c,v 1.5 2011/05/28 05:25:39 matt Exp $	*/
+/*	$NetBSD: cpunode.c,v 1.8 2021/08/07 16:19:02 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,14 +35,13 @@
  */
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: cpunode.c,v 1.8 2021/08/07 16:19:02 thorpej Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: cpunode.c,v 1.5 2011/05/28 05:25:39 matt Exp $");
+#include "ioconf.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
-
-#include "ioconf.h"
 
 #include <powerpc/booke/cpuvar.h>
 
@@ -154,8 +153,8 @@ cpunode_attach(device_t parent, device_t self, void *aux)
 		cna.cna_childmask = childmask;
 		cna.cna_locs = *cnl;
 
-		(void)config_found_sm_loc(self, "cpunode", NULL, &cna,
-		    cpunode_print, NULL);
+		config_found(self, &cna, cpunode_print,
+		    CFARGS(.iattr = "cpunode"));
 		childmask <<= 1;
 	}
 	/*

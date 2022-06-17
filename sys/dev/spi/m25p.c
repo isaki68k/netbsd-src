@@ -1,4 +1,4 @@
-/* $NetBSD: m25p.c,v 1.14 2019/09/14 15:12:12 tnn Exp $ */
+/* $NetBSD: m25p.c,v 1.20 2022/01/19 05:21:44 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: m25p.c,v 1.14 2019/09/14 15:12:12 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: m25p.c,v 1.20 2022/01/19 05:21:44 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -96,7 +96,8 @@ static const struct m25p_info {
 	{ 0x14, 0x20, 0x2015, "STMicro M25P16", 2048, 64 },	/* 16Mbit */
 	{ 0x12, 0x20, 0x2013, "STMicro M25P40", 512, 64 },	/* 4Mbit */
 	{ 0xc0, 0x20, 0x7117, "STMicro M25PX64", 8192, 64 },	/* 64Mbit */
-	{ 0x00, 0x20, 0xBB18, "Numonyx N25Q128", 16384, 64 },	/* 128Mbit */
+	{ 0x00, 0x20, 0xBA18, "Micron MT25QL128", 16384, 64 },  /* 128Mbit (3V) */
+	{ 0x00, 0x20, 0xBB18, "Micron MT25QU128", 16384, 64 },  /* 128Mbit (1.8V)  */
 	{ 0x00, 0xBF, 0x2541, "Microchip SST25VF016B", 2048, 64 }, /* 16Mbit */
 	{ 0x00, 0xC2, 0x2011, "Macronix MX25L10", 128, 64 },	/* 1Mbit */
 	{ 0x00, 0xC2, 0x2012, "Macronix MX25L20", 256, 64 },	/* 2Mbit */
@@ -116,25 +117,16 @@ static const struct m25p_info {
 };
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "jedec,spi-nor",	0 },
-	{ NULL,			0 }
+	{ .compat = "jedec,spi-nor" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
 m25p_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct spi_attach_args *sa = aux;
-	int res;
 
-	res = spi_compatible_match(sa, cf, compat_data);
-	if (!res)
-		return res;
-
-	/* configure for 20MHz, which is the max for normal reads */
-	if (spi_configure(sa->sa_handle, SPI_MODE_0, 20000000))
-		res = 0;
-
-	return res;
+	return spi_compatible_match(sa, cf, compat_data);
 }
 
 static void
@@ -142,11 +134,18 @@ m25p_attach(device_t parent, device_t self, void *aux)
 {
 	struct m25p_softc *sc = device_private(self);
 	struct spi_attach_args *sa = aux;
+	int error;
 
 	sc->sc_sh = sa->sa_handle;
 
 	aprint_normal("\n");
 	aprint_naive("\n");
+
+	/* configure for 20MHz, which is the max for normal reads */
+	error = spi_configure(self, sa->sa_handle, SPI_MODE_0, 20000000);
+	if (error) {
+		return;
+	}
 
 	config_interrupts(self, m25p_doattach);
 }
@@ -165,7 +164,7 @@ m25p_doattach(device_t self)
 	/* first we try JEDEC ID read */
 	cmd = SPIFLASH_CMD_RDJI;
 	if (spi_send_recv(sc->sc_sh, 1, &cmd, 3, buf)) {
-		aprint_error(": failed to get JEDEC identification\n");
+		aprint_error_dev(self, "failed to get JEDEC identification\n");
 		return;
 	}
 	mfgid = buf[0];
@@ -174,7 +173,8 @@ m25p_doattach(device_t self)
 	if ((mfgid == 0xff) || (mfgid == 0)) {
 		cmd = SPIFLASH_CMD_RDID;
 		if (spi_send_recv(sc->sc_sh, 1, &cmd, 4, buf)) {
-			aprint_error(": failed to get legacy signature\n");
+			aprint_error_dev(self,
+			    "failed to get legacy signature\n");
 			return;
 		}
 		sig = buf[3];
@@ -191,8 +191,9 @@ m25p_doattach(device_t self)
 	}
 
 	if (info->name == NULL) {
-		aprint_error(": vendor 0x%02X dev 0x%04X sig 0x%02X not supported\n",
-			     mfgid, devid, sig);
+		aprint_error_dev(self,
+		    "vendor 0x%02X dev 0x%04X sig 0x%02X not supported\n",
+		     mfgid, devid, sig);
 		return;
 	}
 

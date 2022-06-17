@@ -1,4 +1,4 @@
-/*	$NetBSD: pcib.c,v 1.18 2014/03/29 19:28:28 christos Exp $	*/
+/*	$NetBSD: pcib.c,v 1.24 2022/01/22 15:10:31 skrll Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -36,13 +36,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.18 2014/03/29 19:28:28 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.24 2022/01/22 15:10:31 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -196,7 +196,7 @@ pcib_attach(device_t parent, device_t self, void *aux)
 	 * Initialize the DMA tag used for ISA DMA.
 	 */
 	error = bus_dmatag_subregion(pa->pa_dmat, MALTA_DMA_ISA_PHYSBASE,
-	    MALTA_DMA_ISA_PHYSBASE + MALTA_DMA_ISA_SIZE, &sc->sc_dmat, 0);
+	    MALTA_DMA_ISA_PHYSBASE + MALTA_DMA_ISA_SIZE - 1, &sc->sc_dmat, 0);
 	if (error)
 		panic("malta_dma_init: failed to create ISA dma tag: %d",
 		    error);
@@ -352,7 +352,7 @@ pcib_bridge_callback(device_t self)
 	iba.iba_ic->ic_attach_hook = pcib_isa_attach_hook;
 	iba.iba_ic->ic_detach_hook = pcib_isa_detach_hook;
 
-	config_found_ia(self, "isabus", &iba, isabusprint);
+	config_found(self, &iba, isabusprint, CFARGS_NONE);
 }
 
 static void
@@ -426,7 +426,7 @@ pcib_intr(void *v)
 		 * From YAMON source code:
 		 *
 		 * IRQ7 is used to detect spurious interrupts.
-		 * The interrupt acknowledge cycle returns IRQ7, if no 
+		 * The interrupt acknowledge cycle returns IRQ7, if no
 		 * interrupts is requested.
 		 * We can differentiate between this situation and a
 		 * "Normal" IRQ7 by reading the ISR.
@@ -508,10 +508,7 @@ pcib_isa_intr_establish(void *v, int irq, int type, int level,
 		return (NULL);
 	}
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		return (NULL);
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = func;
 	ih->ih_arg = arg;
 	ih->ih_irq = irq;
@@ -554,7 +551,7 @@ pcib_isa_intr_disestablish(void *v, void *arg)
 
 	splx(s);
 
-	free(ih, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 static int

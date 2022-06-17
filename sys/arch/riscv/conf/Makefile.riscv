@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.riscv,v 1.5 2019/06/16 07:42:52 maxv Exp $
+#	$NetBSD: Makefile.riscv,v 1.7 2021/05/01 07:13:21 skrll Exp $
 
 # Makefile for NetBSD
 #
@@ -74,10 +74,16 @@ TEXTADDR?=		0xFFFFFFC000000000
 TEXTADDR?=		0xC0001000
 .endif
 KERNLDSCRIPT?=		${RISCV}/conf/kern.ldscript
-LINKFORMAT+=		-T ${KERNLDSCRIPT}
 EXTRA_LINKFLAGS=	${LDOPTS} --relax
 LINKFLAGS_NORMAL=	-X
 STRIPFLAGS=		-g -X
+
+# Set the physical load address (aka LMA) to the address that OpenSBI's
+# fw_jump jumps to.  This allows us to load the kernel with the -kernel flag
+# in QEMU without having to embed it inside BBL or OpenSBI's fw_payload first.
+#
+KERNEL_PHYS?=		0x80200000
+EXTRA_LINKFLAGS+=	--defsym='KERNEL_PHYS=${KERNEL_PHYS}'
 
 ##
 ## (6) port specific target dependencies
@@ -99,7 +105,7 @@ RAMDISKDIR!=    cd ${NETBSDSRCDIR}/distrib/riscv/ramdisk && ${PRINTOBJDIR}
 
 .if defined(NEED_MDSETIMAGE) && ${NEED_MDSETIMAGE} != "no" \
     && defined(RAMDISKDIR) && exists(${RAMDISKDIR}/ramdisk.fs)
-SYSTEM_DEP+=    ${RAMDISKDIR}/ramdisk.fs 
+SYSTEM_DEP+=    ${RAMDISKDIR}/ramdisk.fs
 SYSTEM_LD_TAIL_EXTRA+=; \
 	echo ${TOOL_MDSETIMAGE} -s $@ ${RAMDISKDIR}/ramdisk.fs; \
 	${TOOL_MDSETIMAGE} -s $@ ${RAMDISKDIR}/ramdisk.fs

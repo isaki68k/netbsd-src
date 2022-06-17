@@ -1,4 +1,4 @@
-/*	$NetBSD: imx7ulp-clock.h,v 1.1.1.1 2019/05/25 11:29:13 jmcneill Exp $	*/
+/*	$NetBSD: imx7ulp-clock.h,v 1.1.1.3 2021/11/07 16:49:57 jmcneill Exp $	*/
 
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
@@ -51,6 +51,7 @@
 #define IMX7ULP_CLK_NIC1_DIV		36
 #define IMX7ULP_CLK_NIC1_BUS_DIV	37
 #define IMX7ULP_CLK_NIC1_EXT_DIV	38
+/* IMX7ULP_CLK_MIPI_PLL is unsupported and shouldn't be used in DT */
 #define IMX7ULP_CLK_MIPI_PLL		39
 #define IMX7ULP_CLK_SIRC		40
 #define IMX7ULP_CLK_SOSC_BUS_CLK	41
@@ -59,7 +60,10 @@
 #define IMX7ULP_CLK_HSRUN_SYS_SEL	44
 #define IMX7ULP_CLK_HSRUN_CORE_DIV	45
 
-#define IMX7ULP_CLK_SCG1_END		46
+#define IMX7ULP_CLK_CORE		46
+#define IMX7ULP_CLK_HSRUN_CORE		47
+
+#define IMX7ULP_CLK_SCG1_END		48
 
 /* PCC2 */
 #define IMX7ULP_CLK_DMA1		0
@@ -67,7 +71,6 @@
 #define IMX7ULP_CLK_FLEXBUS		2
 #define IMX7ULP_CLK_SEMA42_1		3
 #define IMX7ULP_CLK_DMA_MUX1		4
-#define IMX7ULP_CLK_SNVS		5
 #define IMX7ULP_CLK_CAAM		6
 #define IMX7ULP_CLK_LPTPM4		7
 #define IMX7ULP_CLK_LPTPM5		8

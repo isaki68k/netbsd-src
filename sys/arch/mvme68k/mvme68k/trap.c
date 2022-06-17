@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.110 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: trap.c,v 1.112 2021/09/25 19:16:31 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.110 2019/04/06 03:06:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.112 2021/09/25 19:16:31 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_execfmt.h"
@@ -327,7 +327,10 @@ trap(struct frame *fp, int type, unsigned int code, unsigned int v)
 			printf("trap during panic!\n");
 #ifdef DEBUG
 			/* XXX should be a machine-dependent hook */
-			printf("(press a key)\n"); (void)cngetc();
+			printf("(press a key)\n");
+			cnpollc(1);
+			(void)cngetc();
+			cnpollc(0);
 #endif
 		}
 		regdump((struct trapframe *)fp, 128);
@@ -515,8 +518,6 @@ trap(struct frame *fp, int type, unsigned int code, unsigned int v)
 			l->l_pflag &= ~LP_OWEUPC;
 			ADDUPROF(l);
 		}
-		if (curcpu()->ci_want_resched)
-			preempt();
 		goto out;
 
 	case T_MMUFLT:		/* kernel mode page fault */

@@ -1,4 +1,4 @@
-/*	$NetBSD: radeon_gart.c,v 1.10 2018/08/27 13:56:22 riastradh Exp $	*/
+/*	$NetBSD: radeon_gart.c,v 1.14 2021/12/19 11:26:26 riastradh Exp $	*/
 
 /*
  * Copyright 2008 Advanced Micro Devices, Inc.
@@ -27,11 +27,17 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeon_gart.c,v 1.10 2018/08/27 13:56:22 riastradh Exp $");
 
-#include <drm/drmP.h>
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: radeon_gart.c,v 1.14 2021/12/19 11:26:26 riastradh Exp $");
+
+#include <linux/pci.h>
+#include <linux/vmalloc.h>
+
 #include <drm/radeon_drm.h>
+#ifdef CONFIG_X86
+#include <asm/set_memory.h>
+#endif
 #include "radeon.h"
 
 /*
@@ -92,6 +98,10 @@ int radeon_gart_table_ram_alloc(struct radeon_device *rdev)
 	    rdev->gart.ptr, rdev->gart.table_size, NULL, BUS_DMA_WAITOK);
 	if (error)
 		goto fail3;
+
+	memset(rdev->gart.ptr, 0, rdev->gart.table_size);
+	bus_dmamap_sync(rdev->ddev->dmat, rdev->gart.rg_table_map, 0,
+	    rdev->gart.table_size, BUS_DMASYNC_PREWRITE);
 
 	/* Success!  */
 	rdev->gart.table_addr = rdev->gart.rg_table_map->dm_segs[0].ds_addr;
@@ -304,7 +314,7 @@ radeon_gart_post_update(struct radeon_device *rdev, unsigned gpu_pgstart,
 		    BUS_DMASYNC_PREWRITE);
 	}
 	if (rdev->gart.ptr != NULL) {
-		membar_sync();		/* XXX overkill */
+		mb();
 		radeon_gart_tlb_flush(rdev);
 	}
 }
@@ -515,13 +525,14 @@ int radeon_gart_init(struct radeon_device *rdev)
 	DRM_INFO("GART: num cpu pages %u, num gpu pages %u\n",
 		 rdev->gart.num_cpu_pages, rdev->gart.num_gpu_pages);
 	/* Allocate pages table */
-	rdev->gart.pages = vzalloc(sizeof(void *) * rdev->gart.num_cpu_pages);
+	rdev->gart.pages = vzalloc(array_size(sizeof(void *),
+				   rdev->gart.num_cpu_pages));
 	if (rdev->gart.pages == NULL) {
 		radeon_gart_fini(rdev);
 		return -ENOMEM;
 	}
-	rdev->gart.pages_entry = vmalloc(sizeof(uint64_t) *
-					 rdev->gart.num_gpu_pages);
+	rdev->gart.pages_entry = vmalloc(array_size(sizeof(uint64_t),
+						    rdev->gart.num_gpu_pages));
 	if (rdev->gart.pages_entry == NULL) {
 		radeon_gart_fini(rdev);
 		return -ENOMEM;

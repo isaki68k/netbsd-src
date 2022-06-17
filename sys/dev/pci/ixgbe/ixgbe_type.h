@@ -1,9 +1,9 @@
-/* $NetBSD: ixgbe_type.h,v 1.43 2019/09/20 09:28:37 msaitoh Exp $ */
+/* $NetBSD: ixgbe_type.h,v 1.55 2021/12/24 05:11:04 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -358,7 +358,7 @@ struct ixgbe_nvm_version {
 #define IXGBE_MIN_INT_RATE	956
 /* On 82599 and newer, minimum RSC_DELAY is 4us. ITR interval must be larger
  * than RSC_DELAY if RSC is used. ITR_INTERVAL is in 2(.048) us units on 10G
- * and 1G. The minimun EITR is 6us.
+ * and 1G. The minimum EITR is 6us.
  */
 #define IXGBE_MIN_RSC_EITR_10G1G 0x00000018
 #define IXGBE_MAX_EITR		0x00000FF8
@@ -480,8 +480,14 @@ struct ixgbe_nvm_version {
 #define IXGBE_PFMAILBOX(_i)	(0x04B00 + (4 * (_i))) /* 64 total */
 /* 64 Mailboxes, 16 DW each */
 #define IXGBE_PFMBMEM(_i)	(0x13000 + (64 * (_i)))
+#define IXGBE_PFMBICR_INDEX(_i)	((_i) >> 4)
+#define IXGBE_PFMBICR_SHIFT(_i)	((_i) % 16)
 #define IXGBE_PFMBICR(_i)	(0x00710 + (4 * (_i))) /* 4 total */
 #define IXGBE_PFMBIMR(_i)	(0x00720 + (4 * (_i))) /* 4 total */
+#define IXGBE_PFVFLRE(_i)	((((_i) & 1) ? 0x001C0 : 0x00600))
+#define IXGBE_PFVFLREC(_i)	(0x00700 + ((_i) * 4))
+#define IXGBE_PFVFLRE_INDEX(_i)	((_i) >> 5)
+#define IXGBE_PFVFLRE_SHIFT(_i)	((_i) % 32)
 #define IXGBE_VFRE(_i)		(0x051E0 + ((_i) * 4))
 #define IXGBE_VFTE(_i)		(0x08110 + ((_i) * 4))
 #define IXGBE_VMECM(_i)		(0x08790 + ((_i) * 4))
@@ -1114,8 +1120,10 @@ struct ixgbe_dmac_config {
 #define IXGBE_HSMC0R		0x15F04
 #define IXGBE_HSMC1R		0x15F08
 #define IXGBE_SWSR		0x15F10
+#define IXGBE_FWRESETCNT	0x15F40
 #define IXGBE_HFDR		0x15FE8
 #define IXGBE_FLEX_MNG		0x15800 /* 0x15800 - 0x15EFC */
+#define IXGBE_FLEX_MNG_PTR(_i)	(IXGBE_FLEX_MNG + ((_i) * 4))
 
 #define IXGBE_HICR_EN		0x01  /* Enable bit - RO */
 /* Driver sets this bit when done to put command in RAM */
@@ -1504,7 +1512,7 @@ struct ixgbe_dmac_config {
 #define IXGBE_CTRL_RST_MASK	(IXGBE_CTRL_LNK_RST | IXGBE_CTRL_RST)
 
 /* FACTPS */
-#define IXGBE_FACTPS_MNGCG	0x20000000 /* Manageblility Clock Gated */
+#define IXGBE_FACTPS_MNGCG	0x20000000 /* Managebility Clock Gated */
 #define IXGBE_FACTPS_LFS	0x40000000 /* LAN Function Select */
 
 /* MHADD Bit Masks */
@@ -1712,6 +1720,7 @@ struct ixgbe_dmac_config {
 #define TN1010_PHY_ID	0x00A19410
 #define TNX_FW_REV	0xB
 #define X540_PHY_ID	0x01540200
+#define X550_PHY_ID	0x01540220
 #define X550_PHY_ID2	0x01540223
 #define X550_PHY_ID3	0x01540221
 #define X557_PHY_ID	0x01540240
@@ -1998,6 +2007,13 @@ enum {
 #define IXGBE_EIMS_PBUR		IXGBE_EICR_PBUR /* Pkt Buf Handler Err */
 #define IXGBE_EIMS_DHER		IXGBE_EICR_DHER /* Descr Handler Error */
 #define IXGBE_EIMS_TCP_TIMER	IXGBE_EICR_TCP_TIMER /* TCP Timer */
+/*
+ * EIMS_OTHER is R/W on 82598 though the document says it's reserved.
+ * It MUST be required to set this bit to get OTHER interrupt.
+ *
+ * On other chips, it's read only. It's set if any bits of 29..16 is not zero.
+ * Bit 30 (TCP_TIMER) doesn't affect to EIMS_OTHER.
+ */
 #define IXGBE_EIMS_OTHER	IXGBE_EICR_OTHER /* INT Cause Active */
 
 /* Extended Interrupt Mask Clear */
@@ -2019,6 +2035,7 @@ enum {
 #define IXGBE_EIMC_PBUR		IXGBE_EICR_PBUR /* Pkt Buf Handler Err */
 #define IXGBE_EIMC_DHER		IXGBE_EICR_DHER /* Desc Handler Err */
 #define IXGBE_EIMC_TCP_TIMER	IXGBE_EICR_TCP_TIMER /* TCP Timer */
+/* EIMC_OTHER works only on 82598. See EIMS_OTHER's comment */
 #define IXGBE_EIMC_OTHER	IXGBE_EICR_OTHER /* INT Cause Active */
 
 #define IXGBE_EIMS_ENABLE_MASK ( \
@@ -2072,7 +2089,8 @@ enum {
 #define IXGBE_FTQF_QUEUE_ENABLE		0x80000000
 
 /* Interrupt clear mask */
-#define IXGBE_IRQ_CLEAR_MASK	0xFFFFFFFF
+#define IXGBE_IRQ_CLEAR_MASK		0xFFFFFFFF
+#define IXGBE_MSIX_OTHER_CLEAR_MASK	0xFFFF0000
 
 /* Interrupt Vector Allocation Registers */
 #define IXGBE_IVAR_REG_NUM		25
@@ -2351,7 +2369,7 @@ enum {
 /* EEPROM Addressing bits based on type (0-small, 1-large) */
 #define IXGBE_EEC_ADDR_SIZE	0x00000400
 #define IXGBE_EEC_SIZE		0x00007800 /* EEPROM Size */
-#define IXGBE_EERD_MAX_ADDR	0x00003FFF /* EERD alows 14 bits for addr. */
+#define IXGBE_EERD_MAX_ADDR	0x00003FFF /* EERD allows 14 bits for addr. */
 
 #define IXGBE_EEC_SIZE_SHIFT		11
 #define IXGBE_EEPROM_WORD_SIZE_SHIFT	6
@@ -2396,6 +2414,18 @@ enum {
 #define IXGBE_PHYFW_REV			0x19
 #define IXGBE_ALT_MAC_ADDR_PTR		0x37
 #define IXGBE_FREE_SPACE_PTR		0X3E
+
+#if defined(PREBOOT_SUPPORT) || defined(QV_RELEASE)
+/* Minimum Rollback Revision offsets */
+#define IXGBE_MINRREV_PHY_ANALOG_LO	0x46
+#define IXGBE_MINRREV_PHY_ANALOG_HI	0x47
+#define IXGBE_MINRREV_OROM_LO		0x48
+#define IXGBE_MINRREV_OROM_HI		0x49
+#define IXGBE_MINRREV_FW_LO		0x4A
+#define IXGBE_MINRREV_FW_HI		0x4B
+#endif /* PREBOOT_SUPPORT || QV_RELEASE*/
+
+
 
 #define IXGBE_SAN_MAC_ADDR_PTR		0x28
 #define IXGBE_NVM_MAP_VER		0x29
@@ -2773,7 +2803,7 @@ enum {
 #define IXGBE_RXDADV_ERR_FDIR_LEN	0x00100000 /* FDIR Length error */
 #define IXGBE_RXDADV_ERR_FDIR_DROP	0x00200000 /* FDIR Drop error */
 #define IXGBE_RXDADV_ERR_FDIR_COLL	0x00400000 /* FDIR Collision error */
-#define IXGBE_RXDADV_ERR_HBO	0x00800000 /*Header Buffer Overflow */
+#define IXGBE_RXDADV_ERR_HBO	0x00800000 /* Header Buffer Overflow */
 #define IXGBE_RXDADV_ERR_CE	0x01000000 /* CRC Error */
 #define IXGBE_RXDADV_ERR_LE	0x02000000 /* Length Error */
 #define IXGBE_RXDADV_ERR_PE	0x08000000 /* Packet Error */
@@ -2908,12 +2938,6 @@ enum {
 #define IXGBE_RX_DESC_SPECIAL_PRI_MASK	0xE000 /* Priority in upper 3 bits */
 #define IXGBE_RX_DESC_SPECIAL_PRI_SHIFT	0x000D /* Priority in upper 3 of 16 */
 #define IXGBE_TX_DESC_SPECIAL_PRI_SHIFT	IXGBE_RX_DESC_SPECIAL_PRI_SHIFT
-
-/* SR-IOV specific macros */
-#define IXGBE_MBVFICR_INDEX(vf_number)	(vf_number >> 4)
-#define IXGBE_MBVFICR(_i)		(0x00710 + ((_i) * 4))
-#define IXGBE_VFLRE(_i)			(((_i & 1) ? 0x001C0 : 0x00600))
-#define IXGBE_VFLREC(_i)		 (0x00700 + ((_i) * 4))
 /* Translated register #defines */
 #define IXGBE_PVFCTRL(P)	(0x00300 + (4 * (P)))
 #define IXGBE_PVFSTATUS(P)	(0x00008 + (0 * (P)))
@@ -4211,36 +4235,6 @@ struct ixgbe_phy_info {
 
 #include "ixgbe_mbx.h"
 
-struct ixgbe_mbx_operations {
-	void (*init_params)(struct ixgbe_hw *hw);
-	s32  (*read)(struct ixgbe_hw *, u32 *, u16,  u16);
-	s32  (*write)(struct ixgbe_hw *, u32 *, u16, u16);
-	s32  (*read_posted)(struct ixgbe_hw *, u32 *, u16,  u16);
-	s32  (*write_posted)(struct ixgbe_hw *, u32 *, u16, u16);
-	s32  (*check_for_msg)(struct ixgbe_hw *, u16);
-	s32  (*check_for_ack)(struct ixgbe_hw *, u16);
-	s32  (*check_for_rst)(struct ixgbe_hw *, u16);
-	s32  (*clear)(struct ixgbe_hw *hw, u16 vf_number);
-};
-
-struct ixgbe_mbx_stats {
-	struct evcnt msgs_tx;
-	struct evcnt msgs_rx;
-
-	struct evcnt acks;
-	struct evcnt reqs;
-	struct evcnt rsts;
-};
-
-struct ixgbe_mbx_info {
-	struct ixgbe_mbx_operations ops;
-	struct ixgbe_mbx_stats stats;
-	u32 timeout;
-	u32 usec_delay;
-	u32 v2p_mailbox;
-	u16 size;
-};
-
 struct ixgbe_hw {
 	struct adapter *back;
 	struct ixgbe_mac_info		mac;
@@ -4263,6 +4257,8 @@ struct ixgbe_hw {
 	bool allow_unsupported_sfp;
 	bool wol_enabled;
 	bool need_crosstalk_fix;
+	bool need_unsupported_sfp_recovery;
+	u32 quirks;
 };
 
 #define ixgbe_call_func(hw, func, params, error) \
@@ -4310,10 +4306,13 @@ struct ixgbe_hw {
 #define IXGBE_ERR_FDIR_CMD_INCOMPLETE		-38
 #define IXGBE_ERR_FW_RESP_INVALID		-39
 #define IXGBE_ERR_TOKEN_RETRY			-40
+#define IXGBE_ERR_MBX				-41
+#define IXGBE_ERR_MBX_NOMSG			-42
+#define IXGBE_ERR_TIMEOUT			-43
 
 #define IXGBE_ERR_NOT_TRUSTED			-50 /* XXX NetBSD */
 #define IXGBE_ERR_NOT_IN_PROMISC		-51 /* XXX NetBSD */
-
+#define IXGBE_ERR_FAN_FAILURE			-52 /* XXX NetBSD */
 #define IXGBE_NOT_IMPLEMENTED			0x7FFFFFFF
 
 
@@ -4535,5 +4534,8 @@ struct ixgbe_bypass_eeprom {
 #define IXGBE_HOST_INTERFACE_FLASH_INFO_CMD			0x37
 #define IXGBE_HOST_INTERFACE_APPLY_UPDATE_CMD			0x38
 #define IXGBE_HOST_INTERFACE_MASK_CMD				0x000000FF
+
+/* Flags for hw.quirks */
+#define IXGBE_QUIRK_MOD_ABS_INVERT	__BIT(0)
 
 #endif /* _IXGBE_TYPE_H_ */

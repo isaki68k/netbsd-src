@@ -1,4 +1,4 @@
-/* $NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $ */
+/* $NetBSD: meson_rng.c,v 1.5 2022/03/19 11:36:43 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015-2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.5 2022/03/19 11:36:43 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: meson_rng.c,v 1.2 2019/04/21 14:13:55 jmcneill Exp $
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/mutex.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <dev/fdt/fdtvar.h>
@@ -50,13 +49,12 @@ struct meson_rng_softc {
 	bus_space_tag_t		sc_bst;
 	bus_space_handle_t	sc_bsh;
 
-	kmutex_t		sc_lock;
 	krndsource_t		sc_rndsource;
 };
 
-static const char * const compatible[] = {
-	"amlogic,meson-rng",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "amlogic,meson-rng" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(meson_rng, sizeof(struct meson_rng_softc),
@@ -67,7 +65,7 @@ meson_rng_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -92,8 +90,6 @@ meson_rng_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
-
 	/* Core clock is optional */
 	clk = fdtbus_clock_get(phandle, "core");
 	if (clk != NULL && clk_enable(clk) != 0) {
@@ -107,8 +103,6 @@ meson_rng_attach(device_t parent, device_t self, void *aux)
 	rndsource_setcb(&sc->sc_rndsource, meson_rng_get, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
 	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-
-	meson_rng_get(RND_POOLBITS / NBBY, sc);
 }
 
 static void
@@ -117,7 +111,6 @@ meson_rng_get(size_t bytes_wanted, void *priv)
 	struct meson_rng_softc * const sc = priv;
 	uint32_t data;
 
-	mutex_spin_enter(&sc->sc_lock);
 	while (bytes_wanted) {
 		data = bus_space_read_4(sc->sc_bst, sc->sc_bsh, 0);
 		rnd_add_data_sync(&sc->sc_rndsource, &data, sizeof(data),
@@ -125,5 +118,4 @@ meson_rng_get(size_t bytes_wanted, void *priv)
 		bytes_wanted -= MIN(bytes_wanted, sizeof(data));
 	}
 	explicit_memset(&data, 0, sizeof(data));
-	mutex_spin_exit(&sc->sc_lock);
 }

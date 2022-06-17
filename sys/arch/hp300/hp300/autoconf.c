@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.106 2019/06/29 02:41:17 tsutsui Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.110 2021/08/07 16:18:53 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 2002 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.106 2019/06/29 02:41:17 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.110 2021/08/07 16:18:53 thorpej Exp $");
 
 #include "dvbox.h"
 #include "gbox.h"
@@ -108,7 +108,7 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.106 2019/06/29 02:41:17 tsutsui Exp $
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/disklabel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/extent.h>
 #include <sys/mount.h>
 #include <sys/queue.h>
@@ -260,15 +260,16 @@ mainbusattach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	/* Search for and attach children. */
-	config_search_ia(mainbussearch, self, "mainbus", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = mainbussearch));
 }
 
 static int
 mainbussearch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 
-	if (config_match(parent, cf, NULL) > 0)
-		config_attach(parent, cf, NULL, NULL);
+	if (config_probe(parent, cf, NULL))
+		config_attach(parent, cf, NULL, NULL, CFARGS_NONE);
 	return 0;
 }
 
@@ -395,10 +396,7 @@ device_register(device_t dev, void *aux)
 	 * we can mount as root.
 	 */
 
-	dd = malloc(sizeof(struct dev_data), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (dd == NULL)
-		panic("device_register: can't allocate dev_data");
-
+	dd = kmem_zalloc(sizeof(*dd), KM_SLEEP);
 	dd->dd_dev = dev;
 
 	/*
@@ -442,7 +440,7 @@ device_register(device_t dev, void *aux)
 	/*
 	 * Didn't need the dev_data.
 	 */
-	free(dd, M_DEVBUF);
+	kmem_free(dd, sizeof(*dd));
 	return;
 
  linkup:
@@ -680,7 +678,7 @@ setbootdev(void)
 	for (dd = LIST_FIRST(&dev_data_list); dd != NULL; ) {
 		cdd = dd;
 		dd = LIST_NEXT(dd, dd_list);
-		free(cdd, M_DEVBUF);
+		kmem_free(cdd, sizeof(*cdd));
 	}
 }
 

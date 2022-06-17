@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_machdep.c,v 1.32 2012/10/27 17:18:13 chs Exp $	*/
+/*	$NetBSD: grf_machdep.c,v 1.35 2022/05/26 14:33:29 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1991 University of Utah.
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_machdep.c,v 1.32 2012/10/27 17:18:13 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_machdep.c,v 1.35 2022/05/26 14:33:29 tsutsui Exp $");
 
 #include "locators.h"
 
@@ -56,6 +56,8 @@ __KERNEL_RCSID(0, "$NetBSD: grf_machdep.c,v 1.32 2012/10/27 17:18:13 chs Exp $")
 #include <machine/grfioctl.h>
 #include <x68k/dev/grfvar.h>
 #include <x68k/x68k/iodevice.h>
+
+#include "ioconf.h"
 
 /* grfbus: is this necessary? */
 int grfbusprint(void *, const char *);
@@ -76,8 +78,6 @@ CFATTACH_DECL_NEW(grfbus, 0,
 CFATTACH_DECL_NEW(grf, sizeof(struct grf_softc),
     grfmatch, grfattach, NULL, NULL);
 
-extern struct cfdriver grfbus_cd;
-
 int
 grfbusmatch(device_t parent, cfdata_t cf, void *aux)
 {
@@ -92,14 +92,15 @@ grfbusattach(device_t parent, device_t self, void *aux)
 {
 
 	aprint_normal("\n");
-	config_search_ia(grfbussearch, self, "grfb", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = grfbussearch));
 }
 
 int
 grfbussearch(device_t self, cfdata_t match, const int *ldesc, void *aux)
 {
 
-	config_found(self, &match->cf_loc[GRFBCF_ADDR], grfbusprint);
+	config_found(self, &match->cf_loc[GRFBCF_ADDR], grfbusprint, CFARGS_NONE);
 	return (0);
 }
 
@@ -155,7 +156,7 @@ grfattach(device_t parent, device_t self, void *aux)
 	/*
 	 * try and attach an ite
 	 */
-	config_found(self, gp, grfprint);
+	config_found(self, gp, grfprint, CFARGS_NONE);
 }
 
 int

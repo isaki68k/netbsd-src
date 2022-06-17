@@ -1,4 +1,4 @@
-/*	$NetBSD: vdsk.c,v 1.4 2019/10/01 18:00:07 chs Exp $	*/
+/*	$NetBSD: vdsk.c,v 1.10 2022/05/16 17:13:28 palle Exp $	*/
 /*	$OpenBSD: vdsk.c,v 1.46 2015/01/25 21:42:13 kettenis Exp $	*/
 /*
  * Copyright (c) 2009, 2011 Mark Kettenis
@@ -218,6 +218,7 @@ void	vdsk_scsi_inq(struct vdsk_softc *sc, struct scsipi_xfer *);
 void	vdsk_scsi_inquiry(struct vdsk_softc *sc, struct scsipi_xfer *);
 void	vdsk_scsi_capacity(struct vdsk_softc *sc, struct scsipi_xfer *);
 void	vdsk_scsi_capacity16(struct vdsk_softc *sc, struct scsipi_xfer *);
+void	vdsk_scsi_report_luns(struct vdsk_softc *sc, struct scsipi_xfer *);
 void	vdsk_scsi_done(struct scsipi_xfer *, int);
 
 int
@@ -251,7 +252,7 @@ vdsk_attach(device_t parent, device_t self, void *aux)
 
 	/*
 	 * Un-configure queues before registering interrupt handlers,
-	 * such that we dont get any stale LDC packets or events.
+	 * such that we don't get any stale LDC packets or events.
 	 */
 	hv_ldc_tx_qconf(ca->ca_id, 0, 0);
 	hv_ldc_rx_qconf(ca->ca_id, 0, 0);
@@ -357,7 +358,7 @@ vdsk_attach(device_t parent, device_t self, void *aux)
 
 	/*
 	 * Interrupts aren't enabled during autoconf, so poll for VIO
-	 * peer-to-peer hanshake completion.
+	 * peer-to-peer handshake completion.
 	 */
 	s = splbio();
 	timeout = 10 * 1000;
@@ -370,7 +371,7 @@ vdsk_attach(device_t parent, device_t self, void *aux)
 	splx(s);
 
 	if (sc->sc_vio_state != VIO_ESTABLISHED) {
-	  printf("vio not establshed: %d\n", sc->sc_vio_state);
+	  printf("vio not established: %d\n", sc->sc_vio_state);
 	  return;
 	}
 
@@ -392,7 +393,7 @@ vdsk_attach(device_t parent, device_t self, void *aux)
 	sc->sc_channel.chan_id = 0;
 	sc->sc_channel.chan_flags = SCSIPI_CHAN_NOSETTLE;
 
-	config_found(self, &sc->sc_channel, scsiprint);
+	config_found(self, &sc->sc_channel, scsiprint, CFARGS_NONE);
 
 	return;
 
@@ -492,6 +493,7 @@ vdsk_rx_intr(void *arg)
 			break;
 		case LDC_CHANNEL_RESET:
 			DPRINTF(("Rx link reset\n"));
+			ldc_send_vers(lc);
 			break;
 		}
 		lc->lc_rx_state = rx_state;
@@ -773,6 +775,8 @@ vdsk_rx_vio_dring_data(struct vdsk_softc *sc, struct vio_msg_tag *tag)
 
 		case VIO_SUBTYPE_NACK:
 			DPRINTF(("DATA/NACK/DRING_DATA\n"));
+			struct ldc_conn *lc = &sc->sc_lc;
+			ldc_send_vers(lc);
 			break;
 
 		default:
@@ -1045,10 +1049,15 @@ vdsk_scsi_cmd(struct vdsk_softc *sc, struct scsipi_xfer *xs)
 			vdsk_scsi_capacity16(sc, xs);
 			return;
 
+		case SCSI_REPORT_LUNS:
+			vdsk_scsi_report_luns(sc, xs);
+			return;
+			
 		case SCSI_TEST_UNIT_READY:
 		case START_STOP:
 		case SCSI_PREVENT_ALLOW_MEDIUM_REMOVAL:
 		case SCSI_MODE_SENSE_6:
+		case SCSI_MAINTENANCE_IN:
 			vdsk_scsi_done(xs, XS_NOERROR);
 			return;
 
@@ -1325,6 +1334,12 @@ vdsk_scsi_capacity16(struct vdsk_softc *sc, struct scsipi_xfer *xs)
 
 	bcopy(&rcd, xs->data, MIN(sizeof(rcd), xs->datalen));
 
+	vdsk_scsi_done(xs, XS_NOERROR);
+}
+
+void
+vdsk_scsi_report_luns(struct vdsk_softc *sc, struct scsipi_xfer *xs)
+{
 	vdsk_scsi_done(xs, XS_NOERROR);
 }
 

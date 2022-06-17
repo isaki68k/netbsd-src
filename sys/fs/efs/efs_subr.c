@@ -1,4 +1,4 @@
-/*	$NetBSD: efs_subr.c,v 1.12 2015/09/26 12:16:28 maxv Exp $	*/
+/*	$NetBSD: efs_subr.c,v 1.14 2021/12/10 20:36:04 andvar Exp $	*/
 
 /*
  * Copyright (c) 2006 Stephen M. Rumble <rumble@ephemeral.org>
@@ -17,7 +17,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efs_subr.c,v 1.12 2015/09/26 12:16:28 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efs_subr.c,v 1.14 2021/12/10 20:36:04 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/kauth.h>
@@ -50,7 +50,7 @@ struct pool efs_inode_pool;
  * At some point SGI changed the checksum algorithm slightly, which can be
  * enabled with the 'new' flag.
  *
- * Presumably this change occured on or before 24 Oct 1988 (around IRIX 3.1),
+ * Presumably this change occurred on or before 24 Oct 1988 (around IRIX 3.1),
  * so we're pretty unlikely to ever actually see an old checksum. Further, it
  * means that EFS_NEWMAGIC filesystems (IRIX >= 3.3) must match the new
  * checksum whereas EFS_MAGIC filesystems could potentially use either
@@ -63,12 +63,14 @@ efs_sb_checksum(struct efs_sb *esb, int new)
 {
 	int i;
 	int32_t cksum;
-	uint16_t *sbarray = (uint16_t *)esb;
+	uint8_t *sbarray = (uint8_t *)esb;
 
 	KASSERT((EFS_SB_CHECKSUM_SIZE % 2) == 0);
 
-	for (i = cksum = 0; i < (EFS_SB_CHECKSUM_SIZE / 2); i++) {
-		cksum ^= be16toh(sbarray[i]);
+	for (i = cksum = 0; i < EFS_SB_CHECKSUM_SIZE; i += 2) {
+		uint16_t v;
+		memcpy(&v, &sbarray[i], sizeof(v));
+		cksum ^= be16toh(v);
 		cksum  = (cksum << 1) | (new && cksum < 0);
 	}
 

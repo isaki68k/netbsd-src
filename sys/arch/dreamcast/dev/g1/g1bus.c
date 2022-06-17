@@ -1,4 +1,4 @@
-/*	$NetBSD: g1bus.c,v 1.1 2016/12/29 11:49:05 tsutsui Exp $	*/
+/*	$NetBSD: g1bus.c,v 1.3 2021/08/07 16:18:48 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 Marcus Comstedt
@@ -34,7 +34,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: g1bus.c,v 1.1 2016/12/29 11:49:05 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: g1bus.c,v 1.3 2021/08/07 16:18:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -75,7 +75,8 @@ g1busattach(device_t parent, device_t self, void *aux)
 
 	ga.ga_memt = &sc->sc_memt;
 
-	config_search_ia(g1bussearch, self, "g1bus", &ga);
+	config_search(self, &ga,
+	    CFARGS(.search = g1bussearch));
 }
 
 int
@@ -89,8 +90,8 @@ int
 g1bussearch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 
-	if (config_match(parent, cf, aux) > 0)
-		config_attach(parent, cf, aux, g1busprint);
+	if (config_probe(parent, cf, aux))
+		config_attach(parent, cf, aux, g1busprint, CFARGS_NONE);
 
 	return 0;
 }

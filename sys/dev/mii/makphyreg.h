@@ -1,4 +1,4 @@
-/*	$NetBSD: makphyreg.h,v 1.9 2018/12/28 06:20:32 msaitoh Exp $	*/
+/*	$NetBSD: makphyreg.h,v 1.11 2020/08/03 07:25:59 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -92,20 +92,26 @@
 #define	MSCR_ENHANCED_SGMII	0x0004	/* Enhanced SGMII */
 
 #define	MAKPHY_PSSR		0x11	/* PHY specific status register */
-#define	PSSR_JABBER		(1U << 0)   /* jabber indication */
-#define	PSSR_POLARITY		(1U << 1)   /* polarity indiciation */
-#define	PSSR_MDIX		(1U << 6)   /* 1 = MIDX, 0 = MDI */
-#define	PSSR_CABLE_LENGTH_get(x) (((x) >> 7) & 0x3)
-#define	PSSR_LINK		(1U << 10)  /* link indication */
-#define	PSSR_RESOLVED		(1U << 11)  /* speed and duplex resolved */
-#define	PSSR_PAGE_RECEIVED	(1U << 12)  /* page received */
-#define	PSSR_DUPLEX		(1U << 13)  /* 1 = FDX */
-#define	PSSR_SPEED_get(x)	(((x) >> 14) & 0x3)
+#define	MAKPHY_PSSR_JABBER	(1U << 0)   /* jabber indication */
+#define	MAKPHY_PSSR_POLARITY	(1U << 1)   /* polarity indiciation */
+#define	MAKPHY_PSSR_MDIX	(1U << 6)   /* 1 = MIDX, 0 = MDI */
+#define	MAKPHY_PSSR_CABLE_LENGTH_get(x) (((x) >> 7) & 0x3)
+#define	MAKPHY_PSSR_LINK	(1U << 10)  /* link indication */
+#define	MAKPHY_PSSR_RESOLVED	(1U << 11)  /* speed and duplex resolved */
+#define	MAKPHY_PSSR_PAGE_RECEIVED (1U << 12)  /* page received */
+#define	MAKPHY_PSSR_DUPLEX	(1U << 13)  /* 1 = FDX */
+#define	MAKPHY_PSSR_SPEED_get(x) (((x) >> 14) & 0x3)
 
 #define	SPEED_10		0
 #define	SPEED_100		1
 #define	SPEED_1000		2
 #define	SPEED_reserved		3
+
+/* For 88E1112 */
+#define	MAKPHY_PSSR_RESOLUTION_FIBER (1U << 7) /*
+						* Fiber/Copper resolution
+						* 1 = Fiber, 0 = Copper
+						*/
 
 #define	MAKPHY_IE		0x12	/* Interrupt enable */
 #define	IE_JABBER		(1U << 0)   /* jabber indication */
@@ -143,6 +149,7 @@
 #define	LEDCTRL_PULSE_STRCH(x)	((x) << 12)
 #define	LEDCTRL_DISABLE		(1U << 15)  /* disable LED */
 
+/* For 88E1011, 88E1111 */
 #define MAKPHY_ESSR		0x1b    /* Extended PHY specific status */
 #define ESSR_AUTOSEL_DISABLE	0x8000	/* Fiber/Copper autoselect disable */
 #define ESSR_FIBER_LINK		0x2000	/* Fiber/Copper resolution */
@@ -153,13 +160,23 @@
 #define ESSR_DTE_DROP_HYST	0x01e0	/* DTE detect status drop hysteresis */
 #define ESSR_DTE_POWER		0x0010
 #define ESSR_HWCFG_MODE		0x000f
-#define ESSR_GMII_COPPER	0x000f
-#define ESSR_GMII_FIBER		0x0007
-#define ESSR_RGMII_COPPER	0x000b
-#define ESSR_RGMII_FIBER	0x0003
-#define ESSR_RGMII_SGMII	0x0006
-#define ESSR_TBI_COPPER		0x000d
-#define ESSR_TBI_FIBER		0x0005
-
+#define ESSR_SGMII_WC_COPPER	 0x0000 /* SGMII w/ Clock w/ SGMII AN Copper */
+#define ESSR_RTBI_FIBER		 0x0001 /* RTBI to Fiber */
+#define ESSR_RGMII_FIBER	 0x0003 /* RGMII to Fiber */
+#define ESSR_SGMII_WOC_COPPER	 0x0004 /* SGMII w/o Clock w/ SGMII AN Copp. */
+#define ESSR_TBI_FIBER		 0x0005 /* TBI to Fiber */
+#define ESSR_RGMII_SGMII	 0x0006 /* RGMII to SGMII */
+#define ESSR_GMII_FIBER		 0x0007 /* GMII to Fiber */
+#define ESSR_SERIAL_WAN		 0x0008 /* 88E1011: Serial w 1000KX AN */
+#define ESSR_GBIC		 0x0008 /* 88E1111: GBIC */
+#define ESSR_RTBI_COPPER	 0x0009 /* RTBI to Copper */
+#define ESSR_RGMII_COPPER	 0x000b /* RGMII to Copper */
+#define ESSR_RGMII_AUTOSEL	 0x000b /* RGMII with Auto-Selection */
+#define ESSR_SERIAL_WOAN	 0x000c /* 88E1011: Serial w/o 1000KX AN */
+#define ESSR_1000X_WOAN		 0x000c /* 88E1111: 1000X w/o AN Copper */
+#define ESSR_TBI_COPPER		 0x000d /* TBI to Copper */
+#define ESSR_GMII_SGMII		 0x000e /* GMII to SGMII */
+#define ESSR_GMII_COPPER	 0x000f /* GMII to Copper */
+#define ESSR_GMII_AUTOSEL	 0x000f /* GMII with Auto-Selection */
 
 #endif /* _DEV_MII_MAKPHYREG_H_ */

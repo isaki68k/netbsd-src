@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwn.c,v 1.92 2019/10/10 22:34:42 bad Exp $	*/
+/*	$NetBSD: if_iwn.c,v 1.99 2022/04/25 02:29:14 gutteridge Exp $	*/
 /*	$OpenBSD: if_iwn.c,v 1.135 2014/09/10 07:22:09 dcoppa Exp $	*/
 
 /*-
@@ -22,7 +22,7 @@
  * adapters.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwn.c,v 1.92 2019/10/10 22:34:42 bad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwn.c,v 1.99 2022/04/25 02:29:14 gutteridge Exp $");
 
 #define IWN_USE_RBUF	/* Use local storage for RX */
 #undef IWN_HWCRYPTO	/* XXX does not even compile yet */
@@ -75,47 +75,128 @@ __KERNEL_RCSID(0, "$NetBSD: if_iwn.c,v 1.92 2019/10/10 22:34:42 bad Exp $");
 #include <dev/pci/if_iwnreg.h>
 #include <dev/pci/if_iwnvar.h>
 
-static const pci_product_id_t iwn_devices[] = {
-	PCI_PRODUCT_INTEL_WIFI_LINK_1030_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_1030_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_4965_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_4965_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_4965_3,
-	PCI_PRODUCT_INTEL_WIFI_LINK_4965_4,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5100_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5100_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5150_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5150_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5300_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5300_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5350_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_5350_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_1000_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_1000_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6000_3X3_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6000_3X3_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6000_IPA_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6000_IPA_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6050_2X2_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6050_2X2_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6005_2X2_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6005_2X2_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6230_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6230_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6235,
-	PCI_PRODUCT_INTEL_WIFI_LINK_6235_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_100_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_100_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_130_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_130_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_2230_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_2230_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_2200_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_2200_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_135_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_135_2,
-	PCI_PRODUCT_INTEL_WIFI_LINK_105_1,
-	PCI_PRODUCT_INTEL_WIFI_LINK_105_2,
+static const struct device_compatible_entry compat_data[] = {
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_1030_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_1030_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_4965_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_4965_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_4965_3), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_4965_4), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5100_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5100_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5150_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5150_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5300_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5300_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5350_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_5350_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_1000_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_1000_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6000_3X3_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6000_3X3_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6000_IPA_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6000_IPA_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6050_2X2_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6050_2X2_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6005_2X2_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6005_2X2_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6230_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6230_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6235), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_6235_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_100_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_100_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_130_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_130_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_2230_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_2230_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_2200_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_2200_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_135_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_135_2), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_105_1), },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_WIFI_LINK_105_2), },
+
+	PCI_COMPAT_EOL
 };
 
 static int	iwn_match(device_t , struct cfdata *, void *);
@@ -331,16 +412,8 @@ static int
 iwn_match(device_t parent, cfdata_t match __unused, void *aux)
 {
 	struct pci_attach_args *pa = aux;
-	size_t i;
 
-	if (PCI_VENDOR(pa->pa_id) != PCI_VENDOR_INTEL)
-		return 0;
-
-	for (i = 0; i < __arraycount(iwn_devices); i++)
-		if (PCI_PRODUCT(pa->pa_id) == iwn_devices[i])
-			return 1;
-
-	return 0;
+	return pci_compatible_match(pa, compat_data);
 }
 
 static void
@@ -586,12 +659,7 @@ iwn_attach(device_t parent __unused, device_t self, void *aux)
 	IFQ_SET_READY(&ifp->if_snd);
 	memcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
 
-	error = if_initialize(ifp);
-	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		goto fail5;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);
@@ -614,7 +682,11 @@ iwn_attach(device_t parent __unused, device_t self, void *aux)
 	/* Override 802.11 state transition machine. */
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = iwn_newstate;
-	ieee80211_media_init(ic, iwn_media_change, ieee80211_media_status);
+
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTNET);
+	ieee80211_media_init_with_lock(ic,
+	    iwn_media_change, ieee80211_media_status, &sc->sc_media_mtx);
 
 	sc->amrr.amrr_min_success_threshold =  1;
 	sc->amrr.amrr_max_success_threshold = 15;
@@ -638,7 +710,6 @@ iwn_attach(device_t parent __unused, device_t self, void *aux)
 	return;
 
 	/* Free allocated memory if something failed during attachment. */
-fail5:	iwn_free_rx_ring(sc, &sc->rxq);
 fail4:	while (--i >= 0)
 		iwn_free_tx_ring(sc, &sc->txq[i]);
 #ifdef IWN_USE_RBUF
@@ -788,7 +859,7 @@ iwn5000_attach(struct iwn_softc *sc, pci_product_id_t pid)
 		 * PCI_PRODUCT_INTEL_WIFI_LINK_6005_2X2_2
 		 */
 		else
-			sc->fwname = "iwlwifi-6000g2a-5.ucode";
+			sc->fwname = "iwlwifi-6000g2a-6.ucode";
 		break;
 	case IWN_HW_REV_TYPE_2030:
 		sc->limits = &iwn2030_sensitivity_limits;
@@ -902,7 +973,7 @@ iwn_power(int why, void *arg)
 	s = splnet();
 	ifp = &sc->sc_ic.ic_if;
 	if (ifp->if_flags & IFF_UP) {
-		ifp->if_init(ifp);
+		if_init(ifp);
 		if (ifp->if_flags & IFF_RUNNING)
 			ifp->if_start(ifp);
 	}
@@ -2075,21 +2146,21 @@ iwn_rx_done(struct iwn_softc *sc, struct iwn_rx_desc *desc,
 	/* Discard frames with a bad FCS early. */
 	if ((flags & IWN_RX_NOERROR) != IWN_RX_NOERROR) {
 		DPRINTFN(2, ("RX flags error %x\n", flags));
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	/* Discard frames that are too short. */
 	if (len < sizeof (*wh)) {
 		DPRINTF(("frame too short: %d\n", len));
 		ic->ic_stats.is_rx_tooshort++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
 	m1 = MCLGETIalt(sc, M_DONTWAIT, NULL, IWN_RBUF_SIZE);
 	if (m1 == NULL) {
 		ic->ic_stats.is_rx_nobuf++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	bus_dmamap_unload(sc->sc_dmat, data->map);
@@ -2113,7 +2184,7 @@ iwn_rx_done(struct iwn_softc *sc, struct iwn_rx_desc *desc,
 		bus_dmamap_sync(sc->sc_dmat, ring->desc_dma.map,
 		    ring->cur * sizeof (uint32_t), sizeof (uint32_t),
 		    BUS_DMASYNC_PREWRITE);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -2400,9 +2471,9 @@ iwn_tx_done(struct iwn_softc *sc, struct iwn_rx_desc *desc, int ackfailcnt,
 		wn->amn.amn_retrycnt++;
 
 	if (status != 1 && status != 2)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 	else
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 	/* Unmap and free mbuf. */
 	bus_dmamap_sync(sc->sc_dmat, data->map, 0, data->map->dm_mapsize,
@@ -3212,21 +3283,21 @@ iwn_start(struct ifnet *ifp)
 			break;
 		if (m->m_len < sizeof (*eh) &&
 		    (m = m_pullup(m, sizeof (*eh))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		eh = mtod(m, struct ether_header *);
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		/* classify mbuf so we can find which tx ring to use */
 		if (ieee80211_classify(ic, m, ni) != 0) {
 			m_freem(m);
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -3239,7 +3310,7 @@ iwn_start(struct ifnet *ifp)
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 sendit:
@@ -3250,7 +3321,7 @@ sendit:
 
 		if (iwn_tx(sc, m, ni, ac) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -3275,7 +3346,7 @@ iwn_watchdog(struct ifnet *ifp)
 			    "device timeout\n");
 			ifp->if_flags &= ~IFF_UP;
 			iwn_stop(ifp, 1);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;
@@ -4406,14 +4477,14 @@ iwn_config_bt_coex_adv_config(struct iwn_softc *sc, struct iwn_bt_basic *basic,
 	btprot.type = 1;
 	error = iwn_cmd(sc, IWN_CMD_BT_COEX_PROT, &btprot, sizeof btprot, 1);
 	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "could not open BT protcol\n");
+		aprint_error_dev(sc->sc_dev, "could not open BT protocol\n");
 		return error;
 	}
 
 	btprot.open = 0;
 	error = iwn_cmd(sc, IWN_CMD_BT_COEX_PROT, &btprot, sizeof btprot, 1);
 	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "could not close BT protcol\n");
+		aprint_error_dev(sc->sc_dev, "could not close BT protocol\n");
 		return error;
 	}
 	return 0;

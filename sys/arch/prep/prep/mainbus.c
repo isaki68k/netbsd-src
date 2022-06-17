@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.34 2018/08/27 17:17:25 martin Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.40 2021/08/07 16:19:03 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.34 2018/08/27 17:17:25 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.40 2021/08/07 16:19:03 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "opt_residual.h"
@@ -41,10 +41,9 @@ __KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.34 2018/08/27 17:17:25 martin Exp $");
 #include "isa.h"
 
 #include <sys/param.h>
-#include <sys/extent.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/autoconf.h>
 #include <sys/bus.h>
@@ -77,6 +76,14 @@ int mainbus_found = 0;
 struct powerpc_isa_chipset genppc_ict;
 struct genppc_pci_chipset *genppc_pct;
 
+#define	PCI_IO_START	0x00008000
+#define	PCI_IO_END	0x0000ffff
+#define	PCI_IO_SIZE	((PCI_IO_END - PCI_IO_START) + 1)
+
+#define	PCI_MEM_START	0x00000000
+#define	PCI_MEM_END	0x0fffffff
+#define	PCI_MEM_SIZE	((PCI_MEM_END - PCI_MEM_START) + 1)
+
 /*
  * Probe for the mainbus; always succeeds.
  */
@@ -100,9 +107,6 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	int i;
 #if NPCI > 0
 	struct genppc_pci_chipset_businfo *pbi;
-#ifdef PCI_NETBSD_CONFIGURE
-	struct extent *ioext, *memext;
-#endif
 #endif
 
 	mainbus_found = 1;
@@ -116,7 +120,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	for (i = 0; i < CPU_MAXNUM; i++) {
 		ca.ca_name = "cpu";
 		ca.ca_node = i;
-		config_found_ia(self, "mainbus", &ca, NULL);
+		config_found(self, &ca, NULL,
+		    CFARGS(.iattr = "mainbus"));
 	}
 
 	/*
@@ -126,14 +131,10 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	 * XXX that's not currently possible.
 	 */
 #if NPCI > 0
-	genppc_pct = malloc(sizeof(struct genppc_pci_chipset), M_DEVBUF,
-	    M_NOWAIT);
-	KASSERT(genppc_pct != NULL);
+	genppc_pct = kmem_alloc(sizeof(struct genppc_pci_chipset), KM_SLEEP);
 	prep_pci_get_chipset_tag(genppc_pct);
 
-	pbi = malloc(sizeof(struct genppc_pci_chipset_businfo),
-	    M_DEVBUF, M_NOWAIT);
-	KASSERT(pbi != NULL);
+	pbi = kmem_alloc(sizeof(struct genppc_pci_chipset_businfo), KM_SLEEP);
 	pbi->pbi_properties = prop_dictionary_create();
         KASSERT(pbi->pbi_properties != NULL);
 
@@ -147,15 +148,16 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	setup_pciintr_map(pbi, 0, 0, 0);
 
 #ifdef PCI_NETBSD_CONFIGURE
-	ioext  = extent_create("pciio",  0x00008000, 0x0000ffff,
-	    NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", 0x00000000, 0x0fffffff,
-	    NULL, 0, EX_NOWAIT);
+	struct pciconf_resources *pcires = pciconf_resource_init();
 
-	pci_configure_bus(genppc_pct, ioext, memext, NULL, 0, CACHELINESIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    PCI_IO_START, PCI_IO_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    PCI_MEM_START, PCI_MEM_SIZE);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pci_configure_bus(genppc_pct, pcires, 0, CACHELINESIZE);
+
+	pciconf_resource_fini(pcires);
 #endif /* PCI_NETBSD_CONFIGURE */
 #endif /* NPCI */
 
@@ -166,7 +168,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	mba.mba_paa.paa_memt = &genppc_isa_mem_space_tag;
 	mba.mba_paa.paa_ic = &genppc_ict;
 	mba.mba_paa.paa_dmat = &isa_bus_dma_tag;
-	config_found_ia(self, "mainbus", &mba.mba_pba, mainbus_print);
+	config_found(self, &mba.mba_pba, mainbus_print,
+	    CFARGS(.iattr = "mainbus"));
 #endif /* NPNPBUS */
 
 #if NPCI > 0
@@ -180,7 +183,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	mba.mba_pba.pba_bus = 0;
 	mba.mba_pba.pba_bridgetag = NULL;
 	mba.mba_pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
-	config_found_ia(self, "pcibus", &mba.mba_pba, pcibusprint);
+	config_found(self, &mba.mba_pba, pcibusprint,
+	    CFARGS(.iattr = "pcibus"));
 #endif /* NPCI */
 
 #ifdef RESIDUAL_DATA_DUMP

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_l2tp.h,v 1.8 2019/09/19 06:07:24 knakahara Exp $	*/
+/*	$NetBSD: if_l2tp.h,v 1.10 2021/03/16 07:00:38 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -44,11 +44,11 @@
 #include <net/if_ether.h>
 #include <netinet/in.h>
 
-#define	SIOCSL2TPSESSION	_IOW('i', 151, struct l2tp_req)
-#define	SIOCDL2TPSESSION	_IOW('i', 152, struct l2tp_req)
-#define	SIOCSL2TPCOOKIE		_IOW('i', 153, struct l2tp_req)
-#define	SIOCDL2TPCOOKIE		_IOW('i', 154, struct l2tp_req)
-#define	SIOCSL2TPSTATE		_IOW('i', 155, struct l2tp_req)
+#define	SIOCSL2TPSESSION	_IOW('i', 151, struct ifreq)
+#define	SIOCDL2TPSESSION	_IOW('i', 152, struct ifreq)
+#define	SIOCSL2TPCOOKIE		_IOW('i', 153, struct ifreq)
+#define	SIOCDL2TPCOOKIE		_IOW('i', 154, struct ifreq)
+#define	SIOCSL2TPSTATE		_IOW('i', 155, struct ifreq)
 #define	SIOCGL2TP		SIOCGIFGENERIC
 
 struct l2tp_req {
@@ -131,12 +131,11 @@ l2tp_getref_variant(struct l2tp_softc *sc, struct psref *psref)
 	int s;
 
 	s = pserialize_read_enter();
-	var = sc->l2tp_var;
+	var = atomic_load_consume(&sc->l2tp_var);
 	if (var == NULL) {
 		pserialize_read_exit(s);
 		return NULL;
 	}
-	membar_datadep_consumer();
 	psref_acquire(psref, &var->lv_psref, lv_psref_class);
 	pserialize_read_exit(s);
 

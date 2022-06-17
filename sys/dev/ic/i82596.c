@@ -1,4 +1,4 @@
-/* $NetBSD: i82596.c,v 1.42 2019/05/29 10:07:29 msaitoh Exp $ */
+/* $NetBSD: i82596.c,v 1.46 2022/05/29 10:43:46 rin Exp $ */
 
 /*
  * Copyright (c) 2003 Jochen Kunz.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i82596.c,v 1.42 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i82596.c,v 1.46 2022/05/29 10:43:46 rin Exp $");
 
 /* autoconfig and device stuff */
 #include <sys/param.h>
@@ -120,7 +120,7 @@ static void iee_cb_setup(struct iee_softc *, uint32_t);
  * the chip.
  * 
  * IEE_NEED_SWAP in sc->sc_flags has to be cleared on little endian hardware
- * and set on big endian hardware, when endianess conversion is not done
+ * and set on big endian hardware, when endianness conversion is not done
  * by the bus attachment but done by i82596 chip itself.
  * Usually you need to set IEE_NEED_SWAP on big endian machines
  * where the hardware (the LE/~BE pin) is configured as BE mode.
@@ -330,10 +330,10 @@ iee_intr(void *intarg)
 			if (sc->sc_next_tbd != 0) {
 				/* A TX CMD list finished, cleanup */
 				for (n = 0 ; n < sc->sc_next_cb ; n++) {
-					m_freem(sc->sc_tx_mbuf[n]);
-					sc->sc_tx_mbuf[n] = NULL;
 					bus_dmamap_unload(sc->sc_dmat,
 					    sc->sc_tx_map[n]);
+					m_freem(sc->sc_tx_mbuf[n]);
+					sc->sc_tx_mbuf[n] = NULL;
 					IEE_CBSYNC(sc, n,
 					    BUS_DMASYNC_POSTREAD |
 					    BUS_DMASYNC_POSTWRITE);
@@ -348,8 +348,9 @@ iee_intr(void *intarg)
 						    & IEE_CB_MAXCOL;
 					sc->sc_tx_col += col;
 					if ((status & IEE_CB_OK) != 0) {
-						ifp->if_opackets++;
-						ifp->if_collisions += col;
+						if_statadd2(ifp,
+						    if_opackets, 1,
+						    if_collisions, col);
 					}
 				}
 				sc->sc_next_tbd = 0;
@@ -698,6 +699,7 @@ iee_detach(struct iee_softc *sc, int flags)
 		iee_stop(ifp, 1);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+	ifmedia_fini(&sc->sc_ifmedia);
 	bus_dmamap_unload(sc->sc_dmat, sc->sc_shmem_map);
 	bus_dmamap_destroy(sc->sc_dmat, sc->sc_shmem_map);
 	bus_dmamem_unmap(sc->sc_dmat, sc->sc_shmem_addr, sc->sc_shmem_sz);
@@ -966,11 +968,11 @@ iee_init(struct ifnet *ifp)
 	    IEE_SWAPA32(IEE_PHYS_SHMEM(sc->sc_rbd_off));
 	if (err != 0) {
 		for (n = 0 ; n < r; n++) {
-			m_freem(sc->sc_rx_mbuf[n]);
-			sc->sc_rx_mbuf[n] = NULL;
 			bus_dmamap_unload(sc->sc_dmat, sc->sc_rx_map[n]);
 			bus_dmamap_destroy(sc->sc_dmat, sc->sc_rx_map[n]);
 			sc->sc_rx_map[n] = NULL;
+			m_freem(sc->sc_rx_mbuf[n]);
+			sc->sc_rx_mbuf[n] = NULL;
 		}
 		for (n = 0 ; n < t ; n++) {
 			bus_dmamap_destroy(sc->sc_dmat, sc->sc_tx_map[n]);
@@ -1032,14 +1034,14 @@ iee_stop(struct ifnet *ifp, int disable)
 		sc->sc_tx_map[n] = NULL;
 	}
 	for (n = 0 ; n < IEE_NRFD ; n++) {
-		if (sc->sc_rx_mbuf[n] != NULL)
-			m_freem(sc->sc_rx_mbuf[n]);
-		sc->sc_rx_mbuf[n] = NULL;
 		if (sc->sc_rx_map[n] != NULL) {
 			bus_dmamap_unload(sc->sc_dmat, sc->sc_rx_map[n]);
 			bus_dmamap_destroy(sc->sc_dmat, sc->sc_rx_map[n]);
 		}
 		sc->sc_rx_map[n] = NULL;
+		if (sc->sc_rx_mbuf[n] != NULL)
+			m_freem(sc->sc_rx_mbuf[n]);
+		sc->sc_rx_mbuf[n] = NULL;
 	}
 }
 

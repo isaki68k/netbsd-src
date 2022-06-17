@@ -1,4 +1,4 @@
-/*	$NetBSD: ixp425_if_npe.c,v 1.42 2019/09/13 07:55:06 msaitoh Exp $ */
+/*	$NetBSD: ixp425_if_npe.c,v 1.51 2022/05/22 11:27:34 andvar Exp $ */
 
 /*-
  * Copyright (c) 2006 Sam Leffler.  All rights reserved.
@@ -28,7 +28,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/arm/xscale/ixp425/if_npe.c,v 1.1 2006/11/19 23:55:23 sam Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.42 2019/09/13 07:55:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.51 2022/05/22 11:27:34 andvar Exp $");
 
 /*
  * Intel XScale NPE Ethernet driver.
@@ -192,7 +192,6 @@ static int	npe_activate(struct npe_softc *);
 #if 0
 static void	npe_deactivate(struct npe_softc *);
 #endif
-static void	npe_ifmedia_status(struct ifnet *, struct ifmediareq *);
 static void	npe_setmac(struct npe_softc *, const u_char *);
 static void	npe_getmac(struct npe_softc *);
 static void	npe_txdone(int, void *);
@@ -301,7 +300,7 @@ npe_attach(device_t parent, device_t self, void *arg)
 	sc->sc_ethercom.ec_mii = mii;
 
 	ifmedia_init(&mii->mii_media, IFM_IMASK, ether_mediachange,
-	    npe_ifmedia_status);
+	    ether_mediastatus);
 
 	mii_attach(sc->sc_dev, mii, 0xffffffff, MII_PHY_ANY,
 		    MII_OFFSET_ANY, MIIF_DOPAUSE);
@@ -465,23 +464,13 @@ npe_dma_setup(struct npe_softc *sc, struct npedma *dma,
 		aprint_error_dev(sc->sc_dev,
 		    "unable to %s for %s %s buffers, error %u\n",
 		    "load map", dma->name, "h/w", error);
- destroy_dmamap:
 		bus_dmamap_destroy(sc->sc_dt, dma->buf_map);
 		goto unmap_dmamem;
 	}
 
 	/* XXX M_TEMP */
 	dma->buf = malloc(nbuf * sizeof(struct npebuf), M_TEMP,
-	    M_NOWAIT | M_ZERO);
-	if (dma->buf == NULL) {
-		aprint_error_dev(sc->sc_dev,
-		    "unable to %s for %s %s buffers, error %u\n",
-		    "allocate memory", dma->name, "h/w", error);
-		bus_dmamap_unload(sc->sc_dt, dma->buf_map);
-		error = ENOMEM;
-		goto destroy_dmamap;
-	}
-
+	    M_WAITOK | M_ZERO);
 	dma->buf_phys = dma->buf_map->dm_segs[0].ds_addr;
 	for (i = 0; i < dma->nbuf; i++) {
 		struct npebuf *npe = &dma->buf[i];
@@ -627,7 +616,7 @@ npe_activate(struct npe_softc *sc)
 	 * frames to process or tx'd frames to reap.  These callbacks
 	 * are controlled by the q configurations; e.g. we get a
 	 * callback when tx_done has 2 or more frames to process and
-	 * when the rx q has at least one frame.  These setings can
+	 * when the rx q has at least one frame.  These settings can
 	 * changed at the time the q is configured.
 	 */
 	sc->rx_qid = npeconfig[unit].rx_qid;
@@ -681,6 +670,7 @@ npe_deactivate(struct npe_softc *sc);
 	npe_dma_destroy(sc, &sc->txdma);
 	npe_dma_destroy(sc, &sc->rxdma);
 	bus_generic_detach(sc->sc_dev);
+	XXX ifmedia_fini somewhere
 	if (sc->sc_mii)
 		device_delete_child(sc->sc_dev, sc->sc_mii);
 #if 0
@@ -693,40 +683,29 @@ npe_deactivate(struct npe_softc *sc);
 }
 #endif
 
-/*
- * Notify the world which media we're using.
- */
-static void
-npe_ifmedia_status(struct ifnet *ifp, struct ifmediareq *ifmr)
-{
-	struct npe_softc *sc = ifp->if_softc;
-
-	mii_pollstat(&sc->sc_mii);
-
-	ifmr->ifm_active = sc->sc_mii.mii_media_active;
-	ifmr->ifm_status = sc->sc_mii.mii_media_status;
-}
-
 static void
 npe_addstats(struct npe_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct npestats *ns = sc->sc_stats;
 
-	ifp->if_oerrors +=
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_oerrors,
 		  be32toh(ns->dot3StatsInternalMacTransmitErrors)
 		+ be32toh(ns->dot3StatsCarrierSenseErrors)
 		+ be32toh(ns->TxVLANIdFilterDiscards)
-		;
-	ifp->if_ierrors += be32toh(ns->dot3StatsFCSErrors)
+		);
+	if_statadd_ref(nsr, if_ierrors,
+		  be32toh(ns->dot3StatsFCSErrors)
 		+ be32toh(ns->dot3StatsInternalMacReceiveErrors)
 		+ be32toh(ns->RxOverrunDiscards)
 		+ be32toh(ns->RxUnderflowEntryDiscards)
-		;
-	ifp->if_collisions +=
+		);
+	if_statadd_ref(nsr, if_collisions,
 		  be32toh(ns->dot3StatsSingleCollisionFrames)
 		+ be32toh(ns->dot3StatsMultipleCollisionFrames)
-		;
+		);
+	IF_STAT_PUTREF(ifp);
 }
 
 static void
@@ -808,7 +787,7 @@ npe_txdone_finish(struct npe_softc *sc, const struct txdone *td)
 	 * We're no longer busy, so clear the busy flag and call the
 	 * start routine to xmit more packets.
 	 */
-	ifp->if_opackets += td->count;
+	if_statadd(ifp, if_opackets, td->count);
 	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;
 	if_schedule_deferred_start(ifp);
@@ -963,7 +942,7 @@ npe_rxdone(int qid, void *arg)
 				    mrx->m_pkthdr.len);
 				/* Back out "newly allocated" mbuf. */
 				m_freem(m);
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				goto fail;
 			}
 			if ((ifp->if_flags & IFF_PROMISC) == 0) {
@@ -1042,7 +1021,7 @@ npe_rxdone(int qid, void *arg)
 				    device_xname(sc->sc_dev), mrx->m_pkthdr.len);
 				/* Back out "newly allocated" mbuf. */
 				m_freem(m);
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				goto fail;
 			}
 #endif
@@ -1122,7 +1101,7 @@ npeinit_macreg(struct npe_softc *sc)
 	/* Configure MAC to generate MDC clock */
 	WR4(sc, NPE_MAC_CORE_CNTRL, NPE_CORE_MDC_EN);
 
-	/* Disable transmitter and reciver in the MAC */
+	/* Disable transmitter and receiver in the MAC */
 	WR4(sc, NPE_MAC_RX_CNTRL1,
 	    RD4(sc, NPE_MAC_RX_CNTRL1) &~ NPE_RX_CNTRL1_RX_EN);
 	WR4(sc, NPE_MAC_TX_CNTRL1,
@@ -1164,7 +1143,7 @@ npeinit_resetcb(void *xsc)
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	uint32_t msg[2];
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	npeinit_locked(sc);
 
 	msg[0] = NPE_NOTIFYMACRECOVERYDONE << NPE_MAC_MSGID_SHL
@@ -1198,7 +1177,7 @@ npeinit_locked(void *xsc)
 	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;		/* just in case */
 
-	/* Enable transmitter and reciver in the MAC */
+	/* Enable transmitter and receiver in the MAC */
 	WR4(sc, NPE_MAC_RX_CNTRL1,
 	    RD4(sc, NPE_MAC_RX_CNTRL1) | NPE_RX_CNTRL1_RX_EN);
 	WR4(sc, NPE_MAC_TX_CNTRL1,
@@ -1377,7 +1356,7 @@ npestop(struct ifnet *ifp, int disable)
 {
 	struct npe_softc *sc = ifp->if_softc;
 
-	/* Disable transmitter and reciver in the MAC */
+	/* Disable transmitter and receiver in the MAC */
 	WR4(sc, NPE_MAC_RX_CNTRL1,
 	    RD4(sc, NPE_MAC_RX_CNTRL1) &~ NPE_RX_CNTRL1_RX_EN);
 	WR4(sc, NPE_MAC_TX_CNTRL1,
@@ -1412,7 +1391,7 @@ npewatchdog(struct ifnet *ifp)
 
 	aprint_error_dev(sc->sc_dev, "device timeout\n");
 	s = splnet();
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	npeinit_locked(sc);
 	splx(s);
 }
@@ -1450,13 +1429,13 @@ npeioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * If interface is marked down and it is running,
 			 * then stop and disable it.
 			 */
-			(*ifp->if_stop)(ifp, 1);
+			if_stop(ifp, 1);
 		} else if ((ifp->if_flags & (IFF_UP |IFF_RUNNING)) == IFF_UP) {
 			/*
 			 * If interface is marked up and it is stopped, then
 			 * start it.
 			 */
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		} else if ((ifp->if_flags & IFF_UP) != 0) {
 			u_short diff;
 
@@ -1466,7 +1445,7 @@ npeioctl(struct ifnet *ifp, u_long cmd, void *data)
 			    & (IFF_PROMISC | IFF_ALLMULTI);
 			if ((diff & (IFF_PROMISC | IFF_ALLMULTI)) != 0) {
 				/*
-				 * If the difference bettween last flag and
+				 * If the difference between last flag and
 				 * new flag only IFF_PROMISC or IFF_ALLMULTI,
 				 * set multicast filter only (don't reset to
 				 * prevent link down).
@@ -1478,7 +1457,7 @@ npeioctl(struct ifnet *ifp, u_long cmd, void *data)
 				 * any other flags that affect the hardware
 				 * state.
 				 */
-				error = (*ifp->if_init)(ifp);
+				error = if_init(ifp);
 			}
 		}
 		sc->sc_if_flags = ifp->if_flags;

@@ -1,4 +1,4 @@
-/*	$NetBSD: fss.c,v 1.108 2019/08/07 10:36:19 maxv Exp $	*/
+/*	$NetBSD: fss.c,v 1.112 2022/03/31 19:30:15 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fss.c,v 1.108 2019/08/07 10:36:19 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fss.c,v 1.112 2022/03/31 19:30:15 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -240,6 +240,9 @@ fss_close(dev_t dev, int flags, int mode, struct lwp *l)
 	cfdata_t cf;
 	struct fss_softc *sc = device_lookup_private(&fss_cd, minor(dev));
 
+	if (sc == NULL)
+		return ENXIO;
+
 	mflag = (mode == S_IFCHR ? FSS_CDEV_OPEN : FSS_BDEV_OPEN);
 	error = 0;
 
@@ -283,6 +286,11 @@ fss_strategy(struct buf *bp)
 	const bool write = ((bp->b_flags & B_READ) != B_READ);
 	struct fss_softc *sc = device_lookup_private(&fss_cd, minor(bp->b_dev));
 
+	if (sc == NULL) {
+		bp->b_error = ENXIO;
+		goto done;
+	}
+
 	mutex_enter(&sc->sc_slock);
 
 	if (write || sc->sc_state != FSS_ACTIVE) {
@@ -303,7 +311,8 @@ fss_strategy(struct buf *bp)
 	return;
 
 done:
-	mutex_exit(&sc->sc_slock);
+	if (sc != NULL)
+		mutex_exit(&sc->sc_slock);
 	bp->b_resid = bp->b_bcount;
 	biodone(bp);
 }
@@ -332,6 +341,9 @@ fss_ioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 #ifndef _LP64
 	struct fss_get50 *fsg50 = (struct fss_get50 *)data;
 #endif
+
+	if (sc == NULL)
+		return ENXIO;
 
 	switch (cmd) {
 	case FSSIOCSET50:
@@ -687,10 +699,9 @@ fss_create_files(struct fss_softc *sc, struct fss_set *fss,
 	uint64_t numsec;
 	unsigned int secsize;
 	struct timespec ts;
-	/* nd -> nd2 to reduce mistakes while updating only some namei calls */
+	/* distinguish lookup 1 from lookup 2 to reduce mistakes */
 	struct pathbuf *pb2;
-	struct nameidata nd2;
-	struct vnode *vp;
+	struct vnode *vp, *vp2;
 
 	/*
 	 * Get the mounted file system.
@@ -777,16 +788,17 @@ fss_create_files(struct fss_softc *sc, struct fss_set *fss,
 	if (error) {
  		return error;
 	}
-	NDINIT(&nd2, LOOKUP, FOLLOW, pb2);
-	if ((error = vn_open(&nd2, FREAD|FWRITE, 0)) != 0) {
+	error = vn_open(NULL, pb2, 0, FREAD|FWRITE, 0, &vp2, NULL, NULL);
+	if (error != 0) {
 		pathbuf_destroy(pb2);
 		return error;
 	}
-	VOP_UNLOCK(nd2.ni_vp);
+	VOP_UNLOCK(vp2);
 
-	sc->sc_bs_vp = nd2.ni_vp;
+	sc->sc_bs_vp = vp2;
 
-	if (nd2.ni_vp->v_type != VREG && nd2.ni_vp->v_type != VCHR) {
+	if (vp2->v_type != VREG && vp2->v_type != VCHR) {
+		vrele(vp2);
 		pathbuf_destroy(pb2);
 		return EINVAL;
 	}
@@ -1090,7 +1102,7 @@ fss_bs_io(struct fss_softc *sc, fss_io_type rw,
 	    IO_ADV_ENCODE(POSIX_FADV_NOREUSE) | IO_NODELOCKED,
 	    sc->sc_bs_lwp->l_cred, resid, NULL);
 	if (error == 0) {
-		mutex_enter(sc->sc_bs_vp->v_interlock);
+		rw_enter(sc->sc_bs_vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(sc->sc_bs_vp, trunc_page(off),
 		    round_page(off+len), PGO_CLEANIT | PGO_FREE | PGO_SYNCIO);
 	}
@@ -1375,44 +1387,42 @@ fss_modcmd(modcmd_t cmd, void *arg)
 	case MODULE_CMD_INIT:
 		mutex_init(&fss_device_lock, MUTEX_DEFAULT, IPL_NONE);
 		cv_init(&fss_device_cv, "snapwait");
-		error = config_cfdriver_attach(&fss_cd);
+
+		error = devsw_attach(fss_cd.cd_name,
+		    &fss_bdevsw, &fss_bmajor, &fss_cdevsw, &fss_cmajor);
 		if (error) {
 			mutex_destroy(&fss_device_lock);
 			break;
 		}
+
+		error = config_cfdriver_attach(&fss_cd);
+		if (error) {
+			devsw_detach(&fss_bdevsw, &fss_cdevsw);
+			mutex_destroy(&fss_device_lock);
+			break;
+		}
+
 		error = config_cfattach_attach(fss_cd.cd_name, &fss_ca);
 		if (error) {
 			config_cfdriver_detach(&fss_cd);
+			devsw_detach(&fss_bdevsw, &fss_cdevsw);
 			mutex_destroy(&fss_device_lock);
 			break;
 		}
-		error = devsw_attach(fss_cd.cd_name,
-		    &fss_bdevsw, &fss_bmajor, &fss_cdevsw, &fss_cmajor);
 
-		if (error) {
-			config_cfattach_detach(fss_cd.cd_name, &fss_ca);
-			config_cfdriver_detach(&fss_cd);
-			mutex_destroy(&fss_device_lock);
-			break;
-		}
 		break;
 
 	case MODULE_CMD_FINI:
-		devsw_detach(&fss_bdevsw, &fss_cdevsw);
 		error = config_cfattach_detach(fss_cd.cd_name, &fss_ca);
 		if (error) {
-			devsw_attach(fss_cd.cd_name, &fss_bdevsw, &fss_bmajor,
-			    &fss_cdevsw, &fss_cmajor);
 			break;
 		}
 		error = config_cfdriver_detach(&fss_cd);
 		if (error) {
-			devsw_attach(fss_cd.cd_name,
-			    &fss_bdevsw, &fss_bmajor, &fss_cdevsw, &fss_cmajor);
-			devsw_attach(fss_cd.cd_name, &fss_bdevsw, &fss_bmajor,
-			    &fss_cdevsw, &fss_cmajor);
+			config_cfattach_attach(fss_cd.cd_name, &fss_ca);
 			break;
 		}
+		devsw_detach(&fss_bdevsw, &fss_cdevsw);
 		cv_destroy(&fss_device_cv);
 		mutex_destroy(&fss_device_lock);
 		break;

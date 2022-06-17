@@ -1,4 +1,4 @@
-/*	$NetBSD: clock.c,v 1.27 2012/01/09 06:25:55 kiyohara Exp $	*/
+/*	$NetBSD: clock.c,v 1.32 2021/03/05 06:06:34 rin Exp $	*/
 /*      $OpenBSD: clock.c,v 1.3 1997/10/13 13:42:53 pefo Exp $  */
 
 /*
@@ -33,7 +33,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.27 2012/01/09 06:25:55 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.32 2021/03/05 06:06:34 rin Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#include "opt_ppcparam.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -63,14 +68,10 @@ static void init_ppc4xx_tc(void);
 static u_int get_ppc4xx_timecount(struct timecounter *);
 
 static struct timecounter ppc4xx_timecounter = {
-	get_ppc4xx_timecount,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	0,			/* frequency */
-	"ppc_timebase",		/* name */
-	100,			/* quality */
-	NULL,			/* tc_priv */
-	NULL			/* tc_next */
+	.tc_get_timecount = get_ppc4xx_timecount,
+	.tc_counter_mask = ~0u,
+	.tc_name = "ppc_timebase",
+	.tc_quality = 100,
 };
 
 void decr_intr(struct clockframe *);	/* called from trap_subr.S */
@@ -104,8 +105,11 @@ stat_intr(struct clockframe *frame)
 	 */
 	__asm volatile ("wrteei 1");
 
-	if (IPL_CLOCK > s)
+	if (IPL_CLOCK > s) {
+		ci->ci_idepth++;
   		statclock(frame);
+		ci->ci_idepth--;
+	}
 	splx(s);
 }
 
@@ -155,11 +159,11 @@ decr_intr(struct clockframe *frame)
 
 		/*
 		 * Do standard timer interrupt stuff.
-		 * Do softclock stuff only on the last iteration.
 		 */
-		while (--nticks > 0)
+		ci->ci_idepth++;
+		while (nticks-- > 0)
 			hardclock(frame);
-		hardclock(frame);
+		ci->ci_idepth--;
 	}
 	splx(pcpl);
 }
@@ -194,9 +198,17 @@ calc_delayconst(void)
 	prop_number_t freq;
 
 	freq = prop_dictionary_get(board_properties, "processor-frequency");
-	KASSERT(freq != NULL);
 
-	ticks_per_sec = (u_long) prop_number_integer_value(freq);
+#ifndef PPC_CPU_FREQ
+	KASSERT(freq != NULL);
+#else
+	/* XXX hack for pckbc_cnattach() for Explora */
+	if (freq == NULL)
+		ticks_per_sec = (u_long) PPC_CPU_FREQ;
+	else
+#endif
+		ticks_per_sec = (u_long) prop_number_integer_value(freq);
+
 	ns_per_tick = 1000000000 / ticks_per_sec;
 }
 

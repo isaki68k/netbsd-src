@@ -1,4 +1,4 @@
-/* $NetBSD: tc_dma_3000_500.c,v 1.20 2017/06/22 16:46:52 flxd Exp $ */
+/* $NetBSD: tc_dma_3000_500.c,v 1.24 2021/07/18 05:12:27 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -32,13 +32,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: tc_dma_3000_500.c,v 1.20 2017/06/22 16:46:52 flxd Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tc_dma_3000_500.c,v 1.24 2021/07/18 05:12:27 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #define _ALPHA_BUS_DMA_PRIVATE
 #include <sys/bus.h>
@@ -54,6 +54,7 @@ struct alpha_bus_dma_tag tc_dmat_sgmap = {
 	NULL,				/* _next_window */
 	0,				/* _boundary */
 	NULL,				/* _sgmap */
+	PAGE_SIZE,			/* _sgmap_minalign */
 	0,				/* _pfthresh */
 	NULL,				/* _get_tag */
 	tc_bus_dmamap_create_sgmap,
@@ -86,10 +87,7 @@ tc_dma_init_3000_500(int nslots)
 
 	/* Allocate per-slot DMA info. */
 	sisize = nslots * sizeof(struct tc_dma_slot_info);
-	tc_dma_slot_info = malloc(sisize, M_DEVBUF, M_NOWAIT);
-	if (tc_dma_slot_info == NULL)
-		panic("tc_dma_init: can't allocate per-slot DMA info");
-	memset(tc_dma_slot_info, 0, sisize);
+	tc_dma_slot_info = kmem_zalloc(sisize, KM_SLEEP);
 
 	/* Default all slots to direct-mapped. */
 	for (i = 0; i < nslots; i++)
@@ -209,5 +207,5 @@ tc_bus_dmamap_unload_sgmap(bus_dma_tag_t t, bus_dmamap_t map)
 	/*
 	 * Do the generic bits of the unload.
 	 */
-	_bus_dmamap_unload(t, map);
+	_bus_dmamap_unload_common(t, map);
 }

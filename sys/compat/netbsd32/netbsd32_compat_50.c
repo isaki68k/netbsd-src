@@ -1,7 +1,7 @@
-/*	$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $	*/
+/*	$NetBSD: netbsd32_compat_50.c,v 1.52 2021/09/07 11:43:05 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -15,13 +15,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *        This product includes software developed by the NetBSD
- *        Foundation, Inc. and its contributors.
- * 4. Neither the name of The NetBSD Foundation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -36,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.52 2021/09/07 11:43:05 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -69,7 +62,6 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kami
 #include <sys/dirent.h>
 #include <sys/kauth.h>
 #include <sys/vfs_syscalls.h>
-#include <sys/rnd.h>
 #include <sys/compat_stub.h>
 #include <sys/module_hook.h>
 
@@ -178,6 +170,7 @@ compat_50_netbsd32_gettimeofday(struct lwp *l,
 		 * NetBSD has no kernel notion of time zone, so we just
 		 * fake up a timezone struct and return it if demanded.
 		 */
+		memset(&tzfake, 0, sizeof(tzfake));
 		tzfake.tz_minuteswest = 0;
 		tzfake.tz_dsttime = 0;
 		error = copyout(&tzfake, SCARG_P32(uap, tzp), sizeof(tzfake));
@@ -260,9 +253,11 @@ compat_50_netbsd32_adjtime(struct lwp *l,
 	if ((error = kauth_authorize_system(l->l_cred,
 	    KAUTH_SYSTEM_TIME, KAUTH_REQ_SYSTEM_TIME_ADJTIME, NULL, NULL,
 	    NULL)) != 0)
-		return (error);
+		return error;
 
 	if (SCARG_P32(uap, olddelta)) {
+		memset(&atv, 0, sizeof(atv));
+
 		mutex_spin_enter(&timecounter_lock);
 		atv.tv_sec = time_adjtime / 1000000;
 		atv.tv_usec = time_adjtime % 1000000;
@@ -274,13 +269,13 @@ compat_50_netbsd32_adjtime(struct lwp *l,
 
 		error = copyout(&atv, SCARG_P32(uap, olddelta), sizeof(atv));
 		if (error)
-			return (error);
+			return error;
 	}
 	
 	if (SCARG_P32(uap, delta)) {
 		error = copyin(SCARG_P32(uap, delta), &atv, sizeof(atv));
 		if (error)
-			return (error);
+			return error;
 
 		mutex_spin_enter(&timecounter_lock);
 		time_adjtime = (int64_t)atv.tv_sec * 1000000 + atv.tv_usec;
@@ -352,7 +347,7 @@ compat_50_netbsd32_clock_settime(struct lwp *l,
 	int error;
 
 	if ((error = copyin(SCARG_P32(uap, tp), &ts32, sizeof(ts32))) != 0)
-		return (error);
+		return error;
 
 	netbsd32_to_timespec50(&ts32, &ats);
 	return clock_settime1(l->l_proc, SCARG(uap, clock_id), &ats, true);
@@ -397,7 +392,7 @@ compat_50_netbsd32_timer_settime(struct lwp *l,
 	struct netbsd32_itimerspec50 its32;
 
 	if ((error = copyin(SCARG_P32(uap, value), &its32, sizeof(its32))) != 0)
-		return (error);
+		return error;
 	netbsd32_to_timespec50(&its32.it_interval, &value.it_interval);
 	netbsd32_to_timespec50(&its32.it_value, &value.it_value);
 
@@ -409,6 +404,7 @@ compat_50_netbsd32_timer_settime(struct lwp *l,
 		return error;
 
 	if (ovp) {
+		memset(&its32, 0, sizeof(its32));
 		netbsd32_from_timespec50(&ovp->it_interval, &its32.it_interval);
 		netbsd32_from_timespec50(&ovp->it_value, &its32.it_value);
 		return copyout(&its32, SCARG_P32(uap, ovalue), sizeof(its32));
@@ -431,6 +427,8 @@ compat_50_netbsd32_timer_gettime(struct lwp *l, const struct compat_50_netbsd32_
 	    &its)) != 0)
 		return error;
 
+	memset(&its32, 0, sizeof(its32));
+
 	netbsd32_from_timespec50(&its.it_interval, &its32.it_interval);
 	netbsd32_from_timespec50(&its.it_value, &its32.it_value);
 
@@ -451,7 +449,7 @@ compat_50_netbsd32_nanosleep(struct lwp *l,
 
 	error = copyin(SCARG_P32(uap, rqtp), &ts32, sizeof(ts32));
 	if (error)
-		return (error);
+		return error;
 	netbsd32_to_timespec50(&ts32, &rqt);
 
 	error = nanosleep1(l, CLOCK_MONOTONIC, 0, &rqt,
@@ -571,14 +569,12 @@ compat_50_netbsd32__lwp_park(struct lwp *l,
 	}
 
 	if (SCARG(uap, unpark) != 0) {
-		error = lwp_unpark(SCARG(uap, unpark),
-		    SCARG_P32(uap, unparkhint));
+		error = lwp_unpark(&SCARG(uap, unpark), 1);
 		if (error != 0)
 			return error;
 	}
 
-	return lwp_park(CLOCK_REALTIME, TIMER_ABSTIME, tsp,
-	    SCARG_P32(uap, hint));
+	return lwp_park(CLOCK_REALTIME, TIMER_ABSTIME, tsp);
 }
 
 static int
@@ -810,9 +806,9 @@ compat_50_netbsd32___fhstat40(struct lwp *l, const struct compat_50_netbsd32___f
 	int error;
 
 	error = do_fhstat(l, SCARG_P32(uap, fhp), SCARG(uap, fh_size), &sb);
-	if (error != 0) {
+	if (error == 0) {
 		netbsd32_from___stat50(&sb, &sb32);
-		error = copyout(&sb32, SCARG_P32(uap, sb), sizeof(sb));
+		error = copyout(&sb32, SCARG_P32(uap, sb), sizeof(sb32));
 	}
 	return error;
 }
@@ -885,19 +881,17 @@ compat_50_netbsd32_setitimer(struct lwp *l,
 	struct itimerval aitv;
 	int error;
 
-	if ((u_int)which > ITIMER_PROF)
-		return (EINVAL);
 	itv32 = SCARG_P32(uap, itv);
 	if (itv32) {
 		if ((error = copyin(itv32, &s32it, sizeof(s32it))))
-			return (error);
+			return error;
 		netbsd32_to_itimerval50(&s32it, &aitv);
 	}
 	if (SCARG_P32(uap, oitv) != 0) {
 		SCARG(&getargs, which) = which;
 		SCARG(&getargs, itv) = SCARG(uap, oitv);
 		if ((error = compat_50_netbsd32_getitimer(l, &getargs, retval)) != 0)
-			return (error);
+			return error;
 	}
 	if (itv32 == 0)
 		return 0;
@@ -924,26 +918,6 @@ compat_50_netbsd32_getitimer(struct lwp *l, const struct compat_50_netbsd32_geti
 	netbsd32_from_itimerval50(&aitv, &s32it);
 	return copyout(&s32it, SCARG_P32(uap, itv), sizeof(s32it));
 }
-
-#ifdef QUOTA
-int
-compat_50_netbsd32_quotactl(struct lwp *l, const struct compat_50_netbsd32_quotactl_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(const netbsd32_charp) path;
-		syscallarg(int) cmd;
-		syscallarg(int) uid;
-		syscallarg(netbsd32_voidp) arg;
-	} */
-	struct compat_50_sys_quotactl_args ua;
-
-	NETBSD32TOP_UAP(path, const char);
-	NETBSD32TO64_UAP(cmd);
-	NETBSD32TO64_UAP(uid);
-	NETBSD32TOP_UAP(arg, void *);
-	return (compat_50_sys_quotactl(l, &ua, retval));
-}
-#endif
 
 #ifdef NTP
 int
@@ -976,7 +950,7 @@ compat_50_netbsd32_ntp_gettime(struct lwp *l,
 		*retval = (*vec_ntp_timestatus)();
 	}
 
-	return (error);
+	return error;
 }
 #endif
 
@@ -1035,10 +1009,6 @@ static struct syscall_package compat_netbsd32_50_syscalls[] = {
 	    (sy_call_t *)compat_50_netbsd32_setitimer }, 
 	{ NETBSD32_SYS_compat_50_netbsd32_getitimer, 0,
 	    (sy_call_t *)compat_50_netbsd32_getitimer }, 
-#ifdef QUOTA
-	{ NETBSD32_SYS_compat_50_netbsd32_quotactl, 0,
-	    (sy_call_t *)compat_50_netbsd32_quotactl }, 
-#endif
 #ifdef NTP
 	{ NETBSD32_SYS_compat_50_netbsd32_ntp_gettime, 0,
 	    (sy_call_t *)compat_50_netbsd32_ntp_gettime }, 
@@ -1058,7 +1028,7 @@ compat_netbsd32_50_modcmd(modcmd_t cmd, void *arg)
                 ret = syscall_establish(&emul_netbsd32,
 		    compat_netbsd32_50_syscalls);
 		if (ret == 0)
-			MODULE_HOOK_SET(rnd_ioctl32_50_hook, "rnd32_50",
+			MODULE_HOOK_SET(rnd_ioctl32_50_hook,
 			    compat32_50_rnd_ioctl);
 		return ret;
 

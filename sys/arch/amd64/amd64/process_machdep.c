@@ -1,4 +1,4 @@
-/*	$NetBSD: process_machdep.c,v 1.44 2019/08/06 01:34:29 kamil Exp $	*/
+/*	$NetBSD: process_machdep.c,v 1.49 2020/10/19 17:47:37 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -74,9 +74,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.44 2019/08/06 01:34:29 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.49 2020/10/19 17:47:37 christos Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_xen.h"
+#endif
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/time.h>
@@ -93,6 +96,8 @@ __KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.44 2019/08/06 01:34:29 kamil E
 #include <machine/segments.h>
 #include <x86/dbregs.h>
 #include <x86/fpu.h>
+
+struct netbsd32_process_doxmmregs_hook_t netbsd32_process_doxmmregs_hook;
 
 static inline struct trapframe *process_frame(struct lwp *);
 
@@ -305,7 +310,7 @@ process_machdep_write_xstate(struct lwp *l, const struct xstate *regs)
 int
 ptrace_machdep_dorequest(
     struct lwp *l,
-    struct lwp *lt,
+    struct lwp **lt,
     int req,
     void *addr,
     int data
@@ -315,16 +320,18 @@ ptrace_machdep_dorequest(
 	struct iovec iov;
 	struct vmspace *vm;
 	int error;
-	int write = 0;
+	bool write = false;
 
 	switch (req) {
 	case PT_SETXSTATE:
-		write = 1;
+		write = true;
 
 		/* FALLTHROUGH */
 	case PT_GETXSTATE:
-		/* write = 0 done above. */
-		if (!process_machdep_validxstate(lt->l_proc))
+		/* write = false done above. */
+		if ((error = ptrace_update_lwp((*lt)->l_proc, lt, data)) != 0)
+			return error;
+		if (!process_machdep_validfpu((*lt)->l_proc))
 			return EINVAL;
 		if (__predict_false(l->l_proc->p_flag & PK_32)) {
 			struct netbsd32_iovec user_iov;
@@ -355,8 +362,20 @@ ptrace_machdep_dorequest(
 		uio.uio_resid = iov.iov_len;
 		uio.uio_rw = write ? UIO_WRITE : UIO_READ;
 		uio.uio_vmspace = vm;
-		error = process_machdep_doxstate(l, lt, &uio);
+		error = process_machdep_doxstate(l, *lt, &uio);
 		uvmspace_free(vm);
+		return error;
+
+	case PT_SETXMMREGS:		/* only for COMPAT_NETBSD32 */
+		write = true;
+
+		/* FALLTHROUGH */
+	case PT_GETXMMREGS:		/* only for COMPAT_NETBSD32 */
+		/* write = false done above. */
+		if ((error = ptrace_update_lwp((*lt)->l_proc, lt, data)) != 0)
+			return error;
+		MODULE_HOOK_CALL(netbsd32_process_doxmmregs_hook,
+		    (l, *lt, addr, write), EINVAL, error);
 		return error;
 	}
 
@@ -404,7 +423,7 @@ process_machdep_doxstate(struct lwp *curl, struct lwp *l, struct uio *uio)
 }
 
 int
-process_machdep_validxstate(struct proc *p)
+process_machdep_validfpu(struct proc *p)
 {
 
 	if (p->p_flag & PK_SYSTEM)

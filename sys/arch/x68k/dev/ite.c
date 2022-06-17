@@ -1,4 +1,4 @@
-/*	$NetBSD: ite.c,v 1.64 2018/09/03 16:29:28 riastradh Exp $	*/
+/*	$NetBSD: ite.c,v 1.68 2022/05/28 10:36:22 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ite.c,v 1.64 2018/09/03 16:29:28 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ite.c,v 1.68 2022/05/28 10:36:22 andvar Exp $");
 
 #include "ite.h"
 #if NITE > 0
@@ -64,6 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: ite.c,v 1.64 2018/09/03 16:29:28 riastradh Exp $");
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/kauth.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 
 #include <machine/cpu.h>
 #include <machine/kbio.h>
@@ -76,6 +77,9 @@ __KERNEL_RCSID(0, "$NetBSD: ite.c,v 1.64 2018/09/03 16:29:28 riastradh Exp $");
 #include <arch/x68k/dev/itevar.h>
 #include <arch/x68k/dev/kbdmap.h>
 #include <arch/x68k/dev/mfp.h>
+
+#include "ioconf.h"
+
 #if NBELL > 0
 void opm_bell(void);
 #endif
@@ -114,10 +118,7 @@ static int ite_argnum(struct ite_softc *);
 static int ite_zargnum(struct ite_softc *);
 static void ite_sendstr(struct ite_softc *, const char *);
 inline static int atoi(const char *);
-void ite_reset(struct ite_softc *);
 struct ite_softc *getitesp(dev_t);
-int iteon(dev_t, int);
-void iteoff(dev_t, int);
 
 struct itesw itesw[] = {
 	{0,	tv_init,	tv_deinit,	0,
@@ -154,8 +155,6 @@ void iteattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(ite, sizeof(struct ite_softc),
     itematch, iteattach, NULL, NULL);
-
-extern struct cfdriver ite_cd;
 
 dev_type_open(iteopen);
 dev_type_close(iteclose);
@@ -2368,7 +2367,7 @@ itecninit(struct consdev *cd)
 
 /*
  * itecnfinish() is called in ite_init() when the device is
- * being probed in the normal fasion, thus we can finish setting
+ * being probed in the normal fashion, thus we can finish setting
  * up this ite now that the system is more functional.
  */
 void

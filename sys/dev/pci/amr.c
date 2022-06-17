@@ -1,4 +1,4 @@
-/*	$NetBSD: amr.c,v 1.64 2018/12/09 11:14:01 jdolecek Exp $	*/
+/*	$NetBSD: amr.c,v 1.67 2021/08/07 16:19:14 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2003 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amr.c,v 1.64 2018/12/09 11:14:01 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amr.c,v 1.67 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -412,7 +412,7 @@ amr_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Allocate and initalise the command control blocks.
 	 */
-	ac = malloc(sizeof(*ac) * AMR_MAX_CMDS, M_DEVBUF, M_NOWAIT | M_ZERO);
+	ac = malloc(sizeof(*ac) * AMR_MAX_CMDS, M_DEVBUF, M_WAITOK | M_ZERO);
 	amr->amr_ccbs = ac;
 	SLIST_INIT(&amr->amr_ccb_freelist);
 	TAILQ_INIT(&amr->amr_ccb_active);
@@ -464,7 +464,7 @@ amr_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Retrieve parameters, and tell the world about us.
 	 */
-	amr->amr_enqbuf = malloc(AMR_ENQUIRY_BUFSIZE, M_DEVBUF, M_NOWAIT);
+	amr->amr_enqbuf = malloc(AMR_ENQUIRY_BUFSIZE, M_DEVBUF, M_WAITOK);
 	amr->amr_flags |= AMRF_ENQBUF;
 	amr->amr_maxqueuecnt = i;
 	aprint_normal(": AMI RAID ");
@@ -487,7 +487,7 @@ amr_attach(device_t parent, device_t self, void *aux)
 		amr_sdh = shutdownhook_establish(amr_shutdown, NULL);
 
 	/* Attach sub-devices. */
-	amr_rescan(self, "amr", 0);
+	amr_rescan(self, NULL, NULL);
 
 	SIMPLEQ_INIT(&amr->amr_ccb_queue);
 
@@ -511,7 +511,7 @@ amr_attach(device_t parent, device_t self, void *aux)
 }
 
 static int
-amr_rescan(device_t self, const char *attr, const int *flags)
+amr_rescan(device_t self, const char *ifattr, const int *ulocs)
 {
 	int j;
 	int locs[AMRCF_NLOCS];
@@ -528,8 +528,11 @@ amr_rescan(device_t self, const char *attr, const int *flags)
 
 		locs[AMRCF_UNIT] = j;
 
-		amr->amr_drive[j].al_dv = config_found_sm_loc(amr->amr_dv,
-			attr, locs, &amra, amr_print, config_stdsubmatch);
+		amr->amr_drive[j].al_dv =
+		    config_found(amr->amr_dv, &amra, amr_print,
+				 CFARGS(.submatch = config_stdsubmatch,
+					.iattr = ifattr,
+					.locators = locs));
 	}
 	return 0;
 }
@@ -1583,4 +1586,3 @@ amr_modcmd(modcmd_t cmd, void *opaque)
 
 	return error;
 }
-

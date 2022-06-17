@@ -1,4 +1,4 @@
-/* $NetBSD: uslsa.c,v 1.28 2019/05/09 02:43:35 mrg Exp $ */
+/* $NetBSD: uslsa.c,v 1.31 2021/08/07 16:19:17 thorpej Exp $ */
 
 /* from ugensa.c */
 
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uslsa.c,v 1.28 2019/05/09 02:43:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uslsa.c,v 1.31 2021/08/07 16:19:17 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -236,8 +236,8 @@ uslsa_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_subdev = config_found_sm_loc(self, "ucombus", NULL, &ucaa,
-	                                    ucomprint, ucomsubmatch);
+	sc->sc_subdev = config_found(self, &ucaa, ucomprint,
+	    CFARGS(.submatch = ucomsubmatch));
 
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
@@ -439,7 +439,7 @@ uslsa_param(void *vsc, int portno, struct termios *t)
 		break;
 	}
 
-	DPRINTF((sc->sc_dev, "%s: setting LINE_CTL to 0x%x\n",
+	DPRINTF((sc->sc_dev, "%s: setting LINE_CTL to %#x\n",
 	    __func__, value));
 	if ((ret = uslsa_request_set(sc, SLSA_R_SET_LINE_CTL, value)) != 0) {
 		device_printf(sc->sc_dev, "SET_LINE_CTL failed\n");

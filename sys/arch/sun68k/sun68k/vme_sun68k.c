@@ -1,4 +1,4 @@
-/*	$NetBSD: vme_sun68k.c,v 1.15 2009/11/27 03:23:14 rmind Exp $	*/
+/*	$NetBSD: vme_sun68k.c,v 1.19 2021/08/07 16:19:06 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -30,13 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vme_sun68k.c,v 1.15 2009/11/27 03:23:14 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vme_sun68k.c,v 1.19 2021/08/07 16:19:06 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/extent.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/errno.h>
 
 #include <sys/proc.h>
@@ -169,7 +169,7 @@ sun68kvme_attach(device_t parent, device_t self, void *aux)
 	vba.va_slaveconfig = 0;
 
 	aprint_normal("\n");
-	(void)config_found(self, &vba, 0);
+	(void)config_found(self, &vba, 0, CFARGS_NONE);
 }
 
 /*
@@ -268,8 +268,7 @@ sun68k_vme_intr_map(void *cookie, int level, int vec, vme_intr_handle_t *ihp)
 {
 	struct sun68k_vme_intr_handle *svih;
 
-	svih = malloc(sizeof(struct sun68k_vme_intr_handle),
-	    M_DEVBUF, M_NOWAIT);
+	svih = kmem_alloc(sizeof(struct sun68k_vme_intr_handle), KM_SLEEP);
 	svih->pri = level;
 	svih->vec = vec;
 	*ihp = svih;

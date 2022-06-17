@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_proto.h,v 1.9 2019/09/22 10:35:12 maxv Exp $	*/
+/*	$NetBSD: bus_proto.h,v 1.14 2022/01/15 07:11:26 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2001, 2007 The NetBSD Foundation, Inc.
@@ -66,6 +66,8 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_kasan.h"
+#include "opt_kcsan.h"
+#include "opt_kmsan.h"
 #endif
 
 /*
@@ -84,8 +86,8 @@ struct uio;
 #define	BUS_SPACE_MAP_PREFETCHABLE	0x04
 
 /* Bus read/write barrier methods. */
-#define	BUS_SPACE_BARRIER_READ	0x01		/* force read barrier */
-#define	BUS_SPACE_BARRIER_WRITE	0x02		/* force write barrier */
+#define	BUS_SPACE_BARRIER_READ		0x01	/* force read barrier */
+#define	BUS_SPACE_BARRIER_WRITE		0x02	/* force write barrier */
 
 int	bus_space_map(bus_space_tag_t, bus_addr_t, bus_size_t, int,
 		      bus_space_handle_t *);
@@ -127,10 +129,12 @@ uint32_t bus_space_read_4(bus_space_tag_t, bus_space_handle_t,
 uint32_t bus_space_read_stream_4(bus_space_tag_t, bus_space_handle_t,
 				 bus_size_t);
 
+#ifdef __HAVE_BUS_SPACE_8
 uint64_t bus_space_read_8(bus_space_tag_t, bus_space_handle_t,
 			  bus_size_t);
 uint64_t bus_space_read_stream_8(bus_space_tag_t, bus_space_handle_t,
 				 bus_size_t);
+#endif
 
 #if defined(KASAN) && defined(__HAVE_KASAN_INSTR_BUS)
 #define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)					\
@@ -158,6 +162,58 @@ void kasan_bus_space_read_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_read_region_stream_2 kasan_bus_space_read_region_stream_2
 #define bus_space_read_region_stream_4 kasan_bus_space_read_region_stream_4
 #define bus_space_read_region_stream_8 kasan_bus_space_read_region_stream_8
+#elif defined(KCSAN)
+#define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)					\
+void kcsan_bus_space_read_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, uint##bits##_t *, bus_size_t);					\
+void kcsan_bus_space_read_multi_stream_##bytes(bus_space_tag_t,			\
+    bus_space_handle_t, bus_size_t, uint##bits##_t *, bus_size_t);		\
+void kcsan_bus_space_read_region_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, uint##bits##_t *, bus_size_t);					\
+void kcsan_bus_space_read_region_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, uint##bits##_t *, bus_size_t);
+#define bus_space_read_multi_1 kcsan_bus_space_read_multi_1
+#define bus_space_read_multi_2 kcsan_bus_space_read_multi_2
+#define bus_space_read_multi_4 kcsan_bus_space_read_multi_4
+#define bus_space_read_multi_8 kcsan_bus_space_read_multi_8
+#define bus_space_read_multi_stream_1 kcsan_bus_space_read_multi_stream_1
+#define bus_space_read_multi_stream_2 kcsan_bus_space_read_multi_stream_2
+#define bus_space_read_multi_stream_4 kcsan_bus_space_read_multi_stream_4
+#define bus_space_read_multi_stream_8 kcsan_bus_space_read_multi_stream_8
+#define bus_space_read_region_1 kcsan_bus_space_read_region_1
+#define bus_space_read_region_2 kcsan_bus_space_read_region_2
+#define bus_space_read_region_4 kcsan_bus_space_read_region_4
+#define bus_space_read_region_8 kcsan_bus_space_read_region_8
+#define bus_space_read_region_stream_1 kcsan_bus_space_read_region_stream_1
+#define bus_space_read_region_stream_2 kcsan_bus_space_read_region_stream_2
+#define bus_space_read_region_stream_4 kcsan_bus_space_read_region_stream_4
+#define bus_space_read_region_stream_8 kcsan_bus_space_read_region_stream_8
+#elif defined(KMSAN)
+#define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)					\
+void kmsan_bus_space_read_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, uint##bits##_t *, bus_size_t);					\
+void kmsan_bus_space_read_multi_stream_##bytes(bus_space_tag_t,			\
+    bus_space_handle_t, bus_size_t, uint##bits##_t *, bus_size_t);		\
+void kmsan_bus_space_read_region_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, uint##bits##_t *, bus_size_t);					\
+void kmsan_bus_space_read_region_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, uint##bits##_t *, bus_size_t);
+#define bus_space_read_multi_1 kmsan_bus_space_read_multi_1
+#define bus_space_read_multi_2 kmsan_bus_space_read_multi_2
+#define bus_space_read_multi_4 kmsan_bus_space_read_multi_4
+#define bus_space_read_multi_8 kmsan_bus_space_read_multi_8
+#define bus_space_read_multi_stream_1 kmsan_bus_space_read_multi_stream_1
+#define bus_space_read_multi_stream_2 kmsan_bus_space_read_multi_stream_2
+#define bus_space_read_multi_stream_4 kmsan_bus_space_read_multi_stream_4
+#define bus_space_read_multi_stream_8 kmsan_bus_space_read_multi_stream_8
+#define bus_space_read_region_1 kmsan_bus_space_read_region_1
+#define bus_space_read_region_2 kmsan_bus_space_read_region_2
+#define bus_space_read_region_4 kmsan_bus_space_read_region_4
+#define bus_space_read_region_8 kmsan_bus_space_read_region_8
+#define bus_space_read_region_stream_1 kmsan_bus_space_read_region_stream_1
+#define bus_space_read_region_stream_2 kmsan_bus_space_read_region_stream_2
+#define bus_space_read_region_stream_4 kmsan_bus_space_read_region_stream_4
+#define bus_space_read_region_stream_8 kmsan_bus_space_read_region_stream_8
 #else
 #define BUS_SPACE_READ_MEM_PROTOS(bytes, bits)				\
 void bus_space_read_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
@@ -190,10 +246,12 @@ void	bus_space_write_4(bus_space_tag_t, bus_space_handle_t,
 void	bus_space_write_stream_4(bus_space_tag_t, bus_space_handle_t,
 		  		 bus_size_t, uint32_t);
 
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_write_8(bus_space_tag_t, bus_space_handle_t,
 			  bus_size_t, uint64_t);
 void	bus_space_write_stream_8(bus_space_tag_t, bus_space_handle_t,
 		  		 bus_size_t, uint64_t);
+#endif
 
 #if defined(KASAN) && defined(__HAVE_KASAN_INSTR_BUS)
 #define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)					\
@@ -221,6 +279,58 @@ void kasan_bus_space_write_region_stream_##bytes(bus_space_tag_t,		\
 #define bus_space_write_region_stream_2 kasan_bus_space_write_region_stream_2
 #define bus_space_write_region_stream_4 kasan_bus_space_write_region_stream_4
 #define bus_space_write_region_stream_8 kasan_bus_space_write_region_stream_8
+#elif defined(KCSAN)
+#define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)					\
+void kcsan_bus_space_write_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, const uint##bits##_t *, bus_size_t);				\
+void kcsan_bus_space_write_multi_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, const uint##bits##_t *, bus_size_t);	\
+void kcsan_bus_space_write_region_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, const uint##bits##_t *, bus_size_t);				\
+void kcsan_bus_space_write_region_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, const uint##bits##_t *, bus_size_t);
+#define bus_space_write_multi_1 kcsan_bus_space_write_multi_1
+#define bus_space_write_multi_2 kcsan_bus_space_write_multi_2
+#define bus_space_write_multi_4 kcsan_bus_space_write_multi_4
+#define bus_space_write_multi_8 kcsan_bus_space_write_multi_8
+#define bus_space_write_multi_stream_1 kcsan_bus_space_write_multi_stream_1
+#define bus_space_write_multi_stream_2 kcsan_bus_space_write_multi_stream_2
+#define bus_space_write_multi_stream_4 kcsan_bus_space_write_multi_stream_4
+#define bus_space_write_multi_stream_8 kcsan_bus_space_write_multi_stream_8
+#define bus_space_write_region_1 kcsan_bus_space_write_region_1
+#define bus_space_write_region_2 kcsan_bus_space_write_region_2
+#define bus_space_write_region_4 kcsan_bus_space_write_region_4
+#define bus_space_write_region_8 kcsan_bus_space_write_region_8
+#define bus_space_write_region_stream_1 kcsan_bus_space_write_region_stream_1
+#define bus_space_write_region_stream_2 kcsan_bus_space_write_region_stream_2
+#define bus_space_write_region_stream_4 kcsan_bus_space_write_region_stream_4
+#define bus_space_write_region_stream_8 kcsan_bus_space_write_region_stream_8
+#elif defined(KMSAN)
+#define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)					\
+void kmsan_bus_space_write_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, const uint##bits##_t *, bus_size_t);				\
+void kmsan_bus_space_write_multi_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, const uint##bits##_t *, bus_size_t);	\
+void kmsan_bus_space_write_region_##bytes(bus_space_tag_t, bus_space_handle_t,	\
+    bus_size_t, const uint##bits##_t *, bus_size_t);				\
+void kmsan_bus_space_write_region_stream_##bytes(bus_space_tag_t,		\
+    bus_space_handle_t, bus_size_t, const uint##bits##_t *, bus_size_t);
+#define bus_space_write_multi_1 kmsan_bus_space_write_multi_1
+#define bus_space_write_multi_2 kmsan_bus_space_write_multi_2
+#define bus_space_write_multi_4 kmsan_bus_space_write_multi_4
+#define bus_space_write_multi_8 kmsan_bus_space_write_multi_8
+#define bus_space_write_multi_stream_1 kmsan_bus_space_write_multi_stream_1
+#define bus_space_write_multi_stream_2 kmsan_bus_space_write_multi_stream_2
+#define bus_space_write_multi_stream_4 kmsan_bus_space_write_multi_stream_4
+#define bus_space_write_multi_stream_8 kmsan_bus_space_write_multi_stream_8
+#define bus_space_write_region_1 kmsan_bus_space_write_region_1
+#define bus_space_write_region_2 kmsan_bus_space_write_region_2
+#define bus_space_write_region_4 kmsan_bus_space_write_region_4
+#define bus_space_write_region_8 kmsan_bus_space_write_region_8
+#define bus_space_write_region_stream_1 kmsan_bus_space_write_region_stream_1
+#define bus_space_write_region_stream_2 kmsan_bus_space_write_region_stream_2
+#define bus_space_write_region_stream_4 kmsan_bus_space_write_region_stream_4
+#define bus_space_write_region_stream_8 kmsan_bus_space_write_region_stream_8
 #else
 #define BUS_SPACE_WRITE_MEM_PROTOS(bytes, bits)				\
 void bus_space_write_multi_##bytes(bus_space_tag_t, bus_space_handle_t,	\
@@ -244,8 +354,10 @@ void	bus_space_set_multi_2(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int16_t, bus_size_t);
 void	bus_space_set_multi_4(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int32_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_set_multi_8(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int64_t, bus_size_t);
+#endif
 
 void	bus_space_set_multi_stream_1(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int8_t, bus_size_t);
@@ -253,8 +365,10 @@ void	bus_space_set_multi_stream_2(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int16_t, bus_size_t);
 void	bus_space_set_multi_stream_4(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int32_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_set_multi_stream_8(bus_space_tag_t, bus_space_handle_t,
 			      bus_size_t, u_int64_t, bus_size_t);
+#endif
 
 void	bus_space_set_region_1(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int8_t, bus_size_t);
@@ -262,8 +376,10 @@ void	bus_space_set_region_2(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int16_t, bus_size_t);
 void	bus_space_set_region_4(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int32_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_set_region_8(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int64_t, bus_size_t);
+#endif
 
 void	bus_space_set_region_stream_1(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int8_t, bus_size_t);
@@ -271,8 +387,10 @@ void	bus_space_set_region_stream_2(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int16_t, bus_size_t);
 void	bus_space_set_region_stream_4(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int32_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_set_region_stream_8(bus_space_tag_t, bus_space_handle_t,
 			       bus_size_t, u_int64_t, bus_size_t);
+#endif
 
 void	bus_space_copy_region_1(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
@@ -283,9 +401,11 @@ void	bus_space_copy_region_2(bus_space_tag_t, bus_space_handle_t,
 void	bus_space_copy_region_4(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
 				bus_size_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_copy_region_8(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
 				bus_size_t, bus_size_t);
+#endif
 
 void	bus_space_copy_region_stream_1(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
@@ -296,9 +416,11 @@ void	bus_space_copy_region_stream_2(bus_space_tag_t, bus_space_handle_t,
 void	bus_space_copy_region_stream_4(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
 				bus_size_t, bus_size_t);
+#ifdef __HAVE_BUS_SPACE_8
 void	bus_space_copy_region_stream_8(bus_space_tag_t, bus_space_handle_t,
 				bus_size_t, bus_space_handle_t,
 				bus_size_t, bus_size_t);
+#endif
 
 bool	bus_space_is_equal(bus_space_tag_t, bus_space_tag_t);
 bool	bus_space_handle_is_equal(bus_space_tag_t, bus_space_handle_t,
@@ -321,7 +443,7 @@ bool	bus_space_handle_is_equal(bus_space_tag_t, bus_space_handle_t,
 #define	BUS_DMA_READ		0x100	/* mapping is device -> memory only */
 #define	BUS_DMA_WRITE		0x200	/* mapping is memory -> device only */
 #define	BUS_DMA_NOCACHE		0x400	/* hint: map non-cached memory */
-#define	BUS_DMA_PREFETCHABLE	0x800	/* hint: map non-cached but allow 
+#define	BUS_DMA_PREFETCHABLE	0x800	/* hint: map non-cached but allow
 					 * things like write combining */
 
 /* Operations performed by bus_dmamap_sync(). */

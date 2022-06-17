@@ -1,4 +1,4 @@
-/* $NetBSD: dwc3_fdt.c,v 1.7 2019/04/19 19:05:56 jmcneill Exp $ */
+/* $NetBSD: dwc3_fdt.c,v 1.20 2022/06/12 08:04:07 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwc3_fdt.c,v 1.7 2019/04/19 19:05:56 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwc3_fdt.c,v 1.20 2022/06/12 08:04:07 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -51,6 +51,9 @@ __KERNEL_RCSID(0, "$NetBSD: dwc3_fdt.c,v 1.7 2019/04/19 19:05:56 jmcneill Exp $"
 #define	  GCTL_PRTCAP_DEVICE		2
 #define	  GCTL_PRTCAP_OTG		3
 #define	 GCTL_CORESOFTRESET		__BIT(11)
+
+#define	DWC3_GUCTL1			0xc11c
+#define	 GUCTL1_TX_IPGAP_LINECHECK_DIS	__BIT(28)
 
 #define	DWC3_SNPSID			0xc120
 #define	 DWC3_SNPSID_REV		__BITS(15,0)
@@ -120,7 +123,7 @@ dwc3_fdt_soft_reset(struct xhci_softc *sc)
 }
 
 static void
-dwc3_fdt_enable_phy(struct xhci_softc *sc, const int phandle)
+dwc3_fdt_enable_phy(struct xhci_softc *sc, const int phandle, u_int rev)
 {
 	const char *max_speed, *phy_type;
 	u_int phyif_utmi_bits;
@@ -162,6 +165,13 @@ dwc3_fdt_enable_phy(struct xhci_softc *sc, const int phandle)
 		val &= ~GUSB3PIPECTL_DEPOCHANGE;
 	WR4(sc, DWC3_GUSB3PIPECTL(0), val);
 
+	if (rev >= 0x250a) {
+		val = RD4(sc, DWC3_GUCTL1);
+		if (of_hasprop(phandle, "snps,dis-tx-ipgap-linecheck-quirk"))
+			val |= GUCTL1_TX_IPGAP_LINECHECK_DIS;
+		WR4(sc, DWC3_GUCTL1, val);
+	}
+
 	max_speed = fdtbus_get_string(phandle, "maximum-speed");
 	if (max_speed == NULL)
 		max_speed = "super-speed";
@@ -192,20 +202,28 @@ dwc3_fdt_set_mode(struct xhci_softc *sc, u_int mode)
 	WR4(sc, DWC3_GCTL, val);
 }
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun50i-h6-dwc3" },
+	{ .compat = "amlogic,meson-gxl-dwc3" },
+	{ .compat = "fsl,imx8mq-dwc3" },
+	{ .compat = "rockchip,rk3328-dwc3" },
+	{ .compat = "rockchip,rk3399-dwc3" },
+	{ .compat = "samsung,exynos5250-dwusb3" },
+	{ .compat = "snps,dwc3" },
+	DEVICE_COMPAT_EOL
+};
+
+static const struct device_compatible_entry compat_data_dwc3[] = {
+	{ .compat = "snps,dwc3" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 dwc3_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"allwinner,sun50i-h6-dwc3",
-		"amlogic,meson-gxl-dwc3",
-		"rockchip,rk3328-dwc3",
-		"rockchip,rk3399-dwc3",
-		"samsung,exynos5250-dwusb3",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -220,25 +238,54 @@ dwc3_fdt_attach(device_t parent, device_t self, void *aux)
 	char intrstr[128];
 	bus_addr_t addr;
 	bus_size_t size;
-	int error;
+	int error, dwc3_phandle;
 	void *ih;
 	u_int n;
 
 	/* Find dwc3 sub-node */
-	const int dwc3_phandle = of_find_firstchild_byname(phandle, "dwc3");
+	if (of_compatible_lookup(phandle, compat_data_dwc3) == NULL) {
+		dwc3_phandle = of_find_bycompat(phandle, "snps,dwc3");
+		if (dwc3_phandle <= 0) {
+			dwc3_phandle = of_find_firstchild_byname(phandle, "dwc3");
+		}
+	} else {
+		dwc3_phandle = phandle;
+	}
 	if (dwc3_phandle <= 0) {
 		aprint_error(": couldn't find dwc3 child node\n");
 		return;
 	}
 
-	/* Only host mode is supported */
+	/*
+	 * Only host mode is supported, but this includes otg devices
+	 * that have 'usb-role-switch' and 'role-switch-default-mode' of
+	 * 'host'
+	 */
 	const char *dr_mode = fdtbus_get_string(dwc3_phandle, "dr_mode");
-	if (dr_mode == NULL || strcmp(dr_mode, "host") != 0) {
+	if (dr_mode == NULL || strcmp(dr_mode, "otg") == 0) {
+		bool ok = false;
+		if (of_hasprop(dwc3_phandle, "usb-role-switch")) {
+			const char *rsdm = fdtbus_get_string(dwc3_phandle,
+			    "role-switch-default-mode");
+			if (rsdm != NULL && strcmp(rsdm, "host") == 0)
+				ok = true;
+
+			if (!ok) {
+				aprint_error(": host is not default mode\n");
+				return;
+			}
+		}
+		if (!ok) {
+			aprint_error(": cannot switch 'otg' mode to host\n");
+			return;
+		}
+	} else if (strcmp(dr_mode, "host") != 0) {
 		aprint_error(": '%s' not supported\n", dr_mode);
 		return;
 	}
 
 	/* Enable clocks */
+	fdtbus_clock_assign(phandle);
 	for (n = 0; (clk = fdtbus_clock_get_index(phandle, n)) != NULL; n++)
 		if (clk_enable(clk) != 0) {
 			aprint_error(": couldn't enable clock #%d\n", n);
@@ -260,6 +307,7 @@ dwc3_fdt_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_bus.ub_hcpriv = sc;
 	sc->sc_bus.ub_dmatag = faa->faa_dmat;
+	sc->sc_ios = size;
 	sc->sc_iot = faa->faa_bst;
 	if (bus_space_map(sc->sc_iot, addr, size, 0, &sc->sc_ioh) != 0) {
 		aprint_error(": couldn't map registers\n");
@@ -279,7 +327,7 @@ dwc3_fdt_attach(device_t parent, device_t self, void *aux)
 	}
 
 	dwc3_fdt_soft_reset(sc);
-	dwc3_fdt_enable_phy(sc, dwc3_phandle);
+	dwc3_fdt_enable_phy(sc, dwc3_phandle, rev);
 	dwc3_fdt_set_mode(sc, GCTL_PRTCAP_HOST);
 
 	if (!fdtbus_intr_str(dwc3_phandle, 0, intrstr, sizeof(intrstr))) {
@@ -287,8 +335,8 @@ dwc3_fdt_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	ih = fdtbus_intr_establish(dwc3_phandle, 0, IPL_USB, FDT_INTR_MPSAFE,
-	    xhci_intr, sc);
+	ih = fdtbus_intr_establish_xname(dwc3_phandle, 0, IPL_USB,
+	    FDT_INTR_MPSAFE, xhci_intr, sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);
@@ -303,6 +351,7 @@ dwc3_fdt_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint);
-	sc->sc_child2 = config_found(self, &sc->sc_bus2, usbctlprint);
+	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint, CFARGS_NONE);
+	sc->sc_child2 = config_found(self, &sc->sc_bus2, usbctlprint,
+	    CFARGS_NONE);
 }

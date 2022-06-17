@@ -1,7 +1,7 @@
-/*	$NetBSD: linux_misc_notalpha.c,v 1.110 2018/11/29 17:40:12 maxv Exp $	*/
+/*	$NetBSD: linux_misc_notalpha.c,v 1.115 2022/05/22 11:27:34 andvar Exp $	*/
 
 /*-
- * Copyright (c) 1995, 1998, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1995, 1998, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc_notalpha.c,v 1.110 2018/11/29 17:40:12 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc_notalpha.c,v 1.115 2022/05/22 11:27:34 andvar Exp $");
 
 /*
  * Note that we must NOT include "opt_compat_linux32.h" here,
@@ -72,10 +72,10 @@ __KERNEL_RCSID(0, "$NetBSD: linux_misc_notalpha.c,v 1.110 2018/11/29 17:40:12 ma
 
 /*
  * This file contains routines which are used
- * on every linux architechture except the Alpha.
+ * on every linux architecture except the Alpha.
  */
 
-/* Used on: arm, i386, m68k, mips, ppc, sparc, sparc64 */
+/* Used on: arm, aarch64, i386, m68k, mips, ppc, sparc, sparc64 */
 /* Not used on: alpha */
 
 #ifdef DEBUG_LINUX
@@ -85,12 +85,9 @@ __KERNEL_RCSID(0, "$NetBSD: linux_misc_notalpha.c,v 1.110 2018/11/29 17:40:12 ma
 #endif
 
 #ifndef COMPAT_LINUX32
-
 /*
  * Alarm. This is a libc call which uses setitimer(2) in NetBSD.
- * Fiddle with the timers to make it work.
- *
- * XXX This shouldn't be dicking about with the ptimer stuff directly.
+ * Do the same here.
  */
 int
 linux_sys_alarm(struct lwp *l, const struct linux_sys_alarm_args *uap, register_t *retval)
@@ -99,103 +96,33 @@ linux_sys_alarm(struct lwp *l, const struct linux_sys_alarm_args *uap, register_
 		syscallarg(unsigned int) secs;
 	} */
 	struct proc *p = l->l_proc;
-	struct timespec now;
-	struct itimerspec *itp, it;
-	struct ptimer *ptp, *spare;
-	extern kmutex_t timer_lock;
-	struct ptimers *pts;
+	struct itimerval itv, oitv;
+	int error;
 
-	if ((pts = p->p_timers) == NULL)
-		pts = timers_alloc(p);
-	spare = NULL;
-
- retry:
-	mutex_spin_enter(&timer_lock);
-	if (pts && pts->pts_timers[ITIMER_REAL])
-		itp = &pts->pts_timers[ITIMER_REAL]->pt_time;
-	else
-		itp = NULL;
-	/*
-	 * Clear any pending timer alarms.
-	 */
-	if (itp) {
-		callout_stop(&pts->pts_timers[ITIMER_REAL]->pt_ch);
-		timespecclear(&itp->it_interval);
-		getnanotime(&now);
-		if (timespecisset(&itp->it_value) &&
-		    timespeccmp(&itp->it_value, &now, >))
-			timespecsub(&itp->it_value, &now, &itp->it_value);
-		/*
-		 * Return how many seconds were left (rounded up)
-		 */
-		retval[0] = itp->it_value.tv_sec;
-		if (itp->it_value.tv_nsec)
-			retval[0]++;
-	} else {
-		retval[0] = 0;
+	timerclear(&itv.it_interval);
+	itv.it_value.tv_sec = SCARG(uap, secs);
+	itv.it_value.tv_usec = 0;
+	if (itv.it_value.tv_sec < 0) {
+		return EINVAL;
 	}
 
-	/*
-	 * alarm(0) just resets the timer.
-	 */
-	if (SCARG(uap, secs) == 0) {
-		if (itp)
-			timespecclear(&itp->it_value);
-		mutex_spin_exit(&timer_lock);
-		return 0;
+	if ((error = dogetitimer(p, ITIMER_REAL, &oitv)) != 0) {
+		return error;
+	}
+	if (oitv.it_value.tv_usec) {
+		oitv.it_value.tv_sec++;
 	}
 
-	/*
-	 * Check the new alarm time for sanity, and set it.
-	 */
-	timespecclear(&it.it_interval);
-	it.it_value.tv_sec = SCARG(uap, secs);
-	it.it_value.tv_nsec = 0;
-	if (itimespecfix(&it.it_value) || itimespecfix(&it.it_interval)) {
-		mutex_spin_exit(&timer_lock);
-		return (EINVAL);
+	if ((error = dosetitimer(p, ITIMER_REAL, &itv)) != 0) {
+		return error;
 	}
 
-	ptp = pts->pts_timers[ITIMER_REAL];
-	if (ptp == NULL) {
-		if (spare == NULL) {
-			mutex_spin_exit(&timer_lock);
-			spare = pool_get(&ptimer_pool, PR_WAITOK);
-			memset(spare, 0, sizeof(*spare));
-			goto retry;
-		}
-		ptp = spare;
-		spare = NULL;
-		ptp->pt_ev.sigev_notify = SIGEV_SIGNAL;
-		ptp->pt_ev.sigev_signo = SIGALRM;
-		ptp->pt_overruns = 0;
-		ptp->pt_proc = p;
-		ptp->pt_type = CLOCK_REALTIME;
-		ptp->pt_entry = CLOCK_REALTIME;
-		ptp->pt_active = 0;
-		ptp->pt_queued = 0;
-		callout_init(&ptp->pt_ch, CALLOUT_MPSAFE);
-		pts->pts_timers[ITIMER_REAL] = ptp;
-	}
-
-	if (timespecisset(&it.it_value)) {
-		/*
-		 * Don't need to check tvhzto() return value, here.
-		 * callout_reset() does it for us.
-		 */
-		getnanotime(&now);
-		timespecadd(&it.it_value, &now, &it.it_value);
-		callout_reset(&ptp->pt_ch, tshzto(&it.it_value),
-		    realtimerexpire, ptp);
-	}
-	ptp->pt_time = it;
-	mutex_spin_exit(&timer_lock);
-
+	*retval = oitv.it_value.tv_sec;
 	return 0;
 }
 #endif /* !COMPAT_LINUX32 */
 
-#if !defined(__amd64__)
+#if !defined(__aarch64__) && !defined(__amd64__)
 int
 linux_sys_nice(struct lwp *l, const struct linux_sys_nice_args *uap, register_t *retval)
 {
@@ -213,10 +140,10 @@ linux_sys_nice(struct lwp *l, const struct linux_sys_nice_args *uap, register_t 
 	error = sys_setpriority(l, &bsa, retval);
 	return (error) ? EPERM : 0;
 }
-#endif /* !__amd64__ */
+#endif /* !__aarch64__ && !__amd64__ */
 
 #ifndef COMPAT_LINUX32
-#ifndef __amd64__
+#if !defined(__aarch64__) && !defined(__amd64__)
 /*
  * The old Linux readdir was only able to read one entry at a time,
  * even though it had a 'count' argument. In fact, the emulation
@@ -247,8 +174,9 @@ linux_sys_readdir(struct lwp *l, const struct linux_sys_readdir_args *uap, regis
 
 	return error;
 }
-#endif /* !amd64 */
+#endif /* !aarch64 && !amd64 */
 
+#if !defined(__aarch64__)
 /*
  * I wonder why Linux has gettimeofday() _and_ time().. Still, we
  * need to deal with it.
@@ -272,7 +200,9 @@ linux_sys_time(struct lwp *l, const struct linux_sys_time_args *uap, register_t 
 	retval[0] = tt;
 	return 0;
 }
+#endif
 
+#if !defined(__aarch64__)
 /*
  * utime(). Do conversion to things that utimes() understands,
  * and pass it on.
@@ -301,8 +231,9 @@ linux_sys_utime(struct lwp *l, const struct linux_sys_utime_args *uap, register_
 	return do_sys_utimes(l, NULL, SCARG(uap, path), FOLLOW,
 			   tvp,  UIO_SYSSPACE);
 }
+#endif
 
-#ifndef __amd64__
+#if !defined(__aarch64__) && !defined(__amd64__)
 /*
  * waitpid(2).  Just forward on to linux_sys_wait4 with a NULL rusage.
  */
@@ -323,7 +254,7 @@ linux_sys_waitpid(struct lwp *l, const struct linux_sys_waitpid_args *uap, regis
 
 	return linux_sys_wait4(l, &linux_w4a, retval);
 }
-#endif /* !amd64 */
+#endif /* !aarch64 && !amd64 */
 
 int
 linux_sys_setresgid(struct lwp *l, const struct linux_sys_setresgid_args *uap, register_t *retval)
@@ -378,7 +309,7 @@ linux_sys_getresgid(struct lwp *l, const struct linux_sys_getresgid_args *uap, r
 	return (copyout(&gid, SCARG(uap, sgid), sizeof(gid_t)));
 }
 
-#ifndef __amd64__
+#if !defined(__aarch64__) && !defined(__amd64__)
 /*
  * I wonder why Linux has settimeofday() _and_ stime().. Still, we
  * need to deal with it.
@@ -457,5 +388,5 @@ linux_sys_fstatfs64(struct lwp *l, const struct linux_sys_fstatfs64_args *uap, r
 	STATVFSBUF_PUT(sb);
 	return error;
 }
-#endif /* !__amd64__ */
+#endif /* !aarch64 && !__amd64__ */
 #endif /* !COMPAT_LINUX32 */

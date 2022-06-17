@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_shark_machdep.c,v 1.16 2017/03/12 10:19:40 martin Exp $	*/
+/*	$NetBSD: isa_shark_machdep.c,v 1.18 2020/11/22 03:57:19 thorpej Exp $	*/
 
 /*
  * Copyright 1997
@@ -34,14 +34,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_shark_machdep.c,v 1.16 2017/03/12 10:19:40 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_shark_machdep.c,v 1.18 2020/11/22 03:57:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/intr.h>
 #include <machine/irqhandler.h>
@@ -167,10 +167,7 @@ isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level, int (*ih_
 {
 	irqhandler_t *ih;
 
-	/* no point in sleeping unless someone can free memory. */
-	ih = malloc(sizeof *ih, M_DEVBUF, M_ZERO | (cold ? M_NOWAIT : M_WAITOK));
-	if (ih == NULL)
-		panic("isa_intr_establish: can't malloc handler info");
+	ih = kmem_zalloc(sizeof *ih, KM_SLEEP);
 
 	if (!LEGAL_IRQ(irq) || type == IST_NONE)
 		panic("intr_establish: bogus irq or type");

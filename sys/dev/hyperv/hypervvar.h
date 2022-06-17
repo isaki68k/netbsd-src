@@ -1,4 +1,4 @@
-/*	$NetBSD: hypervvar.h,v 1.2 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: hypervvar.h,v 1.6 2022/05/20 13:55:17 nonaka Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
@@ -59,16 +59,18 @@ __CTASSERT(sizeof(struct hyperv_reftsc) == PAGE_SIZE);
 #endif
 
 #if defined(_KERNEL)
+extern u_int hyperv_ver_major;
 
 int	hyperv_hypercall_enabled(void);
 int	hyperv_synic_supported(void);
 int	hyperv_is_gen1(void);
 void	hyperv_send_eom(void);
 void	hyperv_intr(void);
+uint32_t hyperv_get_vcpuid(cpuid_t);
 
 struct vmbus_softc;
-void	vmbus_init_interrupts_md(struct vmbus_softc *);
-void	vmbus_deinit_interrupts_md(struct vmbus_softc *);
+void	vmbus_init_interrupts_md(struct vmbus_softc *, cpuid_t);
+void	vmbus_deinit_interrupts_md(struct vmbus_softc *, cpuid_t);
 void	vmbus_init_synic_md(struct vmbus_softc *, cpuid_t);
 void	vmbus_deinit_synic_md(struct vmbus_softc *, cpuid_t);
 

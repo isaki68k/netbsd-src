@@ -1,4 +1,4 @@
-/* $NetBSD: meson_dwmac.c,v 1.7 2019/07/21 08:24:32 mrg Exp $ */
+/* $NetBSD: meson_dwmac.c,v 1.14 2021/11/19 07:04:27 jdc Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: meson_dwmac.c,v 1.7 2019/07/21 08:24:32 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_dwmac.c,v 1.14 2021/11/19 07:04:27 jdc Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -57,23 +57,26 @@ __KERNEL_RCSID(0, "$NetBSD: meson_dwmac.c,v 1.7 2019/07/21 08:24:32 mrg Exp $");
 #define	 TX_CLK_DELAY			__BITS(6,5)
 #define	 PHY_INTERFACE_SEL		__BIT(0)
 
-static const char * compatible[] = {
-	"amlogic,meson8b-dwmac",
-	"amlogic,meson-gx-dwmac",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "amlogic,meson8b-dwmac" },
+	{ .compat = "amlogic,meson-gx-dwmac" },
+	{ .compat = "amlogic,meson-gxbb-dwmac" },
+	{ .compat = "amlogic,meson-axg-dwmac" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
-meson_dwmac_reset(const int phandle)
+meson_dwmac_reset_eth(const int phandle)
 {
 	struct fdtbus_gpio_pin *pin_reset;
 	const u_int *reset_delay_us;
 	bool reset_active_low;
 	int len, val;
 
-	pin_reset = fdtbus_gpio_acquire(phandle, "snps,reset-gpio", GPIO_PIN_OUTPUT);
+	pin_reset = fdtbus_gpio_acquire(phandle, "snps,reset-gpio",
+	    GPIO_PIN_OUTPUT);
 	if (pin_reset == NULL)
-		return 0;
+		return ENXIO;
 
 	reset_delay_us = fdtbus_get_prop(phandle, "snps,reset-delays-us", &len);
 	if (reset_delay_us == NULL || len != 12)
@@ -93,6 +96,41 @@ meson_dwmac_reset(const int phandle)
 	return 0;
 }
 
+static int
+meson_dwmac_reset_phy(const int phandle)
+{
+	struct fdtbus_gpio_pin *pin_reset;
+	const u_int *reset_assert_us, *reset_deassert_us, *reset_gpios;
+	bool reset_active_low;
+	int len, val;
+
+	pin_reset = fdtbus_gpio_acquire(phandle, "reset-gpios",
+	    GPIO_PIN_OUTPUT);
+	if (pin_reset == NULL)
+		return ENXIO;
+
+	reset_assert_us = fdtbus_get_prop(phandle, "reset-assert-us", &len);
+	if (reset_assert_us == NULL || len != 4)
+		return ENXIO;
+	reset_deassert_us = fdtbus_get_prop(phandle, "reset-deassert-us", &len);
+	if (reset_deassert_us == NULL || len != 4)
+		return ENXIO;
+	reset_gpios = fdtbus_get_prop(phandle, "reset-gpios", &len);
+	if (reset_gpios == NULL || len != 12)
+		return ENXIO;
+
+	reset_active_low = be32toh(reset_gpios[2]);
+
+	val = reset_active_low ? 1 : 0;
+
+	fdtbus_gpio_write(pin_reset, val);
+	delay(be32toh(reset_assert_us[0]));
+	fdtbus_gpio_write(pin_reset, !val);
+	delay(be32toh(reset_deassert_us[0]));
+
+	return 0;
+}
+
 static void
 meson_dwmac_set_mode_rgmii(int phandle, bus_space_tag_t bst,
     bus_space_handle_t bsh, struct clk *clkin)
@@ -100,7 +138,8 @@ meson_dwmac_set_mode_rgmii(int phandle, bus_space_tag_t bst,
 	u_int tx_delay;
 	uint32_t val;
 
-	const u_int div = clk_get_rate(clkin) / 250000000;
+#define DIV_ROUND_OFF(x, y)	(((x) + (y) / 2) / (y))
+	const u_int div = DIV_ROUND_OFF(clk_get_rate(clkin), 250000000);
 
 	if (of_getprop_uint32(phandle, "amlogic,tx-delay-ns", &tx_delay) != 0)
 		tx_delay = 2;
@@ -143,7 +182,7 @@ meson_dwmac_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -152,6 +191,8 @@ meson_dwmac_attach(device_t parent, device_t self, void *aux)
 	struct dwc_gmac_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
+	int miiclk, phandle_phy, phy = MII_PHY_ANY;
+	u_int miiclk_rate;
 	bus_space_handle_t prgeth_bsh;
 	struct fdtbus_reset *rst_gmac;
 	struct clk *clk_gmac, *clk_in[2];
@@ -195,8 +236,14 @@ meson_dwmac_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": missing 'phy-mode' property\n");
 		return;
 	}
+	phandle_phy = fdtbus_get_phandle(phandle, "phy-handle");
+	if (phandle_phy > 0) {
+		of_getprop_uint32(phandle_phy, "reg", &phy);
+	} else {
+		phandle_phy = phandle;
+	}
 
-	if (strcmp(phy_mode, "rgmii") == 0) {
+	if (strncmp(phy_mode, "rgmii", 5) == 0) {
 		meson_dwmac_set_mode_rgmii(phandle, sc->sc_bst, prgeth_bsh, clk_in[0]);
 	} else if (strcmp(phy_mode, "rmii") == 0) {
 		meson_dwmac_set_mode_rmii(phandle, sc->sc_bst, prgeth_bsh);
@@ -218,17 +265,43 @@ meson_dwmac_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": Gigabit Ethernet Controller\n");
 
-	if (fdtbus_intr_establish(phandle, 0, IPL_NET, DWCGMAC_FDT_INTR_MPSAFE,
-	    meson_dwmac_intr, sc) == NULL) {
+	if (fdtbus_intr_establish_xname(phandle, 0, IPL_NET,
+	    DWCGMAC_FDT_INTR_MPSAFE, meson_dwmac_intr, sc,
+	    device_xname(sc->sc_dev)) == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n", intrstr);
 		return;
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
-	if (meson_dwmac_reset(phandle) != 0)
-		aprint_error_dev(self, "PHY reset failed\n");
+	/*
+	 * Depending on the DTS, we need to check either the "snps,...",
+	 * properties on the ethernet node, or the "reset-..."
+	 * properties on the phy node for the MAC reset information.
+	 */
 
-	dwc_gmac_attach(sc, MII_PHY_ANY, GMAC_MII_CLK_100_150M_DIV62);
+	if (of_hasprop(phandle, "snps,reset-gpio")) {
+		if (meson_dwmac_reset_eth(phandle) != 0)
+			aprint_error_dev(self, "PHY reset failed\n");
+	} else {
+		if (meson_dwmac_reset_phy(phandle_phy) != 0)
+			aprint_error_dev(self, "PHY reset failed\n");
+	}
+
+	miiclk_rate = clk_get_rate(clk_gmac);
+	if (miiclk_rate > 250 * 1000 * 1000)
+		miiclk = GMAC_MII_CLK_250_300M_DIV124;
+	else if (miiclk_rate > 150 * 1000 * 1000)
+		miiclk = GMAC_MII_CLK_150_250M_DIV102;
+	else if (miiclk_rate > 100 * 1000 * 1000)
+		miiclk = GMAC_MII_CLK_100_150M_DIV62;
+	else if (miiclk_rate > 60 * 1000 * 1000)
+		miiclk = GMAC_MII_CLK_60_100M_DIV42;
+	else if (miiclk_rate > 35 * 1000 * 1000)
+		miiclk = GMAC_MII_CLK_35_60M_DIV26;
+	else
+		miiclk = GMAC_MII_CLK_25_35M_DIV16;
+
+	dwc_gmac_attach(sc, phy, miiclk);
 }
 
 CFATTACH_DECL_NEW(meson_dwmac, sizeof(struct dwc_gmac_softc),

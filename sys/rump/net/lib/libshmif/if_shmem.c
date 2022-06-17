@@ -1,4 +1,4 @@
-/*	$NetBSD: if_shmem.c,v 1.76 2018/12/12 01:51:32 rin Exp $	*/
+/*	$NetBSD: if_shmem.c,v 1.84 2022/04/09 23:45:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2009, 2010 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_shmem.c,v 1.76 2018/12/12 01:51:32 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_shmem.c,v 1.84 2022/04/09 23:45:02 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -101,7 +101,7 @@ struct shmif_sc {
 	struct lwp *sc_rcvl;
 	bool sc_dying;
 
-	uint64_t sc_uuid;
+	uint64_t sc_uid;
 };
 
 static void shmif_rcv(void *);
@@ -144,7 +144,7 @@ shmif_lockbus(struct shmif_mem *busmem)
 		}
 		continue;
 	}
-	membar_enter();
+	membar_acquire();
 }
 
 static void
@@ -152,7 +152,7 @@ shmif_unlockbus(struct shmif_mem *busmem)
 {
 	unsigned int old __diagused;
 
-	membar_exit();
+	membar_release();
 	old = atomic_swap_32(&busmem->shm_lock, LOCK_UNLOCKED);
 	KASSERT(old == LOCK_LOCKED);
 }
@@ -163,16 +163,16 @@ allocif(int unit, struct shmif_sc **scp)
 	uint8_t enaddr[ETHER_ADDR_LEN] = { 0xb2, 0xa0, 0x00, 0x00, 0x00, 0x00 };
 	struct shmif_sc *sc;
 	struct ifnet *ifp;
-	uint32_t randnum;
-	int error;
+	uint64_t randnum;
+	int error = 0;
 
-	randnum = cprng_fast32();
-	memcpy(&enaddr[2], &randnum, sizeof(randnum));
+	randnum = cprng_strong64();
+	memcpy(&enaddr[2], &randnum, 4);
 
 	sc = kmem_zalloc(sizeof(*sc), KM_SLEEP);
 	sc->sc_memfd = -1;
 	sc->sc_unit = unit;
-	sc->sc_uuid = cprng_fast64();
+	sc->sc_uid = randnum;
 
 	ifp = &sc->sc_ec.ec_if;
 
@@ -191,20 +191,12 @@ allocif(int unit, struct shmif_sc **scp)
 	    IFCAP_CSUM_UDPv4_Rx	| IFCAP_CSUM_UDPv4_Tx |
 	    IFCAP_CSUM_TCPv6_Rx	| IFCAP_CSUM_TCPv6_Tx |
 	    IFCAP_CSUM_UDPv6_Rx	| IFCAP_CSUM_UDPv6_Tx;
+	IFQ_SET_READY(&ifp->if_snd);
 
 	mutex_init(&sc->sc_mtx, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&sc->sc_cv, "shmifcv");
 
-	error = if_initialize(ifp);
-	if (error != 0) {
-		aprint_error("shmif%d: if_initialize failed(%d)\n", unit,
-		    error);
-		cv_destroy(&sc->sc_cv);
-		mutex_destroy(&sc->sc_mtx);
-		kmem_free(sc, sizeof(*sc));
-
-		return error;
-	}
+	if_initialize(ifp);
 #if 1
 	char buf[256];
 
@@ -215,6 +207,7 @@ allocif(int unit, struct shmif_sc **scp)
 	}
 #endif
 
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
 	if_register(ifp);
 
@@ -224,7 +217,6 @@ allocif(int unit, struct shmif_sc **scp)
 	if (scp)
 		*scp = sc;
 
-	error = 0;
 	if (rump_threads) {
 		error = kthread_create(PRI_NONE,
 		    KTHREAD_MPSAFE | KTHREAD_MUSTJOIN, NULL,
@@ -237,7 +229,7 @@ allocif(int unit, struct shmif_sc **scp)
 		shmif_unclone(ifp);
 	}
 
-	return error;
+	return 0;
 }
 
 static int
@@ -555,13 +547,13 @@ shmif_start(struct ifnet *ifp)
 	ifp->if_flags |= IFF_OACTIVE;
 
 	for (;;) {
-		IF_DEQUEUE(&ifp->if_snd, m);
+		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL)
 			break;
 
 		m = ether_sw_offload_tx(ifp, m);
 		if (m == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 
@@ -605,7 +597,7 @@ shmif_snd(struct ifnet *ifp, struct mbuf *m0)
 	sp.sp_len = pktsize;
 	sp.sp_sec = tv.tv_sec;
 	sp.sp_usec = tv.tv_usec;
-	sp.sp_sender = sc->sc_uuid;
+	sp.sp_sender = sc->sc_uid;
 
 	bpf_mtap(ifp, m0, BPF_D_OUT);
 
@@ -630,7 +622,7 @@ shmif_snd(struct ifnet *ifp, struct mbuf *m0)
 	shmif_unlockbus(busmem);
 
 	m_freem(m0);
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 
 	DPRINTF(("shmif_start: send %d bytes at off %d\n", pktsize,
 	    busmem->shm_last));
@@ -798,7 +790,7 @@ shmif_rcv(void *arg)
 		 * Test if we want to pass the packet upwards
 		 */
 		eth = mtod(m, struct ether_header *);
-		if (sp.sp_sender == sc->sc_uuid) {
+		if (sp.sp_sender == sc->sc_uid) {
 			passup = false;
 		} else if (memcmp(eth->ether_dhost, CLLADDR(ifp->if_sadl),
 		    ETHER_ADDR_LEN) == 0) {

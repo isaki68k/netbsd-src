@@ -1,4 +1,4 @@
-/* $NetBSD: bwfmreg.h,v 1.6 2019/10/28 06:37:51 mlelstv Exp $ */
+/* $NetBSD: bwfmreg.h,v 1.8 2022/03/14 06:40:12 mlelstv Exp $ */
 /* $OpenBSD: bwfmreg.h,v 1.16 2018/02/07 21:44:09 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -16,6 +16,19 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+#ifndef	_DEV_IC_BWFMREG_H
+#define	_DEV_IC_BWFMREG_H
+
+#include <sys/param.h>
+#include <sys/types.h>
+
+#include <sys/cdefs.h>
+
+#include <net/if.h>
+#include <net/if_ether.h>
+
+#include <net80211/ieee80211.h>
 
 /* SDIO registers */
 #define BWFM_SDIO_FUNC1_SBADDRLOW		0x1000A
@@ -785,3 +798,19 @@ struct bwfm_event {
 	struct bwfm_ethhdr hdr;
 	struct bwfm_event_msg msg;
 } __packed;
+
+struct bwfm_dload_data {
+	uint16_t flag;
+#define BWFM_DLOAD_FLAG_BEGIN			(1 << 1)
+#define BWFM_DLOAD_FLAG_END			(1 << 2)
+#define BWFM_DLOAD_FLAG_HANDLER_VER_1		(1 << 12)
+#define BWFM_DLOAD_FLAG_HANDLER_VER_MASK	(0xf << 12)
+	uint16_t type;
+#define BWFM_DLOAD_TYPE_CLM			2
+	uint32_t len;
+#define BWFM_DLOAD_MAX_LEN			1400
+	uint32_t crc;
+	uint8_t data[];
+} __packed;
+
+#endif	/* _DEV_IC_BWFMREG_H */

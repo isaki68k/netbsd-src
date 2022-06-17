@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_socket.c,v 1.149 2019/09/08 18:46:32 maxv Exp $	*/
+/*	$NetBSD: linux_socket.c,v 1.154 2021/09/23 06:56:27 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 2008 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_socket.c,v 1.149 2019/09/08 18:46:32 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_socket.c,v 1.154 2021/09/23 06:56:27 ryo Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -85,7 +85,7 @@ __KERNEL_RCSID(0, "$NetBSD: linux_socket.c,v 1.149 2019/09/08 18:46:32 maxv Exp 
 #include <compat/linux/common/linux_sched.h>
 #include <compat/linux/common/linux_socket.h>
 #include <compat/linux/common/linux_fcntl.h>
-#if !defined(__alpha__) && !defined(__amd64__)
+#if !defined(__aarch64__) && !defined(__alpha__) && !defined(__amd64__)
 #include <compat/linux/common/linux_socketcall.h>
 #endif
 #include <compat/linux/common/linux_sockio.h>
@@ -440,6 +440,7 @@ linux_sys_sendto(struct lwp *l, const struct linux_sys_sendto_args *uap, registe
 static void
 linux_to_bsd_msghdr(const struct linux_msghdr *lmsg, struct msghdr *bmsg)
 {
+	memset(bmsg, 0, sizeof(*bmsg));
 	bmsg->msg_name = lmsg->msg_name;
 	bmsg->msg_namelen = lmsg->msg_namelen;
 	bmsg->msg_iov = lmsg->msg_iov;
@@ -452,6 +453,7 @@ linux_to_bsd_msghdr(const struct linux_msghdr *lmsg, struct msghdr *bmsg)
 static void
 bsd_to_linux_msghdr(const struct msghdr *bmsg, struct linux_msghdr *lmsg)
 {
+	memset(lmsg, 0, sizeof(*lmsg));
 	lmsg->msg_name = bmsg->msg_name;
 	lmsg->msg_namelen = bmsg->msg_namelen;
 	lmsg->msg_iov = bmsg->msg_iov;
@@ -699,6 +701,7 @@ linux_copyout_msg_control(struct lwp *l, struct msghdr *mp, struct mbuf *control
 		 * 1. different values for level/type on some archs
 		 * 2. different alignment of CMSG_DATA on some archs
 		 */
+		memset(&linux_cmsg, 0, sizeof(linux_cmsg));
 		linux_cmsg.cmsg_len = cmsg->cmsg_len - LINUX_CMSG_ALIGN_DELTA;
 		linux_cmsg.cmsg_level = cmsg->cmsg_level;
 		linux_cmsg.cmsg_type = cmsg->cmsg_type;
@@ -861,11 +864,11 @@ linux_to_bsd_so_sockopt(int lopt)
 		return SO_DEBUG;
 	case LINUX_SO_REUSEADDR:
 		/*
-		 * Linux does not implement SO_REUSEPORT, but allows reuse of a
-		 * host:port pair through SO_REUSEADDR even if the address is not a
-		 * multicast-address.  Effectively, this means that we should use
-		 * SO_REUSEPORT to allow Linux applications to not exit with
-		 * EADDRINUSE
+		 * Linux does not implement SO_REUSEPORT, but allows reuse of
+		 * a host:port pair through SO_REUSEADDR even if the address
+		 * is not a multicast-address. Effectively, this means that we
+		 * should use SO_REUSEPORT to allow Linux applications to not
+		 * exit with EADDRINUSE
 		 */
 		return SO_REUSEPORT;
 	case LINUX_SO_TYPE:
@@ -880,20 +883,51 @@ linux_to_bsd_so_sockopt(int lopt)
 		return SO_SNDBUF;
 	case LINUX_SO_RCVBUF:
 		return SO_RCVBUF;
-	case LINUX_SO_SNDLOWAT:
-		return SO_SNDLOWAT;
-	case LINUX_SO_RCVLOWAT:
-		return SO_RCVLOWAT;
 	case LINUX_SO_KEEPALIVE:
 		return SO_KEEPALIVE;
 	case LINUX_SO_OOBINLINE:
 		return SO_OOBINLINE;
+	case LINUX_SO_NO_CHECK:
+	case LINUX_SO_PRIORITY:
+		return -1;
 	case LINUX_SO_LINGER:
 		return SO_LINGER;
+	case LINUX_SO_BSDCOMPAT:
+	case LINUX_SO_PASSCRED:
+	case LINUX_SO_PEERCRED:
+		return -1;
+	case LINUX_SO_RCVLOWAT:
+		return SO_RCVLOWAT;
+	case LINUX_SO_SNDLOWAT:
+		return SO_SNDLOWAT;
+	case LINUX_SO_RCVTIMEO:
+		return SO_RCVTIMEO;
+	case LINUX_SO_SNDTIMEO:
+		return SO_SNDTIMEO;
+	case LINUX_SO_SECURITY_AUTHENTICATION:
+	case LINUX_SO_SECURITY_ENCRYPTION_TRANSPORT:
+	case LINUX_SO_SECURITY_ENCRYPTION_NETWORK:
+	case LINUX_SO_BINDTODEVICE:
+	case LINUX_SO_ATTACH_FILTER:
+	case LINUX_SO_DETACH_FILTER:
+	case LINUX_SO_PEERNAME:
+		return -1;
+	case LINUX_SO_TIMESTAMP:
+		return SO_TIMESTAMP;
 	case LINUX_SO_ACCEPTCONN:
-		return SO_ACCEPTCONN;
-	case LINUX_SO_PRIORITY:
-	case LINUX_SO_NO_CHECK:
+	case LINUX_SO_PEERSEC:
+	case LINUX_SO_SNDBUFFORCE:
+	case LINUX_SO_RCVBUFFORCE:
+	case LINUX_SO_PASSSEC:
+	case LINUX_SO_TIMESTAMPNS:
+	case LINUX_SO_MARK:
+	case LINUX_SO_TIMESTAMPING:
+	case LINUX_SO_PROTOCOL:
+	case LINUX_SO_DOMAIN:
+	case LINUX_SO_RXQ_OVFL:
+	case LINUX_SO_WIFI_STATUS:
+	case LINUX_SO_PEEK_OFF:
+	case LINUX_SO_NOFCS:
 	default:
 		return -1;
 	}
@@ -923,6 +957,8 @@ linux_to_bsd_ip_sockopt(int lopt)
 		return IP_ADD_MEMBERSHIP;
 	case LINUX_IP_DROP_MEMBERSHIP:
 		return IP_DROP_MEMBERSHIP;
+	case LINUX_IP_RECVERR:
+		return -2;	/* ignored */
 	default:
 		return -1;
 	}
@@ -1041,6 +1077,8 @@ linux_sys_setsockopt(struct lwp *l, const struct linux_sys_setsockopt_args *uap,
 
 	if (name == -1)
 		return EINVAL;
+	if (name == -2)
+		return 0;
 	SCARG(&bsa, name) = name;
 
 	return sys_setsockopt(l, &bsa, retval);
@@ -1140,12 +1178,15 @@ linux_getifconf(struct lwp *l, register_t *retval, void *data)
 	if (error)
 		return error;
 
-	memset(&ifr, 0, sizeof(ifr));
 	docopy = ifc.ifc_req != NULL;
 	if (docopy) {
+		if (ifc.ifc_len < 0)
+			return EINVAL;
+
 		space = ifc.ifc_len;
 		ifrp = ifc.ifc_req;
 	}
+	memset(&ifr, 0, sizeof(ifr));
 
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
@@ -1609,6 +1650,21 @@ linux_get_sa(struct lwp *l, int s, struct sockaddr_big *sb,
 		sin6->sin6_scope_id = 0;
 	}
 
+	/*
+	 * Linux is less strict than NetBSD and permits namelen to be larger
+	 * than valid struct sockaddr_in*.  If this is the case, truncate
+	 * the value to the correct size, so that NetBSD networking does not
+	 * return an error.
+	 */
+	switch (bdom) {
+	case AF_INET:
+		namelen = MIN(namelen, sizeof(struct sockaddr_in));
+		break;
+	case AF_INET6:
+		namelen = MIN(namelen, sizeof(struct sockaddr_in6));
+		break;
+	}
+
 	sb->sb_family = bdom;
 	sb->sb_len = namelen;
 	ktrkuser("mbsoname", sb, namelen);
@@ -1646,7 +1702,7 @@ linux_sa_put(struct osockaddr *osa)
 	return (0);
 }
 
-#ifndef __amd64__
+#if !defined(__aarch64__) && !defined(__amd64__)
 int
 linux_sys_recv(struct lwp *l, const struct linux_sys_recv_args *uap, register_t *retval)
 {

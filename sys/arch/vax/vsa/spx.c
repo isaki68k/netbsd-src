@@ -1,4 +1,4 @@
-/*	$NetBSD: spx.c,v 1.9 2016/07/07 06:55:39 msaitoh Exp $ */
+/*	$NetBSD: spx.c,v 1.12 2021/08/07 16:19:07 thorpej Exp $ */
 /*
  * SPX/LCSPX/SPXg/SPXgt accelerated framebuffer driver for NetBSD/VAX
  * Copyright (c) 2005 Blaz Antonic
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spx.c,v 1.9 2016/07/07 06:55:39 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spx.c,v 1.12 2021/08/07 16:19:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: spx.c,v 1.9 2016/07/07 06:55:39 msaitoh Exp $");
 #include <sys/conf.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/time.h>
 
 #include <machine/vsbus.h>
@@ -668,7 +668,7 @@ spx_attach(device_t parent, device_t self, void *aux)
 	/* enable cursor */
 	set_btreg(SPXDAC_REG_CCR, 0xc1);
 
-	config_found(self, &aa, wsemuldisplaydevprint);
+	config_found(self, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static	int cur_on;
@@ -1055,7 +1055,7 @@ spx_alloc_screen(void *v, const struct wsscreen_descr *type, void **cookiep,
 	int i;
 	struct spx_screen *ss;
 
-	ss = malloc(sizeof(struct spx_screen), M_DEVBUF, M_WAITOK | M_ZERO);
+	ss = kmem_zalloc(sizeof(struct spx_screen), KM_SLEEP);
 
 	*cookiep = ss;
 	*curxp = *curyp = 0;
@@ -1070,7 +1070,7 @@ spx_alloc_screen(void *v, const struct wsscreen_descr *type, void **cookiep,
 static void
 spx_free_screen(void *v, void *cookie)
 {
-/* FIXME add something to actually free malloc()ed screen? */
+/* FIXME add something to actually free kmem_zalloc()ed screen? */
 }
 
 static int

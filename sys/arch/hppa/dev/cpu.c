@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.1 2014/02/24 07:23:42 skrll Exp $	*/
+/*	$NetBSD: cpu.c,v 1.3 2022/02/14 08:12:48 riastradh Exp $	*/
 
 /*	$OpenBSD: cpu.c,v 1.29 2009/02/08 18:33:28 miod Exp $	*/
 
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.1 2014/02/24 07:23:42 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.3 2022/02/14 08:12:48 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -150,10 +150,13 @@ cpuattach(device_t parent, device_t self, void *aux)
 	/*
 	 * Describe the floating-point support.
 	 */
-	KASSERT(fpu_present);
-	aprint_normal("%s: %s floating point, rev %d\n", device_xname(self),
-	    hppa_mod_info(HPPA_TYPE_FPU, (fpu_version >> 16) & 0x1f),
-	    (fpu_version >> 11) & 0x1f);
+	if (fpu_present)
+		aprint_normal("%s: %s floating point, rev %d\n", device_xname(self),
+		    hppa_mod_info(HPPA_TYPE_FPU, (fpu_version >> 16) & 0x1f),
+		    (fpu_version >> 11) & 0x1f);
+	else
+		aprint_normal("%s: no floating point\n", device_xname(self));
+
 
 	if (cpuno >= HPPA_MAXCPUS) {
 		aprint_normal_dev(self, "not started\n");
@@ -237,11 +240,26 @@ cpu_boot_secondary_processors(void)
 		if (ci->ci_flags & CPUF_PRIMARY)
 			continue;
 
-		/* Release the specified CPU by triggering an EIR{0}. */
+		/*
+		 * Release the specified CPU by triggering an EIR{0}.
+		 *
+		 * The `load-acquire operation' matching this
+		 * store-release is somewhere inside the silicon or
+		 * firmware -- the point is that the store to
+		 * cpu_hatch_info must happen before writing EIR{0};
+		 * there is conceptually some magic inside the silicon
+		 * or firmware that effectively does
+		 *
+		 *	if (atomic_load_acquire(&cpu->io_eir) == 0) {
+		 *		hw_cpu_spinup_trampoline();
+		 *	}
+		 *
+		 * so that hw_cpu_spinup_trampoline correctly sees the
+		 * value we just stored at cpu_hatch_info.
+		 */
 		cpu_hatch_info = ci;
 		cpu = (struct iomod *)(ci->ci_hpa);
-		cpu->io_eir = 0;
-		membar_sync();
+		atomic_store_release(&cpu->io_eir, 0);
 
 		/* Wait for CPU to wake up... */
 		j = 0;
@@ -251,9 +269,12 @@ cpu_boot_secondary_processors(void)
 			printf("failed to hatch cpu %i!\n", ci->ci_cpuid);
 	}
 
-	/* Release secondary CPUs. */
-	start_secondary_cpu = 1;
-	membar_sync();
+	/*
+	 * Release secondary CPUs.
+	 *
+	 * Matches load-acquire in cpu_hatch.
+	 */
+	atomic_store_release(&start_secondary_cpu, 1);
 }
 
 void
@@ -279,8 +300,12 @@ cpu_hatch(void)
 
 	ci->ci_flags |= CPUF_RUNNING;
 
-	/* Wait for additional CPUs to spinup. */
-	while (!start_secondary_cpu)
+	/*
+	 * Wait for additional CPUs to spinup.
+	 *
+	 * Matches store-release in cpu_boot_secondary_processors.
+	 */
+	while (!atomic_load_acquire(&start_secondary_cpu))
 		;
 
 	/* Spin for now */

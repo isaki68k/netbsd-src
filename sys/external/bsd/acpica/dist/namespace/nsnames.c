@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -49,12 +49,6 @@
 
 #define _COMPONENT          ACPI_NAMESPACE
         ACPI_MODULE_NAME    ("nsnames")
-
-/* Local Prototypes */
-
-static void
-AcpiNsNormalizePathname (
-    char                    *OriginalPath);
 
 
 /*******************************************************************************
@@ -228,7 +222,7 @@ AcpiNsHandleToPathname (
     /* Build the path in the caller buffer */
 
     (void) AcpiNsBuildNormalizedPath (Node, Buffer->Pointer,
-        RequiredSize, NoTrailing);
+        (UINT32) RequiredSize, NoTrailing);
 
     ACPI_DEBUG_PRINT ((ACPI_DB_EXEC, "%s [%X]\n",
         (char *) Buffer->Pointer, (UINT32) RequiredSize));
@@ -401,7 +395,7 @@ AcpiNsGetNormalizedPathname (
 
     /* Build the path in the allocated buffer */
 
-    (void) AcpiNsBuildNormalizedPath (Node, NameBuffer, Size, NoTrailing);
+    (void) AcpiNsBuildNormalizedPath (Node, NameBuffer, (UINT32) Size, NoTrailing);
 
     ACPI_DEBUG_PRINT_RAW ((ACPI_DB_NAMES, "%s: Path \"%s\"\n",
         ACPI_GET_FUNCTION_NAME, NameBuffer));
@@ -434,7 +428,7 @@ AcpiNsBuildPrefixedPathname (
     char                    *FullPath = NULL;
     char                    *ExternalPath = NULL;
     char                    *PrefixPath = NULL;
-    UINT32                  PrefixPathLength = 0;
+    ACPI_SIZE               PrefixPathLength = 0;
 
 
     /* If there is a prefix, get the pathname to it */
@@ -508,7 +502,7 @@ Cleanup:
  *
  ******************************************************************************/
 
-static void
+void
 AcpiNsNormalizePathname (
     char                    *OriginalPath)
 {

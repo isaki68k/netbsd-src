@@ -1,4 +1,4 @@
-/*	$NetBSD: sysvbfs_vnops.c,v 1.63 2017/05/26 14:21:01 riastradh Exp $	*/
+/*	$NetBSD: sysvbfs_vnops.c,v 1.68 2021/10/20 03:08:17 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vnops.c,v 1.63 2017/05/26 14:21:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vnops.c,v 1.68 2021/10/20 03:08:17 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -114,7 +114,9 @@ sysvbfs_lookup(void *arg)
 		}
 
 		/* Allocate v-node */
-		if ((error = sysvbfs_vget(v->v_mount, dirent->inode, &vpp)) != 0) {
+		error = sysvbfs_vget(v->v_mount, dirent->inode,
+		    LK_EXCLUSIVE, &vpp);
+		if (error != 0) {
 			DPRINTF("%s: can't get vnode.\n", __func__);
 			return error;
 		}
@@ -159,7 +161,8 @@ sysvbfs_create(void *arg)
 	if (!bfs_dirent_lookup_by_name(bfs, a->a_cnp->cn_nameptr, &dirent))
 		panic("no dirent for created file.");
 
-	if ((err = sysvbfs_vget(mp, dirent->inode, a->a_vpp)) != 0) {
+	err = sysvbfs_vget(mp, dirent->inode, LK_EXCLUSIVE, a->a_vpp);
+	if (err != 0) {
 		DPRINTF("%s: sysvbfs_vget failed.\n", __func__);
 		return err;
 	}
@@ -246,13 +249,13 @@ sysvbfs_check_possible(struct vnode *vp, struct sysvbfs_node *bnode,
 
 static int
 sysvbfs_check_permitted(struct vnode *vp, struct sysvbfs_node *bnode,
-    mode_t mode, kauth_cred_t cred)
+    accmode_t accmode, kauth_cred_t cred)
 {
 	struct bfs_fileattr *attr = &bnode->inode->attr;
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, attr->mode), vp, NULL, genfs_can_access(vp->v_type,
-	    attr->mode, attr->uid, attr->gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, attr->mode), vp, NULL, genfs_can_access(vp, cred,
+	    attr->uid, attr->gid, attr->mode, NULL, accmode));
 }
 
 int
@@ -260,7 +263,7 @@ sysvbfs_access(void *arg)
 {
 	struct vop_access_args /* {
 		struct vnode	*a_vp;
-		int		a_mode;
+		accmode_t	a_accmode;
 		kauth_cred_t	a_cred;
 	} */ *ap = arg;
 	struct vnode *vp = ap->a_vp;
@@ -269,11 +272,11 @@ sysvbfs_access(void *arg)
 
 	DPRINTF("%s:\n", __func__);
 
-	error = sysvbfs_check_possible(vp, bnode, ap->a_mode);
+	error = sysvbfs_check_possible(vp, bnode, ap->a_accmode);
 	if (error)
 		return error;
 
-	error = sysvbfs_check_permitted(vp, bnode, ap->a_mode, ap->a_cred);
+	error = sysvbfs_check_permitted(vp, bnode, ap->a_accmode, ap->a_cred);
 
 	return error;
 }
@@ -356,7 +359,7 @@ sysvbfs_setattr(void *arg)
 		    (vap->va_gid != (gid_t)VNOVAL) ? vap->va_gid : attr->gid;
 		error = kauth_authorize_vnode(cred,
 		    KAUTH_VNODE_CHANGE_OWNERSHIP, vp, NULL,
-		    genfs_can_chown(cred, attr->uid, attr->gid, uid, gid));
+		    genfs_can_chown(vp, cred, attr->uid, attr->gid, uid, gid));
 		if (error)
 			return error;
 		attr->uid = uid;
@@ -383,7 +386,7 @@ sysvbfs_setattr(void *arg)
 	if (vap->va_mode != (mode_t)VNOVAL) {
 		mode_t mode = vap->va_mode;
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_SECURITY,
-		    vp, NULL, genfs_can_chmod(vp->v_type, cred, attr->uid,
+		    vp, NULL, genfs_can_chmod(vp, cred, attr->uid,
 		    attr->gid, mode));
 		if (error)
 			return error;
@@ -394,8 +397,8 @@ sysvbfs_setattr(void *arg)
 	    (vap->va_mtime.tv_sec != VNOVAL) ||
 	    (vap->va_ctime.tv_sec != VNOVAL)) {
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
-		    NULL, genfs_can_chtimes(vp, vap->va_vaflags, attr->uid,
-		    cred));
+		    NULL, genfs_can_chtimes(vp, cred, attr->uid,
+			vap->va_vaflags));
 		if (error)
 			return error;
 
@@ -445,7 +448,7 @@ sysvbfs_read(void *arg)
 			break;
 
 		err = ubc_uiomove(&v->v_uobj, uio, sz, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(v));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(v));
 		if (err)
 			break;
 		DPRINTF("%s: read %ldbyte\n", __func__, sz);
@@ -471,7 +474,6 @@ sysvbfs_write(void *arg)
 	struct uio *uio = a->a_uio;
 	int advice = IO_ADV_DECODE(a->a_ioflag);
 	struct sysvbfs_node *bnode = v->v_data;
-	bool extended = false;
 	vsize_t sz;
 	int err = 0;
 
@@ -486,13 +488,12 @@ sysvbfs_write(void *arg)
 
 	if (bnode->size < uio->uio_offset + uio->uio_resid) {
 		sysvbfs_file_setsize(v, uio->uio_offset + uio->uio_resid);
-		extended = true;
 	}
 
 	while (uio->uio_resid > 0) {
 		sz = uio->uio_resid;
 		err = ubc_uiomove(&v->v_uobj, uio, sz, advice,
-		    UBC_WRITE | UBC_UNMAP_FLAG(v));
+		    UBC_WRITE | UBC_VNODE_FLAGS(v));
 		if (err)
 			break;
 		DPRINTF("%s: write %ldbyte\n", __func__, sz);
@@ -500,19 +501,18 @@ sysvbfs_write(void *arg)
 	if (err)
 		sysvbfs_file_setsize(v, bnode->size - uio->uio_resid);
 
-	VN_KNOTE(v, NOTE_WRITE | (extended ? NOTE_EXTEND : 0));
-
 	return err;
 }
 
 int
 sysvbfs_remove(void *arg)
 {
-	struct vop_remove_v2_args /* {
+	struct vop_remove_v3_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode * a_dvp;
 		struct vnode * a_vp;
 		struct componentname * a_cnp;
+		nlink_t ctx_vp_new_nlink;
 	} */ *ap = arg;
 	struct vnode *vp = ap->a_vp;
 	struct vnode *dvp = ap->a_dvp;
@@ -531,8 +531,6 @@ sysvbfs_remove(void *arg)
 	if ((err = bfs_file_delete(bfs, ap->a_cnp->cn_nameptr, true)) != 0)
 		DPRINTF("%s: bfs_file_delete failed.\n", __func__);
 
-	VN_KNOTE(ap->a_vp, NOTE_DELETE);
-	VN_KNOTE(ap->a_dvp, NOTE_WRITE);
 	if (dvp == vp)
 		vrele(vp);
 	else
@@ -825,38 +823,34 @@ sysvbfs_pathconf(void *v)
 		int a_name;
 		register_t *a_retval;
 	} */ *ap = v;
-	int err = 0;
 
 	DPRINTF("%s:\n", __func__);
 
 	switch (ap->a_name) {
 	case _PC_LINK_MAX:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_NAME_MAX:
 		*ap->a_retval = BFS_FILENAME_MAXLEN;
-		break;
+		return 0;
 	case _PC_PATH_MAX:
 		*ap->a_retval = BFS_FILENAME_MAXLEN;
-		break;
+		return 0;
 	case _PC_CHOWN_RESTRICTED:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_NO_TRUNC:
 		*ap->a_retval = 0;
-		break;
+		return 0;
 	case _PC_SYNC_IO:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_FILESIZEBITS:
 		*ap->a_retval = 32;
-		break;
+		return 0;
 	default:
-		err = EINVAL;
-		break;
+		return genfs_pathconf(ap);
 	}
-
-	return err;
 }
 
 int

@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_pci.c,v 1.56 2019/10/18 17:16:50 tnn Exp $	*/
+/*	$NetBSD: ahcisata_pci.c,v 1.65 2022/05/31 08:43:15 andvar Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,11 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.56 2019/10/18 17:16:50 tnn Exp $");
-
-#ifdef _KERNEL_OPT
-#include "opt_ahcisata_pci.h"
-#endif
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.65 2022/05/31 08:43:15 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ahcisata_pci.h"
@@ -179,17 +175,17 @@ static const struct ahci_pci_quirk ahci_pci_quirks[] = {
 	    AHCI_PCI_QUIRK_FORCE },
 	/* ATI SB600 AHCI 64-bit DMA only works on some boards/BIOSes */
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB600_SATA_1,
-	    AHCI_PCI_QUIRK_BAD64 | AHCI_QUIRK_BADPMP },
+	    AHCI_PCI_QUIRK_BAD64 | AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB700_SATA_AHCI,
-	    AHCI_QUIRK_BADPMP },
+	    AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB700_SATA_RAID,
-	    AHCI_QUIRK_BADPMP },
+	    AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB700_SATA_RAID5,
-	    AHCI_QUIRK_BADPMP },
+	    AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB700_SATA_AHCI2,
-	    AHCI_QUIRK_BADPMP },
+	    AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_ATI, PCI_PRODUCT_ATI_SB700_SATA_STORAGE,
-	    AHCI_QUIRK_BADPMP },
+	    AHCI_QUIRK_BADPMP | AHCI_QUIRK_BADNCQ },
 	{ PCI_VENDOR_VIATECH, PCI_PRODUCT_VIATECH_VT8237R_SATA,
 	    AHCI_QUIRK_BADPMP },
 	{ PCI_VENDOR_VIATECH, PCI_PRODUCT_VIATECH_VT8251_SATA,
@@ -204,10 +200,39 @@ static const struct ahci_pci_quirk ahci_pci_quirks[] = {
 	    AHCI_PCI_QUIRK_FORCE },
 	{ PCI_VENDOR_AMD, PCI_PRODUCT_AMD_HUDSON_SATA,
 	    AHCI_PCI_QUIRK_FORCE },
-	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801JI_SATA_AHCI,
-	    AHCI_QUIRK_BADPMP },
 	{ PCI_VENDOR_AMD, PCI_PRODUCT_AMD_HUDSON_SATA_AHCI,
 	    AHCI_QUIRK_BADPMP },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801JI_SATA_AHCI,
+	    AHCI_QUIRK_BADPMP },
+
+    /* extra delay */
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_C600_AHCI,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_7SER_MO_SATA_AHCI,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_BSW_AHCI,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_8SER_DT_SATA_AHCI,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_9SERIES_SATA_AHCI,
+	    AHCI_QUIRK_EXTRA_DELAY },
+#if 0
+	/*
+	 * XXX Non-reproducible failures reported. May need extra-delay quirk.
+	 */
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_BAYTRAIL_SATA_AHCI_0,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_BAYTRAIL_SATA_AHCI_1,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801I_SATA_4,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801I_SATA_5,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801I_SATA_6,
+	    AHCI_QUIRK_EXTRA_DELAY },
+	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801I_SATA_7,
+	    AHCI_QUIRK_EXTRA_DELAY },
+#endif
 };
 
 struct ahci_pci_softc {
@@ -349,7 +374,7 @@ ahci_pci_intr_establish(struct ahci_softc *sc, int port)
 			if (port == vec) {
 				/* Print error once */
 				aprint_error_dev(self,
-				    "port %d independant interrupt vector not "
+				    "port %d independent interrupt vector not "
 				    "available, sharing with further ports",
 				    port);
 			}
@@ -370,7 +395,7 @@ ahci_pci_intr_establish(struct ahci_softc *sc, int port)
 	    sizeof(intrbuf));
 	psc->sc_ih[vec] = pci_intr_establish_xname(psc->sc_pc,
 	    psc->sc_pihp[vec], IPL_BIO, intr_handler, intr_arg, intr_xname);
-	if (psc->sc_ih == NULL) {
+	if (psc->sc_ih[vec] == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);

@@ -1,4 +1,4 @@
-/* $NetBSD: pci_machdep_common.c,v 1.23 2018/03/02 19:36:19 macallan Exp $ */
+/* $NetBSD: pci_machdep_common.c,v 1.25 2021/12/08 20:50:02 andvar Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -32,14 +32,14 @@
 /*
  * Generic PowerPC functions for dealing with a PCI bridge.  For most cases,
  * these functions will work just fine, however, some machines may need
- * specialized code, so those ports are free to write thier own functions
+ * specialized code, so those ports are free to write their own functions
  * and call those instead where appropriate.
  */
 
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep_common.c,v 1.23 2018/03/02 19:36:19 macallan Exp $");
-
 #define _POWERPC_BUS_DMA_PRIVATE
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep_common.c,v 1.25 2021/12/08 20:50:02 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

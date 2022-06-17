@@ -1,4 +1,4 @@
-/* $NetBSD: if_ti.c,v 1.112 2019/07/09 08:46:59 msaitoh Exp $ */
+/* $NetBSD: if_ti.c,v 1.123 2022/05/23 13:53:37 rin Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999
@@ -55,7 +55,7 @@
  *
  * The Tigon 2 contains 2 R4000 CPUs and requires a newer firmware
  * revision, which supports new features such as extended commands,
- * extended jumbo receive ring desciptors and a mini receive ring.
+ * extended jumbo receive ring descriptors and a mini receive ring.
  *
  * Alteon Networks is to be commended for releasing such a vast amount
  * of development material for the Tigon NIC without requiring an NDA
@@ -81,7 +81,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.112 2019/07/09 08:46:59 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.123 2022/05/23 13:53:37 rin Exp $");
 
 #include "opt_inet.h"
 
@@ -140,6 +140,8 @@ static const struct ti_type ti_devs[] = {
 		"Netgear GA620 1000BASE-T Ethernet" },
 	{ PCI_VENDOR_SGI, PCI_PRODUCT_SGI_TIGON,
 		"Silicon Graphics Gigabit Ethernet" },
+	{ PCI_VENDOR_DEC, PCI_PRODUCT_DEC_PN9000SX,
+		"Farallon PN9000SX Gigabit Ethernet" },
 	{ 0, 0, NULL }
 };
 
@@ -216,7 +218,7 @@ ti_eeprom_putbyte(struct ti_softc *sc, int byte)
 	TI_SETBIT(sc, TI_MISC_LOCAL_CTL, TI_MLC_EE_TXEN);
 
 	/*
-	 * Feed in each bit and stobe the clock.
+	 * Feed in each bit and strobe the clock.
 	 */
 	for (i = 0x80; i; i >>= 1) {
 		if (byte & i) {
@@ -612,14 +614,7 @@ ti_alloc_jumbo_mem(struct ti_softc *sc)
 		sc->ti_cdata.ti_jslots[i] = ptr;
 		ptr += TI_JLEN;
 		entry = malloc(sizeof(struct ti_jpool_entry),
-			       M_DEVBUF, M_NOWAIT);
-		if (entry == NULL) {
-			free(sc->ti_cdata.ti_jumbo_buf, M_DEVBUF);
-			sc->ti_cdata.ti_jumbo_buf = NULL;
-			printf("%s: no memory for jumbo "
-			    "buffer queue!\n", device_xname(sc->sc_dev));
-			return (ENOBUFS);
-		}
+			       M_DEVBUF, M_WAITOK);
 		entry->slot = i;
 		SIMPLEQ_INSERT_HEAD(&sc->ti_jfree_listhead, entry,
 				    jpool_entries);
@@ -762,7 +757,7 @@ ti_newbuf_std(struct ti_softc *sc, int i, struct mbuf *m, bus_dmamap_t dmamap)
 }
 
 /*
- * Intialize a mini receive ring descriptor. This only applies to
+ * Initialize a mini receive ring descriptor. This only applies to
  * the Tigon 2.
  */
 static int
@@ -903,7 +898,7 @@ ti_init_rx_ring_std(struct ti_softc *sc)
 	for (i = 0; i < TI_SSLOTS; i++) {
 		if (ti_newbuf_std(sc, i, NULL, 0) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_STDPROD(sc, i - 1);
 	sc->ti_std = i - 1;
@@ -918,12 +913,12 @@ ti_free_rx_ring_std(struct ti_softc *sc)
 
 	for (i = 0; i < TI_STD_RX_RING_CNT; i++) {
 		if (sc->ti_cdata.ti_rx_std_chain[i] != NULL) {
-			m_freem(sc->ti_cdata.ti_rx_std_chain[i]);
-			sc->ti_cdata.ti_rx_std_chain[i] = NULL;
-
 			/* if (sc->std_dmamap[i] == 0) panic() */
 			bus_dmamap_destroy(sc->sc_dmat, sc->std_dmamap[i]);
 			sc->std_dmamap[i] = 0;
+
+			m_freem(sc->ti_cdata.ti_rx_std_chain[i]);
+			sc->ti_cdata.ti_rx_std_chain[i] = NULL;
 		}
 		memset((char *)&sc->ti_rdata->ti_rx_std_ring[i], 0,
 		    sizeof(struct ti_rx_desc));
@@ -941,7 +936,7 @@ ti_init_rx_ring_jumbo(struct ti_softc *sc)
 	for (i = 0; i < TI_JUMBO_RX_RING_CNT; i++) {
 		if (ti_newbuf_jumbo(sc, i, NULL) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_JUMBOPROD(sc, i - 1);
 	sc->ti_jumbo = i - 1;
@@ -974,7 +969,7 @@ ti_init_rx_ring_mini(struct ti_softc *sc)
 	for (i = 0; i < TI_MSLOTS; i++) {
 		if (ti_newbuf_mini(sc, i, NULL, 0) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_MINIPROD(sc, i - 1);
 	sc->ti_mini = i - 1;
@@ -989,12 +984,12 @@ ti_free_rx_ring_mini(struct ti_softc *sc)
 
 	for (i = 0; i < TI_MINI_RX_RING_CNT; i++) {
 		if (sc->ti_cdata.ti_rx_mini_chain[i] != NULL) {
-			m_freem(sc->ti_cdata.ti_rx_mini_chain[i]);
-			sc->ti_cdata.ti_rx_mini_chain[i] = NULL;
-
 			/* if (sc->mini_dmamap[i] == 0) panic() */
 			bus_dmamap_destroy(sc->sc_dmat, sc->mini_dmamap[i]);
 			sc->mini_dmamap[i] = 0;
+
+			m_freem(sc->ti_cdata.ti_rx_mini_chain[i]);
+			sc->ti_cdata.ti_rx_mini_chain[i] = NULL;
 		}
 		memset((char *)&sc->ti_rdata->ti_rx_mini_ring[i], 0,
 		    sizeof(struct ti_rx_desc));
@@ -1011,13 +1006,18 @@ ti_free_tx_ring(struct ti_softc *sc)
 
 	for (i = 0; i < TI_TX_RING_CNT; i++) {
 		if (sc->ti_cdata.ti_tx_chain[i] != NULL) {
-			m_freem(sc->ti_cdata.ti_tx_chain[i]);
-			sc->ti_cdata.ti_tx_chain[i] = NULL;
+			dma = sc->txdma[i];
+			KDASSERT(dma != NULL);
+			bus_dmamap_sync(sc->sc_dmat, dma->dmamap, 0,
+			    dma->dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
+			bus_dmamap_unload(sc->sc_dmat, dma->dmamap);
 
-			/* if (sc->txdma[i] == 0) panic() */
 			SIMPLEQ_INSERT_HEAD(&sc->txdma_list, sc->txdma[i],
 					    link);
-			sc->txdma[i] = 0;
+			sc->txdma[i] = NULL;
+
+			m_freem(sc->ti_cdata.ti_tx_chain[i]);
+			sc->ti_cdata.ti_tx_chain[i] = NULL;
 		}
 		memset((char *)&sc->ti_rdata->ti_tx_ring[i], 0,
 		    sizeof(struct ti_tx_desc));
@@ -1930,13 +1930,13 @@ ti_rxeof(struct ti_softc *sc)
 			m = sc->ti_cdata.ti_rx_jumbo_chain[rxidx];
 			sc->ti_cdata.ti_rx_jumbo_chain[rxidx] = NULL;
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_jumbo(sc, sc->ti_jumbo, m);
 				continue;
 			}
 			if (ti_newbuf_jumbo(sc, sc->ti_jumbo, NULL)
 			    == ENOBUFS) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_jumbo(sc, sc->ti_jumbo, m);
 				continue;
 			}
@@ -1947,13 +1947,13 @@ ti_rxeof(struct ti_softc *sc)
 			dmamap = sc->mini_dmamap[rxidx];
 			sc->mini_dmamap[rxidx] = 0;
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_mini(sc, sc->ti_mini, m, dmamap);
 				continue;
 			}
 			if (ti_newbuf_mini(sc, sc->ti_mini, NULL, dmamap)
 			    == ENOBUFS) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_mini(sc, sc->ti_mini, m, dmamap);
 				continue;
 			}
@@ -1964,13 +1964,13 @@ ti_rxeof(struct ti_softc *sc)
 			dmamap = sc->std_dmamap[rxidx];
 			sc->std_dmamap[rxidx] = 0;
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_std(sc, sc->ti_std, m, dmamap);
 				continue;
 			}
 			if (ti_newbuf_std(sc, sc->ti_std, NULL, dmamap)
 			    == ENOBUFS) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				ti_newbuf_std(sc, sc->ti_std, m, dmamap);
 				continue;
 			}
@@ -2026,10 +2026,8 @@ ti_rxeof(struct ti_softc *sc)
 			break;
 		}
 
-		if (cur_rx->ti_flags & TI_BDFLAG_VLAN_TAG) {
-			/* ti_vlan_tag also has the priority, trim it */
-			vlan_set_tag(m, cur_rx->ti_vlan_tag & 0x0fff);
-		}
+		if (cur_rx->ti_flags & TI_BDFLAG_VLAN_TAG)
+			vlan_set_tag(m, cur_rx->ti_vlan_tag);
 
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 	}
@@ -2075,11 +2073,8 @@ ti_txeof_tigon1(struct ti_softc *sc)
 			    TI_TX_RING_BASE);
 		cur_tx = &sc->ti_tx_ring_nic[idx % 128];
 		if (cur_tx->ti_flags & TI_BDFLAG_END)
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		if (sc->ti_cdata.ti_tx_chain[idx] != NULL) {
-			m_freem(sc->ti_cdata.ti_tx_chain[idx]);
-			sc->ti_cdata.ti_tx_chain[idx] = NULL;
-
 			dma = sc->txdma[idx];
 			KDASSERT(dma != NULL);
 			bus_dmamap_sync(sc->sc_dmat, dma->dmamap, 0,
@@ -2088,6 +2083,9 @@ ti_txeof_tigon1(struct ti_softc *sc)
 
 			SIMPLEQ_INSERT_HEAD(&sc->txdma_list, dma, link);
 			sc->txdma[idx] = NULL;
+
+			m_freem(sc->ti_cdata.ti_tx_chain[idx]);
+			sc->ti_cdata.ti_tx_chain[idx] = NULL;
 		}
 		sc->ti_txcnt--;
 		TI_INC(sc->ti_tx_saved_considx, TI_TX_RING_CNT);
@@ -2120,11 +2118,8 @@ ti_txeof_tigon2(struct ti_softc *sc)
 		idx = sc->ti_tx_saved_considx;
 		cur_tx = &sc->ti_rdata->ti_tx_ring[idx];
 		if (cur_tx->ti_flags & TI_BDFLAG_END)
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		if (sc->ti_cdata.ti_tx_chain[idx] != NULL) {
-			m_freem(sc->ti_cdata.ti_tx_chain[idx]);
-			sc->ti_cdata.ti_tx_chain[idx] = NULL;
-
 			dma = sc->txdma[idx];
 			KDASSERT(dma != NULL);
 			bus_dmamap_sync(sc->sc_dmat, dma->dmamap, 0,
@@ -2133,6 +2128,9 @@ ti_txeof_tigon2(struct ti_softc *sc)
 
 			SIMPLEQ_INSERT_HEAD(&sc->txdma_list, dma, link);
 			sc->txdma[idx] = NULL;
+
+			m_freem(sc->ti_cdata.ti_tx_chain[idx]);
+			sc->ti_cdata.ti_tx_chain[idx] = NULL;
 		}
 		cnt++;
 		sc->ti_txcnt--;
@@ -2188,24 +2186,23 @@ ti_intr(void *xsc)
 static void
 ti_stats_update(struct ti_softc *sc)
 {
-	struct ifnet		*ifp;
-
-	ifp = &sc->ethercom.ec_if;
+	struct ifnet *ifp = &sc->ethercom.ec_if;
 
 	TI_CDSTATSSYNC(sc, BUS_DMASYNC_POSTREAD);
 
-	ifp->if_collisions +=
+	uint64_t collisions =
 	   (sc->ti_rdata->ti_info.ti_stats.dot3StatsSingleCollisionFrames +
-	   sc->ti_rdata->ti_info.ti_stats.dot3StatsMultipleCollisionFrames +
-	   sc->ti_rdata->ti_info.ti_stats.dot3StatsExcessiveCollisions +
-	   sc->ti_rdata->ti_info.ti_stats.dot3StatsLateCollisions) -
-	   ifp->if_collisions;
+	    sc->ti_rdata->ti_info.ti_stats.dot3StatsMultipleCollisionFrames +
+	    sc->ti_rdata->ti_info.ti_stats.dot3StatsExcessiveCollisions +
+	    sc->ti_rdata->ti_info.ti_stats.dot3StatsLateCollisions);
+	if_statadd(ifp, if_collisions, collisions - sc->ti_if_collisions);
+	sc->ti_if_collisions = collisions;
 
 	TI_CDSTATSSYNC(sc, BUS_DMASYNC_PREREAD);
 }
 
 /*
- * Encapsulate an mbuf chain in the tx ring  by coupling the mbuf data
+ * Encapsulate an mbuf chain in the tx ring by coupling the mbuf data
  * pointers to descriptors.
  */
 static int
@@ -2684,7 +2681,7 @@ ti_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 static int
 ti_ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct ifaddr *ifa = (struct ifaddr *) data;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ti_softc *sc = ifp->if_softc;
 
 	if ((ifp->if_flags & IFF_UP) == 0) {
@@ -2717,7 +2714,7 @@ static int
 ti_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct ti_softc		*sc = ifp->if_softc;
-	struct ifreq		*ifr = (struct ifreq *) data;
+	struct ifreq		*ifr = (struct ifreq *)data;
 	int			s, error = 0;
 	struct ti_cmd_desc	cmd;
 
@@ -2799,7 +2796,7 @@ ti_watchdog(struct ifnet *ifp)
 	ti_stop(sc);
 	ti_init(sc);
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 }
 
 /*

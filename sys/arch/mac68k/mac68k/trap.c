@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.149 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: trap.c,v 1.152 2021/09/25 19:16:31 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.149 2019/04/06 03:06:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.152 2021/09/25 19:16:31 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_execfmt.h"
@@ -286,7 +286,10 @@ trap(struct frame *fp, int type, u_int code, u_int v)
 			printf("trap during panic!\n");
 #ifdef DEBUG
 			/* XXX should be a machine-dependent hook */
-			printf("(press a key)\n"); (void)cngetc();
+			printf("(press a key)\n");
+			cnpollc(1);
+			(void)cngetc();
+			cnpollc(0);
 #endif
 		}
 		regdump((struct trapframe *)fp, 128);
@@ -332,8 +335,8 @@ copyfault:
 	/*
 	 * divde by zero, CHK/TRAPV inst 
 	 */
-	case T_ZERODIV|T_USER:		/* Divide by zero trap */
-		ksi.ksi_code = FPE_FLTDIV;
+	case T_ZERODIV|T_USER:		/* Integer divide by zero trap */
+		ksi.ksi_code = FPE_INTDIV;
 	case T_CHKINST|T_USER:		/* CHK instruction trap */
 	case T_TRAPVINST|T_USER:	/* TRAPV instruction trap */
 		ksi.ksi_addr = (void *)(int)fp->f_format;
@@ -457,7 +460,12 @@ copyfault:
 	case T_TRACE:		/* tracing a trap instruction */
 	case T_TRAP15|T_USER:	/* SUN user trace trap */
 		fp->f_sr &= ~PSL_T;
+		ksi.ksi_addr = (void *)fp->f_pc;
 		ksi.ksi_signo = SIGTRAP;
+		if (type == (T_TRAP15|T_USER))
+			ksi.ksi_code = TRAP_BRKPT;
+		else
+			ksi.ksi_code = TRAP_TRACE;
 		break;
 
 	case T_ASTFLT:		/* System async trap, cannot happen */
@@ -490,8 +498,6 @@ copyfault:
 			l->l_pflag &= ~LP_OWEUPC;
 			ADDUPROF(l);
 		}
-		if (curcpu()->ci_want_resched)
-			preempt();
 		goto out;
 
 	case T_MMUFLT:		/* Kernel mode page fault */

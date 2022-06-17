@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ipsec.h,v 1.6 2019/11/01 04:28:14 knakahara Exp $  */
+/*	$NetBSD: if_ipsec.h,v 1.8 2022/01/17 20:56:03 andvar Exp $  */
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -61,7 +61,7 @@
 
 #define IFF_NAT_T	IFF_LINK0	/* enable NAT-T */
 #define IFF_ECN		IFF_LINK1	/* enable ECN */
-#define IFF_FWD_IPV6	IFF_LINK2	/* foward IPv6 packet */
+#define IFF_FWD_IPV6	IFF_LINK2	/* forward IPv6 packet */
 
 extern struct psref_class *iv_psref_class;
 
@@ -165,9 +165,8 @@ if_ipsec_getref_variant(struct ipsec_softc *sc, struct psref *psref)
 	int s;
 
 	s = pserialize_read_enter();
-	var = sc->ipsec_var;
+	var = atomic_load_consume(&sc->ipsec_var);
 	KASSERT(var != NULL);
-	membar_datadep_consumer();
 	psref_acquire(psref, &var->iv_psref, iv_psref_class);
 	pserialize_read_exit(s);
 

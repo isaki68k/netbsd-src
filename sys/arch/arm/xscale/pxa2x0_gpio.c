@@ -1,4 +1,4 @@
-/*	$NetBSD: pxa2x0_gpio.c,v 1.17 2017/06/16 22:39:34 pgoyette Exp $	*/
+/*	$NetBSD: pxa2x0_gpio.c,v 1.21 2021/08/07 16:18:46 thorpej Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pxa2x0_gpio.c,v 1.17 2017/06/16 22:39:34 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pxa2x0_gpio.c,v 1.21 2021/08/07 16:18:46 thorpej Exp $");
 
 #include "gpio.h"
 #include "opt_pxa2x0_gpio.h"
@@ -44,7 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: pxa2x0_gpio.c,v 1.17 2017/06/16 22:39:34 pgoyette Ex
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/intr.h>
 #include <sys/bus.h>
@@ -234,7 +234,7 @@ pxagpio_attach(device_t parent, device_t self, void *aux)
 	gba.gba_pins = sc->sc_gpio_pins;
 	gba.gba_npins = maxpin;
 
-	config_found_ia(self, "gpiobus", &gba, gpiobus_print);
+	config_found(self, &gba, gpiobus_print, CFARGS_NONE);
 #else
 	aprint_normal_dev(sc->sc_dev, "no GPIO configured in kernel\n");
 #endif
@@ -280,8 +280,7 @@ pxa2x0_gpio_intr_establish(u_int gpio, int level, int spl, int (*func)(void *),
 	if (sc->sc_handlers[gpio] != NULL)
 		panic("pxa2x0_gpio_intr_establish: illegal shared interrupt");
 
-	gh = malloc(sizeof(struct gpio_irq_handler), M_DEVBUF, M_NOWAIT);
-
+	gh = kmem_alloc(sizeof(*gh), KM_SLEEP);
 	gh->gh_func = func;
 	gh->gh_arg = arg;
 	gh->gh_spl = spl;
@@ -366,7 +365,7 @@ pxa2x0_gpio_intr_disestablish(void *cookie)
 #endif
 	}
 
-	free(gh, M_DEVBUF);
+	kmem_free(gh, sizeof(*gh));
 }
 
 static int

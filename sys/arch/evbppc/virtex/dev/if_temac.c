@@ -1,4 +1,4 @@
-/* 	$NetBSD: if_temac.c,v 1.15 2019/05/29 06:21:57 msaitoh Exp $ */
+/* 	$NetBSD: if_temac.c,v 1.19 2022/02/27 11:49:28 riastradh Exp $ */
 
 /*
  * Copyright (c) 2006 Jachym Holecek
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_temac.c,v 1.15 2019/05/29 06:21:57 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_temac.c,v 1.19 2022/02/27 11:49:28 riastradh Exp $");
 
 
 #include <sys/param.h>
@@ -230,7 +230,7 @@ static inline void 	gmi_write_8(uint32_t, uint32_t, uint32_t);
 static inline void 	gmi_write_4(uint32_t, uint32_t);
 static inline void 	gmi_read_8(uint32_t, uint32_t *, uint32_t *);
 static inline uint32_t 	gmi_read_4(uint32_t);
-static inline void 	hif_wait_stat(uint32_t);
+static inline int 	hif_wait_stat(uint32_t);
 
 #define cdmac_rx_stat(sc) \
     bus_space_read_4((sc)->sc_dma_rxt, (sc)->sc_dma_rsh, 0 /* XXX hack */)
@@ -288,14 +288,14 @@ gmi_write_4(uint32_t addr, uint32_t lo)
 	TRACEREG(("%s: %#08x <- %#08x\n", __func__, addr, lo));
 }
 
-static inline void
+static inline void __unused
 gmi_write_8(uint32_t addr, uint32_t lo, uint32_t hi)
 {
 	mtidcr(IDCR_HIF_ARG1, hi);
 	gmi_write_4(addr, lo);
 }
 
-static inline void
+static inline void __unused
 gmi_read_8(uint32_t addr, uint32_t *lo, uint32_t *hi)
 {
 	*lo = gmi_read_4(addr);
@@ -1029,7 +1029,7 @@ temac_txreap(struct temac_softc *sc)
 		m_freem(txs->txs_mbuf);
 		txs->txs_mbuf = NULL;
 
-		sc->sc_if.if_opackets++;
+		if_statinc(&sc->sc_if, if_opackets);
 		sent = 1;
 
 		sc->sc_txsreap = TEMAC_TXSNEXT(sc->sc_txsreap);
@@ -1165,7 +1165,9 @@ temac_rxreap(struct temac_softc *sc)
 		if ((stat & CDMAC_STAT_DONE) == 0)
 			break;
 
-		/* Count any decriptor we've collected, regardless of status. */
+		/*
+		 * Count any descriptor we've collected, regardless of status.
+		 */
 		nseg ++;
 
 		/* XXXFreza: This won't work for jumbo frames. */
@@ -1212,7 +1214,7 @@ temac_rxreap(struct temac_softc *sc)
 			    (TEMAC_ISINTR(tail) ? CDMAC_STAT_INTR : 0) |
 			    (TEMAC_ISLAST(tail) ? CDMAC_STAT_STOP : 0);
 
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			continue;
  		}
 

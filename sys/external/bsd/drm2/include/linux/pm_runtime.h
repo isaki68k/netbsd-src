@@ -1,4 +1,4 @@
-/*	$NetBSD: pm_runtime.h,v 1.4 2018/08/27 07:30:00 riastradh Exp $	*/
+/*	$NetBSD: pm_runtime.h,v 1.9 2021/12/19 12:10:27 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -32,6 +32,8 @@
 #ifndef _LINUX_PM_RUNTIME_H_
 #define _LINUX_PM_RUNTIME_H_
 
+#include <linux/notifier.h>
+
 struct device;
 
 static inline void
@@ -42,6 +44,12 @@ pm_runtime_allow(struct device *dev __unused)
 static inline void
 pm_runtime_disable(struct device *dev __unused)
 {
+}
+
+static inline int
+pm_runtime_get(struct device *dev __unused)
+{
+	return 0;
 }
 
 static inline int
@@ -67,7 +75,17 @@ pm_runtime_put(struct device *dev __unused)
 }
 
 static inline void
+pm_runtime_put_sync(struct device *dev __unused)
+{
+}
+
+static inline void
 pm_runtime_put_autosuspend(struct device *dev __unused)
+{
+}
+
+static inline void
+pm_runtime_put_noidle(struct device *dev __unused)
 {
 }
 
@@ -85,6 +103,22 @@ pm_runtime_set_autosuspend_delay(struct device *dev __unused,
 static inline void
 pm_runtime_use_autosuspend(struct device *dev __unused)
 {
+}
+
+static inline void
+pm_runtime_dont_use_autosuspend(struct device *dev __unused)
+{
+}
+
+static inline void
+pm_runtime_forbid(struct device *dev __unused)
+{
+}
+
+static inline int
+pm_runtime_get_if_in_use(struct device *dev __unused)
+{
+	return 1;
 }
 
 #endif  /* _LINUX_PM_RUNTIME_H_ */

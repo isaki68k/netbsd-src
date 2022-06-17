@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.421 2019/07/18 18:21:45 palle Exp $	*/
+/*	$NetBSD: locore.s,v 1.429 2022/05/22 11:27:34 andvar Exp $	*/
 
 /*
  * Copyright (c) 2006-2010 Matthew R. Green
@@ -228,13 +228,13 @@
 	.endm
 
 	.macro sun4v_tl1_uspill_normal
-	ba,a,pt	%xcc, pcbspill_normals
+	ba,a,pt	%xcc, spill_normal_to_user_stack
 	 nop
 	.align 128
 	.endm
 
 	.macro sun4v_tl1_uspill_other
-	ba,a,pt	%xcc, pcbspill_others
+	ba,a,pt	%xcc, pcbspill_other
 	 nop
 	.align 128
 	.endm
@@ -3343,6 +3343,8 @@ sun4v_tl1_ptbl_miss:
 	bgeu,pt	%xcc, 1f
 	 nop
 
+	/* We had a miss inside rtf_user_fault_start/rtf_user_fault_end block (FILL)
+	
 	/* Fixup %cwp. */
 	rdpr	%cwp, %g1
 	inc	%g1
@@ -3483,6 +3485,129 @@ pcbspill_fail:
 	Debugger()
 	NOTREACHED
 
+
+pcbspill_other:
+	
+	set	CPUINFO_VA, %g6
+	ldx	[%g6 + CI_CPCB], %g6
+	
+	GET_CTXBUSY %g1
+
+	ldx	[%g1], %g1				! kernel pmap is ctx 0
+	
+	srlx	%g6, STSHIFT, %g7
+	and	%g7, STMASK, %g7
+	sll	%g7, 3, %g7				! byte offset into ctxbusy
+	add	%g7, %g1, %g1
+	ldxa	[%g1] ASI_PHYS_CACHED, %g1		! Load pointer to directory
+
+	srlx	%g6, PDSHIFT, %g7			! Do page directory
+	and	%g7, PDMASK, %g7
+	sll	%g7, 3, %g7
+	brz,pn	%g1, pcbspill_other_fail
+	 add	%g7, %g1, %g1
+	ldxa	[%g1] ASI_PHYS_CACHED, %g1
+	srlx	%g6, PTSHIFT, %g7			! Convert to ptab offset
+	and	%g7, PTMASK, %g7
+	brz	%g1, pcbspill_other_fail
+	 sll	%g7, 3, %g7
+	add	%g1, %g7, %g7
+	ldxa	[%g7] ASI_PHYS_CACHED, %g7		! This one is not
+	brgez	%g7, pcbspill_other_fail
+	 srlx	%g7, PGSHIFT, %g7			! Isolate PA part
+	sll	%g6, 32-PGSHIFT, %g6			! And offset
+	sllx	%g7, PGSHIFT+8, %g7			! There are 8 bits to the left of the PA in the TTE
+	srl	%g6, 32-PGSHIFT, %g6
+	srax	%g7, 8, %g7
+	or	%g7, %g6, %g6				! Then combine them to form PA
+
+	wr	%g0, ASI_PHYS_CACHED, %asi		! Use ASI_PHYS_CACHED to prevent possible page faults
+
+	lduba	[%g6 + PCB_NSAVED] %asi, %g7		! Fetch current nsaved from the pcb
+	sllx	%g7, 7, %g5				! 8+8 registers each 8 bytes = 128 bytes (2^7)
+	add	%g6, %g5, %g5				! Offset into pcb_rw
+1:	
+	SPILL	stxa, %g5 + PCB_RW, 8, %asi		! Store the locals and ins
+
+	add	%g5, 16*8, %g5				! Next location for saved register windows
+
+	stxa	%o6, [%g5 + PCB_RW + (14*8)] %asi	! Save %sp so we can write these all out
+	
+	saved						! Increments %cansave and decrements %otherwin
+	
+	rdpr	%cwp, %g1				! shift register window forward
+	inc	%g1
+	wrpr	%g1, %cwp
+
+
+	inc	%g7					! increment number of saved register windows
+
+	rdpr	%otherwin, %g1				! Check to see if done spill'ing otherwin
+	brnz,pt	%g1, 1b
+	 nop
+	
+	stba	%g7, [%g6 + PCB_NSAVED] %asi
+
+	retry
+	NOTREACHED
+
+pcbspill_other_fail:
+	Debugger()
+	NOTREACHED
+
+
+spill_normal_to_user_stack:
+	mov	%sp, %g6						! calculate virtual address of destination stack
+	add	%g6, BIAS, %g6
+
+	mov	CTX_SECONDARY, %g2				! Is this context ok or should it be CTX_PRIMARY? XXX
+	GET_MMU_CONTEXTID %g3, %g2, %g1
+	sllx	%g3, 3, %g3					! Make it into an offset into ctxbusy (see below)
+	
+	GET_CTXBUSY %g1
+	ldx	[%g1 + %g3], %g1				! Fetch pmap for current context id
+
+	! Start of code to extract PA	
+	srlx	%g6, STSHIFT, %g7
+	and	%g7, STMASK, %g7
+	sll	%g7, 3, %g7						! byte offset into ctxbusy
+	add	%g7, %g1, %g1
+	ldxa	[%g1] ASI_PHYS_CACHED, %g1	! Load pointer to directory
+	srlx	%g6, PDSHIFT, %g7			! Do page directory
+	and	%g7, PDMASK, %g7
+	sll	%g7, 3, %g7
+	brz,pn	%g1, spill_normal_to_user_stack_fail
+	 add	%g7, %g1, %g1
+
+	ldxa	[%g1] ASI_PHYS_CACHED, %g1
+	srlx	%g6, PTSHIFT, %g7			! Convert to ptab offset
+	and	%g7, PTMASK, %g7
+	brz	%g1, spill_normal_to_user_stack_fail
+	 sll	%g7, 3, %g7
+	
+	add	%g1, %g7, %g7
+	ldxa	[%g7] ASI_PHYS_CACHED, %g7	! This one is not
+	brgez	%g7, spill_normal_to_user_stack_fail
+	 srlx	%g7, PGSHIFT, %g7			! Isolate PA part
+	
+	sll	%g6, 32-PGSHIFT, %g6			! And offset
+	sllx	%g7, PGSHIFT+8, %g7			! There are 8 bits to the left of the PA in the TTE
+	srl	%g6, 32-PGSHIFT, %g6
+	srax	%g7, 8, %g7
+	or	%g7, %g6, %g6					! Then combine them to form PA
+	! End of code to extract PA
+
+	wr	%g0, ASI_PHYS_CACHED, %asi		! Use ASI_PHYS_CACHED to prevent possible page faults
+	SPILL	stxa, %g6, 8, %asi			! Store the locals and ins
+	saved
+
+	retry
+	NOTREACHED
+
+spill_normal_to_user_stack_fail:
+	sir
+	 nop
+	
 /*
  * End of traps for sun4v.
  */
@@ -4313,7 +4438,7 @@ sun4v_dev_mondo:
 	add	%g2, 64, %g2			 ! each element is 64 bytes 		
 	and	%g2, 0x7ff, %g2			 ! assume 32 elements
 	mov	0x3d0, %g1			 ! Dev Mondo Queue Head
-	stxa	%g2, [%g1] ASI_QUEUE		 ! ajust head index value
+	stxa	%g2, [%g1] ASI_QUEUE		 ! adjust head index value
 	membar	#Sync
 
 	cmp	%g5, MAXINTNUM			! Handle both sun4v legacy (sysino) and cookies.
@@ -6068,8 +6193,10 @@ ENTRY(sp_tlb_flush_all_usiii)
 
 /*
  * sp_blast_dcache(int dcache_size, int dcache_line_size)
+ * sp_blast_dcache_disabled(int dcache_size, int dcache_line_size)
  *
- * Clear out all of D$ regardless of contents
+ * Clear out all of D$ regardless of contents.  The latter one also
+ * disables the D$ while doing so.
  */
 	.align 8
 ENTRY(sp_blast_dcache)
@@ -6093,6 +6220,46 @@ ENTRY(sp_blast_dcache)
 	sethi	%hi(KERNBASE), %o2
 	flush	%o2
 	membar	#Sync
+#ifdef PROF
+	wrpr	%o3, %pstate
+	ret
+	 restore
+#else
+	retl
+	 wrpr	%o3, %pstate
+#endif
+
+	.align 8
+ENTRY(sp_blast_dcache_disabled)
+/*
+ * We turn off interrupts for the duration to prevent RED exceptions.
+ */
+#ifdef PROF
+	save	%sp, -CC64FSZ, %sp
+#endif
+
+	rdpr	%pstate, %o3
+	sub	%o0, %o1, %o0
+	andn	%o3, PSTATE_IE, %o4			! Turn off PSTATE_IE bit
+	wrpr	%o4, 0, %pstate
+
+	ldxa    [%g0] ASI_MCCR, %o5
+	andn	%o5, MCCR_DCACHE_EN, %o4		! Turn off the D$
+	stxa	%o4, [%g0] ASI_MCCR
+	flush 	%g0
+
+1:
+	stxa	%g0, [%o0] ASI_DCACHE_TAG
+	membar	#Sync
+	brnz,pt	%o0, 1b
+	 sub	%o0, %o1, %o0
+
+	sethi	%hi(KERNBASE), %o2
+	flush	%o2
+	membar	#Sync
+
+	stxa	%o5, [%g0] ASI_MCCR			! Restore the D$
+	flush 	%g0
 #ifdef PROF
 	wrpr	%o3, %pstate
 	ret
@@ -6494,11 +6661,19 @@ ENTRY(getfp)
 	 mov %fp, %o0
 
 /*
- * nothing MD to do in the idle loop
+ * Call optional cpu_idle handler if provided
  */
 ENTRY(cpu_idle)
-	retl
+	set	CPUINFO_VA, %o0
+	LDPTR	[%o0 + CI_IDLESPIN], %o1
+	tst	%o1
+	bz	1f
 	 nop
+	jmp	%o1
+	 nop
+1:
+	retl
+	nop
 
 /*
  * cpu_switchto() switches to an lwp to run and runs it, saving the
@@ -6536,8 +6711,7 @@ ENTRY(cpu_switchto)
 	wrpr	%g0, PSTATE_KERN, %pstate	! make sure we're on normal globals
 						! with traps turned off
 
-	brz,pn	%i0, 1f
-	 sethi	%hi(CPCB), %l6
+	sethi	%hi(CPCB), %l6
 
 	rdpr	%pstate, %o1			! oldpstate = %pstate;
 	LDPTR	[%i0 + L_PCB], %l5
@@ -6549,7 +6723,6 @@ ENTRY(cpu_switchto)
 	rdpr	%cwp, %o2		! Useless
 	stb	%o2, [%l5 + PCB_CWP]
 
-1:
 	sethi	%hi(CURLWP), %l7
 
 	LDPTR   [%i1 + L_PCB], %l1	! newpcb = l->l_pcb;
@@ -6693,7 +6866,6 @@ softint_fastintr_ret:
 	ld	[%l0 + CI_MTX_COUNT], %o1
 	inc	%o1				! ci_mtx_count++
 	st	%o1, [%l0 + CI_MTX_COUNT]
-	st	%g0, [%o0 + L_CTXSWTCH]		! prev->l_ctxswtch = 0
 
 	STPTR	%l6, [%l0 + CI_EINTSTACK]	! restore ci_eintstack
 	wrpr	%g0, %l7, %pil			! restore ipl

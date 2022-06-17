@@ -1,4 +1,4 @@
-/*	$NetBSD: if_rtwn.c,v 1.18 2018/12/09 11:14:02 jdolecek Exp $	*/
+/*	$NetBSD: if_rtwn.c,v 1.20 2021/06/16 00:21:18 riastradh Exp $	*/
 /*	$OpenBSD: if_rtwn.c,v 1.5 2015/06/14 08:02:47 stsp Exp $	*/
 #define	IEEE80211_NO_HT
 /*-
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_rtwn.c,v 1.18 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_rtwn.c,v 1.20 2021/06/16 00:21:18 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/sockio.h>
@@ -359,13 +359,7 @@ rtwn_attach(device_t parent, device_t self, void *aux)
 	IFQ_SET_READY(&ifp->if_snd);
 	memcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 
-	error = if_initialize(ifp);
-	if (error != 0) {
-		ifp->if_softc = NULL; /* For rtwn_detach() */
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		goto fail;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);
@@ -397,11 +391,6 @@ rtwn_attach(device_t parent, device_t self, void *aux)
 
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
-
-	return;
-
-fail:
-	rtwn_detach(self, 0);
 }
 
 static int
@@ -1689,7 +1678,7 @@ rtwn_rx_frame(struct rtwn_softc *sc, struct r92c_rx_desc_pci *rx_desc,
 		 * This should not happen since we setup our Rx filter
 		 * to not receive these frames.
 		 */
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1700,11 +1689,11 @@ rtwn_rx_frame(struct rtwn_softc *sc, struct r92c_rx_desc_pci *rx_desc,
 	 */
 	if (__predict_false(pktlen < (int)sizeof(struct ieee80211_frame_ack))) {
 		ic->ic_stats.is_rx_tooshort++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	if (__predict_false(pktlen > MCLBYTES)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1729,14 +1718,14 @@ rtwn_rx_frame(struct rtwn_softc *sc, struct r92c_rx_desc_pci *rx_desc,
 	MGETHDR(m1, M_DONTWAIT, MT_DATA);
 	if (__predict_false(m1 == NULL)) {
 		ic->ic_stats.is_rx_nobuf++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	MCLGET(m1, M_DONTWAIT);
 	if (__predict_false(!(m1->m_flags & M_EXT))) {
 		m_freem(m1);
 		ic->ic_stats.is_rx_nobuf++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1761,7 +1750,7 @@ rtwn_rx_frame(struct rtwn_softc *sc, struct r92c_rx_desc_pci *rx_desc,
 		rtwn_setup_rx_desc(sc, rx_desc,
 		    rx_data->map->dm_segs[0].ds_addr, MCLBYTES, desc_idx);
 
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -2059,7 +2048,7 @@ rtwn_tx_done(struct rtwn_softc *sc, int qid)
 		ieee80211_free_node(tx_data->ni);
 		tx_data->ni = NULL;
 
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		sc->sc_tx_timer = 0;
 		tx_ring->queued--;
 	}
@@ -2106,14 +2095,14 @@ rtwn_start(struct ifnet *ifp)
 
 		if (m->m_len < (int)sizeof(*eh) &&
 		    (m = m_pullup(m, sizeof(*eh))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		eh = mtod(m, struct ether_header *);
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2121,7 +2110,7 @@ rtwn_start(struct ifnet *ifp)
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 sendit:
@@ -2129,7 +2118,7 @@ sendit:
 
 		if (rtwn_tx(sc, m, ni) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2154,7 +2143,7 @@ rtwn_watchdog(struct ifnet *ifp)
 		if (--sc->sc_tx_timer == 0) {
 			aprint_error_dev(sc->sc_dev, "device timeout\n");
 			softint_schedule(sc->init_task);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;

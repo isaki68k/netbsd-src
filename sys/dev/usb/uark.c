@@ -1,4 +1,4 @@
-/*	$NetBSD: uark.c,v 1.15 2019/05/09 02:43:35 mrg Exp $	*/
+/*	$NetBSD: uark.c,v 1.18 2021/08/07 16:19:17 thorpej Exp $	*/
 /*	$OpenBSD: uark.c,v 1.13 2009/10/13 19:33:17 pirofti Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uark.c,v 1.15 2019/05/09 02:43:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uark.c,v 1.18 2021/08/07 16:19:17 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -85,7 +85,7 @@ static int	uark_open(void *, int);
 static void	uark_break(void *, int, int);
 static int	uark_cmd(struct uark_softc *, uint16_t, uint16_t);
 
-struct ucom_methods uark_methods = {
+static const struct ucom_methods uark_methods = {
 	.ucom_get_status = uark_get_status,
 	.ucom_set = uark_set,
 	.ucom_param = uark_param,
@@ -190,8 +190,8 @@ uark_attach(device_t parent, device_t self, void *aux)
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->sc_udev, sc->sc_dev);
 
-	sc->sc_subdev = config_found_sm_loc(self, "ucombus", NULL, &ucaa,
-					    ucomprint, ucomsubmatch);
+	sc->sc_subdev = config_found(self, &ucaa, ucomprint,
+	    CFARGS(.submatch = ucomsubmatch));
 
 	return;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: wsconsio.h,v 1.123 2019/05/24 14:28:48 nonaka Exp $ */
+/* $NetBSD: wsconsio.h,v 1.126 2021/09/28 06:14:27 nia Exp $ */
 
 /*
  * Copyright (c) 1996, 1997 Christopher G. Demetriou.  All rights reserved.
@@ -76,7 +76,8 @@ struct wscons_event {
 #define	WSCONS_EVENT_ASCII		13	/* key code is already ascii */
 #define	WSCONS_EVENT_MOUSE_DELTA_W	14	/* W delta amount */
 #define	WSCONS_EVENT_MOUSE_ABSOLUTE_W	15	/* W location */
-
+#define	WSCONS_EVENT_HSCROLL		16	/* X axis precision scrolling */
+#define	WSCONS_EVENT_VSCROLL		17	/* Y axis precision scrolling */
 
 /*
  * Keyboard ioctls (0 - 31)
@@ -87,7 +88,7 @@ struct wscons_event {
 #define	WSKBD_TYPE_LK201	1	/* lk-201 */
 #define	WSKBD_TYPE_LK401	2	/* lk-401 */
 #define	WSKBD_TYPE_PC_XT	3	/* PC-ish, XT scancode */
-#define	WSKBD_TYPE_PC_AT	4	/* PC-ish, AT scancode */
+#define	WSKBD_TYPE_PC_AT	4	/* PC-ish, AT scancode, not used by modern kernels */
 #define	WSKBD_TYPE_USB		5	/* USB, XT scancode */
 #define	WSKBD_TYPE_NEXT		6	/* NeXT keyboard */
 #define	WSKBD_TYPE_HPC_KBD	7	/* HPC bultin keyboard */
@@ -269,6 +270,28 @@ struct wsmouse_repeat {
 
 #define WSMOUSEIO_SETVERSION	_IOW('W', 41, int)
 #define WSMOUSE_EVENT_VERSION	WSEVENT_VERSION
+
+enum wsmousecfg {
+	WSMOUSECFG_REVERSE_SCROLLING = 0,
+	/* Touchpad parameters */
+	WSMOUSECFG_HORIZSCROLLDIST,
+	WSMOUSECFG_VERTSCROLLDIST
+};
+
+struct wsmouse_param {
+	enum wsmousecfg key;
+	int value;
+};
+
+struct wsmouse_parameters {
+	struct wsmouse_param *params;
+	unsigned int nparams;
+};
+
+#define WSMOUSECFG_MAX		(128) /* maximum number of wsmouse_params */
+
+#define WSMOUSEIO_GETPARAMS	_IOW('W', 42, struct wsmouse_parameters)
+#define WSMOUSEIO_SETPARAMS	_IOW('W', 43, struct wsmouse_parameters)
 
 /*
  * Display ioctls (64 - 95)
@@ -683,5 +706,25 @@ struct wsdisplayio_blit {
 
 #define WSDISPLAYIO_DOBLIT   	_IOWR('W', 105, struct wsdisplayio_blit)
 #define WSDISPLAYIO_WAITBLIT 	_IOWR('W', 106, struct wsdisplayio_blit)
+
+struct wsdisplayio_fontdesc {
+		char fd_name[64];
+		uint16_t fd_height;
+		uint16_t fd_width;
+};
+
+struct wsdisplayio_fontinfo {
+	uint32_t fi_buffersize;
+	uint32_t fi_numentries;
+	struct wsdisplayio_fontdesc *fi_fonts;
+};
+
+/*
+ * fill buffer pointed at by fi_fonts with wsdisplayio_fontdesc until either
+ * full or all fonts are listed
+ * just return the number of entries needed if fi_fonts is NULL
+ */
+
+#define WSDISPLAYIO_LISTFONTS	_IOWR('W', 107, struct wsdisplayio_fontinfo)
 
 #endif /* _DEV_WSCONS_WSCONSIO_H_ */

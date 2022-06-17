@@ -1,4 +1,4 @@
-/*	$NetBSD: rtl8169.c,v 1.160 2019/09/22 16:41:19 ryo Exp $	*/
+/*	$NetBSD: rtl8169.c,v 1.171 2022/05/24 20:50:19 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998-2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.160 2019/09/22 16:41:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.171 2022/05/24 20:50:19 andvar Exp $");
 /* $FreeBSD: /repoman/r/ncvs/src/sys/dev/re/if_re.c,v 1.20 2004/04/11 20:34:08 ru Exp $ */
 
 /*
@@ -172,15 +172,60 @@ static void re_miibus_statchg(struct ifnet *);
 
 static void re_reset(struct rtk_softc *);
 
+static const struct re_revision {
+	uint32_t		re_chipid;
+	const char		*re_name;
+} re_revisions[] = {
+	{ RTK_HWREV_8100,	"RTL8100" },
+	{ RTK_HWREV_8100E,	"RTL8100E" },
+	{ RTK_HWREV_8100E_SPIN2, "RTL8100E 2" },
+	{ RTK_HWREV_8101,	"RTL8101" },
+	{ RTK_HWREV_8101E,	"RTL8101E" },
+	{ RTK_HWREV_8102E,	"RTL8102E" },
+	{ RTK_HWREV_8106E,	"RTL8106E" },
+	{ RTK_HWREV_8401E,	"RTL8401E" },
+	{ RTK_HWREV_8402,	"RTL8402" },
+	{ RTK_HWREV_8411,	"RTL8411" },
+	{ RTK_HWREV_8411B,	"RTL8411B" },
+	{ RTK_HWREV_8102EL,	"RTL8102EL" },
+	{ RTK_HWREV_8102EL_SPIN1, "RTL8102EL 1" },
+	{ RTK_HWREV_8103E,       "RTL8103E" },
+	{ RTK_HWREV_8110S,	"RTL8110S" },
+	{ RTK_HWREV_8139CPLUS,	"RTL8139C+" },
+	{ RTK_HWREV_8168B_SPIN1, "RTL8168 1" },
+	{ RTK_HWREV_8168B_SPIN2, "RTL8168 2" },
+	{ RTK_HWREV_8168B_SPIN3, "RTL8168 3" },
+	{ RTK_HWREV_8168C,	"RTL8168C/8111C" },
+	{ RTK_HWREV_8168C_SPIN2, "RTL8168C/8111C" },
+	{ RTK_HWREV_8168CP,	"RTL8168CP/8111CP" },
+	{ RTK_HWREV_8168F,	"RTL8168F/8111F" },
+	{ RTK_HWREV_8168G,	"RTL8168G/8111G" },
+	{ RTK_HWREV_8168GU,	"RTL8168GU/8111GU" },
+	{ RTK_HWREV_8168H,	"RTL8168H/8111H" },
+	{ RTK_HWREV_8105E,	"RTL8105E" },
+	{ RTK_HWREV_8105E_SPIN1, "RTL8105E" },
+	{ RTK_HWREV_8168D,	"RTL8168D/8111D" },
+	{ RTK_HWREV_8168DP,	"RTL8168DP/8111DP" },
+	{ RTK_HWREV_8168E,	"RTL8168E/8111E" },
+	{ RTK_HWREV_8168E_VL,	"RTL8168E/8111E-VL" },
+	{ RTK_HWREV_8168EP,	"RTL8168EP/8111EP" },
+	{ RTK_HWREV_8168FP,	"RTL8168FP/8117" },
+	{ RTK_HWREV_8169,	"RTL8169" },
+	{ RTK_HWREV_8169_8110SB, "RTL8169/8110SB" },
+	{ RTK_HWREV_8169_8110SBL, "RTL8169SBL" },
+	{ RTK_HWREV_8169_8110SC, "RTL8169/8110SCd" },
+	{ RTK_HWREV_8169_8110SCE, "RTL8169/8110SCe" },
+	{ RTK_HWREV_8169S,	"RTL8169S" },
+
+	{ 0, NULL }
+};
+
 static inline void
 re_set_bufaddr(struct re_desc *d, bus_addr_t addr)
 {
 
-	d->re_bufaddr_lo = htole32((uint32_t)addr);
-	if (sizeof(bus_addr_t) == sizeof(uint64_t))
-		d->re_bufaddr_hi = htole32((uint64_t)addr >> 32);
-	else
-		d->re_bufaddr_hi = 0;
+	d->re_bufaddr_lo = htole32(RE_ADDR_LO(addr));
+	d->re_bufaddr_hi = htole32(RE_ADDR_HI(addr));
 }
 
 static int
@@ -562,13 +607,26 @@ re_attach(struct rtk_softc *sc)
 	struct ifnet *ifp;
 	struct mii_data *mii = &sc->mii;
 	int error = 0, i;
+	const struct re_revision *rr;
+	const char *re_name = NULL;
 
 	if ((sc->sc_quirk & RTKQ_8139CPLUS) == 0) {
-		uint32_t hwrev;
-
 		/* Revision of 8169/8169S/8110s in bits 30..26, 23 */
-		hwrev = CSR_READ_4(sc, RTK_TXCFG) & RTK_TXCFG_HWREV;
-		switch (hwrev) {
+		sc->sc_hwrev = CSR_READ_4(sc, RTK_TXCFG) & RTK_TXCFG_HWREV;
+
+		for (rr = re_revisions; rr->re_name != NULL; rr++) {
+			if (rr->re_chipid == sc->sc_hwrev)
+				re_name = rr->re_name;
+		}
+
+		if (re_name == NULL)
+			aprint_normal_dev(sc->sc_dev,
+			    "unknown ASIC (0x%04x)\n", sc->sc_hwrev >> 16);
+		else
+			aprint_normal_dev(sc->sc_dev,
+			    "%s (0x%04x)\n", re_name, sc->sc_hwrev >> 16);
+
+		switch (sc->sc_hwrev) {
 		case RTK_HWREV_8169:
 			sc->sc_quirk |= RTKQ_8169NONS;
 			break;
@@ -579,9 +637,9 @@ re_attach(struct rtk_softc *sc)
 		case RTK_HWREV_8169_8110SC:
 			sc->sc_quirk |= RTKQ_MACLDPS;
 			break;
-		case RTK_HWREV_8168_SPIN1:
-		case RTK_HWREV_8168_SPIN2:
-		case RTK_HWREV_8168_SPIN3:
+		case RTK_HWREV_8168B_SPIN1:
+		case RTK_HWREV_8168B_SPIN2:
+		case RTK_HWREV_8168B_SPIN3:
 			sc->sc_quirk |= RTKQ_MACSTAT;
 			break;
 		case RTK_HWREV_8168C:
@@ -607,28 +665,25 @@ re_attach(struct rtk_softc *sc)
 			sc->sc_quirk |= RTKQ_NOJUMBO;
 			break;
 		case RTK_HWREV_8168E:
-		case RTK_HWREV_8168H_SPIN1:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_PHYWAKE_PM |
 			    RTKQ_NOJUMBO;
 			break;
-		case RTK_HWREV_8168H:
-			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
-			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_PHYWAKE_PM |
-			    RTKQ_NOJUMBO | RTKQ_RXDV_GATED | RTKQ_TXRXEN_LATER;
-			break;
 		case RTK_HWREV_8168E_VL:
 		case RTK_HWREV_8168F:
+		case RTK_HWREV_8411:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_NOJUMBO;
 			break;
+		case RTK_HWREV_8168EP:
+		case RTK_HWREV_8168FP:
 		case RTK_HWREV_8168G:
-		case RTK_HWREV_8168G_SPIN1:
-		case RTK_HWREV_8168G_SPIN2:
-		case RTK_HWREV_8168G_SPIN4:
+		case RTK_HWREV_8168GU:
+		case RTK_HWREV_8168H:
+		case RTK_HWREV_8411B:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_NOJUMBO | 
-			    RTKQ_RXDV_GATED;
+			    RTKQ_RXDV_GATED | RTKQ_TXRXEN_LATER;
 			break;
 		case RTK_HWREV_8100E:
 		case RTK_HWREV_8100E_SPIN2:
@@ -637,13 +692,28 @@ re_attach(struct rtk_softc *sc)
 			break;
 		case RTK_HWREV_8102E:
 		case RTK_HWREV_8102EL:
-		case RTK_HWREV_8103E:
+		case RTK_HWREV_8102EL_SPIN1:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_NOJUMBO;
 			break;
+		case RTK_HWREV_8103E:
+			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
+			    RTKQ_MACSTAT | RTKQ_CMDSTOP;
+			break;
+		case RTK_HWREV_8401E:
+		case RTK_HWREV_8105E:
+		case RTK_HWREV_8105E_SPIN1: /* XXX */
+		case RTK_HWREV_8106E:
+			sc->sc_quirk |= RTKQ_PHYWAKE_PM |
+			    RTKQ_DESCV2 | RTKQ_NOEECMD | RTKQ_MACSTAT |
+			    RTKQ_CMDSTOP;
+			break;
+		case RTK_HWREV_8402:
+			sc->sc_quirk |= RTKQ_PHYWAKE_PM |
+			    RTKQ_DESCV2 | RTKQ_NOEECMD | RTKQ_MACSTAT |
+			    RTKQ_CMDSTOP; /* CMDSTOP_WAIT_TXQ */
+			break;
 		default:
-			aprint_normal_dev(sc->sc_dev,
-			    "Unknown revision (0x%08x)\n", hwrev);
 			/* assume the latest features */
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD;
 			sc->sc_quirk |= RTKQ_NOJUMBO;
@@ -666,7 +736,7 @@ re_attach(struct rtk_softc *sc)
 	/*
 	 * RTL81x9 chips automatically read EEPROM to init MAC address,
 	 * and some NAS override its MAC address per own configuration,
-	 * so no need to explicitely read EEPROM and set ID registers.
+	 * so no need to explicitly read EEPROM and set ID registers.
 	 */
 #ifdef RE_USE_EECMD
 	if ((sc->sc_quirk & RTKQ_NOEECMD) != 0) {
@@ -853,6 +923,7 @@ re_attach(struct rtk_softc *sc)
 	IFQ_SET_READY(&ifp->if_snd);
 
 	callout_init(&sc->rtk_tick_ch, 0);
+	callout_setfunc(&sc->rtk_tick_ch, re_tick, sc);
 
 	/* Do MII setup */
 	mii->mii_ifp = ifp;
@@ -964,12 +1035,12 @@ re_detach(struct rtk_softc *sc)
 	/* Detach all PHYs. */
 	mii_detach(&sc->mii, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->mii.mii_media, IFM_INST_ANY);
-
 	rnd_detach_source(&sc->rnd_source);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->mii.mii_media);
 
 	/* Destroy DMA maps for RX buffers. */
 	for (i = 0; i < RE_RX_DESC_CNT; i++)
@@ -1055,6 +1126,7 @@ re_newbuf(struct rtk_softc *sc, int idx, struct mbuf *m)
 		if (n == NULL)
 			return ENOBUFS;
 
+		MCLAIM(n, &sc->ethercom.ec_rx_mowner);
 		MCLGET(n, M_DONTWAIT);
 		if ((n->m_flags & M_EXT) == 0) {
 			m_freem(n);
@@ -1243,7 +1315,7 @@ re_rxeof(struct rtk_softc *sc)
 				printf(", CRC error");
 			printf("\n");
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			/*
 			 * If this is part of a multi-fragment packet,
 			 * discard all the pieces.
@@ -1262,7 +1334,7 @@ re_rxeof(struct rtk_softc *sc)
 		 */
 
 		if (__predict_false(re_newbuf(sc, i, NULL) != 0)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			if (sc->re_head != NULL) {
 				m_freem(sc->re_head);
 				sc->re_head = sc->re_tail = NULL;
@@ -1398,12 +1470,14 @@ re_txeof(struct rtk_softc *sc)
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 
+		net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 		if (txstat & (RE_TDESC_STAT_EXCESSCOL | RE_TDESC_STAT_COLCNT))
-			ifp->if_collisions++;
+			if_statinc_ref(nsr, if_collisions);
 		if (txstat & RE_TDESC_STAT_TXERRSUM)
-			ifp->if_oerrors++;
+			if_statinc_ref(nsr, if_oerrors);
 		else
-			ifp->if_opackets++;
+			if_statinc_ref(nsr, if_opackets);
+		IF_STAT_PUTREF(ifp);
 	}
 
 	sc->re_ldata.re_txq_considx = idx;
@@ -1448,7 +1522,7 @@ re_tick(void *arg)
 	mii_tick(&sc->mii);
 	splx(s);
 
-	callout_reset(&sc->rtk_tick_ch, hz, re_tick, sc);
+	callout_schedule(&sc->rtk_tick_ch, hz);
 }
 
 int
@@ -1611,7 +1685,7 @@ re_start(struct ifnet *ifp)
 
 			IFQ_DEQUEUE(&ifp->if_snd, m);
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2009,7 +2083,7 @@ re_init(struct ifnet *ifp)
 	ifp->if_flags |= IFF_RUNNING;
 	ifp->if_flags &= ~IFF_OACTIVE;
 
-	callout_reset(&sc->rtk_tick_ch, hz, re_tick, sc);
+	callout_schedule(&sc->rtk_tick_ch, hz);
 
  out:
 	if (error) {
@@ -2055,7 +2129,7 @@ re_ioctl(struct ifnet *ifp, u_long command, void *data)
 		error = 0;
 
 		if (command == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (command != SIOCADDMULTI && command != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING)
@@ -2077,7 +2151,7 @@ re_watchdog(struct ifnet *ifp)
 	sc = ifp->if_softc;
 	s = splnet();
 	printf("%s: watchdog timeout\n", device_xname(sc->sc_dev));
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	re_txeof(sc);
 	re_rxeof(sc);

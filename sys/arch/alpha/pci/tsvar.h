@@ -1,4 +1,4 @@
-/* $NetBSD: tsvar.h,v 1.12 2014/02/21 12:23:30 jdc Exp $ */
+/* $NetBSD: tsvar.h,v 1.17 2021/07/19 01:06:14 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 by Ross Harvey.  All rights reserved.
@@ -31,6 +31,7 @@
  *
  */
 
+#include <sys/extent.h>
 #include <dev/isa/isavar.h>
 #include <dev/pci/pcivar.h>
 #include <dev/i2c/i2cvar.h>
@@ -50,10 +51,13 @@ struct tsp_config {
 	struct	alpha_bus_space pc_iot, pc_memt;
 	struct	alpha_pci_chipset pc_pc;
 
+	struct	alpha_bus_dma_tag pc_dmat64_direct;
 	struct	alpha_bus_dma_tag pc_dmat_direct;
-	struct	alpha_bus_dma_tag pc_dmat_sgmap;
+	struct	alpha_bus_dma_tag pc_dmat_sgmap_lo;
+	struct	alpha_bus_dma_tag pc_dmat_sgmap_hi;
 
-	struct alpha_sgmap pc_sgmap;
+	struct alpha_sgmap pc_sgmap_lo;
+	struct alpha_sgmap pc_sgmap_hi;
 
 	uint32_t pc_hae_mem;
 	uint32_t pc_hae_io;
@@ -62,6 +66,13 @@ struct tsp_config {
 	long	pc_mem_exstorage[_FSTORE];
 	struct	extent *pc_io_ex, *pc_mem_ex;
 	int	pc_mallocsafe;
+
+	struct {
+		uint64_t wsba[4];
+		uint64_t wsm[4];
+		uint64_t tba[4];
+	} pc_saved_windows;
+	uint64_t pc_saved_pctl;
 };
 
 struct tsp_attach_args {
@@ -72,7 +83,6 @@ struct tsp_attach_args {
 struct tsciic_softc {
 	device_t	sc_dev;
 	struct		i2c_controller sc_i2c;
-	kmutex_t	sc_buslock;
 };
 
 struct tsciic_attach_args {

@@ -1,4 +1,4 @@
-/*	$NetBSD: wss.c,v 1.73 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: wss.c,v 1.77 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1994 John Brezak
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wss.c,v 1.73 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wss.c,v 1.77 2021/08/07 16:19:12 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -89,7 +89,6 @@ const struct audio_hw_if wss_hw_if = {
 	.close			= ad1848_isa_close,
 	.query_format		= ad1848_query_format,
 	.set_format		= ad1848_set_format,
-	.round_blocksize	= ad1848_round_blocksize,
 	.commit_settings	= ad1848_commit_settings,
 	.halt_output		= ad1848_isa_halt_output,
 	.halt_input		= ad1848_isa_halt_input,
@@ -162,7 +161,8 @@ wssattach(struct wss_softc *sc)
 		arg.type = AUDIODEV_TYPE_OPL;
 		arg.hwif = 0;
 		arg.hdl = 0;
-		(void)config_found(ac->sc_dev, &arg, audioprint);
+		(void)config_found(ac->sc_dev, &arg, audioprint,
+		    CFARGS(.iattr = "wss"));
 	}
 }
 

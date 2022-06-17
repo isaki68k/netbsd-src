@@ -1,4 +1,4 @@
-/* $NetBSD: vr4181giu.c,v 1.4 2012/10/27 17:17:55 chs Exp $ */
+/* $NetBSD: vr4181giu.c,v 1.8 2021/08/07 16:18:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999-2001
@@ -35,11 +35,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vr4181giu.c,v 1.4 2012/10/27 17:17:55 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vr4181giu.c,v 1.8 2021/08/07 16:18:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/queue.h>
 #include <sys/systm.h>
 
@@ -151,7 +151,7 @@ vr4181giu_attach(device_t parent, device_t self, void *aux)
 	sc->sc_haa.haa_sc = sc;
 	sc->sc_haa.haa_getchip = vr4181giu_getchip;
 	sc->sc_haa.haa_iot = sc->sc_iot;
-	while (config_found(self, &sc->sc_haa, vr4181giu_print)) ;
+	while (config_found(self, &sc->sc_haa, vr4181giu_print, CFARGS_NONE)) ;
 
 	/*
 	 * GIU-ISA bridge
@@ -169,7 +169,7 @@ vr4181giu_callback(device_t self)
 	struct vr4181giu_softc		*sc = (void *) self;
 
 	sc->sc_haa.haa_busname = "vrisab";
-	config_found(self, &sc->sc_haa, vr4181giu_print);
+	config_found(self, &sc->sc_haa, vr4181giu_print, CFARGS_NONE);
 }
 
 static int
@@ -325,9 +325,7 @@ vr4181giu_intr_establish(
 
 	s = splhigh();
 
-	if ((ih = malloc(sizeof *ih, M_DEVBUF, M_NOWAIT)) == NULL)
-		panic("vr4181giu_intr_establish: memory exhausted.");
-
+	ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 	ih->ih_port = port;
 	ih->ih_fun = ih_fun;
 	ih->ih_arg = ih_arg;

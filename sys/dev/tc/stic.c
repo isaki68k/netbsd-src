@@ -1,4 +1,4 @@
-/*	$NetBSD: stic.c,v 1.53 2018/03/30 22:54:36 maya Exp $	*/
+/*	$NetBSD: stic.c,v 1.58 2022/05/18 13:56:32 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: stic.c,v 1.53 2018/03/30 22:54:36 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: stic.c,v 1.58 2022/05/18 13:56:32 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -363,7 +363,7 @@ stic_reset(struct stic_info *si)
 	DELAY(2000);			/* wait 2ms for STIC to respond. */
 	sr->sr_sticsr = 0x00000000;	/* Hit the STIC's csr again... */
 	tc_wmb();
-	sr->sr_buscsr = 0xffffffff;	/* and bash its bus-acess csr. */
+	sr->sr_buscsr = 0xffffffff;	/* and bash its bus-access csr. */
 	tc_wmb();
 	tc_syncbus();			/* Blam! */
 	DELAY(20000);			/* wait until the stic recovers... */
@@ -433,7 +433,7 @@ stic_attach(device_t self, struct stic_info *si, int console)
 	waa.accessops = &stic_accessops;
 	waa.accesscookie = si;
 
-	config_found(self, &waa, wsemuldisplaydevprint);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 void
@@ -623,7 +623,7 @@ stic_setup_backing(struct stic_info *si, struct stic_screen *ss)
 	int size;
 
 	size = si->si_consw * si->si_consh * sizeof(*ss->ss_backing);
-	ss->ss_backing = malloc(size, M_DEVBUF, M_NOWAIT|M_ZERO);
+	ss->ss_backing = malloc(size, M_DEVBUF, M_WAITOK | M_ZERO);
 }
 
 static int
@@ -1422,7 +1422,7 @@ stic_set_hwcurpos(struct stic_info *si)
 }
 
 /*
- * STIC control inteface.  We have a separate device for mapping the board,
+ * STIC control interface.  We have a separate device for mapping the board,
  * because access to the DMA engine means that it's possible to circumvent
  * the securelevel mechanism.
  */

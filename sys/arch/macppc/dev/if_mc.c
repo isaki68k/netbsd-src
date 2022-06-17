@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mc.c,v 1.24 2019/04/25 10:08:45 msaitoh Exp $	*/
+/*	$NetBSD: if_mc.c,v 1.28 2022/02/16 23:49:26 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997 David Huang <khym@bga.com>
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mc.c,v 1.24 2019/04/25 10:08:45 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mc.c,v 1.28 2022/02/16 23:49:26 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -108,6 +108,7 @@ mc_attach(device_t parent, device_t self, void *aux)
 	struct mc_softc *sc = device_private(self);
 	uint8_t myaddr[ETHER_ADDR_LEN];
 	u_int *reg;
+	char intr_xname[INTRDEVNAMEBUF];
 
 	sc->sc_dev = self;
 	sc->sc_node = ca->ca_node;
@@ -169,9 +170,16 @@ mc_attach(device_t parent, device_t self, void *aux)
 	dbdma_reset(sc->sc_txdma);
 
 	/* Install interrupt handlers */
+
 	/*intr_establish(ca->ca_intr[1], IST_EDGE, IPL_NET, mc_dmaintr, sc);*/
-	intr_establish(ca->ca_intr[2], IST_EDGE, IPL_NET, mc_dmaintr, sc);
-	intr_establish(ca->ca_intr[0], IST_EDGE, IPL_NET, mcintr, sc);
+
+	snprintf(intr_xname, sizeof(intr_xname), "%s dma", device_xname(self));
+	intr_establish_xname(ca->ca_intr[2], IST_EDGE, IPL_NET, mc_dmaintr, sc,
+	    intr_xname);
+
+	snprintf(intr_xname, sizeof(intr_xname), "%s pio", device_xname(self));
+	intr_establish_xname(ca->ca_intr[0], IST_EDGE, IPL_NET, mcintr, sc,
+	    intr_xname);
 
 	sc->sc_biucc = XMTSP_64;
 	sc->sc_fifocc = XMTFW_16 | RCVFW_64 | XMTFWU | RCVFWU |
@@ -259,7 +267,7 @@ mc_dmaintr(void *arg)
 		statoff = offset + datalen;
 
 		DBDMA_BUILD_CMD(cmd, DBDMA_CMD_STOP, 0, 0, 0, 0);
-		__asm volatile("eieio");
+		__asm volatile("eieio" ::: "memory");
 
 		/* flushcache(sc->sc_rxbuf + offset, datalen + 4); */
 
@@ -274,7 +282,7 @@ mc_dmaintr(void *arg)
 next:
 		DBDMA_BUILD_CMD(cmd, DBDMA_CMD_IN_LAST, 0, DBDMA_INT_ALWAYS,
 			DBDMA_WAIT_NEVER, DBDMA_BRANCH_NEVER);
-		__asm volatile("eieio");
+		__asm volatile("eieio" ::: "memory");
 		cmd->d_status = 0;
 		cmd->d_resid = 0;
 		sc->sc_tail = i + 1;

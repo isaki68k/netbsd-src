@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gre.h,v 1.44 2019/02/26 09:43:37 msaitoh Exp $ */
+/*	$NetBSD: if_gre.h,v 1.50 2021/12/03 13:27:39 andvar Exp $ */
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@ struct gre_h {
 				and payload
 				Present if (ck_pres | rt_pres == 1).
 				Valid if (ck_pres == 1).
-	u_int_16 offset		offset from start of routing filed to
+	u_int_16 offset		offset from start of routing field to
 				first octet of active SRE (see below).
 				Present if (ck_pres | rt_pres == 1).
 				Valid if (rt_pres == 1).
@@ -127,11 +127,10 @@ struct gre_h {
 				Present if (key_pres ==1 ).
 	u_int_32 seq_num	Sequence number to allow for packet order
 				Present if (seq_pres ==1 ).
-	struct gre_sre[] routing Routing fileds (see below)
+	struct gre_sre[] routing Routing fields (see below)
 				Present if (rt_pres == 1)
  */
-} __packed;
-
+};
 #define GRE_CP		0x8000  /* Checksum Present */
 #define GRE_RP		0x4000  /* Routing Present */
 #define GRE_KP		0x2000  /* Key Present */

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.136 2019/10/01 18:00:08 chs Exp $ */
+/*	$NetBSD: cpu.c,v 1.140 2021/04/05 22:36:27 nakayama Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.136 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.140 2021/04/05 22:36:27 nakayama Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -95,6 +95,7 @@ struct cpu_bootargs *cpu_args;	/* allocated very early in pmap_bootstrap. */
 struct pool_cache *fpstate_cache;
 
 static struct cpu_info *alloc_cpuinfo(u_int);
+static void cpu_idle_sun4v(void);
 
 /* The following are used externally (sysctl_hw). */
 char	machine[] = MACHINE;		/* from <machine/param.h> */
@@ -503,7 +504,7 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 	 * For other cpus, we need to call mi_cpu_attach()
 	 * and complete setting up cpcb.
 	 */
-	if (ci->ci_flags & CPUF_PRIMARY) {
+	if (CPU_IS_PRIMARY(ci)) {
 		fpstate_cache = pool_cache_init(sizeof(struct fpstate64),
 					SPARC64_BLOCK_SIZE, 0, 0, "fpstate",
 					NULL, IPL_NONE, NULL, NULL, NULL);
@@ -556,7 +557,15 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 		    (u_int)GETVER_CPU_IMPL(),
 		    (u_int)GETVER_CPU_MASK());
 	}
-
+#ifdef NUMA
+	if (CPU_IS_USIIIi()) {
+		uint64_t start = ci->ci_cpuid;
+		start <<= 36;
+		ci->ci_numa_id = ci->ci_cpuid;
+		printf("NUMA bucket %d %016lx\n", ci->ci_cpuid, start);
+		uvm_page_numa_load(start, 0x1000000000, ci->ci_cpuid);
+	}
+#endif
 	if (ci->ci_system_clockrate[0] != 0) {
 		aprint_normal_dev(dev, "system tick frequency %s MHz\n",
 		    clockfreq(ci->ci_system_clockrate[0]));
@@ -687,7 +696,19 @@ cpu_attach(device_t parent, device_t dev, void *aux)
 		ci->ci_cpuset = pa;
 		pa += 64;
 	}
-	
+
+	/*
+	 * cpu_idle setup (currently only necessary for sun4v)
+	 */
+	if (CPU_ISSUN4V) {
+		ci->ci_idlespin = cpu_idle_sun4v;
+	}
+}
+
+static void
+cpu_idle_sun4v(void)
+{
+	hv_cpu_yield();
 }
 
 int

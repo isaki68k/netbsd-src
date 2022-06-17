@@ -1,4 +1,4 @@
-/* $NetBSD: am335x_trng.c,v 1.2 2016/12/17 15:24:35 riastradh Exp $ */
+/* $NetBSD: am335x_trng.c,v 1.6 2022/06/08 23:12:27 andvar Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am335x_trng.c,v 1.2 2016/12/17 15:24:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am335x_trng.c,v 1.6 2022/06/08 23:12:27 andvar Exp $");
 
 #include "opt_omap.h"
 
@@ -36,7 +36,6 @@ __KERNEL_RCSID(0, "$NetBSD: am335x_trng.c,v 1.2 2016/12/17 15:24:35 riastradh Ex
 #include <sys/conf.h>
 #include <sys/mutex.h>
 #include <sys/bus.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <arm/omap/am335x_prcm.h>
@@ -57,7 +56,6 @@ struct trng_softc {
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
 
-	kmutex_t sc_lock;
 	krndsource_t sc_rndsource;
 };
 
@@ -96,11 +94,9 @@ trng_attach(device_t parent, device_t self, void *aux)
 	sc->sc_iot = obio->obio_iot;
 	if (bus_space_map(obio->obio_iot, obio->obio_addr, obio->obio_size,
 	    0, &sc->sc_ioh) != 0) {
-		aprint_error(": couldn't map address spcae\n");
+		aprint_error(": couldn't map address space\n");
 		return;
 	}
-
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 
 	prcm_module_enable(&rng_module);
 
@@ -119,8 +115,6 @@ trng_attach(device_t parent, device_t self, void *aux)
 
 	aprint_naive("\n");
 	aprint_normal("\n");
-
-	trng_callback(RND_POOLBITS / NBBY, sc);
 }
 
 static void
@@ -130,7 +124,6 @@ trng_callback(size_t bytes_wanted, void *priv)
 	uint32_t buf[2];
 	u_int retry;
 
-	mutex_enter(&sc->sc_lock);
 	while (bytes_wanted) {
 		for (retry = 10; retry > 0; retry--) {
 			if (TRNG_READ(sc, TRNG_STATUS_REG) & TRNG_STATUS_READY)
@@ -147,5 +140,4 @@ trng_callback(size_t bytes_wanted, void *priv)
 		bytes_wanted -= MIN(bytes_wanted, sizeof(buf));
 	}
 	explicit_memset(buf, 0, sizeof(buf));
-	mutex_exit(&sc->sc_lock);
 }

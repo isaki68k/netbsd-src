@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -119,7 +119,7 @@ DtCompileOneField (
             break;
         }
 
-        /* Fall through. */
+        ACPI_FALLTHROUGH;
 
     case DT_FIELD_TYPE_BUFFER:
 
@@ -326,14 +326,14 @@ DtCompileInteger (
         {
             if (Value != 1)
             {
-                DtError (ASL_WARNING, ASL_MSG_RESERVED_VALUE, Field,
+                DtError (ASL_ERROR, ASL_MSG_RESERVED_FIELD, Field,
                     "Must be one, setting to one");
                 Value = 1;
             }
         }
         else if (Value != 0)
         {
-            DtError (ASL_WARNING, ASL_MSG_RESERVED_VALUE, Field,
+            DtError (ASL_ERROR, ASL_MSG_RESERVED_FIELD, Field,
                 "Must be zero, setting to zero");
             Value = 0;
         }
@@ -468,6 +468,14 @@ DtCompileBuffer (
 
     StringValue = DtNormalizeBuffer (StringValue, &Count);
     Substring = StringValue;
+    if (Count != ByteLength)
+    {
+        sprintf(AslGbl_MsgBuffer,
+            "Found %u values, must match expected count: %u",
+            Count, ByteLength);
+        DtError (ASL_ERROR, ASL_MSG_BUFFER_LIST, Field, AslGbl_MsgBuffer);
+        goto Exit;
+    }
 
     /* Each element of StringValue is now three chars (2 hex + 1 space) */
 
@@ -612,4 +620,123 @@ DtCompileFlag (
     }
 
     *Buffer |= (UINT8) (Value << BitPosition);
+}
+
+
+/******************************************************************************
+ *
+ * FUNCTION:    DtCreateField
+ *
+ * PARAMETERS: Name
+ *             Value
+ *             Line
+ *             Offset
+ *             Column
+ *             NameColumn
+ *
+ * RETURN:     None
+ *
+ * DESCRIPTION: Create a field
+ *
+ *****************************************************************************/
+
+void
+DtCreateField (
+    DT_TABLE_UNIT           *FieldKey,
+    DT_TABLE_UNIT           *FieldValue,
+    UINT32                  Offset)
+{
+    DT_FIELD                *Field = UtFieldCacheCalloc ();
+
+
+    Field->StringLength = 0;
+    if (FieldKey->Value)
+    {
+        Field->Name =
+            strcpy (UtLocalCacheCalloc (strlen (FieldKey->Value) + 1), FieldKey->Value);
+    }
+
+    if (FieldValue->Value)
+    {
+        Field->StringLength = strlen (FieldValue->Value);
+        Field->Value =
+            strcpy (UtLocalCacheCalloc (Field->StringLength + 1), FieldValue->Value);
+    }
+
+    Field->Line = FieldValue->Line;
+    Field->ByteOffset = Offset;
+    Field->NameColumn = FieldKey->Column;
+    Field->Column = FieldValue->Column;
+    DtLinkField (Field);
+
+    DtDumpFieldList (AslGbl_FieldList);
+}
+
+
+/******************************************************************************
+ *
+ * FUNCTION:    DtCreateTableUnit
+ *
+ * PARAMETERS: Data
+ *             Line
+ *             Column
+ *
+ * RETURN:     a table unit
+ *
+ * DESCRIPTION: Create a table unit
+ *
+ *****************************************************************************/
+
+DT_TABLE_UNIT *
+DtCreateTableUnit (
+    char                    *Data,
+    UINT32                  Line,
+    UINT32                  Column)
+{
+    DT_TABLE_UNIT           *Unit = (DT_TABLE_UNIT *) UtFieldCacheCalloc ();
+
+
+    Unit->Value = Data;
+    Unit->Line = Line;
+    Unit->Column = Column;
+    return (Unit);
+}
+
+
+/******************************************************************************
+ *
+ * FUNCTION:    DtLinkField
+ *
+ * PARAMETERS:  Field               - New field object to link
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Link one field name and value to the list
+ *
+ *****************************************************************************/
+
+void
+DtLinkField (
+    DT_FIELD                *Field)
+{
+    DT_FIELD                *Prev;
+    DT_FIELD                *Next;
+
+
+    Prev = Next = AslGbl_FieldList;
+
+    while (Next)
+    {
+        Prev = Next;
+        Next = Next->Next;
+    }
+
+    if (Prev)
+    {
+        Prev->Next = Field;
+    }
+    else
+    {
+        AslGbl_FieldList = Field;
+    }
 }

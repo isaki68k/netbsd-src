@@ -1,4 +1,4 @@
-/* $Id: arbus.c,v 1.15 2011/07/10 06:26:02 matt Exp $ */
+/* $Id: arbus.c,v 1.17 2021/08/07 16:18:58 thorpej Exp $ */
 /*
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
  * Copyright (c) 2006 Garrett D'Amore.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arbus.c,v 1.15 2011/07/10 06:26:02 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arbus.c,v 1.17 2021/08/07 16:18:58 thorpej Exp $");
 
 #include "locators.h"
 #define	_MIPS_BUS_DMA_PRIVATE
@@ -147,8 +147,9 @@ arbus_attach(device_t parent, device_t self, void *aux)
 			continue;
 		}
 
-		(void) config_found_sm_loc(self, "arbus", locs, &aa,
-		    arbus_print, config_stdsubmatch);
+		config_found(self, &aa, arbus_print,
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .locators = locs));
 	}
 }
 

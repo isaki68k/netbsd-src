@@ -1,4 +1,4 @@
-/* $NetBSD: tcasic.c,v 1.47 2017/06/22 16:46:52 flxd Exp $ */
+/* $NetBSD: tcasic.c,v 1.52 2021/08/07 16:18:41 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -32,10 +32,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: tcasic.c,v 1.47 2017/06/22 16:46:52 flxd Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcasic.c,v 1.52 2021/08/07 16:18:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 
 #include <machine/autoconf.h>
@@ -46,20 +47,20 @@ __KERNEL_RCSID(0, "$NetBSD: tcasic.c,v 1.47 2017/06/22 16:46:52 flxd Exp $");
 #include <alpha/tc/tc_conf.h>
 
 /* Definition of the driver for autoconfig. */
-int	tcasicmatch(device_t, cfdata_t, void *);
-void	tcasicattach(device_t, device_t, void *);
+static int	tcasicmatch(device_t, cfdata_t, void *);
+static void	tcasicattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(tcasic, 0,
     tcasicmatch, tcasicattach, NULL, NULL);
 
 extern struct cfdriver tcasic_cd;
 
-int	tcasicprint(void *, const char *);
+static int	tcasicprint(void *, const char *);
 
 /* There can be only one. */
-int	tcasicfound;
+static int	tcasicfound;
 
-int
+static int
 tcasicmatch(device_t parent, cfdata_t cf, void *aux)
 {
 	struct mainbus_attach_args *ma = aux;
@@ -78,7 +79,7 @@ tcasicmatch(device_t parent, cfdata_t cf, void *aux)
 	return (1);
 }
 
-void
+static void
 tcasicattach(device_t parent, device_t self, void *aux)
 {
 	struct tcbus_attach_args tba;
@@ -145,12 +146,14 @@ tcasicattach(device_t parent, device_t self, void *aux)
 	(*intr_setup)();
 
 	/* They all come in at 0x800. */
-	scb_set(0x800, iointr, NULL, IPL_VM);
+	mutex_enter(&cpu_lock);
+	scb_set(0x800, iointr, NULL);
+	mutex_exit(&cpu_lock);
 
-	config_found(self, &tba, tcasicprint);
+	config_found(self, &tba, tcasicprint, CFARGS_NONE);
 }
 
-int
+static int
 tcasicprint(void *aux, const char *pnp)
 {
 

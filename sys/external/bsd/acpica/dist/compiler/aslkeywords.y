@@ -6,7 +6,7 @@ NoEcho('
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@ NoEcho('
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -94,7 +94,7 @@ AddressKeyword
     ;
 
 AddressSpaceKeyword
-    : ByteConst                             {$$ = UtCheckIntegerRange ($1, 0x0A, 0xFF);}
+    : ByteConst                             {$$ = UtCheckIntegerRange ($1, ACPI_NUM_PREDEFINED_REGIONS, 0xFF);}
     | RegionSpaceKeyword                    {}
     ;
 
@@ -286,6 +286,7 @@ RegionSpaceKeyword
     | PARSEOP_REGIONSPACE_GPIO              {$$ = TrCreateLeafOp (PARSEOP_REGIONSPACE_GPIO);}
     | PARSEOP_REGIONSPACE_GSBUS             {$$ = TrCreateLeafOp (PARSEOP_REGIONSPACE_GSBUS);}
     | PARSEOP_REGIONSPACE_PCC               {$$ = TrCreateLeafOp (PARSEOP_REGIONSPACE_PCC);}
+    | PARSEOP_REGIONSPACE_PRM               {$$ = TrCreateLeafOp (PARSEOP_REGIONSPACE_PRM);}
     | PARSEOP_REGIONSPACE_FFIXEDHW          {$$ = TrCreateLeafOp (PARSEOP_REGIONSPACE_FFIXEDHW);}
     ;
 

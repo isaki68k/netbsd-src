@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.171 2016/12/22 14:47:59 cherry Exp $	*/
+/*	$NetBSD: pmap.c,v 1.173 2022/02/06 20:20:19 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.171 2016/12/22 14:47:59 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.173 2022/02/06 20:20:19 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pmap_debug.h"
@@ -1537,7 +1537,7 @@ pmap_bootstrap(vaddr_t nextva)
 
 	/*
 	 * On the Sun3/50, the video frame buffer is located at
-	 * physical addres 1MB so we must step over it.
+	 * physical address 1MB so we must step over it.
 	 */
 	if (cpu_machine_id == ID_SUN3_50) {
 		hole_start = m68k_trunc_page(OBMEM_BW50_ADDR);
@@ -2181,7 +2181,7 @@ pmap_enter_user(pmap_t pmap, vaddr_t pgva, int new_pte, bool wired)
 	/* Validate this assumption. */
 	if (pmap != current_pmap()) {
 #ifdef	PMAP_DEBUG
-		/* Aparently, this never happens. */
+		/* Apparently, this never happens. */
 		db_printf("pmap_enter_user: not curlwp\n");
 		Debugger();
 #endif

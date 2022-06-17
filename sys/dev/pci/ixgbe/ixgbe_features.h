@@ -1,6 +1,7 @@
+/* $NetBSD: ixgbe_features.h,v 1.4 2021/12/24 05:02:11 msaitoh Exp $ */
 /******************************************************************************
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without

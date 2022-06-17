@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.h,v 1.4 2015/10/17 21:07:23 jmcneill Exp $	*/
+/*	$NetBSD: acpi.h,v 1.10 2022/05/28 01:07:47 manu Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -33,15 +33,29 @@
 #define _LINUX_ACPI_H_
 
 #ifdef _KERNEL_OPT
-#if defined(__i386__) || defined(__x86_64__)
 #include "acpica.h"
-#else
-#define NACPICA 0
-#endif
 #endif
 
 #if NACPICA > 0
 #include <dev/acpi/acpivar.h>
-#endif
 
+#include <linux/types.h>
+#include <linux/uuid.h>
+
+typedef ACPI_HANDLE acpi_handle;
+typedef ACPI_OBJECT_TYPE acpi_object_type;
+typedef ACPI_SIZE acpi_size;
+typedef ACPI_STATUS acpi_status;
+
+#define	acpi_evaluate_dsm	linux_acpi_evaluate_dsm
+#define	acpi_evaluate_dsm_typed	linux_acpi_evaluate_dsm_typed
+#define	acpi_check_dsm		linux_acpi_check_dsm
+
+union acpi_object *acpi_evaluate_dsm(acpi_handle, const guid_t *,
+    uint64_t, uint64_t, union acpi_object *);
+union acpi_object *acpi_evaluate_dsm_typed(acpi_handle, const guid_t *,
+    uint64_t, uint64_t, union acpi_object *, acpi_object_type);
+bool acpi_check_dsm(acpi_handle, const guid_t *, uint64_t, uint64_t);
+
+#endif	/* NACPICA > 0 */
 #endif  /* _LINUX_ACPI_H_ */

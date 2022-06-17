@@ -1,4 +1,4 @@
-/*	$NetBSD: cv3dpb.c,v 1.3 2015/10/02 05:22:49 msaitoh Exp $ */
+/*	$NetBSD: cv3dpb.c,v 1.6 2021/08/07 16:18:42 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2011, 2012 The NetBSD Foundation, Inc.
@@ -36,7 +36,6 @@
 #include <sys/errno.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
-#include <sys/extent.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -142,7 +141,7 @@ cv3dpb_attach(device_t parent, device_t self, void *aux)
 	pba.pba_bus = 0;
 	pba.pba_bridgetag = NULL;
 
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARGS_NONE);
 }
 
 pcireg_t

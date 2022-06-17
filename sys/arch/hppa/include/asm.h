@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.16 2019/04/16 12:25:17 skrll Exp $	*/
+/*	$NetBSD: asm.h,v 1.18 2022/06/01 06:18:04 skrll Exp $	*/
 
 /*	$OpenBSD: asm.h,v 1.12 2001/03/29 02:15:57 mickey Exp $	*/
 
@@ -68,7 +68,7 @@
 	ldo	HPPA_FRAME_SIZE(%sp), %sp	!\
 	copy	%rp, %arg0			!\
 	bl	2f, %arg1			!\
-	depi	0, 31, 2, %arg1			!\
+	 depi	0, 31, 2, %arg1			!\
 2:						!\
 	bl	_mcount, %rp			!\
 	 ldo	1b - 2b(%arg1), %arg1		!\
@@ -99,8 +99,8 @@
 #define ALTENTRY(x) ! .export x, entry ! .label x
 #define EXIT(x) ! .exit ! .procend ! .size x, .-x
 
-#define RCSID(x)	.pushsection ".ident"		!\
-			.asciz x			!\
+#define RCSID(x)	.pushsection ".ident","MS",@progbits,1;		\
+			.asciz x;					\
 			.popsection
 
 #define WEAK_ALIAS(alias,sym)				\

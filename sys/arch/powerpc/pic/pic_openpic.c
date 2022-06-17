@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_openpic.c,v 1.15 2018/09/03 16:29:26 riastradh Exp $ */
+/*	$NetBSD: pic_openpic.c,v 1.20 2022/02/23 21:54:40 andvar Exp $ */
 
 /*-
  * Copyright (c) 2007 Michael Lorenz
@@ -27,7 +27,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_openpic.c,v 1.15 2018/09/03 16:29:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_openpic.c,v 1.20 2022/02/23 21:54:40 andvar Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_multiprocessor.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -39,8 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: pic_openpic.c,v 1.15 2018/09/03 16:29:26 riastradh E
 #include <powerpc/openpic.h>
 
 #include <powerpc/pic/picvar.h>
-
-#include "opt_interrupt.h"
 
 static void opic_enable_irq(struct pic_ops *, int, int);
 static void opic_disable_irq(struct pic_ops *, int);
@@ -110,7 +112,7 @@ setup_openpic(void *addr, int passthrough)
 
 	openpic_set_priority(0, 0);
 
-	/* clear all pending interrunts */
+	/* clear all pending interrupts */
 	for (irq = 0; irq < pic->pic_numintrs; irq++) {
 		openpic_read_irq(0);
 		openpic_eoi(0);

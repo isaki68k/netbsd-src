@@ -1,4 +1,4 @@
-/*	$NetBSD: urlphy.c,v 1.34 2019/03/25 09:20:46 msaitoh Exp $	*/
+/*	$NetBSD: urlphy.c,v 1.39 2022/01/08 17:35:05 riastradh Exp $	*/
 /*
  * Copyright (c) 2001, 2002
  *     Shingo WATANABE <nabe@nabechan.org>.  All rights reserved.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: urlphy.c,v 1.34 2019/03/25 09:20:46 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: urlphy.c,v 1.39 2022/01/08 17:35:05 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -107,7 +107,6 @@ urlphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &urlphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 
 	/* Don't do loopback on this PHY. */
 	sc->mii_flags |= MIIF_NOLOOP;
@@ -119,16 +118,17 @@ urlphy_attach(device_t parent, device_t self, void *aux)
 		    "ignoring this PHY, non-zero instance\n");
 		return;
 	}
+
+	mii_lock(mii);
+
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
 	sc->mii_capabilities &= ma->mii_capmask;
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -202,9 +202,7 @@ urlphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if (sc->mii_ticks <= sc->mii_anegticks)
 			return 0;
 
-		PHY_RESET(sc);
-
-		if (mii_phy_auto(sc, 0) == EJUSTRETURN)
+		if (mii_phy_auto_restart(sc) == EJUSTRETURN)
 			return 0;
 
 		break;

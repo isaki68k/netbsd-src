@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.14 2019/06/18 21:18:12 kamil Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.19 2021/03/06 08:08:19 rin Exp $	*/
 
 #ifndef _POWERPC_PTRACE_H
 #define	_POWERPC_PTRACE_H
@@ -41,7 +41,7 @@
 	case PT_GETVECREGS: \
 	case PT_SETVECREGS:
 
-int ptrace_machdep_dorequest(struct lwp *, struct lwp *, int, void *, int);
+int ptrace_machdep_dorequest(struct lwp *, struct lwp **, int, void *, int);
 int process_machdep_dovecregs(struct lwp *, struct lwp *, struct uio *);
 int process_machdep_validvecregs(struct proc *);
 
@@ -69,6 +69,16 @@ int procfs_machdep_dovecregs(struct lwp *, struct lwp *,
 int procfs_machdep_validvecregs(struct lwp *, struct mount *);
 
 #endif /* ALTIVEC || PPC_HAVE_SPE */
+
+#if defined(PPC_BOOKE) || defined(PPC_IBM4XX)
+int ppc_sstep(struct lwp *, int);
+#endif /* PPC_BOOKE || PPC_IBM4XX */
 #endif /* _KERNEL */
+
+#define PTRACE_ILLEGAL_ASM	__asm __volatile (".long 0" : : : "memory")
+
+#define PTRACE_BREAKPOINT	((const uint8_t[]) { 0x7f, 0xe0, 0x00, 0x08 })
+#define PTRACE_BREAKPOINT_ASM	__asm __volatile("trap")
+#define PTRACE_BREAKPOINT_SIZE	4
 
 #endif /* _POWERPC_PTRACE_H */

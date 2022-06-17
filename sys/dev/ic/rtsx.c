@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsx.c,v 1.3 2018/04/24 18:34:30 maya Exp $	*/
+/*	$NetBSD: rtsx.c,v 1.6 2021/08/07 16:19:12 thorpej Exp $	*/
 /*	$OpenBSD: rtsx.c,v 1.10 2014/08/19 17:55:03 phessler Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsx.c,v 1.3 2018/04/24 18:34:30 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsx.c,v 1.6 2021/08/07 16:19:12 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -239,7 +239,7 @@ rtsx_attach(struct rtsx_softc *sc, bus_space_tag_t iot,
 	saa.saa_clkmax = 25000;
 	saa.saa_caps = SMC_CAPS_DMA|SMC_CAPS_4BIT_MODE;
 
-	sc->sc_sdmmc = config_found(sc->sc_dev, &saa, NULL);
+	sc->sc_sdmmc = config_found(sc->sc_dev, &saa, NULL, CFARGS_NONE);
 	if (sc->sc_sdmmc == NULL)
 		goto destroy_dmamap_cmd;
 
@@ -1044,7 +1044,7 @@ rtsx_read_cfg(struct rtsx_softc *sc, uint8_t func, uint16_t addr, uint32_t *val)
 	RTSX_READ(sc, RTSX_CFGDATA1, &data1);
 	RTSX_READ(sc, RTSX_CFGDATA2, &data2);
 	RTSX_READ(sc, RTSX_CFGDATA3, &data3);
-	*val = (data3 << 24) | (data2 << 16) | (data1 << 8) | data0;
+	*val = ((uint32_t)data3 << 24) | (data2 << 16) | (data1 << 8) | data0;
 
 	return 0;
 }

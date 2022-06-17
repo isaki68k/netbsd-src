@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.157 2019/03/19 20:30:05 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.161 2022/05/30 09:56:02 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -695,7 +695,7 @@ ENTRY_NOPROFILE(lev7intr)
  * (profiling, scheduling) and software interrupts (network, softclock).
  * We check for ASTs first, just like the VAX.  To avoid excess overhead
  * the T_ASTFLT handling code will also check for software interrupts so we
- * do not have to do it here.  After identifing that we need an AST we
+ * do not have to do it here.  After identifying that we need an AST we
  * drop the IPL to allow device interrupts.
  *
  * This code is complicated by the fact that sendsig may have been called
@@ -705,7 +705,7 @@ ENTRY_NOPROFILE(lev7intr)
  */
 ASENTRY_NOPROFILE(rei)
 #ifdef DEBUG
-	tstl	_C_LABEL(panicstr)	| have we paniced?
+	tstl	_C_LABEL(panicstr)	| have we panicked?
 	jne	Ldorte			| yes, do not make matters worse
 #endif
 	tstl	_C_LABEL(astpending)	| AST pending?
@@ -983,7 +983,7 @@ LMMUenable_end:
 
 /* set kernel stack, user SP */
 	movl	_C_LABEL(lwp0uarea),%a1	| grab lwp0 uarea 
-	lea	%a1@(USPACE),%sp	| set kernel stack to end of area
+	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 	movl	%a2,%a1@(PCB_USP)	| and save it
@@ -1447,6 +1447,7 @@ ENTRY_NOPROFILE(fpeaemu60)
 
 	.data
 	.space	PAGE_SIZE
+	.align	4
 ASLOCAL(tmpstk)
 
 GLOBAL(mmutype)

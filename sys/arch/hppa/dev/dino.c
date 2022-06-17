@@ -1,4 +1,4 @@
-/*	$NetBSD: dino.c,v 1.4 2019/04/16 06:45:04 skrll Exp $ */
+/*	$NetBSD: dino.c,v 1.13 2021/09/18 23:54:13 macallan Exp $ */
 
 /*	$OpenBSD: dino.c,v 1.5 2004/02/13 20:39:31 mickey Exp $	*/
 
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.4 2019/04/16 06:45:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.13 2021/09/18 23:54:13 macallan Exp $");
 
 /* #include "cardbus.h" */
 
@@ -345,6 +345,24 @@ dino_conf_read(void *v, pcitag_t tag, int reg)
 	if ((unsigned int)reg >= PCI_CONF_SIZE)
 		return (pcireg_t) -1;
 
+	/*
+	 * XXX
+	 * thus sayeth the Dino manual:
+	 * 7.7.1 Generating PCI Special Cycles thru PA I/O Space
+	 * When the PCI_CONFIG_ADDR registers BUS_NUM is the equal to the
+	 * DINO’s bus number, 8’h00, DEV_NUM and Function fields are all ones,
+	 * and the REG_NUM field is all zeros the next write to PCI_CONFIG_DATA
+	 * register will generate a special cycle on DINO’s PCI bus. If the
+	 * BUS_NUM field does not equal DINO bus number then a type 1
+	 * transaction will be forwarded to PCI as described above.
+	 * Note: Dino is using a legal PCI configuration address to generate a
+	 * PCI special cycle. System firmware and software should not attempt
+	 * to read or write to this configuration address when walking the
+	 * PCI bus through configuration address space.
+	 */
+	if ((tag & 0xff00) == 0xff00)
+		return -1;
+
 	/* fix arbitration errata by disabling all pci devs on config read */
 	pamr = r->pamr;
 	r->pamr = 0;
@@ -367,6 +385,11 @@ dino_conf_write(void *v, pcitag_t tag, int reg, pcireg_t data)
 
 	if ((unsigned int)reg >= PCI_CONF_SIZE)
 		return;
+
+	/*
+	 * don't try to access dev 1f / func 7, see comment in dino_conf_read()
+	 */
+	if ((tag & 0xff00) == 0xff00) return;
 
 	/* fix arbitration errata by disabling all pci devs on config read */
 	pamr = r->pamr;
@@ -602,7 +625,7 @@ dino_vaddr(void *v, bus_space_handle_t h)
 paddr_t
 dino_mmap(void *v, bus_addr_t addr, off_t off, int prot, int flags)
 {
-	return -1;
+	return btop(addr + off);
 }
 
 uint8_t
@@ -1629,7 +1652,7 @@ dinoattach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_regs = r = (volatile struct dino_regs *)sc->sc_bh;
+	sc->sc_regs = r = (volatile struct dino_regs *)sc->sc_bh;	
 #ifdef trust_the_firmware_to_proper_initialize_everything
 	r->io_addr_en = 0;
 	r->io_control = 0x80;
@@ -1637,7 +1660,7 @@ dinoattach(device_t parent, device_t self, void *aux)
 	r->papr = 0;
 	r->io_fbb_en |= 1;
 	r->damode = 0;
-	r->gmask &= ~1;	/* allow GSC bus req */
+	r->gmask &= ~1; /* allow GSC bus req */
 	r->pciror = 0;
 	r->pciwor = 0;
 	r->brdg_feat = 0xc0000000;
@@ -1645,19 +1668,14 @@ dinoattach(device_t parent, device_t self, void *aux)
 
 	snprintf(sc->sc_ioexname, sizeof(sc->sc_ioexname),
 	    "%s_io", device_xname(self));
-	if ((sc->sc_ioex = extent_create(sc->sc_ioexname, 0, 0xffff,
-	    NULL, 0, EX_NOWAIT | EX_MALLOCOK)) == NULL) {
-		aprint_error(": can't allocate I/O extent map\n");
-		bus_space_unmap(sc->sc_bt, sc->sc_bh, PAGE_SIZE);
-		return;
-	}
+	sc->sc_ioex = extent_create(sc->sc_ioexname, 0, 0xffff,
+	    NULL, 0, EX_WAITOK | EX_MALLOCOK);
 
 	/* interrupts guts */
 	s = splhigh();
 	r->icr = 0;
-	r->imr = ~0;
-	(void)r->irr0;
 	r->imr = 0;
+	(void)r->irr0;
 	r->iar0 = ci->ci_hpa | (31 - ca->ca_irq);
 	splx(s);
 	/* Establish the interrupt register. */
@@ -1733,11 +1751,14 @@ dinoattach(device_t parent, device_t self, void *aux)
 	pba.pba_pc = &sc->sc_pc;
 	pba.pba_bus = 0;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint,
+	    CFARGS(.iattr = "pcibus"));
 }
 
 static device_t
 dino_callback(device_t self, struct confargs *ca)
 {
-	return config_found_sm_loc(self, "gedoens", NULL, ca, mbprint, mbsubmatch);
+	return config_found(self, ca, mbprint,
+	    CFARGS(.submatch = mbsubmatch,
+		   .iattr = "gedoens"));
 }

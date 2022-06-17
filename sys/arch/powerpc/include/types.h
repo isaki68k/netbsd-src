@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.59 2019/04/07 05:25:55 thorpej Exp $	*/
+/*	$NetBSD: types.h,v 1.66 2021/04/01 04:35:46 simonb Exp $	*/
 
 /*-
  * Copyright (C) 1995 Wolfgang Solfrank.
@@ -33,6 +33,10 @@
 
 #ifndef	_POWERPC_TYPES_H_
 #define	_POWERPC_TYPES_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/cdefs.h>
 #include <sys/featuretest.h>
@@ -71,12 +75,12 @@ typedef struct label_t {
 typedef __uint32_t tlb_asid_t;		/* for booke */
 #endif
 
-#define __SIMPLELOCK_LOCKED	1
-#define __SIMPLELOCK_UNLOCKED	0
+#define	__SIMPLELOCK_LOCKED	1
+#define	__SIMPLELOCK_UNLOCKED	0
 
-#define __HAVE_CPU_COUNTER
-#define __HAVE_NEW_STYLE_BUS_H
-#define __HAVE_SYSCALL_INTERN
+#define	__HAVE_CPU_COUNTER
+#define	__HAVE_NEW_STYLE_BUS_H
+#define	__HAVE_SYSCALL_INTERN
 #define	__HAVE_CPU_DATA_FIRST
 #define	__HAVE_CPU_UAREA_ROUTINES
 #ifdef _LP64
@@ -87,8 +91,7 @@ typedef __uint32_t tlb_asid_t;		/* for booke */
 #define	__HAVE___LWP_GETTCB_FAST
 #define	__HAVE___LWP_SETTCB
 #define	__HAVE_TLS_VARIANT_I
-#define	__OPENFIRMIO_OPEN_CHECK_BROKEN
-int __openfirmio_open_check_broken(void);
+#define	__HAVE_BUS_SPACE_8
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #define	PCU_FPU		0	/* FPU */
@@ -103,6 +106,11 @@ int __openfirmio_open_check_broken(void);
 #endif
 #if defined(_KERNEL)
 #define	__HAVE_RAS
+#endif
+
+#ifndef PPC_IBM4XX
+/* XXX temporary */
+#define	__HAVE_UNLOCKED_PMAP
 #endif
 
 #endif	/* _POWERPC_TYPES_H_ */

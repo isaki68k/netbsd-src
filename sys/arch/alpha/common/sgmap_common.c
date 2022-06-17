@@ -1,4 +1,4 @@
-/* $NetBSD: sgmap_common.c,v 1.26 2012/01/27 18:52:48 para Exp $ */
+/* $NetBSD: sgmap_common.c,v 1.29 2021/07/18 05:12:27 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -32,12 +32,11 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: sgmap_common.c,v 1.26 2012/01/27 18:52:48 para Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sgmap_common.c,v 1.29 2021/07/18 05:12:27 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/proc.h>
 
 #include <uvm/uvm_extern.h>
@@ -67,6 +66,14 @@ alpha_sgmap_init(bus_dma_tag_t t, struct alpha_sgmap *sgmap, const char *name,
 	if (sgvasize & PGOFSET) {
 		printf("size botch for sgmap `%s'\n", name);
 		goto die;
+	}
+
+	/*
+	 * If we don't yet have a minimum SGVA alignment, default
+	 * to the system page size.
+	 */
+	if (t->_sgmap_minalign < PAGE_SIZE) {
+		t->_sgmap_minalign = PAGE_SIZE;
 	}
 
 	sgmap->aps_wbase = wbase;
@@ -103,16 +110,22 @@ alpha_sgmap_init(bus_dma_tag_t t, struct alpha_sgmap *sgmap, const char *name,
 	}
 
 	/*
-	 * Create the extent map used to manage the virtual address
+	 * Create the arena used to manage the virtual address
 	 * space.
+	 *
+	 * XXX Consider using a quantum cache up to MAXPHYS+PAGE_SIZE
+	 * XXX (extra page to handle the spill page).  For now, we don't,
+	 * XXX because we are using constrained allocations everywhere.
 	 */
-	sgmap->aps_ex = extent_create(name, sgvabase, sgvasize - 1,
-	    NULL, 0, EX_NOWAIT|EX_NOCOALESCE);
-	if (sgmap->aps_ex == NULL) {
-		printf("unable to create extent map for sgmap `%s'\n",
-		    name);
-		goto die;
-	}
+	sgmap->aps_arena = vmem_create(name, sgvabase, sgvasize,
+				       PAGE_SIZE,	/* quantum */
+				       NULL,		/* importfn */
+				       NULL,		/* releasefn */
+				       NULL,		/* source */
+				       0,		/* qcache_max */
+				       VM_SLEEP,
+				       IPL_VM);
+	KASSERT(sgmap->aps_arena != NULL);
 
 	/*
 	 * Allocate a spill page if that hasn't already been done.

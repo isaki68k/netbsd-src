@@ -1,4 +1,4 @@
-/* $NetBSD: sbgbus.c,v 1.13 2011/07/10 23:32:03 matt Exp $ */
+/* $NetBSD: sbgbus.c,v 1.15 2021/08/07 16:18:59 thorpej Exp $ */
 
 /*
  * Copyright 2000, 2001
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbgbus.c,v 1.13 2011/07/10 23:32:03 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbgbus.c,v 1.15 2021/08/07 16:18:59 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -74,7 +74,8 @@ sbgbus_attach(device_t parent, device_t self, void *aux)
 {
 
 	/* Configure children using indirect configuration. */
-	config_search_ia(sbgbussearch, self, "sbgbus", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = sbgbussearch));
 }
 
 static int
@@ -154,8 +155,8 @@ sbgbussearch(device_t parent, cfdata_t cf,
 		}
 
 		tryagain = 0;
-		if (config_match(parent, cf, &sga) > 0) {
-			config_attach(parent, cf, &sga, sbgbusprint);
+		if (config_probe(parent, cf, &sga)) {
+			config_attach(parent, cf, &sga, sbgbusprint, CFARGS_NONE);
 			tryagain = (cf->cf_fstate == FSTATE_STAR);
 		}
 	} while (tryagain);

@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.5 2011/07/18 17:26:56 dyoung Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.7 2021/08/07 16:19:04 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.5 2011/07/18 17:26:56 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.7 2021/08/07 16:19:04 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/extent.h>
@@ -95,7 +95,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 
 	ca.ca_name = "cpu";
 	ca.ca_node = 0;
-	config_found_ia(self, "mainbus", &ca, mainbus_print);
+	config_found(self, &ca, mainbus_print,
+	    CFARGS(.iattr = "mainbus"));
 
 #if DEBUG
 	printf("scanning MCA bus\n");
@@ -115,8 +116,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	mba.mba_mba.mba_dmat = NULL; /*&mca_bus_dma_tag;*/
 	mba.mba_mba.mba_mc = NULL;
 	mba.mba_mba.mba_bus = 0;
-	config_found_ia(self, "mcabus", &mba.mba_mba, mcabusprint);
-
+	config_found(self, &mba.mba_mba, mcabusprint,
+	    CFARGS(.iattr = "mcabus"));
 }
 
 int

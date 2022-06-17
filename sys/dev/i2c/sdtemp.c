@@ -1,4 +1,4 @@
-/*      $NetBSD: sdtemp.c,v 1.36 2019/10/01 18:00:08 chs Exp $        */
+/*      $NetBSD: sdtemp.c,v 1.41 2021/12/01 21:33:19 msaitoh Exp $        */
 
 /*
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdtemp.c,v 1.36 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdtemp.c,v 1.41 2021/12/01 21:33:19 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -214,8 +214,13 @@ sdtemp_match(device_t parent, cfdata_t cf, void *aux)
 	if ((ia->ia_addr & SDTEMP_ADDRMASK) != SDTEMP_ADDR)
 		return 0;
 
-	/* Verify that we can read the manufacturer ID, Device ID and the capability */
-	iic_acquire_bus(sc.sc_tag, 0);
+	/*
+	 * Verify that we can read the manufacturer ID, Device ID and the
+	 * capability
+	 */
+	error = iic_acquire_bus(sc.sc_tag, 0);
+	if (error)
+		return 0;
 	error = sdtemp_read_16(&sc, SDTEMP_REG_MFG_ID,  &mfgid) |
 		sdtemp_read_16(&sc, SDTEMP_REG_DEV_REV, &devid) |
 		sdtemp_read_16(&sc, SDTEMP_REG_CAPABILITY, &cap);
@@ -234,8 +239,8 @@ sdtemp_match(device_t parent, cfdata_t cf, void *aux)
 	}
 
 	/*
-	 * Check by SDTEMP_IS_TSE2004AV() might not be enough, so check the alarm
-	 * capability, too.
+	 * Check by SDTEMP_IS_TSE2004AV() might not be enough, so check the
+	 * alarm capability, too.
 	 */
 	if ((cap & SDTEMP_CAP_HAS_ALARM) == 0)
 		return 0;
@@ -255,7 +260,10 @@ sdtemp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_address = ia->ia_addr;
 	sc->sc_dev = self;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	error = iic_acquire_bus(sc->sc_tag, 0);
+	if (error)
+		return;
+
 	if ((error = sdtemp_read_16(sc, SDTEMP_REG_MFG_ID,  &mfgid)) != 0 ||
 	    (error = sdtemp_read_16(sc, SDTEMP_REG_DEV_REV, &devid)) != 0) {
 		iic_release_bus(sc->sc_tag, 0);
@@ -397,6 +405,7 @@ sdtemp_attach(device_t parent, device_t self, void *aux)
 bad:
 	kmem_free(sc->sc_sensor, sizeof(envsys_data_t));
 	sysmon_envsys_destroy(sc->sc_sme);
+	sc->sc_sme = NULL;
 }
 
 static int
@@ -423,7 +432,9 @@ sdtemp_get_limits(struct sysmon_envsys *sme, envsys_data_t *edata,
 	uint16_t lim;
 
 	*props = 0;
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0) != 0)
+		return;
+
 	if (sdtemp_read_16(sc, SDTEMP_REG_LOWER_LIM, &lim) == 0 && lim != 0) {
 		limits->sel_warnmin = sdtemp_decode_temp(sc, lim);
 		*props |= PROP_WARNMIN;
@@ -453,7 +464,9 @@ sdtemp_set_limits(struct sysmon_envsys *sme, envsys_data_t *edata,
 		limits = &sc->sc_deflims;
 		props  = &sc->sc_defprops;
 	}
-	iic_acquire_bus(sc->sc_tag, 0);
+	if (iic_acquire_bus(sc->sc_tag, 0) != 0)
+		return;
+
 	if (*props & PROP_WARNMIN) {
 		val = __UK2C(limits->sel_warnmin);
 		(void)sdtemp_write_16(sc, SDTEMP_REG_LOWER_LIM,
@@ -565,7 +578,12 @@ sdtemp_refresh(struct sysmon_envsys *sme, envsys_data_t *edata)
 	uint16_t val;
 	int error;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	error = iic_acquire_bus(sc->sc_tag, 0);
+	if (error) {
+		edata->state = ENVSYS_SINVALID;
+		return;
+	}
+
 	error = sdtemp_read_16(sc, SDTEMP_REG_AMBIENT_TEMP, &val);
 	iic_release_bus(sc->sc_tag, 0);
 
@@ -593,7 +611,7 @@ sdtemp_refresh(struct sysmon_envsys *sme, envsys_data_t *edata)
 }
 
 /*
- * power management functions
+ * Power management functions
  *
  * We go into "shutdown" mode at suspend time, and return to normal
  * mode upon resume.  This reduces power consumption by disabling
@@ -607,7 +625,10 @@ sdtemp_pmf_suspend(device_t dev, const pmf_qual_t *qual)
 	int error;
 	uint16_t config;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	error = iic_acquire_bus(sc->sc_tag, 0);
+	if (error != 0)
+		return false;
+
 	error = sdtemp_read_16(sc, SDTEMP_REG_CONFIG, &config);
 	if (error == 0) {
 		config |= SDTEMP_CONFIG_SHUTDOWN_MODE;
@@ -624,7 +645,10 @@ sdtemp_pmf_resume(device_t dev, const pmf_qual_t *qual)
 	int error;
 	uint16_t config;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	error = iic_acquire_bus(sc->sc_tag, 0);
+	if (error != 0)
+		return false;
+
 	error = sdtemp_read_16(sc, SDTEMP_REG_CONFIG, &config);
 	if (error == 0) {
 		config &= ~SDTEMP_CONFIG_SHUTDOWN_MODE;
@@ -668,8 +692,8 @@ sdtemp_config_mcp(struct sdtemp_softc *sc)
 	if (rv == 0)
 		sc->sc_resolution = SDTEMP_CAP_RESOLUTION_MAX;
 	else
-		aprint_error("%s: error %d writing resolution register\n",
-		    device_xname(sc->sc_dev), rv);
+		aprint_debug_dev(sc->sc_dev,
+		    "error %d writing resolution register\n", rv);
 }
 
 static void
@@ -688,8 +712,8 @@ sdtemp_config_idt(struct sdtemp_softc *sc)
 	if (rv == 0)
 		sc->sc_resolution = SDTEMP_CAP_RESOLUTION_MAX;
 	else
-		aprint_error("%s: error %d writing resolution register\n",
-		    device_xname(sc->sc_dev), rv);
+		aprint_debug_dev(sc->sc_dev,
+		    "error %d writing resolution register\n", rv);
 }
 
 MODULE(MODULE_CLASS_DRIVER, sdtemp, "i2cexec,sysmon_envsys");

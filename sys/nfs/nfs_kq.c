@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_kq.c,v 1.26 2017/10/25 08:12:40 maya Exp $	*/
+/*	$NetBSD: nfs_kq.c,v 1.32 2021/10/20 03:08:18 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_kq.c,v 1.26 2017/10/25 08:12:40 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_kq.c,v 1.32 2021/10/20 03:08:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,9 +44,6 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_kq.c,v 1.26 2017/10/25 08:12:40 maya Exp $");
 #include <sys/unistd.h>
 #include <sys/file.h>
 #include <sys/kthread.h>
-
-#include <uvm/uvm_extern.h>
-#include <uvm/uvm.h>
 
 #include <nfs/rpcv2.h>
 #include <nfs/nfsproto.h>
@@ -194,9 +191,7 @@ filt_nfsdetach(struct knote *kn)
 	struct vnode *vp = (struct vnode *)kn->kn_hook;
 	struct kevq *ke;
 
-	mutex_enter(vp->v_interlock);
-	SLIST_REMOVE(&vp->v_klist, kn, knote, kn_selnext);
-	mutex_exit(vp->v_interlock);
+	vn_knote_detach(vp, kn);
 
 	/* Remove the vnode from watch list */
 	mutex_enter(&nfskq_lock);
@@ -234,7 +229,7 @@ filt_nfsread(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= (EV_EOF | EV_ONESHOT);
+		knote_set_eof(kn, EV_ONESHOT);
 		return (1);
 	case 0:
 		mutex_enter(vp->v_interlock);
@@ -258,7 +253,7 @@ filt_nfsvnode(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		if ((kn->kn_sfflags & hint) != 0)
 			kn->kn_fflags |= hint;
 		return (1);
@@ -280,14 +275,14 @@ filt_nfsvnode(struct knote *kn, long hint)
 
 
 static const struct filterops nfsread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_nfsdetach,
 	.f_event = filt_nfsread,
 };
 
 static const struct filterops nfsvnode_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_nfsdetach,
 	.f_event = filt_nfsvnode,
@@ -367,10 +362,9 @@ nfs_kqfilter(void *v)
 		SLIST_INSERT_HEAD(&kevlist, ke, kev_link);
 	}
 
-	mutex_enter(vp->v_interlock);
-	SLIST_INSERT_HEAD(&vp->v_klist, kn, kn_selnext);
 	kn->kn_hook = vp;
-	mutex_exit(vp->v_interlock);
+
+	vn_knote_attach(vp, kn);
 
 	/* kick the poller */
 	cv_signal(&nfskq_cv);

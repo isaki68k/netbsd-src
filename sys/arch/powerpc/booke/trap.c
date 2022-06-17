@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.27 2018/01/27 10:07:41 flxd Exp $	*/
+/*	$NetBSD: trap.c,v 1.37 2021/03/06 08:08:19 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,41 +34,42 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_ddb.h"
-
 #include <sys/cdefs.h>
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.37 2021/03/06 08:08:19 rin Exp $");
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.27 2018/01/27 10:07:41 flxd Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
+#include "opt_ddb.h"
+#endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/siginfo.h>
-#include <sys/lwp.h>
-#include <sys/proc.h>
 #include <sys/cpu.h>
 #include <sys/kauth.h>
+#include <sys/lwp.h>
+#include <sys/proc.h>
+#include <sys/ptrace.h>
 #include <sys/ras.h>
+#include <sys/siginfo.h>
+#include <sys/systm.h>
+
+#include <ddb/ddb.h>
 
 #include <uvm/uvm_extern.h>
 
-#include <powerpc/pcb.h>
-#include <powerpc/userret.h>
-#include <powerpc/psl.h>
-#include <powerpc/instr.h>
 #include <powerpc/altivec.h>		/* use same interface for SPE */
-
+#include <powerpc/instr.h>
+#include <powerpc/pcb.h>
+#include <powerpc/psl.h>
 #include <powerpc/spr.h>
-#include <powerpc/booke/spr.h>
-#include <powerpc/booke/cpuvar.h>
+#include <powerpc/trap.h>
+#include <powerpc/userret.h>
 
 #include <powerpc/fpu/fpu_extern.h>
 
-#include <powerpc/db_machdep.h>
-#include <ddb/db_interface.h>
-
-#include <powerpc/trap.h>
-#include <powerpc/booke/trap.h>
+#include <powerpc/booke/cpuvar.h>
 #include <powerpc/booke/pte.h>
+#include <powerpc/booke/spr.h>
+#include <powerpc/booke/trap.h>
 
 void trap(enum ppc_booke_exceptions, struct trapframe *);
 
@@ -110,15 +111,13 @@ mchk_exception(struct trapframe *tf, ksiginfo_t *ksi)
 	struct cpu_info * const ci = curcpu();
 	int rv = EFAULT;
 
-	if (usertrap)
+	if (usertrap) {
 		ci->ci_ev_umchk.ev_count++;
-
-	if (rv != 0 && usertrap) {
 		KSI_INIT_TRAP(ksi);
-		ksi->ksi_signo = SIGSEGV;
-		ksi->ksi_trap = EXC_DSI;
-		ksi->ksi_code = SEGV_ACCERR;
+		ksi->ksi_signo = SIGBUS;
+		ksi->ksi_trap = EXC_MCHK;
 		ksi->ksi_addr = (void *)faultva;
+		ksi->ksi_code = BUS_OBJERR;
 	}
 
 	return rv;
@@ -167,8 +166,6 @@ pagefault(struct vm_map *map, vaddr_t va, vm_prot_t ftype, bool usertrap)
 		rv = uvm_fault(map, trunc_page(va), ftype);
 		if (rv == 0)
 			uvm_grow(l->l_proc, trunc_page(va));
-		if (rv == EACCES)
-			rv = EFAULT;
 	} else {
 		if (cpu_intr_p())
 			return EFAULT;
@@ -182,10 +179,31 @@ pagefault(struct vm_map *map, vaddr_t va, vm_prot_t ftype, bool usertrap)
 			if (rv == 0)
 				uvm_grow(l->l_proc, trunc_page(va));
 		}
-		if (rv == EACCES)
-			rv = EFAULT;
 	}
 	return rv;
+}
+
+static void
+vm_signal(int error, int trap, vaddr_t addr, ksiginfo_t *ksi)
+{
+
+	KSI_INIT_TRAP(ksi);
+	switch (error) {
+	case EINVAL:
+		ksi->ksi_signo = SIGBUS;
+		ksi->ksi_code = BUS_ADRERR;
+		break;
+	case EACCES:
+		ksi->ksi_signo = SIGSEGV;
+		ksi->ksi_code = SEGV_ACCERR;
+		break;
+	default:
+		ksi->ksi_signo = SIGSEGV;
+		ksi->ksi_code = SEGV_MAPERR;
+		break;
+	}
+	ksi->ksi_trap = trap;
+	ksi->ksi_addr = (void *)addr;
 }
 
 static int
@@ -234,16 +252,9 @@ dsi_exception(struct trapframe *tf, ksiginfo_t *ksi)
 
 	int rv = pagefault(faultmap, faultva, ftype, usertrap);
 
-	/*
-	 * We can't get a MAPERR here since that's a different exception.
-	 */
 	if (__predict_false(rv != 0 && usertrap)) {
 		ci->ci_ev_udsi_fatal.ev_count++;
-		KSI_INIT_TRAP(ksi);
-		ksi->ksi_signo = SIGSEGV;
-		ksi->ksi_trap = EXC_DSI;
-		ksi->ksi_code = SEGV_ACCERR;
-		ksi->ksi_addr = (void *)faultva;
+		vm_signal(rv, EXC_DSI, faultva, ksi);
 	}
 	return rv;
 }
@@ -282,12 +293,18 @@ isi_exception(struct trapframe *tf, ksiginfo_t *ksi)
 		KASSERT(pg);
 		struct vm_page_md * const mdpg = VM_PAGE_TO_MD(pg);
 
-		UVMHIST_LOG(pmapexechist,
-		    "srr0=%#x pg=%p (pa %#"PRIxPADDR"): %s", 
-		    tf->tf_srr0, pg, pa, 
-		    (VM_PAGEMD_EXECPAGE_P(mdpg)
-			? "no syncicache (already execpage)"
-			: "performed syncicache (now execpage)"));
+#ifdef UVMHIST
+		if (VM_PAGEMD_EXECPAGE_P(mdpg))
+			UVMHIST_LOG(pmapexechist,
+			    "srr0=%#x pg=%p (pa %#"PRIxPADDR"): "
+			    "no syncicache (already execpage)", 
+			    tf->tf_srr0, (uintptr_t)pg, pa, 0);
+		else
+			UVMHIST_LOG(pmapexechist,
+			    "srr0=%#x pg=%p (pa %#"PRIxPADDR"): "
+			    "performed syncicache (now execpage)",
+			    tf->tf_srr0, (uintptr_t)pg, pa, 0);
+#endif
 
 		if (!VM_PAGEMD_EXECPAGE_P(mdpg)) {
 			ci->ci_softc->cpu_ev_exec_trap_sync.ev_count++;
@@ -311,16 +328,8 @@ isi_exception(struct trapframe *tf, ksiginfo_t *ksi)
 	    usertrap);
 
 	if (__predict_false(rv != 0 && usertrap)) {
-		/*
-		 * We can't get a MAPERR here since
-		 * that's a different exception.
-		 */
 		ci->ci_ev_isi_fatal.ev_count++;
-		KSI_INIT_TRAP(ksi);
-		ksi->ksi_signo = SIGSEGV;
-		ksi->ksi_trap = EXC_ISI;
-		ksi->ksi_code = SEGV_ACCERR;
-		ksi->ksi_addr = (void *)tf->tf_srr0; /* not truncated */
+		vm_signal(rv, EXC_ISI, tf->tf_srr0, ksi);
 	}
 	UVMHIST_LOG(pmapexechist, "<- %d", rv, 0,0,0);
 	return rv;
@@ -356,11 +365,7 @@ dtlb_exception(struct trapframe *tf, ksiginfo_t *ksi)
 
 	if (__predict_false(rv != 0 && usertrap)) {
 		ci->ci_ev_udsi_fatal.ev_count++;
-		KSI_INIT_TRAP(ksi);
-		ksi->ksi_signo = SIGSEGV;
-		ksi->ksi_trap = EXC_DSI;
-		ksi->ksi_code = (rv == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
-		ksi->ksi_addr = (void *)faultva;
+		vm_signal(rv, EXC_DSI, faultva, ksi);
 	}
 	return rv;
 }
@@ -380,11 +385,7 @@ itlb_exception(struct trapframe *tf, ksiginfo_t *ksi)
 
 	if (__predict_false(rv != 0 && usertrap)) {
 		ci->ci_ev_isi_fatal.ev_count++;
-		KSI_INIT_TRAP(ksi);
-		ksi->ksi_signo = SIGSEGV;
-		ksi->ksi_trap = EXC_ISI;
-		ksi->ksi_code = (rv == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
-		ksi->ksi_addr = (void *)tf->tf_srr0;
+		vm_signal(rv, EXC_ISI, tf->tf_srr0, ksi);
 	}
 	return rv;
 }
@@ -441,10 +442,7 @@ emulate_opcode(struct trapframe *tf, ksiginfo_t *ksi)
 		return true;
 	}
 
-	/*
-	 * If we bothered to emulate FP, we would try to do so here.
-	 */
-	return false;
+	return emulate_mxmsr(curlwp, tf, opcode);
 }
 
 static int
@@ -464,11 +462,31 @@ pgm_exception(struct trapframe *tf, ksiginfo_t *ksi)
 
 	ci->ci_ev_pgm.ev_count++;
 
+	KSI_INIT_TRAP(ksi);
+
 	if (tf->tf_esr & ESR_PTR) {
-		struct proc *p = curlwp->l_proc;
-		if (p->p_raslist != NULL
-		    && ras_lookup(p, (void *)tf->tf_srr0) != (void *) -1) {
-			tf->tf_srr0 += 4;
+		struct lwp * const l = curlwp;
+		struct proc * const p = curlwp->l_proc;
+		vaddr_t va = (vaddr_t)tf->tf_srr0;
+		int error;
+
+		/*
+		 * Restore original instruction and clear BP.
+		 */
+		if (p->p_md.md_ss_addr[0] == va ||
+		    p->p_md.md_ss_addr[1] == va) {
+			error = ppc_sstep(l, 0);
+			if (error != 0) {
+				vm_signal(error, EXC_PGM /* XXX */, va, ksi);
+				return error;
+			}
+			ksi->ksi_code = TRAP_TRACE;
+		} else
+			ksi->ksi_code = TRAP_BRKPT;
+
+		if (p->p_raslist != NULL &&
+		    ras_lookup(p, (void *)va) != (void *)-1) {
+			tf->tf_srr0 += (ksi->ksi_code == TRAP_TRACE) ? 0 : 4;
 			return 0;
 		}
 	}
@@ -481,10 +499,12 @@ pgm_exception(struct trapframe *tf, ksiginfo_t *ksi)
 	}
 
 	if (tf->tf_esr & ESR_PIL) {
-		struct pcb * const pcb = lwp_getpcb(curlwp);
-		if (__predict_false(!fpu_used_p(curlwp))) {
+		struct lwp * const l = curlwp;
+		struct pcb * const pcb = lwp_getpcb(l);
+
+		if (__predict_false(!fpu_used_p(l))) {
 			memset(&pcb->pcb_fpu, 0, sizeof(pcb->pcb_fpu));
-			fpu_mark_used(curlwp);
+			fpu_mark_used(l);
 		}
 		if (fpu_emulate(tf, &pcb->pcb_fpu, ksi)) {
 			if (ksi->ksi_signo == 0) {
@@ -495,7 +515,6 @@ pgm_exception(struct trapframe *tf, ksiginfo_t *ksi)
 		}
 	}
 
-	KSI_INIT_TRAP(ksi);
 	ksi->ksi_signo = SIGILL;
 	ksi->ksi_trap = EXC_PGM;
 	if (tf->tf_esr & ESR_PIL) {
@@ -504,7 +523,6 @@ pgm_exception(struct trapframe *tf, ksiginfo_t *ksi)
 		ksi->ksi_code = ILL_PRVOPC;
 	} else if (tf->tf_esr & ESR_PTR) {
 		ksi->ksi_signo = SIGTRAP;
-		ksi->ksi_code = TRAP_BRKPT;
 	} else {
 		ksi->ksi_code = 0;
 	}
@@ -512,6 +530,7 @@ pgm_exception(struct trapframe *tf, ksiginfo_t *ksi)
 	return rv;
 }
 
+#if 0
 static int
 debug_exception(struct trapframe *tf, ksiginfo_t *ksi)
 {
@@ -546,6 +565,7 @@ debug_exception(struct trapframe *tf, ksiginfo_t *ksi)
 	ksi->ksi_code = TRAP_TRACE;
 	return rv;
 }
+#endif
 
 static int
 ali_exception(struct trapframe *tf, ksiginfo_t *ksi)
@@ -688,7 +708,7 @@ onfaulted(struct trapframe *tf, register_t rv)
 	tf->tf_fixreg[1] = fb->fb_sp;
 	tf->tf_fixreg[2] = fb->fb_r2;
 	tf->tf_fixreg[3] = rv;
-	pcb->pcb_onfault = NULL;
+	memcpy(&tf->tf_fixreg[13], fb->fb_fixreg, sizeof(fb->fb_fixreg));
 	return true;
 }
 
@@ -753,6 +773,7 @@ trap(enum ppc_booke_exceptions trap_code, struct trapframe *tf)
 	switch (trap_code) {
 	case T_CRITIAL_INPUT:
 	case T_EXTERNAL_INPUT:
+	case T_DEBUG:
 	case T_DECREMENTER:
 	case T_FIXED_INTERVAL:
 	case T_WATCHDOG:
@@ -792,6 +813,7 @@ trap(enum ppc_booke_exceptions trap_code, struct trapframe *tf)
 	case T_INSTRUCTION_TLB_ERROR:
 		rv = itlb_exception(tf, &ksi);
 		break;
+#if 0
 	case T_DEBUG:
 #ifdef DDB
 		if (!usertrap && ddb_exception(tf))
@@ -799,6 +821,7 @@ trap(enum ppc_booke_exceptions trap_code, struct trapframe *tf)
 #endif
 		rv = debug_exception(tf, &ksi);
 		break;
+#endif
 	case T_EMBEDDED_FP_DATA:
 		rv = embedded_fp_data_exception(tf, &ksi);
 		break;
@@ -878,6 +901,7 @@ trap(enum ppc_booke_exceptions trap_code, struct trapframe *tf)
 			    p->p_pid, l->l_lid, p->p_comm,
 			    l->l_cred ?  kauth_cred_geteuid(l->l_cred) : -1);
 			ksi.ksi_signo = SIGKILL;
+			ksi.ksi_code = 0;
 		}
 		if (rv != 0) {
 			/*

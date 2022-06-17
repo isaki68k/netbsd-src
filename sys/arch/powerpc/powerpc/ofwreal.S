@@ -1,4 +1,4 @@
-/*	$NetBSD: ofwreal.S,v 1.14 2018/12/31 18:47:46 christos Exp $	*/
+/*	$NetBSD: ofwreal.S,v 1.16 2021/08/20 20:25:27 andvar Exp $	*/
 
 /*
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -42,6 +42,7 @@
  *
  * TODO: handle set-callback specially
  */
+
 #include <machine/psl.h>
 #include <machine/trap.h>
 #include <machine/asm.h>
@@ -127,7 +128,7 @@ fwentry:
 	mtmsr	%r4
 	isync
 
-	lis	%r3,fwsave@ha		/* save mmu values of firmare */
+	lis	%r3,fwsave@ha		/* save mmu values of firmware */
 	addi	%r3,%r3,fwsave@l	/* (might not be necessary, but... */
 	bl	savemmu
 

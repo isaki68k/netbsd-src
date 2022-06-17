@@ -1,4 +1,4 @@
-#	$NetBSD: files.generic64,v 1.12 2019/03/17 08:17:56 skrll Exp $
+#	$NetBSD: files.generic64,v 1.19 2021/09/13 23:31:23 jmcneill Exp $
 #
 # A generic (aarch64) kernel configuration info
 #
@@ -12,11 +12,15 @@ include "arch/evbarm/conf/files.fdt"
 #
 include "arch/arm/acpi/files.acpi"
 include "arch/arm/amlogic/files.meson"
+include "arch/arm/apple/files.apple"
 include "arch/arm/broadcom/files.bcm2835"
 include "arch/arm/nvidia/files.tegra"
+include "arch/arm/nxp/files.imx"
 include "arch/arm/rockchip/files.rockchip"
+include "arch/arm/samsung/files.exynos"
 include "arch/arm/sunxi/files.sunxi"
 include "arch/arm/virt/files.virt"
+include "arch/arm/sociox/files.sociox"
 
 #
 # Stack-less Just-In-Time compiler

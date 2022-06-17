@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3ehci.c,v 1.9 2019/08/21 04:17:41 msaitoh Exp $	*/
+/*	$NetBSD: pq3ehci.c,v 1.12 2021/08/07 16:19:02 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,9 +29,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pq3ehci.c,v 1.9 2019/08/21 04:17:41 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3ehci.c,v 1.12 2021/08/07 16:19:02 thorpej Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_usb.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -160,7 +162,8 @@ pq3ehci_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Attach usb device. */
-	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint);
+	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint,
+	    CFARGS_NONE);
 	return;
 
 fail:

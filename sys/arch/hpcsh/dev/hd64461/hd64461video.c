@@ -1,4 +1,4 @@
-/*	$NetBSD: hd64461video.c,v 1.53 2011/07/19 15:30:52 dyoung Exp $	*/
+/*	$NetBSD: hd64461video.c,v 1.56 2022/05/24 06:28:00 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2004 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hd64461video.c,v 1.53 2011/07/19 15:30:52 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hd64461video.c,v 1.56 2022/05/24 06:28:00 andvar Exp $");
 
 #include "opt_hd64461video.h"
 // #define HD64461VIDEO_HWACCEL
@@ -270,7 +270,7 @@ hd64461video_attach(device_t parent, device_t self, void *aux)
 	hfa.ha_ndspconf	   = 1;
 	hfa.ha_dspconflist = &hd64461video_chip.hd;
 	
-	config_found(self, &hfa, hpcfbprint);
+	config_found(self, &hfa, hpcfbprint, CFARGS_NONE);
 
 	/*
 	 * XXX: TODO: for now this device manages power using
@@ -898,7 +898,7 @@ hd64461video_font_set_attr(struct hd64461video_softc *sc,
 
 }
 
-/* return frame buffer virtual address of charcter #n */
+/* return frame buffer virtual address of character #n */
 STATIC vaddr_t
 hd64461video_font_start_addr(struct hd64461video_softc *sc, int n)
 {

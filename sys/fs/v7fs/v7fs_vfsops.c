@@ -1,4 +1,4 @@
-/*	$NetBSD: v7fs_vfsops.c,v 1.16 2017/06/01 02:45:13 chs Exp $	*/
+/*	$NetBSD: v7fs_vfsops.c,v 1.19 2022/05/03 07:34:38 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2011 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: v7fs_vfsops.c,v 1.16 2017/06/01 02:45:13 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: v7fs_vfsops.c,v 1.19 2022/05/03 07:34:38 hannken Exp $");
 #if defined _KERNEL_OPT
 #include "opt_v7fs.h"
 #endif
@@ -157,9 +157,12 @@ v7fs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 		    (mp->mnt_iflag & IMNT_WANTRDWR) != 0 :
 		    (mp->mnt_flag & MNT_RDONLY) == 0)
 			accessmode |= VWRITE;
+
+		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 		error = kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_MOUNT,
 		    KAUTH_REQ_SYSTEM_MOUNT_DEVICE, mp, devvp,
 		    KAUTH_ARG(accessmode));
+		VOP_UNLOCK(devvp);
 	}
 
 	if (error) {
@@ -198,7 +201,7 @@ is_v7fs_partition(struct vnode *devvp)
 		DPRINTF("getdiskinfo=%d\n", error);
 		return error;
 	}
-	DPRINTF("ptype=%s size=%" PRIu64 "\n", dkw.dkw_ptype, dkw->dkw_size);
+	DPRINTF("ptype=%s size=%" PRIu64 "\n", dkw.dkw_ptype, dkw.dkw_size);
 
 	return strcmp(dkw.dkw_ptype, DKW_PTYPE_V7) == 0 ? 0 : EINVAL;
 }
@@ -321,13 +324,13 @@ v7fs_unmount(struct mount *mp, int mntflags)
 }
 
 int
-v7fs_root(struct mount *mp, struct vnode **vpp)
+v7fs_root(struct mount *mp, int lktype, struct vnode **vpp)
 {
 	struct vnode *vp;
 	int error;
 
 	DPRINTF("\n");
-	if ((error = VFS_VGET(mp, V7FS_ROOT_INODE, &vp)) != 0) {
+	if ((error = VFS_VGET(mp, V7FS_ROOT_INODE, lktype, &vp)) != 0) {
 		DPRINTF("error=%d\n", error);
 		return error;
 	}
@@ -482,7 +485,7 @@ v7fs_loadvnode(struct mount *mp, struct vnode *vp,
 
 
 int
-v7fs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
+v7fs_vget(struct mount *mp, ino_t ino, int lktype, struct vnode **vpp)
 {
 	int error;
 	v7fs_ino_t number;
@@ -494,7 +497,7 @@ v7fs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 	error = vcache_get(mp, &number, sizeof(number), &vp);
 	if (error)
 		return error;
-	error = vn_lock(vp, LK_EXCLUSIVE);
+	error = vn_lock(vp, lktype);
 	if (error) {
 		vrele(vp);
 		return error;
@@ -506,7 +509,7 @@ v7fs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 }
 
 int
-v7fs_fhtovp(struct mount *mp, struct fid *fid, struct vnode **vpp)
+v7fs_fhtovp(struct mount *mp, struct fid *fid, int lktype, struct vnode **vpp)
 {
 
 	DPRINTF("\n");

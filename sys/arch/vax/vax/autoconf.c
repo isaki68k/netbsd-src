@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.97 2017/05/22 16:39:40 ragge Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.100 2022/03/03 06:28:26 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1994 Ludd, University of Lule}, Sweden.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.97 2017/05/22 16:39:40 ragge Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.100 2022/03/03 06:28:26 riastradh Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_cputype.h"
@@ -137,7 +137,7 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 		ma.ma_type = *devp;
 		ma.ma_iot = &vax_mem_bus_space;
 		ma.ma_dmat = &vax_bus_dma_tag;
-		config_found(self, &ma, mainbus_print);
+		config_found(self, &ma, mainbus_print, CFARGS_NONE);
 	}
 
 	/*
@@ -173,7 +173,7 @@ cpu_mainbus_attach(device_t parent, device_t self, void *aux)
 
 	KASSERT(device_private(self) == NULL);
 	ci = curcpu();
-	self->dv_private = ci;
+	device_set_private(self, ci);
 	ci->ci_dev = self;
 	ci->ci_cpuid = device_unit(self);
 

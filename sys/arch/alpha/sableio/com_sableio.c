@@ -1,4 +1,4 @@
-/* $NetBSD: com_sableio.c,v 1.14 2018/12/08 17:46:09 thorpej Exp $ */
+/* $NetBSD: com_sableio.c,v 1.16 2021/05/07 16:58:34 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: com_sableio.c,v 1.14 2018/12/08 17:46:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com_sableio.c,v 1.16 2021/05/07 16:58:34 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -65,13 +65,13 @@ struct com_sableio_softc {
 	void	*sc_ih;			/* interrupt handler */
 };
 
-int	com_sableio_match(device_t, cfdata_t , void *);
-void	com_sableio_attach(device_t, device_t, void *);
+static int	com_sableio_match(device_t, cfdata_t , void *);
+static void	com_sableio_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(com_sableio, sizeof(struct com_sableio_softc),
     com_sableio_match, com_sableio_attach, NULL, NULL);
 
-int
+static int
 com_sableio_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct sableio_attach_args *sa = aux;
@@ -83,7 +83,7 @@ com_sableio_match(device_t parent, cfdata_t match, void *aux)
 	return (0);
 }
 
-void
+static void
 com_sableio_attach(device_t parent, device_t self, void *aux)
 {
 	struct com_sableio_softc *ssc = device_private(self);
@@ -92,6 +92,7 @@ com_sableio_attach(device_t parent, device_t self, void *aux)
 	const char *intrstr;
 	char buf[PCI_INTRSTR_LEN];
 	bus_space_handle_t ioh;
+	pci_intr_handle_t ih;
 
 	sc->sc_dev = self;
 	if (com_is_console(sa->sa_iot, sa->sa_ioaddr, &ioh) == 0 &&
@@ -106,10 +107,11 @@ com_sableio_attach(device_t parent, device_t self, void *aux)
 
 	com_attach_subr(sc);
 
-	intrstr = pci_intr_string(sa->sa_pc, sa->sa_sableirq[0],
-	    buf, sizeof(buf));
-	ssc->sc_ih = pci_intr_establish(sa->sa_pc, sa->sa_sableirq[0],
-	    IPL_SERIAL, comintr, sc);
+	alpha_pci_intr_handle_init(&ih, sa->sa_sableirq[0], 0);
+
+	intrstr = pci_intr_string(sa->sa_pc, ih, buf, sizeof(buf));
+	ssc->sc_ih = pci_intr_establish(sa->sa_pc, ih, IPL_SERIAL,
+	    comintr, sc);
 	if (ssc->sc_ih == NULL) {
 		aprint_error_dev(self, "unable to establish interrupt");
 		if (intrstr != NULL)

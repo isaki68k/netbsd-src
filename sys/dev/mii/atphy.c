@@ -1,4 +1,4 @@
-/*	$NetBSD: atphy.c,v 1.24 2019/10/18 12:53:08 hkenken Exp $ */
+/*	$NetBSD: atphy.c,v 1.30 2020/03/15 23:04:50 thorpej Exp $ */
 /*	$OpenBSD: atphy.c,v 1.1 2008/09/25 20:47:16 brad Exp $	*/
 
 /*-
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.24 2019/10/18 12:53:08 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.30 2020/03/15 23:04:50 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -99,11 +99,10 @@ CFATTACH_DECL_NEW(atphy, sizeof(struct atphy_softc),
 	atphy_match, atphy_attach, mii_phy_detach, mii_phy_activate);
 
 const struct mii_phy_funcs atphy_funcs = {
-        atphy_service, atphy_status, atphy_reset,
+	atphy_service, atphy_status, atphy_reset,
 };
 
 static const struct mii_phydesc atphys[] = {
-	MII_PHY_DESC(ATHEROS, F1),
 	MII_PHY_DESC(ATTANSIC, L1),
 	MII_PHY_DESC(ATTANSIC, L2),
 	MII_PHY_DESC(ATTANSIC, AR8021),
@@ -190,19 +189,18 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &atphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	if (atphy_is_gige(mpd))
-		sc->mii_anegticks = MII_ANEGTICKS_GIGE;
-	else
-		sc->mii_anegticks = MII_ANEGTICKS;
-
 	sc->mii_flags |= MIIF_NOLOOP;
 
-	prop_dictionary_get_bool(parent_prop, "tx_internal_delay", &asc->rgmii_tx_internal_delay);
-	prop_dictionary_get_bool(parent_prop, "rx_internal_delay", &asc->rgmii_rx_internal_delay);
+	prop_dictionary_get_bool(parent_prop, "tx_internal_delay",
+	    &asc->rgmii_tx_internal_delay);
+	prop_dictionary_get_bool(parent_prop, "rx_internal_delay",
+	    &asc->rgmii_rx_internal_delay);
 
 	prop_dictionary_get_uint32(prop, "clk_25m", &asc->mii_clk_25m);
 	if (asc->mii_clk_25m != 0)
 		atphy_clk_25m(asc);
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -212,9 +210,9 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	if (atphy_is_gige(mpd) && (sc->mii_capabilities & BMSR_EXTSTAT))
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 
-	aprint_normal_dev(self, "");
+	mii_unlock(mii);
+
 	mii_phy_add_media(sc);
-	aprint_normal("\n");
 }
 
 int
@@ -222,6 +220,8 @@ atphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t anar, bmcr, bmsr;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -273,7 +273,7 @@ atphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return EINVAL;
 		}
 
-		anar = mii_anar(IFM_SUBTYPE(ife->ifm_media));
+		anar = mii_anar(ife);
 		if ((ife->ifm_media & IFM_FDX) != 0) {
 			bmcr |= BMCR_FDX;
 			/* Enable pause. */
@@ -344,6 +344,8 @@ atphy_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmsr, bmcr, gsr, ssr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -410,10 +412,32 @@ atphy_reset(struct mii_softc *sc)
 	uint16_t reg;
 	int i;
 
-	/* Take PHY out of power down mode. */
+	KASSERT(mii_locked(sc->mii_pdata));
+
+	/*
+	 * Take PHY out of power down mode.
+	 *
+	 * XXX AR8021 document has no description about the power saving
+	 * control register. Shouldn't we write it?
+	 */
 	PHY_WRITE(sc, 29, 0x29);
+	/*
+	 * XXX AR8031 document says the lower 14 bits are reserved and the
+	 * default value is 0x36d0. Shouldn't we clear those bits?
+	 * I have no document neither L1(F1) nor L2(F2).
+	 */
 	PHY_WRITE(sc, 30, 0);
 
+	if ((sc->mii_mpd_model == MII_MODEL_ATTANSIC_L2)
+	    && (sc->mii_mpd_rev == 1)) {
+		/*
+		 * On NVIDIA MCP61 with Attansic L2 rev. 1, changing debug
+		 * port 0x29's value makes the next PHY read fail with error.
+		 * This is observed on ASUS M2N-MX SE Plus. Read any register
+		 * to ignore this problem.
+		 */
+		(void)PHY_READ(sc, ATPHY_SCR, &reg);
+	}
 	PHY_READ(sc, ATPHY_SCR, &reg);
 	/* Enable automatic crossover. */
 	reg |= ATPHY_SCR_AUTO_X_MODE;
@@ -453,6 +477,8 @@ static int
 atphy_mii_phy_auto(struct mii_softc *sc)
 {
 	uint16_t anar;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	sc->mii_ticks = 0;
 	anar = BMSR_MEDIA_TO_ANAR(sc->mii_capabilities) | ANAR_CSMA;

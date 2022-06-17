@@ -1,4 +1,4 @@
-#	$NetBSD: files.sunxi,v 1.66 2019/08/03 13:28:42 tnn Exp $
+#	$NetBSD: files.sunxi,v 1.70 2021/11/07 17:13:12 jmcneill Exp $
 #
 # Configuration info for Allwinner sunxi family SoCs
 #
@@ -16,6 +16,7 @@ file	arch/arm/sunxi/sunxi_ccu_div.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_fixed_factor.c	sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_fractional.c	sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_gate.c		sunxi_ccu
+file	arch/arm/sunxi/sunxi_ccu_mux.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_nm.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_nkmp.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_phase.c	sunxi_ccu
@@ -51,6 +52,11 @@ file	arch/arm/sunxi/sun8i_h3_ccu.c		sunxi_h3_ccu
 device	sun8ih3rccu: sunxi_ccu
 attach	sun8ih3rccu at fdt with sunxi_h3_r_ccu
 file	arch/arm/sunxi/sun8i_h3_r_ccu.c		sunxi_h3_r_ccu
+
+# CCU (V3s)
+device	sun8iv3sccu: sunxi_ccu
+attach	sun8iv3sccu at fdt with sunxi_v3s_ccu
+file	arch/arm/sunxi/sun8i_v3s_ccu.c		sunxi_v3s_ccu
 
 # CCU (A80)
 device	sun9ia80ccu: sunxi_ccu
@@ -159,14 +165,6 @@ device	sun9iusbphy
 attach	sun9iusbphy at fdt with sunxi_a80_usbphy
 file	arch/arm/sunxi/sun9i_a80_usbphy.c	sunxi_a80_usbphy
 
-# EHCI
-attach	ehci at fdt with ehci_fdt
-file	dev/fdt/ehci_fdt.c			ehci_fdt	
-
-# OHCI
-attach	ohci at fdt with ohci_fdt
-file	dev/fdt/ohci_fdt.c			ohci_fdt
-
 # TWI
 device	sunxitwi: i2cbus, i2cexec, mvi2c
 attach	sunxitwi at fdt with sunxi_twi
@@ -240,6 +238,11 @@ file	arch/arm/sunxi/sun8i_codec.c		sun8i_codec
 device	h3codec
 attach	h3codec at fdt with h3_codec
 file	arch/arm/sunxi/sun8i_h3_codec.c		h3_codec needs-flag
+
+# V3s Audio codec (analog part)
+device	v3scodec
+attach	v3scodec at fdt with v3s_codec
+file	arch/arm/sunxi/sun8i_v3s_codec.c	v3s_codec needs-flag
 
 # A64 Audio codec (analog part)
 device	a64acodec
@@ -364,6 +367,11 @@ device	sunxihdmiphy: drmkms
 attach	sunxihdmiphy at fdt with sunxi_hdmiphy
 file	arch/arm/sunxi/sunxi_hdmiphy.c		sunxi_hdmiphy | sunxi_dwhdmi
 
+# Allwinner Crypto Engine
+device	sun8icrypto
+attach	sun8icrypto at fdt with sun8i_crypto
+file	arch/arm/sunxi/sun8i_crypto.c		sun8i_crypto
+
 # SOC parameters
 defflag	opt_soc.h			SOC_SUNXI
 defflag	opt_soc.h			SOC_SUNXI_MC
@@ -378,6 +386,7 @@ defflag	opt_soc.h			SOC_SUN7I_A20: SOC_SUN7I
 defflag	opt_soc.h			SOC_SUN8I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN8I_A83T: SOC_SUN8I, SOC_SUNXI_MC
 defflag	opt_soc.h			SOC_SUN8I_H3: SOC_SUN8I
+defflag	opt_soc.h			SOC_SUN8I_V3S: SOC_SUN8I
 defflag	opt_soc.h			SOC_SUN9I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN9I_A80: SOC_SUN9I, SOC_SUNXI_MC
 defflag	opt_soc.h			SOC_SUN50I: SOC_SUNXI

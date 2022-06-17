@@ -1,4 +1,4 @@
-/* $NetBSD: db_trace.c,v 1.28 2012/02/06 02:14:10 matt Exp $ */
+/* $NetBSD: db_trace.c,v 1.30 2021/07/24 21:31:32 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.28 2012/02/06 02:14:10 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.30 2021/07/24 21:31:32 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -85,6 +85,12 @@ static struct special_symbol {
 	{ (vaddr_t)&XentSys,		"syscall" },
 	{ (vaddr_t)&XentUna,		"unaligned access fault" },
 	{ (vaddr_t)&XentRestart,	"console restart" },
+
+	/*
+	 * We'll not know what trap we took, but we'll find the
+	 * trap frame, at least...
+	 */
+	{ (vaddr_t)&exception_return,	"(exception return)" },
 	{ 0 }
 };
 
@@ -126,7 +132,7 @@ do {									\
 			 * The assumption here is that a positive
 			 * stack offset is the function epilogue,
 			 * which may come before callpc when an
-			 * agressive optimizer (like GCC 3.3 or later)
+			 * aggressive optimizer (like GCC 3.3 or later)
 			 * has moved part of the function "out of
 			 * line", past the epilogue. Therefore, ignore
 			 * the positive offset so that
@@ -253,6 +259,16 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 			(*pr)("symbol botch: callpc 0x%lx < "
 			    "func 0x%lx (%s)\n", callpc, symval, symname);
 			return;
+		}
+
+		/*
+		 * If the previous RA pointed at the kernel thread
+		 * backstop, then we are at the root of the call
+		 * graph.
+		 */
+		if (symval == (vaddr_t)&alpha_kthread_backstop) {
+			(*pr)("--- kernel thread backstop ---\n");
+			break;
 		}
 
 		/*

@@ -90,7 +90,7 @@ static device_t
 gecko_callback(device_t self, struct confargs *ca)
 {
 
-	return config_found_sm_loc(self, "gedoens", NULL, ca, mbprint,
-	    mbsubmatch);
+	return config_round(self, ca, mbprint,
+	    CFARGS(.submatch = mbsubmatch));
 }
 

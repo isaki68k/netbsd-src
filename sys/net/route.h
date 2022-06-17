@@ -1,4 +1,4 @@
-/*	$NetBSD: route.h,v 1.125 2019/09/19 04:08:29 ozaki-r Exp $	*/
+/*	$NetBSD: route.h,v 1.129 2021/08/09 20:49:10 andvar Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -207,7 +207,7 @@ struct	rtstat {
 
 #if !defined(_KERNEL) || !defined(COMPAT_RTSOCK)
 /*
- * If we aren't being compiled for backwards compatiblity, enforce 64-bit
+ * If we aren't being compiled for backwards compatibility, enforce 64-bit
  * alignment so any routing message is the same regardless if the kernel
  * is an ILP32 or LP64 kernel.
  */
@@ -266,10 +266,23 @@ struct rt_msghdr {
 #define RTM_DELADDR	0x17	/* address being removed from iface */
 #define RTM_CHGADDR	0x18	/* address properties changed */
 
+#ifdef RTM_NAMES
+static const char *rtm_names[] = {
+    "*none*", "add", "delete", "change", "get",
+    "losing", "redirect", "miss", "lock", "oldadd",
+    "olddel", "*resolve*", "onewaddr", "odeladdr", "ooifinfo",
+    "oifinfo", "ifannounce", "ieee80211", "setgate", "llinfo_upd",
+    "ifinfo", "ochgaddr",  "newaddr", "deladdr", "chgaddr",
+};
+#endif
+
 /*
  * setsockopt defines used for the filtering.
  */
 #define	RO_MSGFILTER	1	/* array of which rtm_type to send to client */
+#define	RO_MISSFILTER	2	/* array of sockaddrs to match miss dst */
+
+#define	RO_FILTSA_MAX	30	/* maximum number of sockaddrs per filter */
 
 #define RTV_MTU		0x1	/* init or lock _mtu */
 #define RTV_HOPCOUNT	0x2	/* init or lock _hopcount */
@@ -540,8 +553,8 @@ void	rt_addrmsg_rt(int, struct ifaddr *, int, struct rtentry *);
 void	route_enqueue(struct mbuf *, int);
 
 struct llentry;
-void	rt_clonedmsg(int, const struct sockaddr *, const uint8_t *,
-            const struct ifnet *);
+void	rt_clonedmsg(int, const struct sockaddr *, const struct sockaddr *,
+	    const uint8_t *, const struct ifnet *);
 
 void	rt_setmetrics(void *, struct rtentry *);
 

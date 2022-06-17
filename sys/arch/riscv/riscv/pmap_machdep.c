@@ -1,11 +1,12 @@
-/* $NetBSD: pmap_machdep.c,v 1.4 2019/06/16 07:42:52 maxv Exp $ */
+/* $NetBSD: pmap_machdep.c,v 1.10 2021/10/30 07:18:46 skrll Exp $ */
 
 /*
- * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014, 2019, 2021 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas (of 3am Software Foundry) and Maxime Villard.
+ * by Matt Thomas (of 3am Software Foundry), Maxime Villard, and
+ * Nick Hudson.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,7 +34,7 @@
 
 #include <sys/cdefs.h>
 
-__RCSID("$NetBSD: pmap_machdep.c,v 1.4 2019/06/16 07:42:52 maxv Exp $");
+__RCSID("$NetBSD: pmap_machdep.c,v 1.10 2021/10/30 07:18:46 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -47,23 +48,38 @@ vaddr_t pmap_direct_base __read_mostly;
 vaddr_t pmap_direct_end __read_mostly;
 
 void
+pmap_bootstrap(void)
+{
+
+	pmap_bootstrap_common();
+}
+
+void
 pmap_zero_page(paddr_t pa)
 {
+#ifdef _LP64
 #ifdef PMAP_DIRECT_MAP
 	memset((void *)PMAP_DIRECT_MAP(pa), 0, PAGE_SIZE);
 #else
 #error "no direct map"
+#endif
+#else
+	KASSERT(false);
 #endif
 }
 
 void
 pmap_copy_page(paddr_t src, paddr_t dst)
 {
+#ifdef _LP64
 #ifdef PMAP_DIRECT_MAP
 	memcpy((void *)PMAP_DIRECT_MAP(dst), (const void *)PMAP_DIRECT_MAP(src),
 	    PAGE_SIZE);
 #else
 #error "no direct map"
+#endif
+#else
+	KASSERT(false);
 #endif
 }
 
@@ -105,9 +121,14 @@ paddr_t
 pmap_md_direct_mapped_vaddr_to_paddr(vaddr_t va)
 {
 #ifdef _LP64
+#ifdef PMAP_DIRECT_MAP
 	return PMAP_DIRECT_UNMAP(va);
 #else
 #error "no direct map"
+#endif
+#else
+	KASSERT(false);
+	return 0;
 #endif
 }
 
@@ -134,11 +155,16 @@ pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 {
 	return false;
 }
- 
+
 void
-pmap_md_pdetab_activate(struct pmap *pmap)
+pmap_md_xtab_activate(struct pmap *pmap, struct lwp *l)
 {
 	__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
+}
+
+void
+pmap_md_xtab_deactivate(struct pmap *pmap)
+{
 }
 
 void
@@ -158,7 +184,7 @@ tlb_get_asid(void)
 }
 
 void
-tlb_set_asid(tlb_asid_t asid)
+tlb_set_asid(tlb_asid_t asid, struct pmap *pm)
 {
 	riscvreg_asid_write(asid);
 }
@@ -188,7 +214,7 @@ tlb_update_addr(vaddr_t va, tlb_asid_t asid, pt_entry_t pte, bool insert_p)
 u_int
 tlb_record_asids(u_long *ptr, tlb_asid_t asid_max)
 {
-	memset(ptr, 0xff, PMAP_TLB_NUM_PIDS / (8 * sizeof(u_long)));
+	memset(ptr, 0xff, PMAP_TLB_NUM_PIDS / NBBY);
 	ptr[0] = -2UL;
 	return PMAP_TLB_NUM_PIDS - 1;
 }

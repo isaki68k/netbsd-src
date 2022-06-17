@@ -1,4 +1,4 @@
-/*	$NetBSD: aic79xx.c,v 1.51 2019/02/04 10:09:31 mrg Exp $	*/
+/*	$NetBSD: aic79xx.c,v 1.68 2022/05/23 19:52:35 andvar Exp $	*/
 
 /*
  * Core routines and tables shareable across OS platforms.
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.51 2019/02/04 10:09:31 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.68 2022/05/23 19:52:35 andvar Exp $");
 
 #include <dev/ic/aic79xx_osm.h>
 #include <dev/ic/aic79xx_inline.h>
@@ -63,7 +63,7 @@ __KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.51 2019/02/04 10:09:31 mrg Exp $");
 struct ahd_softc_tailq ahd_tailq = TAILQ_HEAD_INITIALIZER(ahd_tailq);
 
 /***************************** Lookup Tables **********************************/
-const char *ahd_chip_names[] =
+const char * const ahd_chip_names[] =
 {
 	"NONE",
 	"aic7901",
@@ -104,7 +104,7 @@ static struct ahd_phase_table_entry ahd_phase_table[] =
 };
 
 /*
- * In most cases we only wish to itterate over real phases, so
+ * In most cases we only wish to iterate over real phases, so
  * exclude the last element from the count.
  */
 static const u_int num_phases = NUM_ELEMENTS(ahd_phase_table) - 1;
@@ -222,7 +222,7 @@ static void		ahd_dumpseq(struct ahd_softc *ahd);
 #endif
 static void		ahd_loadseq(struct ahd_softc *ahd);
 static int		ahd_check_patch(struct ahd_softc *ahd,
-					struct patch **start_patch,
+					const struct patch **start_patch,
 					u_int start_instr, u_int *skip_addr);
 static u_int		ahd_resolve_seqaddr(struct ahd_softc *ahd,
 					    u_int address);
@@ -404,7 +404,7 @@ ahd_flush_qoutfifo(struct ahd_softc *ahd)
 	ahd_run_qoutfifo(ahd);
 
 	/*
-	 * Flush the good status FIFO for compelted packetized commands.
+	 * Flush the good status FIFO for completed packetized commands.
 	 */
 	ahd_set_modes(ahd, AHD_MODE_SCSI, AHD_MODE_SCSI);
 	saved_scbptr = ahd_get_scbptr(ahd);
@@ -653,7 +653,7 @@ ahd_run_data_fifo(struct ahd_softc *ahd, struct scb *scb)
 			ahd_outb(ahd, SG_STATE, 0);
 
 			/*
-			 * Flush the data FIFO.  Strickly only
+			 * Flush the data FIFO.  Strictly only
 			 * necessary for Rev A parts.
 			 */
 			ahd_outb(ahd, DFCNTRL,
@@ -1579,7 +1579,7 @@ ahd_handle_scsiint(struct ahd_softc *ahd, u_int intstat)
 		/*
 		 * Although the driver does not care about the
 		 * 'Selection in Progress' status bit, the busy
-		 * LED does.  SELINGO is only cleared by a sucessfull
+		 * LED does.  SELINGO is only cleared by a successful
 		 * selection, so we must manually clear it to insure
 		 * the LED turns off just incase no future successful
 		 * selections occur (e.g. no devices on the bus).
@@ -1837,7 +1837,7 @@ ahd_handle_transmission_error(struct ahd_softc *ahd)
 		 * through any phases that occur after we release
 		 * this last ack until the LQI manager sees a
 		 * packet phase.  This implies we may have to
-		 * ignore a perfectly valid "unexected busfree"
+		 * ignore a perfectly valid "unexpected busfree"
 		 * after our "initiator detected error" message is
 		 * sent.  A busfree is the expected response after
 		 * we tell the target that its L_Q was corrupted.
@@ -1963,7 +1963,7 @@ ahd_handle_lqiphase_error(struct ahd_softc *ahd, u_int lqistat1)
 		ahd_outb(ahd, CLRINT, CLRSCSIINT);
 		ahd_unpause(ahd);
 	} else {
-		printf("Reseting Channel for LQI Phase error\n");
+		printf("Resetting Channel for LQI Phase error\n");
 		ahd_dump_card_state(ahd);
 		ahd_reset_channel(ahd, 'A', /*Initiate Reset*/TRUE);
 	}
@@ -2579,7 +2579,7 @@ ahd_clear_critical_section(struct ahd_softc *ahd)
 		ahd_outb(ahd, SEQCTL0, ahd_inb(ahd, SEQCTL0) & ~STEP);
 		ahd_outb(ahd, SIMODE1, simode1);
 		/*
-		 * SCSIINT seems to glitch occassionally when
+		 * SCSIINT seems to glitch occasionally when
 		 * the interrupt masks are restored.  Clear SCSIINT
 		 * one more time so that only persistent errors
 		 * are seen as a real interrupt.
@@ -2706,9 +2706,7 @@ ahd_alloc_tstate(struct ahd_softc *ahd, u_int scsi_id, char channel)
 	 && ahd->enabled_targets[scsi_id] != master_tstate)
 		panic("%s: ahd_alloc_tstate - Target already allocated",
 		      ahd_name(ahd));
-	tstate = malloc(sizeof(*tstate), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (tstate == NULL)
-		return (NULL);
+	tstate = malloc(sizeof(*tstate), M_DEVBUF, M_WAITOK | M_ZERO);
 
 	/*
 	 * If we have allocated a master tstate, copy user settings from
@@ -4800,7 +4798,7 @@ ahd_handle_ign_wide_residue(struct ahd_softc *ahd,
 				/*
 				 * The residual data count is not updated
 				 * for the command run to completion case.
-				 * Explcitly zero the count.
+				 * Explicitly zero the count.
 				 */
 				data_cnt &= ~AHD_SG_LEN_MASK;
 			}
@@ -5245,7 +5243,7 @@ ahd_shutdown(void *arg)
  * that is only available just after a reset.  If "reinit" is
  * non-zero, this reset occurred after initial configuration
  * and the caller requests that the chip be fully reinitialized
- * to a runable state.  Chip interrupts are *not* enabled after
+ * to a runnable state.  Chip interrupts are *not* enabled after
  * a reinitialization.  The caller must enable interrupts via
  * ahd_intr_enable().
  */
@@ -5278,7 +5276,7 @@ ahd_reset(struct ahd_softc *ahd, int reinit)
 		 * does not disable its parity logic prior to
 		 * the start of the reset.  This may cause a
 		 * parity error to be detected and thus a
-		 * spurious SERR or PERR assertion.  Disble
+		 * spurious SERR or PERR assertion.  Disable
 		 * PERR and SERR responses during the CHIPRST.
 		 */
 		mod_cmd = cmd &
@@ -5448,7 +5446,7 @@ ahd_init_scbdata(struct ahd_softc *ahd)
 	}
 
 	/*
-	 * Note that we were successfull
+	 * Note that we were successful
 	 */
 	return (0);
 
@@ -5985,14 +5983,14 @@ ahd_controller_info(struct ahd_softc *ahd, char *tbuf, size_t l)
 		ahd->scb_data.maxhscbs);
 }
 
-static const char *channel_strings[] = {
+static const char * const channel_strings[] = {
 	"Primary Low",
 	"Primary High",
 	"Secondary Low",
 	"Secondary High"
 };
 
-static const char *termstat_strings[] = {
+static const char * const termstat_strings[] = {
 	"Terminated Correctly",
 	"Over Terminated",
 	"Under Terminated",
@@ -6018,14 +6016,10 @@ ahd_init(struct ahd_softc *ahd)
 
 	ahd->stack_size = ahd_probe_stack_size(ahd);
 	ahd->saved_stack = malloc(ahd->stack_size * sizeof(uint16_t),
-				  M_DEVBUF, M_NOWAIT);
-	if (ahd->saved_stack == NULL)
-		return (ENOMEM);
-	/* Zero the memory */
-	memset(ahd->saved_stack, 0, ahd->stack_size * sizeof(uint16_t));
+				  M_DEVBUF, M_WAITOK | M_ZERO);
 
 	/*
-	 * Verify that the compiler hasn't over-agressively
+	 * Verify that the compiler hasn't over-aggressively
 	 * padded important structures.
 	 */
 	if (sizeof(struct hardware_scb) != 64)
@@ -6914,7 +6908,7 @@ ahd_resume(struct ahd_softc *ahd)
  * table entry for TCL.  Return the offset into
  * the SCB that contains the entry for TCL.
  * saved_scbid is dereferenced and set to the
- * scbid that should be restored once manipualtion
+ * scbid that should be restored once manipulation
  * of the TCL entry is complete.
  */
 static inline u_int
@@ -8258,13 +8252,13 @@ ahd_dumpseq(struct ahd_softc* ahd)
 }
 #endif
 
-static void
+static void __noinline
 ahd_loadseq(struct ahd_softc *ahd)
 {
-	struct	cs cs_table[num_critical_sections];
-	u_int	begin_set[num_critical_sections];
-	u_int	end_set[num_critical_sections];
-	struct	patch *cur_patch;
+	struct	cs cs_table[NUM_CRITICAL_SECTIONS];
+	u_int	begin_set[NUM_CRITICAL_SECTIONS];
+	u_int	end_set[NUM_CRITICAL_SECTIONS];
+	const struct patch *cur_patch;
 	u_int	cs_count;
 	u_int	cur_cs;
 	u_int	i;
@@ -8415,12 +8409,12 @@ ahd_loadseq(struct ahd_softc *ahd)
 }
 
 static int
-ahd_check_patch(struct ahd_softc *ahd, struct patch **start_patch,
+ahd_check_patch(struct ahd_softc *ahd, const struct patch **start_patch,
 		u_int start_instr, u_int *skip_addr)
 {
-	struct	patch *cur_patch;
-	struct	patch *last_patch;
-	u_int	num_patches;
+	const struct	patch *cur_patch;
+	const struct	patch *last_patch;
+	u_int		num_patches;
 
 	num_patches = sizeof(patches)/sizeof(struct patch);
 	last_patch = &patches[num_patches];
@@ -8435,7 +8429,7 @@ ahd_check_patch(struct ahd_softc *ahd, struct patch **start_patch,
 			cur_patch += cur_patch->skip_patch;
 		} else {
 			/* Accepted this patch.  Advance to the next
-			 * one and wait for our intruction pointer to
+			 * one and wait for our instruction pointer to
 			 * hit this point.
 			 */
 			cur_patch++;
@@ -8453,7 +8447,7 @@ ahd_check_patch(struct ahd_softc *ahd, struct patch **start_patch,
 static u_int
 ahd_resolve_seqaddr(struct ahd_softc *ahd, u_int address)
 {
-	struct patch *cur_patch;
+	const struct patch *cur_patch;
 	int address_offset;
 	u_int skip_addr;
 	u_int i;
@@ -8490,7 +8484,7 @@ ahd_download_instr(struct ahd_softc *ahd, u_int instrptr, uint8_t *dconsts)
 	/*
 	 * The firmware is always compiled into a little endian format.
 	 */
-	instr.integer = ahd_le32toh(*(uint32_t*)&seqprog[instrptr * 4]);
+	instr.integer = ahd_le32toh(*(const uint32_t*)&seqprog[instrptr * 4]);
 
 	fmt1_ins = &instr.format1;
 	fmt3_ins = NULL;
@@ -9096,7 +9090,7 @@ ahd_acquire_seeprom(struct ahd_softc *ahd)
 	 * We should be able to determine the SEEPROM type
 	 * from the flexport logic, but unfortunately not
 	 * all implementations have this logic and there is
-	 * no programatic method for determining if the logic
+	 * no programmatic method for determining if the logic
 	 * is present.
 	 */
 

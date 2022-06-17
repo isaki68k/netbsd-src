@@ -1,4 +1,4 @@
-/*	$NetBSD: sh3_machdep.c,v 1.107 2019/04/06 03:06:27 thorpej Exp $	*/
+/*	$NetBSD: sh3_machdep.c,v 1.112 2022/02/23 21:54:40 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2002 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sh3_machdep.c,v 1.107 2019/04/06 03:06:27 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sh3_machdep.c,v 1.112 2022/02/23 21:54:40 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -162,7 +162,7 @@ sh_cpu_init(int arch, int product)
 	/* Hardclock, RTC initialize. */
 	machine_clock_init();
 
-	/* ICU initiailze. */
+	/* ICU initialize. */
 	curcpu()->ci_idepth = -1;
 	intc_init();
 
@@ -304,7 +304,7 @@ sh_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 }
 
@@ -334,7 +334,7 @@ void *
 getframe(const struct lwp *l, int sig, int *onstack)
 {
 	const struct proc *p = l->l_proc;
-	const struct sigaltstack *sigstk= &l->l_sigstk;
+	const stack_t *sigstk = &l->l_sigstk;
 
 	/* Do we need to jump onto the signal stack? */
 	*onstack = (sigstk->ss_flags & (SS_DISABLE | SS_ONSTACK)) == 0

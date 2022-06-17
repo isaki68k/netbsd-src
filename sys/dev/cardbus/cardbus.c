@@ -1,4 +1,4 @@
-/*	$NetBSD: cardbus.c,v 1.108 2011/08/01 11:20:27 drochner Exp $	*/
+/*	$NetBSD: cardbus.c,v 1.114 2022/03/26 13:41:16 martin Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999 and 2000
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cardbus.c,v 1.108 2011/08/01 11:20:27 drochner Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cardbus.c,v 1.114 2022/03/26 13:41:16 martin Exp $");
 
 #include "opt_cardbus.h"
 
@@ -163,6 +163,7 @@ cardbus_read_tuples(struct cardbus_attach_args *ca, pcireg_t cis_ptr,
 	pcireg_t reg;
 	int found = 0;
 	int cardbus_space = cis_ptr & CARDBUS_CIS_ASIMASK;
+	size_t mlen, n, tlen;
 	int i, j;
 
 	memset(tuples, 0, len);
@@ -262,10 +263,28 @@ cardbus_read_tuples(struct cardbus_attach_args *ca, pcireg_t cis_ptr,
 			cardbus_conf_write(cc, cf, tag,
 			    PCI_COMMAND_STATUS_REG,
 			    command | PCI_COMMAND_MEM_ENABLE);
-			/* XXX byte order? */
-			bus_space_read_region_1(bar_tag, bar_memh,
-			    cis_ptr, tuples,
-			    MIN(bar_size - MIN(bar_size, cis_ptr), len));
+
+			mlen = MIN(bar_size - MIN(bar_size, cis_ptr), len);
+			for (n = 0; n < mlen; ) {
+				tuples[n] = bus_space_read_1(bar_tag, bar_memh,
+				    cis_ptr+n);
+				if (tuples[n] == PCMCIA_CISTPL_END)
+					break;
+				if (tuples[n] == PCMCIA_CISTPL_NULL) {
+					n++;
+					continue;
+				}
+				n++;
+				tuples[n] = bus_space_read_1(bar_tag, bar_memh,
+				    cis_ptr+n);
+				tlen = tuples[n];
+				n++;
+				if (n+tlen >= mlen)
+					break;
+				bus_space_read_region_1(bar_tag, bar_memh,
+				    cis_ptr+n, tuples+n, tlen);
+				n += tlen;
+			}
 			found++;
 		}
 		command = cardbus_conf_read(cc, cf, tag,
@@ -448,7 +467,7 @@ cardbus_rescan(device_t self, const char *ifattr,
 	tag = cardbus_make_tag(cc, cf, sc->sc_bus, function);
 
 	/*
-	 * Wait until power comes up.  Maxmum 500 ms.
+	 * Wait until power comes up.  Maximum 500 ms.
 	 *
 	 * XXX What is this for?  The bridge driver ought to have waited
 	 * XXX already.
@@ -557,11 +576,8 @@ cardbus_rescan(device_t self, const char *ifattr,
 		 * We need to allocate the ct here, since we might
 		 * need it when reading the CIS
 		 */
-		if ((ct = malloc(sizeof(struct cardbus_devfunc),
-		    M_DEVBUF, M_NOWAIT)) == NULL) {
-			panic("no room for cardbus_tag");
-		}
-
+		ct = malloc(sizeof(struct cardbus_devfunc),
+		    M_DEVBUF, M_WAITOK);
 		ct->ct_bhlc = bhlc;
 		ct->ct_cc = sc->sc_cc;
 		ct->ct_cf = sc->sc_cf;
@@ -607,8 +623,9 @@ cardbus_rescan(device_t self, const char *ifattr,
 
 		locs[CARDBUSCF_FUNCTION] = function;
 
-		if ((csc = config_found_sm_loc(sc->sc_dev, "cardbus", locs,
-		    &ca, cardbusprint, config_stdsubmatch)) == NULL) {
+		if ((csc = config_found(sc->sc_dev, &ca, cardbusprint,
+					CFARGS(.submatch = config_stdsubmatch,
+					       .locators = locs))) == NULL) {
 			/* do not match */
 			disable_function(sc, function);
 			sc->sc_funcs[function] = NULL;
@@ -778,7 +795,7 @@ enable_function(struct cardbus_softc *sc, int cdstatus, int function)
 static void
 disable_function(struct cardbus_softc *sc, int function)
 {
-	bool powerdown;
+	bool no_powerdown;
 	cardbus_devfunc_t ct;
 	device_t dv;
 	int i;
@@ -791,7 +808,7 @@ disable_function(struct cardbus_softc *sc, int function)
 			continue;
 		dv = ct->ct_device;
 		if (prop_dictionary_get_bool(device_properties(dv),
-		    "pmf-powerdown", &powerdown) && !powerdown)
+		    "pmf-no-powerdown", &no_powerdown) && no_powerdown)
 			return;
 	}
 	/* power-off because no functions are enabled */

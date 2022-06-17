@@ -1,4 +1,4 @@
-/* $NetBSD: auixp.c,v 1.48 2019/10/16 21:52:22 maya Exp $ */
+/* $NetBSD: auixp.c,v 1.53 2022/01/25 22:01:35 andvar Exp $ */
 
 /*
  * Copyright (c) 2004, 2005 Reinoud Zandijk <reinoud@netbsd.org>
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.48 2019/10/16 21:52:22 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.53 2022/01/25 22:01:35 andvar Exp $");
 
 #include <sys/types.h>
 #include <sys/errno.h>
@@ -360,7 +360,7 @@ auixp_commit_settings(void *hdl)
 		value &= ~ATI_REG_CMD_SPDF_CONFIG_MASK;
 		value |=  ATI_REG_CMD_SPDF_CONFIG_34; /* NetBSD AC'97 default */
 
-		/* XXX this prolly is not nessisary unless splitted XXX */
+		/* XXX this prolly is not necessary unless split XXX */
 		value &= ~ATI_REG_CMD_INTERLEAVE_SPDF;
 		if (params->precision <= 16)
 			value |= ATI_REG_CMD_INTERLEAVE_SPDF;
@@ -422,16 +422,13 @@ static int
 auixp_round_blocksize(void *hdl, int bs, int mode,
     const audio_params_t *param)
 {
-	uint32_t new_bs;
 
-	new_bs = bs;
-	/* Be conservative; align to 32 bytes and maximise it to 64 kb */
 	/* 256 kb possible */
-	if (new_bs > 0x10000)
+	if (bs > 0x10000)
 		bs = 0x10000;			/* 64 kb max */
-	new_bs = (bs & ~0x20);			/* 32 bytes align */
+	bs = rounddown(bs, param->channels * param->precision / NBBY);
 
-	return new_bs;
+	return bs;
 }
 
 
@@ -719,7 +716,7 @@ auixp_update_busbusy(struct auixp_softc *sc)
  * audio is refilled by calling the intr() function when space is available
  * again.
  */
-/* XXX allmost literaly a copy of trigger-input; could be factorised XXX */
+/* XXX almost literally a copy of trigger-input; could be factorised XXX */
 static int
 auixp_trigger_output(void *hdl, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *param)
@@ -794,7 +791,7 @@ auixp_halt_output(void *hdl)
 }
 
 
-/* XXX allmost literaly a copy of trigger-output; could be factorised XXX */
+/* XXX almost literally a copy of trigger-output; could be factorised XXX */
 static int
 auixp_trigger_input(void *hdl, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *param)
@@ -873,8 +870,8 @@ auixp_halt_input(void *hdl)
  * IXP audio interrupt handler
  *
  * note that we return the number of bits handled; the return value is not
- * documentated but i saw it implemented in other drivers. Prolly returning a
- * value > 0 means "i've dealt with it"
+ * documented but I saw it implemented in other drivers. Prolly returning a
+ * value > 0 means "I've dealt with it"
  *
  */
 static int
@@ -1119,7 +1116,7 @@ auixp_attach(device_t parent, device_t self, void *aux)
 
 	/* establish interrupt routine hookup at IPL_AUDIO level */
 	sc->sc_ih = pci_intr_establish_xname(pc, ih, IPL_AUDIO, auixp_intr,
-	    self, device_xname(self));
+	    sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(sc->sc_dev, "can't establish interrupt");
 		if (intrstr != NULL)
@@ -1570,7 +1567,7 @@ auixp_disable_dma(struct auixp_softc *sc, struct auixp_dma *dma)
 
 	iot = sc->sc_iot;
 	ioh = sc->sc_ioh;
-	/* lets not stress the DMA engine more than nessisary */
+	/* lets not stress the DMA engine more than necessary */
 	value = bus_space_read_4(iot, ioh, ATI_REG_CMD);
 	if (value & dma->dma_enable_bit) {
 		value &= ~dma->dma_enable_bit;
@@ -1588,7 +1585,7 @@ auixp_enable_dma(struct auixp_softc *sc, struct auixp_dma *dma)
 
 	iot = sc->sc_iot;
 	ioh = sc->sc_ioh;
-	/* lets not stress the DMA engine more than nessisary */
+	/* lets not stress the DMA engine more than necessary */
 	value = bus_space_read_4(iot, ioh, ATI_REG_CMD);
 	if (!(value & dma->dma_enable_bit)) {
 		value |= dma->dma_enable_bit;

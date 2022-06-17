@@ -1,4 +1,4 @@
-/* $NetBSD: ofwpci.c,v 1.14 2017/01/11 18:19:29 christos Exp $ */
+/* $NetBSD: ofwpci.c,v 1.21 2021/08/07 16:19:01 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,14 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwpci.c,v 1.14 2017/01/11 18:19:29 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwpci.c,v 1.21 2021/08/07 16:19:01 thorpej Exp $");
 
 #include "opt_pci.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
-#include <sys/extent.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <dev/pci/pcivar.h>
@@ -137,9 +136,6 @@ ofwpci_attach(device_t parent, device_t self, void *aux)
 	int i;
 	uint32_t busrange[2];
 	char buf[64];
-#ifdef PCI_NETBSD_CONFIGURE
-	struct extent *ioext, *memext;
-#endif
 
 	aprint_normal("\n");
 
@@ -199,9 +195,7 @@ ofwpci_attach(device_t parent, device_t self, void *aux)
 	pc->pc_iot = &sc->sc_iot;
 	pc->pc_memt = &sc->sc_memt;
 
-	pbi = malloc(sizeof(struct genppc_pci_chipset_businfo),
-	    M_DEVBUF, M_NOWAIT);
-	KASSERT(pbi != NULL);
+	pbi = kmem_alloc(sizeof(struct genppc_pci_chipset_businfo), KM_SLEEP);
 	pbi->pbi_properties = prop_dictionary_create();
 	KASSERT(pbi->pbi_properties != NULL);
 	SIMPLEQ_INIT(&pc->pc_pbi);
@@ -209,18 +203,21 @@ ofwpci_attach(device_t parent, device_t self, void *aux)
 
 	genofw_setup_pciintr_map((void *)pc, pbi, pc->pc_node);
 #ifdef PCI_NETBSD_CONFIGURE
-	ioext  = extent_create("pciio",
-	    modeldata.pciiodata[device_unit(self)].start,
-	    modeldata.pciiodata[device_unit(self)].limit,
-	    NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", sc->sc_memt.pbs_base,
-	    sc->sc_memt.pbs_limit-1, NULL, 0, EX_NOWAIT);
+	struct pciconf_resources *pcires = pciconf_resource_init();
 
-	if (pci_configure_bus(pc, ioext, memext, NULL, 0, CACHELINESIZE))
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    modeldata.pciiodata[device_unit(self)].start,
+	    (modeldata.pciiodata[device_unit(self)].limit -
+	     modeldata.pciiodata[device_unit(self)].start) + 1);
+	
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    sc->sc_memt.pbs_base,
+	    (sc->sc_memt.pbs_limit - sc->sc_memt.pbs_base) + 1);
+
+	if (pci_configure_bus(pc, pcires, 0, CACHELINESIZE))
 		aprint_error("pci_configure_bus() failed\n");
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pciconf_resource_fini(pcires);
 #endif /* PCI_NETBSD_CONFIGURE */
 	memset(&pba, 0, sizeof(pba));
 	pba.pba_memt = pc->pc_memt;
@@ -231,5 +228,6 @@ ofwpci_attach(device_t parent, device_t self, void *aux)
 	pba.pba_bridgetag = NULL;
 	pba.pba_pc = pc;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint,
+	    CFARGS(.devhandle = device_handle(self)));
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_fcntl.h,v 1.18 2019/08/23 11:19:39 maxv Exp $	*/
+/*	$NetBSD: linux_fcntl.h,v 1.20 2021/11/25 02:27:08 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998 The NetBSD Foundation, Inc.
@@ -52,6 +52,8 @@
 
 int linux_to_bsd_ioflags(int);
 int linux_to_bsd_atflags(int);
+int bsd_to_linux_statx(struct stat *, struct linux_statx *, unsigned int);
+int linux_statat(struct lwp *, int, const char *, int, struct stat *);
 
 struct linux_flock {
 	short       l_type;
@@ -79,6 +81,8 @@ struct linux_flock64 {
 #include <compat/linux/arch/powerpc/linux_fcntl.h>
 #elif defined(__mips__)
 #include <compat/linux/arch/mips/linux_fcntl.h>
+#elif defined(__aarch64__)
+#include <compat/linux/arch/aarch64/linux_fcntl.h>
 #elif defined(__arm__)
 #include <compat/linux/arch/arm/linux_fcntl.h>
 #elif defined(__amd64__)

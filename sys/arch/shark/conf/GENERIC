@@ -1,4 +1,4 @@
-#	$NetBSD: GENERIC,v 1.133 2019/04/26 21:40:32 sevan Exp $
+#	$NetBSD: GENERIC,v 1.140 2021/04/30 02:24:05 thorpej Exp $
 #
 # Generic Shark configuration.
 #
@@ -7,7 +7,7 @@ include	"arch/shark/conf/std.shark"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.133 $"
+#ident		"GENERIC-$Revision: 1.140 $"
 
 # estimated number of users
 maxusers	32
@@ -103,8 +103,6 @@ options 	NFS_BOOT_DHCP	# use NetBSD standard DHCP/NFS boot code
 include 	"conf/compat_netbsd12.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
-options 	COMPAT_LINUX	# Linux compatibility.
-
 # Shared memory options
 
 options 	SYSVMSG		# System V-like message queues
@@ -144,7 +142,7 @@ options 	BUFQ_PRIOCSCAN
 #options 	ARM700BUGTRACK	# track the ARM700 swi bug
 #options 	PORTMASTER	# Enable PortMaster only options
 options 	DIAGNOSTIC	# internal consistency checks
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 options 	DDB		# in-kernel debugger
 makeoptions	COPY_SYMTAB=1 	# reserve symbol space for DDB
 				# (needed because we boot netbsd.aout)
@@ -205,11 +203,21 @@ ofbus*		at ofbus?
 #ofdisk* 	at ofbus?
 #ofnet*		at ofbus?	# don't use with cs0
 #ofcons* 	at ofbus?	# don't use with pc0
-ofrtc*		at ofisa?
 ofrom*		at ofbus?
 
 ofisa*		at ofbus?
-ofbus*		at ofisa?
+
+# Sequoia core logic chipset
+sequoia*	at ofbus?
+ofisa*		at sequoia?
+
+# Shark I2C interface
+sharkiic*	at sequoia?
+iic*		at sharkiic?
+
+# Only 2 DIMM slots in a Shark.
+spdmem*        at iic? addr 0x50
+spdmem*        at iic? addr 0x51
 
 # IDE/ATA disk
 wdc*		at ofisa?
@@ -219,17 +227,6 @@ wd*		at atabus? drive ?
 atapibus*	at atabus?
 cd*		at atapibus? drive?
 sd*		at atapibus? drive?
-
-# PCCONS@OFW
-#ofisapc*	at ofbus?
-#pc*		at ofisapc?
-#options 	FRENCH_KBD
-#options 	FINNISH_KBD
-#options 	GERMAN_KBD
-#options 	NORWEGIAN_KBD
-
-# PS/2 Mouse
-#opms0		at spckbd? irq 12
 
 # wscons
 pckbc*		at ofisa?
@@ -241,6 +238,9 @@ chipsfb*	at ofbus?	# C&T 65550 in rev. 4 and earlier
 wsdisplay*	at wsemuldisplaydev?
 wskbd*		at pckbd? console ?
 wsmouse*	at pms? mux 0
+
+# mc146818 real time clock
+mcclock*	at ofisa?
 
 # CS8900 Ethernet@OFW
 cs*		at ofisa?
@@ -288,7 +288,6 @@ pseudo-device	carp			# Common Address Redundancy Protocol
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
-#pseudo-device	strip			# STarmode Radio IP (Metricon Ricochet)
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	vnd			# disk-like interface to files
 #options 	VND_COMPRESSION		# compressed vnd(4)

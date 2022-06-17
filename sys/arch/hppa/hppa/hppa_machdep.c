@@ -1,7 +1,7 @@
-/*	$NetBSD: hppa_machdep.c,v 1.29 2014/02/24 07:23:43 skrll Exp $	*/
+/*	$NetBSD: hppa_machdep.c,v 1.33 2022/05/13 18:40:02 skrll Exp $	*/
 
 /*-
- * Copyright (c) 1997 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hppa_machdep.c,v 1.29 2014/02/24 07:23:43 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hppa_machdep.c,v 1.33 2022/05/13 18:40:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -141,7 +141,7 @@ cpu_mcontext_validate(struct lwp *l, const mcontext_t *mcp)
 #if 0
 	/*
 	 * XXX
-	 * Force the space regs and priviledge bits to
+	 * Force the space regs and privilege bits to
 	 * the right values in the trapframe for now.
 	 */
 
@@ -279,7 +279,9 @@ hppa_ras(struct lwp *l)
 
 	p = l->l_proc;
 	tf = l->l_md.md_regs;
-	rasaddr = (intptr_t)ras_lookup(p, (void *)tf->tf_iioq_head);
+
+	rasaddr = (intptr_t)ras_lookup(p,
+	    (void *)(tf->tf_iioq_head & ~HPPA_PC_PRIV_MASK));
 	if (rasaddr != -1) {
 		rasaddr |= HPPA_PC_PRIV_USER;
 		tf->tf_iioq_head = rasaddr;
@@ -292,20 +294,29 @@ hppa_ras(struct lwp *l)
  * or after the current trap/syscall if in system mode.
  */
 void
-cpu_need_resched(struct cpu_info *ci, int flags)
+cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
-	bool immed = (flags & RESCHED_IMMED) != 0;
 
-	if (ci->ci_want_resched && !immed)
-		return;
-	ci->ci_want_resched = 1;
-	setsoftast(ci->ci_data.cpu_onproc);
-
+	if ((flags & RESCHED_REMOTE) != 0) {
 #ifdef MULTIPROCESSOR
-	if (ci->ci_curlwp != ci->ci_data.cpu_idlelwp) {
-		if (immed && ci != curcpu()) {
-			/* XXX send IPI */
-		}
-	}
+		/* XXX send IPI */
 #endif
+	} else {
+		setsoftast(l);
+	}
 }
+
+#ifdef MODULAR
+struct lwp *
+hppa_curlwp(void)
+{
+	return curlwp;
+}
+
+struct cpu_info *
+hppa_curcpu(void)
+{
+	return curcpu();
+}
+#endif
+

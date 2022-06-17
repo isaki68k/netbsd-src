@@ -1,4 +1,4 @@
-/*	$NetBSD: ld.c,v 1.107 2019/10/06 06:10:44 mlelstv Exp $	*/
+/*	$NetBSD: ld.c,v 1.112 2021/05/30 11:24:02 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ld.c,v 1.107 2019/10/06 06:10:44 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ld.c,v 1.112 2021/05/30 11:24:02 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -63,6 +63,7 @@ __KERNEL_RCSID(0, "$NetBSD: ld.c,v 1.107 2019/10/06 06:10:44 mlelstv Exp $");
 
 static void	ldminphys(struct buf *bp);
 static bool	ld_suspend(device_t, const pmf_qual_t *);
+static bool	ld_resume(device_t, const pmf_qual_t *);
 static bool	ld_shutdown(device_t, int);
 static int	ld_diskstart(device_t, struct buf *bp);
 static void	ld_iosize(device_t, int *);
@@ -110,7 +111,7 @@ const struct cdevsw ld_cdevsw = {
 	.d_flag = D_DISK | D_MPSAFE
 };
 
-static struct	dkdriver lddkdriver = {
+static const struct	dkdriver lddkdriver = {
 	.d_open = ldopen,
 	.d_close = ldclose,
 	.d_strategy = ldstrategy,
@@ -166,7 +167,8 @@ ldattach(struct ld_softc *sc, const char *default_strategy)
 	bufq_alloc(&dksc->sc_bufq, default_strategy, BUFQ_SORT_RAWBLOCK);
 
 	/* Register with PMF */
-	if (!pmf_device_register1(dksc->sc_dev, ld_suspend, NULL, ld_shutdown))
+	if (!pmf_device_register1(dksc->sc_dev, ld_suspend, ld_resume,
+		ld_shutdown))
 		aprint_error_dev(dksc->sc_dev,
 		    "couldn't establish power handler\n");
 
@@ -189,26 +191,25 @@ int
 ldbegindetach(struct ld_softc *sc, int flags)
 {
 	struct dk_softc *dksc = &sc->sc_dksc;
-	int rv = 0;
+	int error;
 
+	/* If we never attached properly, no problem with detaching.  */
 	if ((sc->sc_flags & LDF_ENABLED) == 0)
-		return (0);
+		return 0;
 
-	rv = disk_begindetach(&dksc->sc_dkdev, ld_lastclose, dksc->sc_dev, flags);
+	/*
+	 * If the disk is still open, back out before we commit to
+	 * detaching.
+	 */
+	error = disk_begindetach(&dksc->sc_dkdev, ld_lastclose, dksc->sc_dev,
+	    flags);
+	if (error)
+		return error;
 
-	if (rv != 0)
-		return rv;
+	/* We are now committed to detaching.  Prevent new xfers.  */
+	ldadjqparam(sc, 0);
 
-	mutex_enter(&sc->sc_mutex);
-	sc->sc_maxqueuecnt = 0;
-
-	while (sc->sc_queuecnt > 0) {
-		sc->sc_flags |= LDF_DRAIN;
-		cv_wait(&sc->sc_drain, &sc->sc_mutex);
-	}
-	mutex_exit(&sc->sc_mutex);
-
-	return (rv);
+	return 0;
 }
 
 void
@@ -220,12 +221,17 @@ ldenddetach(struct ld_softc *sc)
 	if ((sc->sc_flags & LDF_ENABLED) == 0)
 		return;
 
-	mutex_enter(&sc->sc_mutex);
-
 	/* Wait for commands queued with the hardware to complete. */
-	if (sc->sc_queuecnt != 0) {
-		if (cv_timedwait(&sc->sc_drain, &sc->sc_mutex, 30 * hz))
+	mutex_enter(&sc->sc_mutex);
+	while (sc->sc_queuecnt > 0) {
+		if (cv_timedwait(&sc->sc_drain, &sc->sc_mutex, 30 * hz)) {
+			/*
+			 * XXX This seems like a recipe for crashing on
+			 * use after free...
+			 */
 			printf("%s: not drained\n", dksc->sc_xname);
+			break;
+		}
 	}
 	mutex_exit(&sc->sc_mutex);
 
@@ -272,7 +278,55 @@ ldenddetach(struct ld_softc *sc)
 static bool
 ld_suspend(device_t dev, const pmf_qual_t *qual)
 {
-	return ld_shutdown(dev, 0);
+	struct ld_softc *sc = device_private(dev);
+	int queuecnt;
+	bool ok = false;
+
+	/* Block new requests and wait for outstanding requests to drain.  */
+	mutex_enter(&sc->sc_mutex);
+	KASSERT((sc->sc_flags & LDF_SUSPEND) == 0);
+	sc->sc_flags |= LDF_SUSPEND;
+	while ((queuecnt = sc->sc_queuecnt) > 0) {
+		if (cv_timedwait(&sc->sc_drain, &sc->sc_mutex, 30 * hz))
+			break;
+	}
+	mutex_exit(&sc->sc_mutex);
+
+	/* Block suspend if we couldn't drain everything in 30sec.  */
+	if (queuecnt > 0) {
+		device_printf(dev, "timeout draining buffers\n");
+		goto out;
+	}
+
+	/* Flush cache before we lose power.  If we can't, block suspend.  */
+	if (ld_flush(dev, /*poll*/false) != 0) {
+		device_printf(dev, "failed to flush cache\n");
+		goto out;
+	}
+
+	/* Success!  */
+	ok = true;
+
+out:	if (!ok)
+		(void)ld_resume(dev, qual);
+	return ok;
+}
+
+static bool
+ld_resume(device_t dev, const pmf_qual_t *qual)
+{
+	struct ld_softc *sc = device_private(dev);
+
+	/* Allow new requests to come in.  */
+	mutex_enter(&sc->sc_mutex);
+	KASSERT(sc->sc_flags & LDF_SUSPEND);
+	sc->sc_flags &= ~LDF_SUSPEND;
+	mutex_exit(&sc->sc_mutex);
+
+	/* Restart any pending queued requests.  */
+	dk_start(&sc->sc_dksc, NULL);
+
+	return true;
 }
 
 /* ARGSUSED */
@@ -296,6 +350,10 @@ ldopen(dev_t dev, int flags, int fmt, struct lwp *l)
 	unit = DISKUNIT(dev);
 	if ((sc = device_lookup_private(&ld_cd, unit)) == NULL)
 		return (ENXIO);
+
+	if ((sc->sc_flags & LDF_ENABLED) == 0)
+		return (ENODEV);
+
 	dksc = &sc->sc_dksc;
 
 	return dk_open(dksc, dev, flags, fmt, l);
@@ -430,17 +488,24 @@ ld_diskstart(device_t dev, struct buf *bp)
 	struct ld_softc *sc = device_private(dev);
 	int error;
 
-	if (sc->sc_queuecnt >= sc->sc_maxqueuecnt)
+	if (sc->sc_queuecnt >= sc->sc_maxqueuecnt ||
+	    sc->sc_flags & LDF_SUSPEND) {
+		if (sc->sc_flags & LDF_SUSPEND)
+			aprint_debug_dev(dev, "i/o blocked while suspended\n");
 		return EAGAIN;
+	}
 
 	if ((sc->sc_flags & LDF_MPSAFE) == 0)
 		KERNEL_LOCK(1, curlwp);
 
 	mutex_enter(&sc->sc_mutex);
 
-	if (sc->sc_queuecnt >= sc->sc_maxqueuecnt)
+	if (sc->sc_queuecnt >= sc->sc_maxqueuecnt ||
+	    sc->sc_flags & LDF_SUSPEND) {
+		if (sc->sc_flags & LDF_SUSPEND)
+			aprint_debug_dev(dev, "i/o blocked while suspended\n");
 		error = EAGAIN;
-	else {
+	} else {
 		error = (*sc->sc_start)(sc, bp);
 		if (error == 0)
 			sc->sc_queuecnt++;
@@ -463,10 +528,7 @@ lddone(struct ld_softc *sc, struct buf *bp)
 
 	mutex_enter(&sc->sc_mutex);
 	if (--sc->sc_queuecnt <= sc->sc_maxqueuecnt) {
-		if ((sc->sc_flags & LDF_DRAIN) != 0) {
-			sc->sc_flags &= ~LDF_DRAIN;
-			cv_broadcast(&sc->sc_drain);
-		}
+		cv_broadcast(&sc->sc_drain);
 		mutex_exit(&sc->sc_mutex);
 		dk_start(dksc, NULL);
 	} else
@@ -509,7 +571,7 @@ lddump(dev_t dev, daddr_t blkno, void *va, size_t size)
 	if ((sc->sc_flags & LDF_ENABLED) == 0)
 		return (ENODEV);
 
-	return dk_dump(dksc, dev, blkno, va, size);
+	return dk_dump(dksc, dev, blkno, va, size, 0);
 }
 
 static int

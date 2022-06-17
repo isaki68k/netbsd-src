@@ -1,4 +1,4 @@
-/*	$NetBSD: in_var.h,v 1.97 2018/11/29 09:51:20 ozaki-r Exp $	*/
+/*	$NetBSD: in_var.h,v 1.102 2021/03/08 22:01:18 christos Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -113,6 +113,14 @@ struct in_ifaddr {
 	struct pslist_entry	ia_hash_pslist_entry;
 	struct pslist_entry	ia_pslist_entry;
 #endif
+};
+
+struct in_nbrinfo {
+	char ifname[IFNAMSIZ];	/* if name, e.g. "en0" */
+	struct in_addr addr;	/* IPv4 address of the neighbor */
+	long	asked;		/* number of queries already sent for this addr */
+	int	state;		/* reachability state */
+	int	expire;		/* lifetime for NDP state transition */
 };
 
 #ifdef _KERNEL
@@ -374,6 +382,7 @@ struct in_multi {
 #ifdef _KERNEL
 
 #include <net/pktqueue.h>
+#include <sys/cprng.h>
 
 extern pktqueue_t *ip_pktq;
 
@@ -438,16 +447,16 @@ void	in_addrhash_insert(struct in_ifaddr *);
 void	in_addrhash_remove(struct in_ifaddr *);
 int	ipflow_fastforward(struct mbuf *);
 
-struct ipid_state;
-typedef struct ipid_state ipid_state_t;
-
-ipid_state_t *	ip_id_init(void);
-void		ip_id_fini(ipid_state_t *);
-uint16_t	ip_randomid(ipid_state_t *, uint16_t);
-
-extern ipid_state_t *	ip_ids;
 extern uint16_t		ip_id;
 extern int		ip_do_randomid;
+
+static __inline uint16_t
+ip_randomid(void)
+{
+
+	uint16_t id = (uint16_t)cprng_fast32();
+	return id ? id : 1;
+}
 
 /*
  * ip_newid_range: "allocate" num contiguous IP IDs.
@@ -461,7 +470,7 @@ ip_newid_range(const struct in_ifaddr *ia, u_int num)
 
 	if (ip_do_randomid) {
 		/* XXX ignore num */
-		return ip_randomid(ip_ids, ia ? ia->ia_idsalt : 0);
+		return ip_randomid();
 	}
 
 	/* Never allow an IP ID of 0 (detect wrap). */

@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.90 2019/09/23 23:06:26 kamil Exp $	*/
+/*	$NetBSD: types.h,v 1.93 2021/04/01 04:35:46 simonb Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -123,7 +123,7 @@ typedef __register_t	register_t;
  * other run-in-userspace code defines _KERNEL, but is careful not to
  * build anything using 64bit atomic ops by default.
  */
-#define __HAVE_ATOMIC64_OPS
+#define	__HAVE_ATOMIC64_OPS
 #endif
 #define	__HAVE_ATOMIC_AS_MEMBAR
 #define	__HAVE_CPU_LWP_SETPRIVATE
@@ -133,13 +133,6 @@ typedef __register_t	register_t;
 #define	__HAVE_TLS_VARIANT_II
 #define	__HAVE_COMMON___TLS_GET_ADDR
 #define	__HAVE_UCAS_FULL
-
-#if defined(_KERNEL)
 #define	__HAVE_RAS
-
-#if !defined(XEN) && !defined(NO_PCI_MSI_MSIX)
-#define __HAVE_PCI_MSI_MSIX
-#endif
-#endif
 
 #endif	/* _I386_MACHTYPES_H_ */

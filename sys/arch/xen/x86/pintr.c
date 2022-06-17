@@ -103,19 +103,19 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.10 2019/02/13 06:15:51 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.24 2022/05/26 11:06:14 bouyer Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
 #include "isa.h"
 #include "pci.h"
+#include "opt_pci.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/proc.h>
 #include <sys/errno.h>
 #include <sys/cpu.h>
@@ -126,6 +126,12 @@ __KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.10 2019/02/13 06:15:51 cherry Exp $");
 #include <machine/pio.h>
 #include <xen/evtchn.h>
 #include <xen/intr.h>
+
+#include <dev/pci/pcivar.h>
+
+#ifdef __HAVE_PCI_MSI_MSIX
+#include <x86/pci/msipic.h>
+#endif
 
 #include "acpica.h"
 #include "ioapic.h"
@@ -144,9 +150,8 @@ struct intrstub x2apic_level_stubs[MAX_INTR_SOURCES] = {{0,0,0}};
 #include <machine/i82093var.h>
 #endif /* NIOAPIC */
 
-int irq2port[NR_EVENT_CHANNELS] = {0}; /* actually port + 1, so that 0 is invaid */
-static int irq2vect[256] = {0};
-static int vect2irq[256] = {0};
+// XXX NR_EVENT_CHANNELS is 2048, use some sparse structure?
+short irq2port[NR_EVENT_CHANNELS] = {0}; /* actually port + 1, so that 0 is invaid */
 
 #if NACPICA > 0
 #include <machine/mpconfig.h>
@@ -161,29 +166,124 @@ static int vect2irq[256] = {0};
 #endif
 
 #if defined(DOM0OPS) || NPCI > 0
+
+#ifdef __HAVE_PCI_MSI_MSIX
 int
-xen_vec_alloc(int gsi)
+xen_map_msi_pirq(struct pic *pic, int count)
 {
-	physdev_op_t op;
+	struct physdev_map_pirq map_irq;
+	const struct msipic_pci_info *msi_i = msipic_get_pci_info(pic);
+	int i;
+	int ret;
 
-	KASSERT(gsi < 255);
+	if (count == -1)
+		count = msi_i->mp_veccnt;
+	KASSERT(count > 0);
 
-	if (irq2port[gsi] == 0) {
-		op.cmd = PHYSDEVOP_ASSIGN_VECTOR;
-		op.u.irq_op.irq = gsi;
-		if (HYPERVISOR_physdev_op(&op) < 0) {
-			panic("PHYSDEVOP_ASSIGN_VECTOR gsi %d", gsi);
-		}
-		KASSERT(irq2vect[gsi] == 0 ||
-			irq2vect[gsi] == op.u.irq_op.vector);
-		irq2vect[gsi] = op.u.irq_op.vector;
-		KASSERT(vect2irq[op.u.irq_op.vector] == 0 ||
-			 vect2irq[op.u.irq_op.vector] == gsi);
-		vect2irq[op.u.irq_op.vector] = gsi;
+	KASSERT(pic->pic_type == PIC_MSI);
+
+	memset(&map_irq, 0, sizeof(map_irq));
+	map_irq.domid = DOMID_SELF;
+	map_irq.type = MAP_PIRQ_TYPE_MSI_SEG;
+	map_irq.index = -1;
+	map_irq.pirq = -1;
+	map_irq.bus = msi_i->mp_bus;
+ 	map_irq.devfn = (msi_i->mp_dev << 3) | msi_i->mp_fun;
+	aprint_debug("xen_map_msi_pirq bus %d devfn 0x%x (%d %d) entry_nr %d",
+	    map_irq.bus, map_irq.devfn, msi_i->mp_dev, msi_i->mp_fun,
+	    map_irq.entry_nr);
+	map_irq.entry_nr = count;
+	if (msi_i->mp_veccnt > 1) {
+		map_irq.type = MAP_PIRQ_TYPE_MULTI_MSI;
 	}
 
-	return (irq2vect[gsi]);
+	ret = HYPERVISOR_physdev_op(PHYSDEVOP_map_pirq, &map_irq);
+
+	if (ret == 0) {
+		KASSERT(map_irq.entry_nr == count);
+		aprint_debug(" pirq(s)");
+		for (i = 0; i < count; i++) {
+			msi_i->mp_xen_pirq[i] = map_irq.pirq + i;
+			aprint_debug(" %d", msi_i->mp_xen_pirq[i]);
+		}
+		aprint_debug("\n");
+	} else {
+		aprint_debug(" fail %d\n", ret);
+	}
+	return ret;
 }
+
+int
+xen_map_msix_pirq(struct pic *pic, int count)
+{
+	struct physdev_map_pirq map_irq;
+	const struct msipic_pci_info *msi_i = msipic_get_pci_info(pic);
+	int i;
+	int ret;
+
+	if (count == -1)
+		count = msi_i->mp_veccnt;
+	KASSERT(count > 0);
+
+	KASSERT(pic->pic_type == PIC_MSIX);
+
+	memset(&map_irq, 0, sizeof(map_irq));
+	map_irq.domid = DOMID_SELF;
+	map_irq.type = MAP_PIRQ_TYPE_MSI_SEG;
+	map_irq.index = -1;
+	map_irq.pirq = -1;
+	map_irq.bus = msi_i->mp_bus;
+ 	map_irq.devfn = (msi_i->mp_dev << 3) | msi_i->mp_fun;
+ 	map_irq.table_base = msi_i->mp_table_base;
+
+	aprint_debug("xen_map_msix_pirq bus %d devfn 0x%x (%d %d) count %d",
+	    map_irq.bus, map_irq.devfn, msi_i->mp_dev, msi_i->mp_fun,
+	    count);
+
+	for (i = 0; i < count; i++) {
+		map_irq.entry_nr = i;
+		map_irq.pirq = -1;
+		aprint_debug(" map %d", i);
+		ret = HYPERVISOR_physdev_op(PHYSDEVOP_map_pirq, &map_irq);
+		if (ret) {
+			aprint_debug(" fail %d\n", ret);
+			goto fail;
+		}
+		msi_i->mp_xen_pirq[i] = map_irq.pirq;
+		aprint_debug("->%d", msi_i->mp_xen_pirq[i]);
+	}
+	aprint_debug("\n");
+	return 0;
+
+fail:
+	i--;
+	while(i >= 0) {
+		struct physdev_unmap_pirq unmap_irq;
+		unmap_irq.domid = DOMID_SELF;
+		unmap_irq.pirq = msi_i->mp_xen_pirq[i];
+		
+		(void)HYPERVISOR_physdev_op(PHYSDEVOP_unmap_pirq, &unmap_irq);
+		msi_i->mp_xen_pirq[i] = 0;
+	}
+	return ret;
+}
+
+void
+xen_pci_msi_release(struct pic *pic, int count)
+{
+	const struct msipic_pci_info *msi_i = msipic_get_pci_info(pic);
+	KASSERT(count == msi_i->mp_veccnt);
+	for (int i = 0; i < count; i++) {
+		struct physdev_unmap_pirq unmap_irq;
+		unmap_irq.domid = DOMID_SELF;
+		unmap_irq.pirq = msi_i->mp_xen_pirq[i];
+		
+		(void)HYPERVISOR_physdev_op(PHYSDEVOP_unmap_pirq, &unmap_irq);
+		msi_i->mp_xen_pirq[i] = 0;
+	}
+}
+
+#endif /* __HAVE_PCI_MSI_MSIX */
 
 /*
  * This function doesn't "allocate" anything. It merely translates our
@@ -195,6 +295,7 @@ xen_vec_alloc(int gsi)
 int
 xen_pic_to_gsi(struct pic *pic, int pin)
 {
+	int ret;
 	int gsi;
 
 	KASSERT(pic != NULL);
@@ -204,19 +305,55 @@ xen_pic_to_gsi(struct pic *pic, int pin)
 	 * If so, legacy_irq should identity map correctly to gsi.
 	 */
 	gsi = pic->pic_vecbase + pin;
+	KASSERT(gsi < NR_EVENT_CHANNELS);
 
 	switch (pic->pic_type) {
 	case PIC_I8259:
 		KASSERT(gsi < 16);
-		break;
+		/* FALLTHROUGH */
 	case PIC_IOAPIC:
+	    {
+		KASSERT(gsi < 255);
+
+		if (irq2port[gsi] != 0) {
+			/* Already mapped the shared interrupt */
+			break;
+		}
+
+		struct physdev_irq irq_op;
+		memset(&irq_op, 0, sizeof(irq_op));
+		irq_op.irq = gsi;
+		ret = HYPERVISOR_physdev_op(PHYSDEVOP_alloc_irq_vector,
+		    &irq_op);
+		if (ret < 0) {
+			panic("physdev_op(PHYSDEVOP_alloc_irq_vector) %d"
+			    " fail %d", gsi, ret);
+		}
+		aprint_debug("xen_pic_to_gsi %s pin %d gsi %d allocated %d\n",
+		    (pic->pic_type == PIC_IOAPIC) ? "ioapic" : "i8259",
+		    pin, gsi, irq_op.vector);
+
+		KASSERT(irq_op.vector == gsi);
 		break;
-	default: /* XXX: MSI Support */
-		panic("XXX: MSI(X) Support");
+	    }
+	case PIC_MSI:
+	case PIC_MSIX:
+#ifdef __HAVE_PCI_MSI_MSIX
+	{
+		const struct msipic_pci_info *msi_i = msipic_get_pci_info(pic);
+		KASSERT(pin < msi_i->mp_veccnt);
+		gsi = msi_i->mp_xen_pirq[pin];
+		aprint_debug("xen_pic_to_gsi %s pin %d gsi %d\n",
+		    (pic->pic_type == PIC_MSI) ? "MSI" : "MSIX",
+		    pin, gsi);
+		break;
+	}
+#endif
+	default:
+		panic("unknown pic_type %d", pic->pic_type);
 		break;
 	}
 
-	KASSERT(gsi < 255);
 	return gsi;
 }
 

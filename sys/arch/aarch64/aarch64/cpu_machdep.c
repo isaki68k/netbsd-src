@@ -1,7 +1,7 @@
-/* $NetBSD: cpu_machdep.c,v 1.6 2018/08/03 17:04:30 ryo Exp $ */
+/* $NetBSD: cpu_machdep.c,v 1.12 2021/09/23 15:19:03 ryo Exp $ */
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: cpu_machdep.c,v 1.6 2018/08/03 17:04:30 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu_machdep.c,v 1.12 2021/09/23 15:19:03 ryo Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -124,7 +124,8 @@ dosoftints(void)
 		if (softints == 0) {
 #ifdef __HAVE_PREEMPTION
 			if (ci->ci_want_resched & RESCHED_KPREEMPT) {
-				ci->ci_want_resched &= ~RESCHED_KPREEMPT;
+				atomic_and_uint(&ci->ci_want_resched,
+				    ~RESCHED_KPREEMPT);
 				splsched();
 				kpreempt(-2);
 			}
@@ -180,10 +181,11 @@ CTASSERT(offsetof(struct fpreg, fpsr) == offsetof(__fregset_t, __fpsr));
 void
 cpu_getmcontext(struct lwp *l, mcontext_t *mcp, unsigned int *flagsp)
 {
-	const struct trapframe * const tf = l->l_md.md_utf;
+	const struct trapframe * const tf = lwp_trapframe(l);
 
 	memcpy(mcp->__gregs, &tf->tf_regs, sizeof(mcp->__gregs));
 	mcp->__gregs[_REG_TPIDR] = (uintptr_t)l->l_private;
+	mcp->__gregs[_REG_SPSR] &= ~SPSR_A64_BTYPE;
 
 	if (fpu_used_p(l)) {
 		const struct pcb * const pcb = lwp_getpcb(l);
@@ -197,8 +199,10 @@ cpu_getmcontext(struct lwp *l, mcontext_t *mcp, unsigned int *flagsp)
 int
 cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 {
+	struct proc * const p = l->l_proc;
+
 	if (flags & _UC_CPU) {
-		struct trapframe * const tf = l->l_md.md_utf;
+		struct trapframe * const tf = lwp_trapframe(l);
 		int error = cpu_mcontext_validate(l, mcp);
 		if (error)
 			return error;
@@ -214,6 +218,13 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		fpu_discard(l, true);
 		pcb->pcb_fpregs = *(const struct fpreg *)&mcp->__fregs;
 	}
+
+	mutex_enter(p->p_lock);
+	if (flags & _UC_SETSTACK)
+		l->l_sigstk.ss_flags |= SS_ONSTACK;
+	if (flags & _UC_CLRSTACK)
+		l->l_sigstk.ss_flags &= ~SS_ONSTACK;
+	mutex_exit(p->p_lock);
 
 	return 0;
 }
@@ -233,60 +244,25 @@ startlwp(void *arg)
 }
 
 void
-cpu_need_resched(struct cpu_info *ci, int flags)
+cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
-	struct lwp * const l = ci->ci_data.cpu_onproc;
-#ifdef MULTIPROCESSOR
-	struct cpu_info * const cur_ci = curcpu();
-#endif
-
 	KASSERT(kpreempt_disabled());
 
-	ci->ci_want_resched |= flags;
-
-	if (__predict_false((l->l_pflag & LP_INTR) != 0)) {
-		/*
-		 * No point doing anything, it will switch soon.
-		 * Also here to prevent an assertion failure in
-		 * kpreempt() due to preemption being set on a
-		 * soft interrupt LWP.
-		 */
-		return;
-	}
-
-	if (__predict_false(l == ci->ci_data.cpu_idlelwp)) {
-#ifdef MULTIPROCESSOR
-		/*
-		 * If the other CPU is idling, it must be waiting for an
-		 * interrupt.  So give it one.
-		 */
-		if (__predict_false(ci != cur_ci))
-			intr_ipi_send(ci->ci_kcpuset, IPI_NOP);
-#endif
-		return;
-	}
-
-#ifdef MULTIPROCESSOR
-	atomic_or_uint(&ci->ci_want_resched, flags);
-#else
-	ci->ci_want_resched |= flags;
-#endif
-
-	if (flags & RESCHED_KPREEMPT) {
+	if ((flags & RESCHED_KPREEMPT) != 0) {
 #ifdef __HAVE_PREEMPTION
-		atomic_or_uint(&l->l_dopreempt, DOPREEMPT_ACTIVE);
-		if (ci != cur_ci) {
+		if ((flags & RESCHED_REMOTE) != 0) {
 			intr_ipi_send(ci->ci_kcpuset, IPI_KPREEMPT);
 		}
 #endif
 		return;
 	}
-	setsoftast(ci);	/* force call to ast() */
+	if ((flags & RESCHED_REMOTE) != 0) {
 #ifdef MULTIPROCESSOR
-	if (ci != cur_ci && (flags & RESCHED_IMMED)) {
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
-	}
 #endif
+	} else {
+		l->l_md.md_astpending = 1;
+	}
 }
 
 void
@@ -296,17 +272,23 @@ cpu_need_proftick(struct lwp *l)
 	KASSERT(l->l_cpu == curcpu());
 
 	l->l_pflag |= LP_OWEUPC;
-	setsoftast(l->l_cpu);
+	l->l_md.md_astpending = 1;
 }
 
 void
-cpu_set_curpri(int pri)
+cpu_signotify(struct lwp *l)
 {
-	kpreempt_disable();
-	curcpu()->ci_schedstate.spc_curpriority = pri;
-	kpreempt_enable();
-}
 
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
+#endif
+	} else {
+		l->l_md.md_astpending = 1;
+	}
+}
 
 #ifdef __HAVE_PREEMPTION
 bool

@@ -1,4 +1,4 @@
-/*	$NetBSD: mutex.h,v 1.4 2009/07/20 04:41:37 kiyohara Exp $	*/
+/*	$NetBSD: mutex.h,v 1.7 2022/04/06 22:47:57 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -15,7 +15,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- *      
+ *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -47,7 +47,6 @@ struct kmutex {
 	__cpu_simple_lock_t	mtx_lock;
 };
 
-
 /* XXX when we implement mutex_enter()/mutex_exit(), uncomment this
 #define __HAVE_MUTEX_STUBS		1
 */
@@ -55,19 +54,6 @@ struct kmutex {
 #define __HAVE_SPIN_MUTEX_STUBS		1
 */
 #define	__HAVE_SIMPLE_MUTEXES		1
-
-/*
- * MUTEX_RECEIVE: no memory barrier required, atomic_cas implies a load fence.
- */
-#define	MUTEX_RECEIVE(mtx)		/* nothing */
-
-/*
- * MUTEX_GIVE: no memory barrier required, as _lock_cas() will take care of it.
- */
-#define	MUTEX_GIVE(mtx)			/* nothing */
-
-#define	MUTEX_CAS(ptr, old, new)		\
-    (atomic_cas_ulong((volatile unsigned long *)(ptr), (old), (new)) == (old))
 
 #endif	/* __MUTEX_PRIVATE */
 

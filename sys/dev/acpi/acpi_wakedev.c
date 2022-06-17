@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_wakedev.c,v 1.27 2017/06/01 02:45:09 chs Exp $ */
+/* $NetBSD: acpi_wakedev.c,v 1.29 2022/05/31 20:28:57 mrg Exp $ */
 
 /*-
  * Copyright (c) 2009, 2010, 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_wakedev.c,v 1.27 2017/06/01 02:45:09 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_wakedev.c,v 1.29 2022/05/31 20:28:57 mrg Exp $");
+
+#include "pci.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -210,7 +212,6 @@ acpi_wakedev_add(struct acpi_devnode *ad)
 {
 	struct acpi_wakedev *aw;
 	const char *str = NULL;
-	device_t dev;
 	int err;
 
 	KASSERT(ad != NULL && ad->ad_wakedev != NULL);
@@ -228,12 +229,14 @@ acpi_wakedev_add(struct acpi_devnode *ad)
 
 	if (ad->ad_device != NULL)
 		str = device_xname(ad->ad_device);
+#if NPCI > 0
 	else {
-		dev = acpi_pcidev_find_dev(ad);
+		device_t dev = acpi_pcidev_find_dev(ad);
 
 		if (dev != NULL)
 			str = device_xname(dev);
 	}
+#endif
 
 	if (str == NULL)
 		return;
@@ -292,7 +295,7 @@ acpi_wakedev_commit(struct acpi_softc *sc, int state)
 	 *
 	 *  3.	Execute _DSW or _PSW method.
 	 */
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_wakedev == NULL)
 			continue;

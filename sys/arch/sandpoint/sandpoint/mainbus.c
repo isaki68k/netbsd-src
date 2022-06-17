@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.30 2015/09/07 23:00:08 phx Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.34 2021/08/07 16:19:04 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -31,13 +31,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.30 2015/09/07 23:00:08 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.34 2021/08/07 16:19:04 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
 
 #include <sys/param.h>
-#include <sys/extent.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/systm.h>
@@ -60,6 +59,14 @@ CFATTACH_DECL_NEW(mainbus, 0,
 
 struct powerpc_isa_chipset genppc_ict;
 
+#define	PCI_IO_START	0x00001000
+#define	PCI_IO_END	0x0000ffff
+#define	PCI_IO_SIZE	((PCI_IO_END - PCI_IO_START) + 1)
+
+#define	PCI_MEM_START	0x80000000U
+#define	PCI_MEM_END	0x8fffffffU
+#define	PCI_MEM_SIZE	((PCI_MEM_END - PCI_MEM_START) + 1)
+
 /*
  * Probe for the mainbus; always succeeds.
  */
@@ -79,31 +86,32 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	struct mainbus_attach_args mba;
 	struct pcibus_attach_args pba;
 	struct btinfo_prodfamily *pfam;
-#if defined(PCI_NETBSD_CONFIGURE)
-	struct extent *ioext, *memext;
-#endif
 
 	aprint_naive("\n");
 	aprint_normal("\n");
 
 	mba.ma_name = "cpu";
-	config_found_ia(self, "mainbus", &mba, mainbus_print);
+	config_found(self, &mba, mainbus_print,
+	    CFARGS(.iattr = "mainbus"));
 
 	mba.ma_name = "eumb";
 	mba.ma_bst = &sandpoint_eumb_space_tag;
-	config_found_ia(self, "mainbus", &mba, mainbus_print);
+	config_found(self, &mba, mainbus_print,
+	    CFARGS(.iattr = "mainbus"));
 
 	pfam = lookup_bootinfo(BTINFO_PRODFAMILY);
 	if (pfam != NULL && strcmp(pfam->name, "nhnas") == 0) {
 		/* attach nhpow(4) for NH230/231 only */
 		mba.ma_name = "nhpow";
 		mba.ma_bst = &sandpoint_nhgpio_space_tag;
-		config_found_ia(self, "mainbus", &mba, mainbus_print);
+		config_found(self, &mba, mainbus_print,
+		    CFARGS(.iattr = "mainbus"));
 	}
 
 	mba.ma_name = "cfi";
 	mba.ma_bst = &sandpoint_flash_space_tag;
-	config_found_ia(self, "mainbus", &mba, mainbus_print);
+	config_found(self, &mba, mainbus_print,
+	    CFARGS(.iattr = "mainbus"));
 
 	/*
 	 * XXX Note also that the presence of a PCI bus should
@@ -113,15 +121,16 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	 */
 #if NPCI > 0
 #if defined(PCI_NETBSD_CONFIGURE)
-	ioext  = extent_create("pciio",  0x00001000, 0x0000ffff,
-	    NULL, 0, EX_NOWAIT);
-	memext = extent_create("pcimem", 0x80000000, 0x8fffffff,
-	    NULL, 0, EX_NOWAIT);
+	struct pciconf_resources *pcires = pciconf_resource_init();
 
-	pci_configure_bus(0, ioext, memext, NULL, 0, 32);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    PCI_IO_START, PCI_IO_SIZE);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    PCI_MEM_START, PCI_MEM_SIZE);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pci_configure_bus(0, pcires, 0, 32);
+
+	pciconf_resource_fini(pcires);
 #endif
 
 	pba.pba_iot = &sandpoint_io_space_tag;
@@ -133,7 +142,8 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	pba.pba_bridgetag = NULL;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
 
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint,
+	    CFARGS(.iattr = "pcibus"));
 #endif
 }
 

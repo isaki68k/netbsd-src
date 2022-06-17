@@ -1,4 +1,4 @@
-/*	$NetBSD: am2315.c,v 1.5 2018/06/17 01:08:15 thorpej Exp $	*/
+/*	$NetBSD: am2315.c,v 1.7 2022/03/30 00:06:50 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2017 Brad Spencer <brad@anduin.eldar.org>
@@ -17,7 +17,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am2315.c,v 1.5 2018/06/17 01:08:15 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am2315.c,v 1.7 2022/03/30 00:06:50 pgoyette Exp $");
 
 /*
  * Driver for the Aosong AM2315
@@ -458,10 +458,8 @@ am2315_detach(device_t self, int flags)
 	mutex_enter(&sc->sc_mutex);
 
 	/* Remove the sensors */
-	if (sc->sc_sme != NULL) {
+	if (sc->sc_sme != NULL)
 		sysmon_envsys_unregister(sc->sc_sme);
-		sc->sc_sme = NULL;
-	}
 	mutex_exit(&sc->sc_mutex);
 
 	/* Destroy the wait cond */
@@ -477,7 +475,7 @@ am2315_detach(device_t self, int flags)
 	return 0;
 }
 
-MODULE(MODULE_CLASS_DRIVER, am2315temp, "i2cexec,sysmon_envsys");
+MODULE(MODULE_CLASS_DRIVER, am2315temp, "iic,sysmon_envsys");
 
 #ifdef _MODULE
 #include "ioconf.c"

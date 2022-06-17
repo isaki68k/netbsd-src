@@ -1,4 +1,4 @@
-/*	$NetBSD: fhpib.c,v 1.40 2014/03/24 19:42:58 christos Exp $	*/
+/*	$NetBSD: fhpib.c,v 1.43 2021/08/07 16:18:53 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fhpib.c,v 1.40 2014/03/24 19:42:58 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fhpib.c,v 1.43 2021/08/07 16:18:53 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -186,7 +186,7 @@ fhpibattach(device_t parent, device_t self, void *aux)
 	ha.ha_type = HPIBC;			/* XXX */
 	ha.ha_ba = HPIBC_BA;
 	ha.ha_softcpp = &sc->sc_hpibbus;	/* XXX */
-	(void)config_found(self, &ha, hpibdevprint);
+	(void)config_found(self, &ha, hpibdevprint, CFARGS_NONE);
 }
 
 static void
@@ -444,7 +444,7 @@ fhpibgo(struct hpibbus_softc *hs, int slave, int sec, void *ptr, int count,
  * A DMA read can finish but the device can still be waiting (MAG-tape
  * with more data than we're waiting for).  This timeout routine
  * takes care of that.  Somehow, the thing gets hosed.  For now, since
- * this should be a very rare occurence, we RESET it.
+ * this should be a very rare occurrence, we RESET it.
  */
 static void
 fhpibdmadone(void *arg)

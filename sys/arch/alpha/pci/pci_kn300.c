@@ -1,4 +1,4 @@
-/* $NetBSD: pci_kn300.c,v 1.36 2014/03/21 16:39:29 christos Exp $ */
+/* $NetBSD: pci_kn300.c,v 1.43 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*
  * Copyright (c) 1998 by Matthew Jacob
@@ -32,18 +32,19 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pci_kn300.c,v 1.36 2014/03/21 16:39:29 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_kn300.c,v 1.43 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
+#include <sys/cpu.h>
 #include <sys/syslog.h>
 
 #include <machine/autoconf.h>
+#include <machine/rpb.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -52,22 +53,24 @@ __KERNEL_RCSID(0, "$NetBSD: pci_kn300.c,v 1.36 2014/03/21 16:39:29 christos Exp 
 #include <alpha/mcbus/mcbusreg.h>
 #include <alpha/pci/mcpciareg.h>
 #include <alpha/pci/mcpciavar.h>
-#include <alpha/pci/pci_kn300.h>
 
 #include "sio.h"
 #if NSIO > 0 || NPCEB > 0
 #include <alpha/pci/siovar.h>
 #endif
 
-int	dec_kn300_intr_map(const struct pci_attach_args *,
-	    pci_intr_handle_t *);
-const char *dec_kn300_intr_string(void *, pci_intr_handle_t, char *, size_t);
-const struct evcnt *dec_kn300_intr_evcnt(void *, pci_intr_handle_t);
-void	*dec_kn300_intr_establish(void *, pci_intr_handle_t,
-	    int, int (*func)(void *), void *);
-void	dec_kn300_intr_disestablish(void *, void *);
+static int	dec_kn300_intr_map(const struct pci_attach_args *,
+		    pci_intr_handle_t *);
+static const char *dec_kn300_intr_string(pci_chipset_tag_t, pci_intr_handle_t,
+		    char *, size_t);
+static const struct evcnt *dec_kn300_intr_evcnt(pci_chipset_tag_t,
+		    pci_intr_handle_t);
+static void	*dec_kn300_intr_establish(pci_chipset_tag_t,
+		    pci_intr_handle_t, int, int (*func)(void *), void *);
+static void	dec_kn300_intr_disestablish(pci_chipset_tag_t, void *);
 
 #define	KN300_PCEB_IRQ	16
+#define	KN300_STRAY_MAX	25
 #define	NPIN		4
 
 #define	NIRQ	(MAX_MC_BUS * MCPCIA_PER_MCBUS * MCPCIA_MAXSLOT * NPIN)
@@ -77,34 +80,37 @@ static struct alpha_shared_intr *kn300_pci_intr;
 
 static struct mcpcia_config *mcpcia_eisaccp = NULL;
 
-void	kn300_iointr(void *, unsigned long);
-void	kn300_enable_intr(struct mcpcia_config *, int);
-void	kn300_disable_intr(struct mcpcia_config *, int);
+static void	kn300_iointr(void *, unsigned long);
+static void	kn300_enable_intr(struct mcpcia_config *, int);
+static void	kn300_disable_intr(struct mcpcia_config *, int);
 
-void
-pci_kn300_pickintr(struct mcpcia_config *ccp, int first)
+static void
+pci_kn300_pickintr(void *core, bus_space_tag_t iot, bus_space_tag_t memt,
+    pci_chipset_tag_t pc)
 {
-	char *cp;
-	pci_chipset_tag_t pc = &ccp->cc_pc;
+	struct mcpcia_config *ccp = core;
+	struct evcnt *ev;
+	const char *cp;
 
-	if (first) {
+	if (kn300_pci_intr == NULL) {
 		int g;
 
-#define PCI_KN300_IRQ_STR	16
-		kn300_pci_intr = alpha_shared_intr_alloc(NIRQ,
-		    PCI_KN300_IRQ_STR);
+		kn300_pci_intr = alpha_shared_intr_alloc(NIRQ);
 		for (g = 0; g < NIRQ; g++) {
-			alpha_shared_intr_set_maxstrays(kn300_pci_intr, g, 25);
+			alpha_shared_intr_set_maxstrays(kn300_pci_intr, g,
+			    KN300_STRAY_MAX);
+
+			ev = alpha_shared_intr_evcnt(kn300_pci_intr, g);
 			cp = alpha_shared_intr_string(kn300_pci_intr, g);
-			snprintf(cp, PCI_KN300_IRQ_STR, "irq %d", g);
-			evcnt_attach_dynamic(alpha_shared_intr_evcnt(
-			    kn300_pci_intr, g), EVCNT_TYPE_INTR, NULL,
+
+			evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL,
 			    "kn300", cp);
+
 			savirqs[g] = (char) -1;
 		}
 	}
 
-	pc->pc_intr_v = ccp;
+	pc->pc_intr_v = core;
 	pc->pc_intr_map = dec_kn300_intr_map;
 	pc->pc_intr_string = dec_kn300_intr_string;
 	pc->pc_intr_evcnt = dec_kn300_intr_evcnt;
@@ -122,8 +128,9 @@ pci_kn300_pickintr(struct mcpcia_config *ccp, int first)
 #endif
 	}
 }
+ALPHA_PCI_INTR_INIT(ST_DEC_4100, pci_kn300_pickintr)
 
-int
+static int
 dec_kn300_intr_map(const struct pci_attach_args *pa, pci_intr_handle_t *ihp)
 {
 	pcitag_t bustag = pa->pa_intrtag;
@@ -137,7 +144,7 @@ dec_kn300_intr_map(const struct pci_attach_args *pa, pci_intr_handle_t *ihp)
 		/* No IRQ used. */
 		return 1;
 	}
-	if (buspin > 4 || buspin < 0) {
+	if (buspin < 0 || buspin > 4) {
 		printf("dec_kn300_intr_map: bad interrupt pin %d\n", buspin);
 		return 1;
 	}
@@ -168,65 +175,85 @@ dec_kn300_intr_map(const struct pci_attach_args *pa, pci_intr_handle_t *ihp)
 	 *	Software only:
 	 *	bits 11-15	MCPCIA IRQ
 	 */
-	*ihp = (pci_intr_handle_t)
+	const u_int irq = 
 		(buspin - 1			    )	|
 		((device & 0x7)			<< 2)	|
 		((ccp->cc_mid - 4)		<< 5)	|
 		((7 - ccp->cc_gid)		<< 8)	|
 		(mcpcia_irq			<< 11);
+	alpha_pci_intr_handle_init(ihp, irq, 0);
 	return (0);
 }
 
-const char *
-dec_kn300_intr_string(void *ccv, pci_intr_handle_t ih, char *buf, size_t len)
+static const char *
+dec_kn300_intr_string(pci_chipset_tag_t const pc __unused,
+    pci_intr_handle_t const ih, char * const buf, size_t const len)
 {
-	snprintf(buf, len, "kn300 irq %ld", ih & 0x3ff);
+	const u_int irq = alpha_pci_intr_handle_get_irq(&ih) & 0x3ff;
+
+	snprintf(buf, len, "kn300 irq %u", irq);
 	return buf;
 }
 
-const struct evcnt *
-dec_kn300_intr_evcnt(void *ccv, pci_intr_handle_t ih)
+static const struct evcnt *
+dec_kn300_intr_evcnt(pci_chipset_tag_t const pc __unused,
+    pci_intr_handle_t const ih)
 {
+	const u_int irq = alpha_pci_intr_handle_get_irq(&ih) & 0x3ff;
 
-	return (alpha_shared_intr_evcnt(kn300_pci_intr, ih & 0x3ff));
+	return alpha_shared_intr_evcnt(kn300_pci_intr, irq);
 }
 
-void *
+static void *
 dec_kn300_intr_establish(
-	void *ccv,
-	pci_intr_handle_t ih,
-	int level,
+	pci_chipset_tag_t const pc,
+	pci_intr_handle_t const ih,
+	int const level,
 	int (*func)(void *),
 	void *arg)
 {
-	struct mcpcia_config *ccp = ccv;
+	struct mcpcia_config * const ccp = pc->pc_intr_v;
 	void *cookie;
-	int irq;
+	const u_int ihv = alpha_pci_intr_handle_get_irq(&ih);
+	const u_int irq = ihv & 0x3ff;
+	const u_int flags = alpha_pci_intr_handle_get_flags(&ih);
 
-	irq = ih & 0x3ff;
-	cookie = alpha_shared_intr_establish(kn300_pci_intr, irq, IST_LEVEL,
-	    level, func, arg, "kn300 irq");
+	cookie = alpha_shared_intr_alloc_intrhand(kn300_pci_intr, irq,
+	    IST_LEVEL, level, flags, func, arg, "kn300");
 
-	if (cookie != NULL &&
-	    alpha_shared_intr_firstactive(kn300_pci_intr, irq)) {
-		scb_set(MCPCIA_VEC_PCI + SCB_IDXTOVEC(irq),
-		    kn300_iointr, NULL, level);
-		alpha_shared_intr_set_private(kn300_pci_intr, irq, ccp);
-		savirqs[irq] = (ih >> 11) & 0x1f;
-		kn300_enable_intr(ccp, savirqs[irq]);
-		alpha_mb();
+	if (cookie == NULL)
+		return NULL;
+
+	mutex_enter(&cpu_lock);
+
+	if (! alpha_shared_intr_link(kn300_pci_intr, cookie, "kn300")) {
+		mutex_exit(&cpu_lock);
+		alpha_shared_intr_free_intrhand(cookie);
+		return NULL;
 	}
-	return (cookie);
+
+	if (alpha_shared_intr_firstactive(kn300_pci_intr, irq)) {
+		scb_set(MCPCIA_VEC_PCI + SCB_IDXTOVEC(irq), kn300_iointr, NULL);
+		alpha_shared_intr_set_private(kn300_pci_intr, irq, ccp);
+		savirqs[irq] = (ihv >> 11) & 0x1f;
+		alpha_mb();
+		kn300_enable_intr(ccp, savirqs[irq]);
+	}
+
+	mutex_exit(&cpu_lock);
+
+	return cookie;
 }
 
-void
-dec_kn300_intr_disestablish(void *ccv, void *cookie)
+static void
+dec_kn300_intr_disestablish(pci_chipset_tag_t const pc __unused,
+    void * const cookie __unused)
 {
 	panic("dec_kn300_intr_disestablish not implemented");
 }
 
-void
-kn300_iointr(void *arg, unsigned long vec)
+static void
+kn300_iointr(void * const arg __unused, unsigned long const vec)
 {
 	struct mcpcia_softc *mcp;
 	u_long irq;
@@ -264,22 +291,22 @@ kn300_iointr(void *arg, unsigned long vec)
 	 * Stray interrupt; disable the IRQ on the appropriate MCPCIA
 	 * if we've reached the limit.
 	 */
-	alpha_shared_intr_stray(kn300_pci_intr, irq, "kn300 irq");
+	alpha_shared_intr_stray(kn300_pci_intr, irq, "kn300");
 	if (ALPHA_SHARED_INTR_DISABLE(kn300_pci_intr, irq) == 0)
 		return;
 	kn300_disable_intr(mcp->mcpcia_cc, savirqs[irq]);
 }
 
-void
-kn300_enable_intr(struct mcpcia_config *ccp, int irq)
+static void
+kn300_enable_intr(struct mcpcia_config * const ccp, int const irq)
 {
 	alpha_mb();
 	REGVAL(MCPCIA_INT_MASK0(ccp)) |= (1 << irq);
 	alpha_mb();
 }
 
-void
-kn300_disable_intr(struct mcpcia_config *ccp, int irq)
+static void
+kn300_disable_intr(struct mcpcia_config * const ccp, int const irq)
 {
 	alpha_mb();
 	REGVAL(MCPCIA_INT_MASK0(ccp)) &= ~(1 << irq);

@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.145 2019/04/06 03:06:28 thorpej Exp $	*/
+/*	$NetBSD: trap.c,v 1.147 2020/08/10 10:51:21 rin Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1990, 1993
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.145 2019/04/06 03:06:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.147 2020/08/10 10:51:21 rin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_execfmt.h"
@@ -404,8 +404,8 @@ trap(struct trapframe *tf, int type, u_int code, u_int v)
 			ILL_PRVOPC : ILL_ILLOPC;
 		break;
 
-	case T_ZERODIV|T_USER:	/* Divide by zero */
-		ksi.ksi_code = FPE_FLTDIV;
+	case T_ZERODIV|T_USER:	/* Integer divide by zero */
+		ksi.ksi_code = FPE_INTDIV;
 	case T_CHKINST|T_USER:	/* CHK instruction trap */
 	case T_TRAPVINST|T_USER:	/* TRAPV instruction trap */
 		ksi.ksi_addr = (void *)(int)tf->tf_format;
@@ -450,7 +450,12 @@ trap(struct trapframe *tf, int type, u_int code, u_int v)
 	case T_TRACE:		/* tracing a trap instruction */
 	case T_TRAP15|T_USER:	/* SUN user trace trap */
 		tf->tf_sr &= ~PSL_T;
+		ksi.ksi_addr = (void *)tf->tf_pc;
 		ksi.ksi_signo = SIGTRAP;
+		if (type == (T_TRAP15|T_USER))
+			ksi.ksi_code = TRAP_BRKPT;
+		else
+			ksi.ksi_code = TRAP_TRACE;
 		break;
 
 	case T_ASTFLT:		/* system async trap, cannot happen */
@@ -463,8 +468,6 @@ trap(struct trapframe *tf, int type, u_int code, u_int v)
 			l->l_pflag &= ~LP_OWEUPC;
 			ADDUPROF(l);
 		}
-		if (curcpu()->ci_want_resched)
-			preempt();
 		goto douret;
 
 	case T_MMUFLT:		/* kernel mode page fault */

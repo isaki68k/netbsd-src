@@ -1,4 +1,4 @@
-/*	$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $	*/
+/*	$NetBSD: ata.c,v 1.169 2022/05/31 08:43:15 andvar Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.169 2022/05/31 08:43:15 andvar Exp $");
 
 #include "opt_ata.h"
 
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $");
 #include <sys/bus.h>
 #include <sys/once.h>
 #include <sys/bitops.h>
+#include <sys/cpu.h>
 
 #define ATABUS_PRIVATE
 
@@ -83,13 +84,17 @@ int atadebug_mask = ATADEBUG_MASK;
 #define ATADEBUG_PRINT(args, level)
 #endif
 
+#if defined(ATA_DOWNGRADE_MODE) && NATA_DMA
+static int	ata_downgrade_mode(struct ata_drive_datas *, int);
+#endif
+
 static ONCE_DECL(ata_init_ctrl);
 static struct pool ata_xfer_pool;
 
 /*
  * A queue of atabus instances, used to ensure the same bus probe order
  * for a given hardware configuration at each boot.  Kthread probing
- * devices on a atabus.  Only one probing at once. 
+ * devices on a atabus.  Only one probing at once.
  */
 static TAILQ_HEAD(, atabus_initq)	atabus_initq_head;
 static kmutex_t				atabus_qlock;
@@ -200,8 +205,8 @@ ata_channel_attach(struct ata_channel *chp)
 
 	KASSERT(chp->ch_queue != NULL);
 
-	chp->atabus = config_found_ia(chp->ch_atac->atac_dev, "ata", chp,
-		atabusprint);
+	chp->atabus = config_found(chp->ch_atac->atac_dev, chp, atabusprint,
+		CFARGS(.iattr = "ata"));
 }
 
 /*
@@ -229,9 +234,6 @@ atabusconfig(struct atabus_softc *atabus_sc)
 	int i, error;
 
 	/* we are in the atabus's thread context */
-	ata_channel_lock(chp);
-	chp->ch_flags |= ATACH_TH_RUN;
-	ata_channel_unlock(chp);
 
 	/*
 	 * Probe for the drives attached to controller, unless a PMP
@@ -247,11 +249,6 @@ atabusconfig(struct atabus_softc *atabus_sc)
 		    DEBUG_PROBE);
 	}
 
-	/* next operations will occurs in a separate thread */
-	ata_channel_lock(chp);
-	chp->ch_flags &= ~ATACH_TH_RUN;
-	ata_channel_unlock(chp);
-
 	/* Make sure the devices probe in atabus order to avoid jitter. */
 	mutex_enter(&atabus_qlock);
 	for (;;) {
@@ -263,6 +260,8 @@ atabusconfig(struct atabus_softc *atabus_sc)
 	mutex_exit(&atabus_qlock);
 
 	ata_channel_lock(chp);
+
+	KASSERT(ata_is_thread_run(chp));
 
 	/* If no drives, abort here */
 	if (chp->ch_drive == NULL)
@@ -299,7 +298,7 @@ atabusconfig(struct atabus_softc *atabus_sc)
 
 	ata_delref(chp);
 
-	config_pending_decr(atac->atac_dev);
+	config_pending_decr(atabus_sc->sc_dev);
 }
 
 /*
@@ -373,8 +372,9 @@ atabusconfig_thread(void *arg)
 		adev.adev_bustype = atac->atac_bustype_ata;
 		adev.adev_channel = chp->ch_channel;
 		adev.adev_drv_data = &chp->ch_drive[i];
-		chp->ch_drive[i].drv_softc = config_found_ia(atabus_sc->sc_dev,
-		    "ata_hl", &adev, ataprint);
+		chp->ch_drive[i].drv_softc = config_found(atabus_sc->sc_dev,
+		    &adev, ataprint,
+		    CFARGS(.iattr = "ata_hl"));
 		if (chp->ch_drive[i].drv_softc != NULL) {
 			ata_probe_caps(&chp->ch_drive[i]);
 		} else {
@@ -425,7 +425,7 @@ atabusconfig_thread(void *arg)
 
 	ata_delref(chp);
 
-	config_pending_decr(atac->atac_dev);
+	config_pending_decr(atabus_sc->sc_dev);
 	kthread_exit(0);
 }
 
@@ -444,7 +444,7 @@ atabus_thread(void *arg)
 	int i, rv;
 
 	ata_channel_lock(chp);
-	chp->ch_flags |= ATACH_TH_RUN;
+	KASSERT(ata_is_thread_run(chp));
 
 	/*
 	 * Probe the drives.  Reset type to indicate to controllers
@@ -466,9 +466,7 @@ atabus_thread(void *arg)
 		if ((chp->ch_flags & (ATACH_TH_RESET | ATACH_TH_DRIVE_RESET
 		    | ATACH_TH_RECOVERY | ATACH_SHUTDOWN)) == 0 &&
 		    (chq->queue_active == 0 || chq->queue_freeze == 0)) {
-			chp->ch_flags &= ~ATACH_TH_RUN;
 			cv_wait(&chp->ch_thr_idle, &chp->ch_lock);
-			chp->ch_flags |= ATACH_TH_RUN;
 		}
 		if (chp->ch_flags & ATACH_SHUTDOWN) {
 			break;
@@ -545,6 +543,14 @@ atabus_thread(void *arg)
 	cv_signal(&chp->ch_thr_idle);
 	ata_channel_unlock(chp);
 	kthread_exit(0);
+}
+
+bool
+ata_is_thread_run(struct ata_channel *chp)
+{
+	KASSERT(mutex_owned(&chp->ch_lock));
+
+	return (chp->ch_thread == curlwp && !cpu_intr_p());
 }
 
 static void
@@ -846,13 +852,8 @@ ata_get_params(struct ata_drive_datas *drvp, uint8_t flags,
 	xfer->c_ata_c.flags = AT_READ | flags;
 	xfer->c_ata_c.data = tb;
 	xfer->c_ata_c.bcount = ATA_BSIZE;
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		ATADEBUG_PRINT(("ata_get_parms: wdc_exec_command failed\n"),
-		    DEBUG_FUNCS|DEBUG_PROBE);
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		ATADEBUG_PRINT(("ata_get_parms: ata_c.flags=0x%x\n",
 		    xfer->c_ata_c.flags), DEBUG_FUNCS|DEBUG_PROBE);
@@ -936,11 +937,8 @@ ata_set_mode(struct ata_drive_datas *drvp, uint8_t mode, uint8_t flags)
 	xfer->c_ata_c.r_count = mode;
 	xfer->c_ata_c.flags = flags;
 	xfer->c_ata_c.timeout = 1000; /* 1s */
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		rv = CMD_ERR;
 		goto out;
@@ -962,14 +960,25 @@ ata_dmaerr(struct ata_drive_datas *drvp, int flags)
 	/*
 	 * Downgrade decision: if we get NERRS_MAX in NXFER.
 	 * We start with n_dmaerrs set to NERRS_MAX-1 so that the
-	 * first error within the first NXFER ops will immediatly trigger
+	 * first error within the first NXFER ops will immediately trigger
 	 * a downgrade.
 	 * If we got an error and n_xfers is bigger than NXFER reset counters.
 	 */
 	drvp->n_dmaerrs++;
 	if (drvp->n_dmaerrs >= NERRS_MAX && drvp->n_xfers <= NXFER) {
+#ifdef ATA_DOWNGRADE_MODE
 		ata_downgrade_mode(drvp, flags);
 		drvp->n_dmaerrs = NERRS_MAX-1;
+#else
+		static struct timeval last;
+		static const struct timeval serrintvl = { 300, 0 };
+
+		if (ratecheck(&last, &serrintvl)) {
+			aprint_error_dev(drvp->drv_softc,
+			    "excessive DMA errors - %d in last %d transfers\n",
+			    drvp->n_dmaerrs, drvp->n_xfers);
+		}
+#endif
 		drvp->n_xfers = 0;
 		return;
 	}
@@ -1015,7 +1024,7 @@ ata_exec_xfer(struct ata_channel *chp, struct ata_xfer *xfer)
 
 	/*
 	 * Standard commands are added to the end of command list, but
-	 * recovery commands must be run immediatelly.
+	 * recovery commands must be run immediately.
 	 */
 	if ((xfer->c_flags & C_SKIP_QUEUE) == 0)
 		SIMPLEQ_INSERT_TAIL(&chp->ch_queue->queue_xfer, xfer,
@@ -1222,10 +1231,11 @@ int
 ata_xfer_start(struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = xfer->c_chp;
-	int rv;
+	int rv, status;
 
 	KASSERT(mutex_owned(&chp->ch_lock));
 
+again:
 	rv = xfer->ops->c_start(chp, xfer);
 	switch (rv) {
 	case ATASTART_STARTED:
@@ -1239,8 +1249,10 @@ ata_xfer_start(struct ata_xfer *xfer)
 		/* can happen even in thread context for some ATAPI devices */
 		ata_channel_unlock(chp);
 		KASSERT(xfer->ops != NULL && xfer->ops->c_poll != NULL);
-		xfer->ops->c_poll(chp, xfer);
+		status = xfer->ops->c_poll(chp, xfer);
 		ata_channel_lock(chp);
+		if (status == ATAPOLL_AGAIN)
+			goto again;
 		break;
 	case ATASTART_ABORT:
 		ata_channel_unlock(chp);
@@ -1318,7 +1330,7 @@ ata_free_xfer(struct ata_channel *chp, struct ata_xfer *xfer)
 
 	if (__predict_false(chp->ch_atac->atac_free_hw))
 		chp->ch_atac->atac_free_hw(chp);
- 
+
 	ata_channel_unlock(chp);
 
 	if (__predict_true(!ISSET(xfer->c_flags, C_PRIVATE_ALLOC)))
@@ -1408,7 +1420,7 @@ ata_timo_xfer_check(struct ata_xfer *xfer)
 
 	    		device_printf(drvp->drv_softc,
 			    "xfer %"PRIxPTR" freed while invoking timeout\n",
-			    (intptr_t)xfer & PAGE_MASK); 
+			    (intptr_t)xfer & PAGE_MASK);
 
 			ata_free_xfer(chp, xfer);
 			return true;
@@ -1419,7 +1431,7 @@ ata_timo_xfer_check(struct ata_xfer *xfer)
 
 	    	device_printf(drvp->drv_softc,
 		    "xfer %"PRIxPTR" deactivated while invoking timeout\n",
-		    (intptr_t)xfer & PAGE_MASK); 
+		    (intptr_t)xfer & PAGE_MASK);
 		return true;
 	}
 
@@ -1491,7 +1503,7 @@ ata_kill_pending(struct ata_drive_datas *drvp)
 				break;
 			}
 		}
-		
+
 		if (!drv_active) {
 			/* all finished */
 			break;
@@ -1588,12 +1600,14 @@ ata_thread_run(struct ata_channel *chp, int flags, int type, int arg)
 			/* NOTREACHED */
 		}
 
-		/*
-		 * Block execution of other commands while reset is scheduled
-		 * to a thread.
-		 */
-		ata_channel_freeze_locked(chp);
-		chp->ch_flags |= type;
+		if (!(chp->ch_flags & type)) {
+			/*
+			 * Block execution of other commands while
+			 * reset is scheduled to a thread.
+			 */
+			ata_channel_freeze_locked(chp);
+			chp->ch_flags |= type;
+		}
 
 		cv_signal(&chp->ch_thr_idle);
 		return;
@@ -1602,7 +1616,7 @@ ata_thread_run(struct ata_channel *chp, int flags, int type, int arg)
 	/* Block execution of other commands during reset */
 	ata_channel_freeze_locked(chp);
 
-	/* 
+	/*
 	 * If reset has been scheduled to a thread, then clear
 	 * the flag now so that the thread won't try to execute it if
 	 * we happen to sleep, and thaw one more time after the reset.
@@ -1749,20 +1763,20 @@ ata_print_modes(struct ata_channel *chp)
 			    ? " w/PRIO" : "");
 		} else if (drvp->drive_flags & ATA_DRIVE_WFUA)
 			aprint_verbose(", WRITE DMA FUA EXT");
-			
+
 #endif	/* NATA_DMA || NATA_PIOBM */
 		aprint_verbose("\n");
 	}
 }
 
-#if NATA_DMA
+#if defined(ATA_DOWNGRADE_MODE) && NATA_DMA
 /*
  * downgrade the transfer mode of a drive after an error. return 1 if
  * downgrade was possible, 0 otherwise.
  *
  * MUST BE CALLED AT splbio()!
  */
-int
+static int
 ata_downgrade_mode(struct ata_drive_datas *drvp, int flags)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -1812,7 +1826,7 @@ ata_downgrade_mode(struct ata_drive_datas *drvp, int flags)
 	ata_thread_run(chp, flags, ATACH_TH_RESET, ATACH_NODRIVE);
 	return 1;
 }
-#endif	/* NATA_DMA */
+#endif	/* ATA_DOWNGRADE_MODE && NATA_DMA */
 
 /*
  * Probe drive's capabilities, for use by the controller later
@@ -1896,7 +1910,7 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 			 */
 			if (atac->atac_set_modes)
 				/*
-				 * It's OK to pool here, it's fast enough
+				 * It's OK to poll here, it's fast enough
 				 * to not bother waiting for interrupt
 				 */
 				if (ata_set_mode(drvp, 0x08 | (i + 3),
@@ -1910,7 +1924,7 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 			}
 			/*
 			 * If controller's driver can't set its PIO mode,
-			 * get the highter one for the drive.
+			 * get the higher one for the drive.
 			 */
 			if (atac->atac_set_modes == NULL ||
 			    atac->atac_pio_cap >= i + 3) {
@@ -2035,9 +2049,7 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 #if NATA_DMA
 	if ((atac->atac_cap & ATAC_CAP_DMA) == 0) {
 		/* don't care about DMA modes */
-		if (*sep != '\0')
-			aprint_verbose("\n");
-		return;
+		goto out;
 	}
 	if (cf_flags & ATA_CONFIG_DMA_SET) {
 		ata_channel_lock(chp);
@@ -2083,13 +2095,10 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 	}
 	ata_channel_unlock(chp);
 
-	if (*sep != '\0')
-		aprint_verbose("\n");
-
 #if NATA_UDMA
 	if ((atac->atac_cap & ATAC_CAP_UDMA) == 0) {
 		/* don't care about UDMA modes */
-		return;
+		goto out;
 	}
 	if (cf_flags & ATA_CONFIG_UDMA_SET) {
 		ata_channel_lock(chp);
@@ -2104,7 +2113,10 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 		ata_channel_unlock(chp);
 	}
 #endif	/* NATA_UDMA */
+out:
 #endif	/* NATA_DMA */
+	if (*sep != '\0')
+		aprint_verbose("\n");
 }
 
 /* management of the /dev/atabus* devices */
@@ -2268,7 +2280,7 @@ atabus_rescan(device_t self, const char *ifattr, const int *locators)
 
 	/*
 	 * we can rescan a port multiplier atabus, even if some devices are
-	 * still attached 
+	 * still attached
 	 */
 	if (chp->ch_satapmp_nports == 0) {
 		if (chp->atapibus != NULL) {

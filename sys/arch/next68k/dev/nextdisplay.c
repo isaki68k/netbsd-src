@@ -1,4 +1,4 @@
-/* $NetBSD: nextdisplay.c,v 1.21 2012/10/27 17:18:05 chs Exp $ */
+/* $NetBSD: nextdisplay.c,v 1.25 2021/08/07 16:19:01 thorpej Exp $ */
 
 /*
  * Copyright (c) 1998 Matt DeBergalis
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nextdisplay.c,v 1.21 2012/10/27 17:18:05 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nextdisplay.c,v 1.25 2021/08/07 16:19:01 thorpej Exp $");
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: nextdisplay.c,v 1.21 2012/10/27 17:18:05 chs Exp $")
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/bus.h>
 #include <machine/cpu.h>
@@ -234,6 +234,8 @@ nextdisplay_attach(device_t parent, device_t self, void *aux)
 	int iscolor;
 	paddr_t addr;
 
+	sc->sc_dev = self;
+
 	if (rom_machine_type == NeXT_WARP9C ||
 	    rom_machine_type == NeXT_TURBO_COLOR) {
 		iscolor = 1;
@@ -249,8 +251,8 @@ nextdisplay_attach(device_t parent, device_t self, void *aux)
 		sc->sc_dc = &nextdisplay_console_dc;
 		sc->nscreens = 1;
 	} else {
-		sc->sc_dc = (struct nextdisplay_config *)
-				malloc(sizeof(struct nextdisplay_config), M_DEVBUF, M_WAITOK);
+		sc->sc_dc = kmem_alloc(sizeof(struct nextdisplay_config),
+		    KM_SLEEP);
 		nextdisplay_init(sc->sc_dc, iscolor);
 	}
 
@@ -277,7 +279,7 @@ nextdisplay_attach(device_t parent, device_t self, void *aux)
 #if 0
 	printf("nextdisplay: access cookie is %p\n", sc);
 #endif
-	config_found(self, &waa, wsemuldisplaydevprint);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 int

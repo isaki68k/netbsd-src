@@ -1,4 +1,4 @@
-/*	$NetBSD: wdvar.h,v 1.49 2019/04/05 18:23:45 bouyer Exp $	*/
+/*	$NetBSD: wdvar.h,v 1.51 2021/12/28 13:27:32 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -31,8 +31,20 @@
 #include "opt_wd.h"
 #endif
 
-#include <dev/dkvar.h>
+#include <sys/types.h>
+
+#include <sys/callout.h>
+#include <sys/condvar.h>
+#include <sys/disk.h>
+#include <sys/mutex.h>
 #include <sys/sysctl.h>
+#include <sys/queue.h>
+
+#include <dev/ata/atareg.h>
+#include <dev/ata/atavar.h>
+#include <dev/dkvar.h>
+
+struct sysctllog;
 
 struct wd_softc {
 	/* General disk infos */
@@ -59,10 +71,13 @@ struct wd_softc {
 	uint64_t sc_capacity512; /* ... in DEV_BSIZE blocks */
 	uint32_t sc_capacity28; /* capacity accessible with LBA28 commands */
 	uint32_t sc_blksize; /* logical block size, in bytes */
+	struct disk_sectoralign sc_sectoralign; /* sector alignment */
 
 #ifdef WD_SOFTBADSECT
 	SLIST_HEAD(, disk_badsectors)	sc_bslist;
 	u_int sc_bscount;
+	kcondvar_t sc_bslist_cv;
+	u_int sc_bslist_inuse;
 #endif
 
 	/* Retry/requeue failed transfers */

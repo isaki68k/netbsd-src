@@ -1,4 +1,4 @@
-/*	$NetBSD: twa.c,v 1.57 2018/12/09 11:14:02 jdolecek Exp $ */
+/*	$NetBSD: twa.c,v 1.61 2021/12/10 20:36:04 andvar Exp $ */
 /*	$wasabi: twa.c,v 1.27 2006/07/28 18:17:21 wrstuden Exp $	*/
 
 /*-
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: twa.c,v 1.57 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: twa.c,v 1.61 2021/12/10 20:36:04 andvar Exp $");
 
 //#define TWA_DEBUG
 
@@ -153,7 +153,7 @@ static const struct twa_message	twa_aen_table[] = {
 	{0x0000, "AEN queue empty"},
 	{0x0001, "Controller reset occurred"},
 	{0x0002, "Degraded unit detected"},
-	{0x0003, "Controller error occured"},
+	{0x0003, "Controller error occurred"},
 	{0x0004, "Background rebuild failed"},
 	{0x0005, "Background rebuild done"},
 	{0x0006, "Incomplete unit detected"},
@@ -836,13 +836,10 @@ twa_alloc_req_pkts(struct twa_softc *sc, int num_reqs)
 	size_t max_segs, max_xfer;
 	int	i, rv, rseg, size;
 
-	if ((sc->sc_units = malloc(sc->sc_nunits *
-	    sizeof(struct twa_drive), M_DEVBUF, M_NOWAIT|M_ZERO)) == NULL) 
-		return(ENOMEM);
-
-	if ((sc->twa_req_buf = malloc(num_reqs * sizeof(struct twa_request),
-					M_DEVBUF, M_NOWAIT)) == NULL)
-		return(ENOMEM);
+	sc->sc_units = malloc(sc->sc_nunits *
+	    sizeof(struct twa_drive), M_DEVBUF, M_WAITOK | M_ZERO);
+	sc->twa_req_buf = malloc(num_reqs * sizeof(struct twa_request),
+	    M_DEVBUF, M_WAITOK);
 
 	size = num_reqs * sizeof(struct twa_command_packet);
 
@@ -993,13 +990,8 @@ twa_request_bus_scan(device_t self, const char *attr, const int *flags)
 
 		tr->tr_cmd_pkt_type |= TWA_CMD_PKT_TYPE_INTERNAL;
 
-		tr->tr_data = malloc(TWA_SECTOR_SIZE, M_DEVBUF, M_NOWAIT);
+		tr->tr_data = malloc(TWA_SECTOR_SIZE, M_DEVBUF, M_WAITOK);
 
-		if (tr->tr_data == NULL) {
-			twa_release_request(tr);
-			splx(s);
-			return (ENOMEM);
-		}
 		td = &sc->sc_units[unit];
 
 		if (twa_inquiry(tr, unit) == 0) {
@@ -1017,8 +1009,10 @@ twa_request_bus_scan(device_t self, const char *attr, const int *flags)
 				locs[TWACF_UNIT] = unit;
 
 				sc->sc_units[unit].td_dev =
-				    config_found_sm_loc(sc->twa_dv, attr,
-				    locs, &twaa, twa_print, config_stdsubmatch);
+				    config_found(sc->twa_dv, &twaa, twa_print,
+				    CFARGS(.submatch = config_stdsubmatch,
+					   .iattr = attr,
+					   .locators = locs));
 			}
 		} else {
 			if (td->td_dev != NULL) {
@@ -1495,7 +1489,7 @@ twa_setup(device_t self)
 
 	twa_describe_controller(sc);
 
-	error = twa_request_bus_scan(self, "twa", 0);
+	error = twa_request_bus_scan(self, NULL, NULL);
 
 	twa_outl(sc, TWA_CONTROL_REGISTER_OFFSET,
 		TWA_CONTROL_CLEAR_ATTENTION_INTERRUPT |

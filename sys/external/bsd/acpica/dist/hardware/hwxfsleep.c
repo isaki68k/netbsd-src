@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -84,7 +84,7 @@ static ACPI_SLEEP_FUNCTIONS         AcpiSleepDispatch[] =
                        ACPI_HW_OPTIONAL_FUNCTION (AcpiHwLegacyWakePrep)),
      ACPI_STRUCT_INIT (ExtendedFunction,
                        AcpiHwExtendedWakePrep) },
-    {ACPI_STRUCT_INIT (Legacy_function,
+    {ACPI_STRUCT_INIT (LegacyFunction,
                        ACPI_HW_OPTIONAL_FUNCTION (AcpiHwLegacyWake)),
      ACPI_STRUCT_INIT (ExtendedFunction,
                        AcpiHwExtendedWake) }
@@ -249,6 +249,10 @@ AcpiEnterSleepStateS4bios (
 
     Status = AcpiHwWritePort (AcpiGbl_FADT.SmiCommand,
         (UINT32) AcpiGbl_FADT.S4BiosRequest, 8);
+    if (ACPI_FAILURE (Status))
+    {
+        return_ACPI_STATUS (Status);
+    }
 
     do {
         AcpiOsStall (ACPI_USEC_PER_MSEC);
@@ -357,6 +361,12 @@ AcpiEnterSleepStatePrep (
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (Status);
+    }
+
+    Status = AcpiGetSleepTypeData (ACPI_STATE_S0,
+        &AcpiGbl_SleepTypeAS0, &AcpiGbl_SleepTypeBS0);
+    if (ACPI_FAILURE (Status)) {
+        AcpiGbl_SleepTypeAS0 = ACPI_SLEEP_TYPE_INVALID;
     }
 
     /* Execute the _PTS method (Prepare To Sleep) */

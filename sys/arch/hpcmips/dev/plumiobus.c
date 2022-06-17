@@ -1,4 +1,4 @@
-/*	$NetBSD: plumiobus.c,v 1.14 2012/10/27 17:17:53 chs Exp $ */
+/*	$NetBSD: plumiobus.c,v 1.19 2022/01/24 09:14:37 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.
@@ -30,14 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plumiobus.c,v 1.14 2012/10/27 17:17:53 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plumiobus.c,v 1.19 2022/01/24 09:14:37 andvar Exp $");
 
 #define PLUMIOBUSDEBUG
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -163,7 +163,8 @@ plumiobus_attach(device_t parent, device_t self, void *aux)
 	plumiobus_dump(sc);
 #endif
 
-	config_search_ia(plumiobus_search, self, "plumiobusif", plumiobus_print);
+	config_search(self, NULL,
+	    CFARGS(.search = plumiobus_search));
 }
 
 /* XXX something kludge */
@@ -172,10 +173,7 @@ __plumiobus_subregion(bus_space_tag_t t, bus_addr_t ofs, bus_size_t size)
 {
 	struct hpcmips_bus_space *hbs;
 	
-	if (!(hbs = malloc(sizeof(struct hpcmips_bus_space), 
-	    M_DEVBUF, M_NOWAIT))) {
-		panic ("__plumiobus_subregion: no memory.");
-	}
+	hbs = kmem_alloc(sizeof(*hbs), KM_SLEEP);
 	*hbs = *t;
 	hbs->t_base += ofs;
 	hbs->t_size = size;
@@ -203,8 +201,8 @@ plumiobus_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	pba.pba_busname	= "plumisab";
 	
 	if (!(sc->sc_isa[slot].pr_enabled) && /* not attached slot */
-	    config_match(parent, cf, &pba)) {
-		config_attach(parent, cf, &pba, plumiobus_print);
+	    config_probe(parent, cf, &pba)) {
+		config_attach(parent, cf, &pba, plumiobus_print, CFARGS_NONE);
 		sc->sc_isa[slot].pr_enabled = 1;
 	}
 
@@ -238,7 +236,7 @@ plumiobus_dump(struct plumiobus_softc *sc)
 
 	reg = PLUM_IOBUS_IOXCCNT_MASK &
 	    plum_conf_read(regt, regh, PLUM_IOBUS_IOXCCNT_REG);
-	printf(" # of wait to become from the access begining: %d clock\n",
+	printf(" # of wait to become from the access beginning: %d clock\n",
 	    reg + 1);
 	reg = plum_conf_read(regt, regh, PLUM_IOBUS_IOXACNT_REG);
 	printf(" # of wait in access clock: ");

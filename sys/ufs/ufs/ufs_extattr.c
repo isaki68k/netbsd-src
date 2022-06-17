@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_extattr.c,v 1.50 2019/08/19 14:09:12 christos Exp $	*/
+/*	$NetBSD: ufs_extattr.c,v 1.53 2021/06/29 22:40:54 dholland Exp $	*/
 
 /*-
  * Copyright (c) 1999-2002 Robert N. M. Watson
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_extattr.c,v 1.50 2019/08/19 14:09:12 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_extattr.c,v 1.53 2021/06/29 22:40:54 dholland Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ffs.h"
@@ -107,57 +107,6 @@ static int	ufs_extattr_get_header(struct vnode *,
 		    struct ufs_extattr_list_entry *, 
 		    struct ufs_extattr_header *, off_t *);
 
-/*
- * Convert a FreeBSD extended attribute and namespace to a consistent string
- * representation.
- *
- * The returned value, if not NULL, is guaranteed to be an allocated object
- * of its size as returned by strlen() + 1 and must be freed by the caller.
- */
-static char *
-from_freebsd_extattr(int attrnamespace, const char *attrname)
-{
-	const char *namespace;
-	char *attr;
-	size_t len;
-
-	if (attrnamespace == EXTATTR_NAMESPACE_SYSTEM)
-		namespace = "system";
-	else if (attrnamespace == EXTATTR_NAMESPACE_USER)
-		namespace = "user";
-	else
-		return NULL;
-
-	/* <namespace>.<attrname>\0 */
-	len = strlen(namespace) + 1 + strlen(attrname) + 1;
-
-	attr = kmem_alloc(len, KM_SLEEP);
-
-	snprintf(attr, len, "%s.%s", namespace, attrname);
-
-	return attr;
-}
-
-/*
- * Internal wrapper around a conversion-check-free sequence.
- */
-static int
-internal_extattr_check_cred(vnode_t *vp, int attrnamespace, const char *name,
-    kauth_cred_t cred, int access_mode)
-{
-	char *attr;
-	int error;
-
-	attr = from_freebsd_extattr(attrnamespace, name);
-	if (attr == NULL)
-		return EINVAL;
-
-	error = extattr_check_cred(vp, attr, cred, access_mode);
-
-	kmem_free(attr, strlen(attr) + 1);
-
-	return error;
-}
 
 /*
  * Per-FS attribute lock protecting attribute operations.
@@ -223,7 +172,6 @@ ufs_extattr_autocreate_attr(struct vnode *vp, int attrnamespace,
 	struct mount *mp = vp->v_mount;
 	struct ufsmount *ump = VFSTOUFS(mp);
 	struct vnode *backing_vp;
-	struct nameidata nd;
 	struct pathbuf *pb;
 	char *path;
 	struct ufs_extattr_fileheader uef;
@@ -271,14 +219,16 @@ ufs_extattr_autocreate_attr(struct vnode *vp, int attrnamespace,
 	VOP_UNLOCK(vp);
 
 	pb = pathbuf_create(path);
-	NDINIT(&nd, CREATE, LOCKPARENT, pb);
 	
 	/*
 	 * Since we do not hold ufs_extattr_uepm_lock anymore,
 	 * another thread may race with us for backend creation,
-	 * but only one can succeed here thanks to O_EXCL
+	 * but only one can succeed here thanks to O_EXCL.
+	 *
+ 	 * backing_vp is the backing store. 
 	 */
-	error = vn_open(&nd, O_CREAT|O_EXCL|O_RDWR, 0600);
+	error = vn_open(NULL, pb, 0, O_CREAT|O_EXCL|O_RDWR, 0600,
+	    &backing_vp, NULL, NULL);
 
 	/*
 	 * Reacquire the lock on the vnode
@@ -295,14 +245,9 @@ ufs_extattr_autocreate_attr(struct vnode *vp, int attrnamespace,
 		return error;
 	}
 
-	KASSERT(nd.ni_vp != NULL);
-	KASSERT(VOP_ISLOCKED(nd.ni_vp) == LK_EXCLUSIVE);
-	KASSERT(VOP_ISLOCKED(nd.ni_dvp) == 0);
+	KASSERT(backing_vp != NULL);
+	KASSERT(VOP_ISLOCKED(backing_vp) == LK_EXCLUSIVE);
 
-	/*
- 	 * backing_vp is the backing store. 
-	 */	
-	backing_vp = nd.ni_vp;
 	pathbuf_destroy(pb);
 	PNBUF_PUT(path);
 
@@ -694,7 +639,7 @@ ufs_extattr_autostart(struct mount *mp, struct lwp *l)
 	 * Does UFS_EXTATTR_FSROOTSUBDIR exist off the filesystem root?
 	 * If so, automatically start EA's.
 	 */
-	error = VFS_ROOT(mp, &rvp);
+	error = VFS_ROOT(mp, LK_EXCLUSIVE, &rvp);
 	if (error) {
 		printf("%s: VFS_ROOT() (%d)\n", __func__, error);
 		return error;
@@ -1130,8 +1075,7 @@ ufs_extattr_get(struct vnode *vp, int attrnamespace, const char *name,
 	if (strlen(name) == 0)
 		return EINVAL;
 
-	error = internal_extattr_check_cred(vp, attrnamespace, name, cred,
-	    VREAD);
+	error = extattr_check_cred(vp, attrnamespace, cred, VREAD);
 	if (error)
 		return error;
 
@@ -1249,8 +1193,7 @@ ufs_extattr_list(struct vnode *vp, int attrnamespace,
 	 * XXX: We can move this inside the loop and iterate on individual
 	 *	attributes.
 	 */
-	error = internal_extattr_check_cred(vp, attrnamespace, "", cred,
-	    VREAD);
+	error = extattr_check_cred(vp, attrnamespace, cred, VREAD);
 	if (error)
 		return error;
 
@@ -1420,8 +1363,7 @@ ufs_extattr_set(struct vnode *vp, int attrnamespace, const char *name,
 	if (!ufs_extattr_valid_attrname(attrnamespace, name))
 		return EINVAL;
 
-	error = internal_extattr_check_cred(vp, attrnamespace, name, cred,
-	    VWRITE);
+	error = extattr_check_cred(vp, attrnamespace, cred, VWRITE);
 	if (error)
 		return error;
 
@@ -1539,8 +1481,7 @@ ufs_extattr_rm(struct vnode *vp, int attrnamespace, const char *name,
 	if (!ufs_extattr_valid_attrname(attrnamespace, name))
 		return EINVAL;
 
-	error = internal_extattr_check_cred(vp, attrnamespace, name, cred,
-	    VWRITE);
+	error = extattr_check_cred(vp, attrnamespace, cred, VWRITE);
 	if (error)
 		return error;
 

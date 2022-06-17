@@ -1,4 +1,4 @@
-/* $NetBSD: omap3_i2c.c,v 1.3 2013/03/13 03:08:17 khorben Exp $ */
+/* $NetBSD: omap3_i2c.c,v 1.6 2021/08/07 16:18:45 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2012 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap3_i2c.c,v 1.3 2013/03/13 03:08:17 khorben Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap3_i2c.c,v 1.6 2021/08/07 16:18:45 thorpej Exp $");
 
 #include "opt_omap.h"
 
@@ -53,7 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: omap3_i2c.c,v 1.3 2013/03/13 03:08:17 khorben Exp $"
 struct omap3_i2c_softc {
 	device_t		sc_dev;
 	struct i2c_controller	sc_ic;
-	kmutex_t		sc_lock;
 	device_t		sc_i2cdev;
 
 	bus_space_tag_t		sc_iot;
@@ -74,8 +73,6 @@ static void	omap3_i2c_attach(device_t, device_t, void *);
 static int	omap3_i2c_rescan(device_t, const char *, const int *);
 static void	omap3_i2c_childdet(device_t, device_t);
 
-static int	omap3_i2c_acquire_bus(void *, int);
-static void	omap3_i2c_release_bus(void *, int);
 static int	omap3_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *,
 			       size_t, void *, size_t, int);
 
@@ -120,10 +117,9 @@ omap3_i2c_attach(device_t parent, device_t self, void *opaque)
 
 	sc->sc_dev = self;
 	sc->sc_iot = obio->obio_iot;
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	iic_tag_init(&sc->sc_ic);
 	sc->sc_ic.ic_cookie = sc;
-	sc->sc_ic.ic_acquire_bus = omap3_i2c_acquire_bus;
-	sc->sc_ic.ic_release_bus = omap3_i2c_release_bus;
 	sc->sc_ic.ic_exec = omap3_i2c_exec;
 
 	if (bus_space_map(obio->obio_iot, obio->obio_addr, obio->obio_size,
@@ -149,11 +145,11 @@ omap3_i2c_rescan(device_t self, const char *ifattr, const int *locs)
 	struct omap3_i2c_softc *sc = device_private(self);
 	struct i2cbus_attach_args iba;
 
-	if (ifattr_match(ifattr, "i2cbus") && sc->sc_i2cdev == NULL) {
+	if (sc->sc_i2cdev == NULL) {
 		memset(&iba, 0, sizeof(iba));
 		iba.iba_tag = &sc->sc_ic;
-		sc->sc_i2cdev = config_found_ia(self, "i2cbus",
-		    &iba, iicbus_print);
+		sc->sc_i2cdev =
+		    config_found(self, &iba, iicbus_print, CFARGS_NONE);
 	}
 
 	return 0;
@@ -166,29 +162,6 @@ omap3_i2c_childdet(device_t self, device_t child)
 
 	if (sc->sc_i2cdev == child)
 		sc->sc_i2cdev = NULL;
-}
-
-static int
-omap3_i2c_acquire_bus(void *opaque, int flags)
-{
-	struct omap3_i2c_softc *sc = opaque;
-
-	if (flags & I2C_F_POLL) {
-		if (!mutex_tryenter(&sc->sc_lock))
-			return EBUSY;
-	} else {
-		mutex_enter(&sc->sc_lock);
-	}
-
-	return 0;
-}
-
-static void
-omap3_i2c_release_bus(void *opaque, int flags)
-{
-	struct omap3_i2c_softc *sc = opaque;
-
-	mutex_exit(&sc->sc_lock);
 }
 
 static int

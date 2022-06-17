@@ -1,4 +1,4 @@
-/*	$NetBSD: tps65217pmic.c,v 1.13 2019/10/27 20:11:13 jmcneill Exp $ */
+/*	$NetBSD: tps65217pmic.c,v 1.20 2021/08/07 16:19:11 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 #include "opt_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tps65217pmic.c,v 1.13 2019/10/27 20:11:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tps65217pmic.c,v 1.20 2021/08/07 16:19:11 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: tps65217pmic.c,v 1.13 2019/10/27 20:11:13 jmcneill E
 #include <dev/i2c/i2cvar.h>
 
 #include <dev/sysmon/sysmonvar.h>
+#include <dev/sysmon/sysmon_taskq.h>
 
 #include <dev/i2c/tps65217pmicreg.h>
 #include <dev/i2c/tps65217pmicvar.h>
@@ -145,11 +146,13 @@ struct tps_reg_param {
 	bool is_xadj;			/* voltage is adjusted externally */
 
 	uint16_t current_voltage;	/* in mV */
-
 };
 
 static int tps65217pmic_match(device_t, cfdata_t, void *);
 static void tps65217pmic_attach(device_t, device_t, void *);
+
+static int tps65217pmic_i2c_lock(struct tps65217pmic_softc *);
+static void tps65217pmic_i2c_unlock(struct tps65217pmic_softc *);
 
 static uint8_t tps65217pmic_reg_read(struct tps65217pmic_softc *, uint8_t);
 static void tps65217pmic_reg_write(struct tps65217pmic_softc *, uint8_t,
@@ -296,8 +299,8 @@ static struct tps_reg_param tps_regulators[] = {
 static bool matched = false;
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "ti,tps65217",			0 },
-	{ NULL }
+	{ .compat = "ti,tps65217" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -397,10 +400,18 @@ tps65217pmic_power_monitor_init(struct tps65217pmic_softc *sc)
 	intrmask = TPS65217PMIC_INT_USBM | TPS65217PMIC_INT_ACM |
 	    TPS65217PMIC_INT_PBM;
 
+	if (tps65217pmic_i2c_lock(sc) != 0) {
+		aprint_error_dev(sc->sc_dev,
+		    "failed to initialize power monitor\n");
+		return;
+	}
+
 	status = tps65217pmic_reg_read(sc, TPS65217PMIC_STATUS);
 	ppath = tps65217pmic_reg_read(sc, TPS65217PMIC_PPATH);
 	/* acknowledge and disregard whatever interrupt was generated earlier */
 	intr = tps65217pmic_reg_read(sc, TPS65217PMIC_INT);
+
+	tps65217pmic_i2c_unlock(sc);
 
 	sc->sc_usbstatus = status & TPS65217PMIC_STATUS_USBPWR;
 	sc->sc_acstatus = status & TPS65217PMIC_STATUS_ACPWR;
@@ -419,7 +430,7 @@ tps65217pmic_power_monitor_init(struct tps65217pmic_softc *sc)
 }
 
 static void
-tps65217pmic_power_monitor(void *aux)
+tps65217pmic_power_monitor_task(void *aux)
 {
 	struct tps65217pmic_softc *sc;
 	uint8_t status;
@@ -429,7 +440,14 @@ tps65217pmic_power_monitor(void *aux)
 
 	mutex_enter(&sc->sc_lock);
 
+	if (tps65217pmic_i2c_lock(sc) != 0) {
+		device_printf(sc->sc_dev,
+		    "WARNING: unable to perform power monitor task.\n");
+		return;
+	}
 	status = tps65217pmic_reg_read(sc, TPS65217PMIC_STATUS);
+	tps65217pmic_i2c_unlock(sc);
+
 	usbstatus = status & TPS65217PMIC_STATUS_USBPWR;
 	acstatus = status & TPS65217PMIC_STATUS_ACPWR;
 
@@ -459,6 +477,12 @@ tps65217pmic_power_monitor(void *aux)
 	mutex_exit(&sc->sc_lock);
 
 	callout_schedule(&sc->sc_powerpollco, hz);
+}
+
+static void
+tps65217pmic_power_monitor(void *aux)
+{
+	sysmon_task_queue_sched(0, tps65217pmic_power_monitor_task, aux);
 }
 
 static void
@@ -503,11 +527,19 @@ tps65217pmic_wled_init(struct tps65217pmic_softc *sc, int isel, int fdim,
 		return;
 	}
 
+	if (tps65217pmic_i2c_lock(sc) != 0) {
+		device_printf(sc->sc_dev,
+		    "WARNING: unable to configure LED\n");
+		return;
+	}
+
 	tps65217pmic_reg_write(sc, TPS65217PMIC_WLEDCTRL1, val);
 	tps65217pmic_reg_write(sc, TPS65217PMIC_WLEDCTRL2,
 	    (brightness - 1) & TPS65217PMIC_WLEDCTRL2_DUTY);
 	val |= TPS65217PMIC_WLEDCTRL1_ISINK_EN;
 	tps65217pmic_reg_write(sc, TPS65217PMIC_WLEDCTRL1, val);
+
+	tps65217pmic_i2c_unlock(sc);
 }
 
 static void
@@ -516,10 +548,18 @@ tps65217pmic_reg_refresh(struct tps65217pmic_softc *sc)
 	int i;
 	struct tps_reg_param *c_reg;
 
+	if (tps65217pmic_i2c_lock(sc) != 0) {
+		device_printf(sc->sc_dev,
+		    "WARNING: unable to refresh regulators\n");
+		return;
+	}
+
 	for (i = 0; i < NTPS_REG; i++) {
 		c_reg = &tps_regulators[i];
 		tps65217pmic_regulator_read_config(sc, c_reg);
 	}
+
+	tps65217pmic_i2c_unlock(sc);
 }
 
 /* Get version and revision of the chip. */
@@ -528,7 +568,15 @@ tps65217pmic_version(struct tps65217pmic_softc *sc)
 {
 	uint8_t chipid;
 
+	if (tps65217pmic_i2c_lock(sc) != 0) {
+		device_printf(sc->sc_dev,
+		    "WARNING: unable to get chip ID\n");
+		return;
+	}
+
 	chipid = tps65217pmic_reg_read(sc, TPS65217PMIC_CHIPID);
+
+	tps65217pmic_i2c_unlock(sc);
 
 	sc->sc_version = chipid & TPS65217PMIC_CHIPID_VER_MASK;
 	sc->sc_revision = chipid & TPS65217PMIC_CHIPID_REV_MASK;
@@ -687,32 +735,45 @@ tps65217pmic_print_ppath(struct tps65217pmic_softc *sc)
 	aprint_normal("\n");
 }
 
+static int
+tps65217pmic_i2c_lock(struct tps65217pmic_softc *sc)
+{
+	int error;
+
+	error = iic_acquire_bus(sc->sc_tag, 0);
+	if (error) {
+		device_printf(sc->sc_dev,
+		    "unable to acquire i2c bus, error %d\n", error);
+	}
+	return error;
+}
+
+static void
+tps65217pmic_i2c_unlock(struct tps65217pmic_softc *sc)
+{
+	iic_release_bus(sc->sc_tag, 0);
+}
+
 static uint8_t
 tps65217pmic_reg_read(struct tps65217pmic_softc *sc, uint8_t reg)
 {
 	uint8_t wbuf[2];
 	uint8_t rv;
 
-	if (iic_acquire_bus(sc->sc_tag, I2C_F_POLL) != 0) {
-		aprint_error_dev(sc->sc_dev, "cannot acquire bus for read\n");
-		return 0;
-	}
-
 	wbuf[0] = reg;
 
 	if (iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr, wbuf,
-	    1, &rv, 1, I2C_F_POLL)) {
+	    1, &rv, 1, 0)) {
 		aprint_error_dev(sc->sc_dev, "cannot execute operation\n");
-		iic_release_bus(sc->sc_tag, I2C_F_POLL);
+		iic_release_bus(sc->sc_tag, 0);
 		return 0;
 	}
-	iic_release_bus(sc->sc_tag, I2C_F_POLL);
 
 	return rv;
 }
 
 static void
-tps65217pmic_reg_write_unlocked(struct tps65217pmic_softc *sc,
+tps65217pmic_reg_write(struct tps65217pmic_softc *sc,
     uint8_t reg, uint8_t data)
 {
 	uint8_t wbuf[2];
@@ -721,23 +782,9 @@ tps65217pmic_reg_write_unlocked(struct tps65217pmic_softc *sc,
 	wbuf[1] = data;
 
 	if (iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP, sc->sc_addr, NULL, 0,
-	    wbuf, 2, I2C_F_POLL)) {
+	    wbuf, 2, 0)) {
 		aprint_error_dev(sc->sc_dev, "cannot execute I2C write\n");
 	}
-}
-
-static void __unused
-tps65217pmic_reg_write(struct tps65217pmic_softc *sc, uint8_t reg, uint8_t data)
-{
-
-	if (iic_acquire_bus(sc->sc_tag, I2C_F_POLL) != 0) {
-		aprint_error_dev(sc->sc_dev, "cannot acquire bus for write\n");
-		return;
-	}
-
-	tps65217pmic_reg_write_unlocked(sc, reg, data);
-
-	iic_release_bus(sc->sc_tag, I2C_F_POLL);
 }
 
 static void
@@ -745,16 +792,16 @@ tps65217pmic_reg_write_l2(struct tps65217pmic_softc *sc,
     uint8_t reg, uint8_t data)
 {
 	uint8_t regpw = reg ^ TPS65217PMIC_PASSWORD_XOR;
-	if (iic_acquire_bus(sc->sc_tag, I2C_F_POLL) != 0) {
-		aprint_error_dev(sc->sc_dev, "cannot acquire bus for write\n");
-		return;
-	}
 
-	tps65217pmic_reg_write_unlocked(sc, TPS65217PMIC_PASSWORD, regpw);
-	tps65217pmic_reg_write_unlocked(sc, reg, data);
-	tps65217pmic_reg_write_unlocked(sc, TPS65217PMIC_PASSWORD, regpw);
-	tps65217pmic_reg_write_unlocked(sc, reg, data);
-	iic_release_bus(sc->sc_tag, I2C_F_POLL);
+	if (tps65217pmic_i2c_lock(sc))
+		return;
+
+	tps65217pmic_reg_write(sc, TPS65217PMIC_PASSWORD, regpw);
+	tps65217pmic_reg_write(sc, reg, data);
+	tps65217pmic_reg_write(sc, TPS65217PMIC_PASSWORD, regpw);
+	tps65217pmic_reg_write(sc, reg, data);
+
+	tps65217pmic_i2c_unlock(sc);
 }
 
 static void
@@ -915,7 +962,7 @@ tps65217pmic_regulator_attach(struct tps65217pmic_softc *sc)
 
 		raa.reg_param = param;
 		raa.reg_phandle = child;
-		config_found(sc->sc_dev, &raa, NULL);
+		config_found(sc->sc_dev, &raa, NULL, CFARGS_NONE);
 	}
 }
 
@@ -939,7 +986,7 @@ tps65217reg_enable(device_t dev, bool enable)
 	uint8_t val;
 	int error;
 
-	error = iic_acquire_bus(pmic_sc->sc_tag, I2C_F_POLL);
+	error = tps65217pmic_i2c_lock(pmic_sc);
 	if (error != 0)
 		return error;
 
@@ -952,7 +999,7 @@ tps65217reg_enable(device_t dev, bool enable)
 
 	regulator->is_enabled = enable;
 
-	iic_release_bus(pmic_sc->sc_tag, I2C_F_POLL);
+	tps65217pmic_i2c_unlock(pmic_sc);
 
 	return 0;
 }
@@ -965,13 +1012,13 @@ tps65217reg_set_voltage(device_t dev, u_int min_uvol, u_int max_uvol)
 	struct tps_reg_param *regulator = sc->sc_param;
 	int error;
 
-	error = iic_acquire_bus(pmic_sc->sc_tag, I2C_F_POLL);
+	error = tps65217pmic_i2c_lock(pmic_sc);
 	if (error != 0)
 		return error;
 
 	error = tps65217pmic_set_volt(pmic_sc->sc_dev, regulator->name, min_uvol / 1000);
 
-	iic_release_bus(pmic_sc->sc_tag, I2C_F_POLL);
+	tps65217pmic_i2c_unlock(pmic_sc);
 
 	return error;
 }

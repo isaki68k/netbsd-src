@@ -1,4 +1,4 @@
-$NetBSD: hdaudiodevs,v 1.2 2015/05/30 14:12:42 jmcneill Exp $
+$NetBSD: hdaudiodevs,v 1.6 2022/04/16 12:24:06 nia Exp $
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -28,16 +28,21 @@ $NetBSD: hdaudiodevs,v 1.2 2015/05/30 14:12:42 jmcneill Exp $
  * SUCH DAMAGE.
  */
 
-/* The following is duplicated from pci except SIGMATEL* and CMEDIA */
-vendor	ATI		0x1002	ATI Technologies
+/*
+ * Try to keep vendor and product names 15 characters or less. They are
+ * used by the AUDIO_GETDEV ioctl and copied into buffers that are
+ * constrained by MAX_AUDIO_DEV_LEN (sys/audioio.h).
+ */
+
+vendor	ATI		0x1002	ATI
 vendor	NVIDIA		0x10de	NVIDIA
-vendor	REALTEK		0x10ec	Realtek Semiconductor
-vendor	VIATECH		0x1106	VIA TeCHnologies
+vendor	REALTEK		0x10ec	Realtek
+vendor	VIATECH		0x1106	VIA
 vendor	SIGMATEL2	0x111d	Sigmatel
 vendor	ANALOG		0x11d4	Analog Devices
-vendor	CONEXANT	0x14f1	Conexant Systems
+vendor	CONEXANT	0x14f1	Conexant
 vendor	VMWARE		0x15ad	VMware
-vendor	CMEDIA		0x434d	C-Media Electronics
+vendor	CMEDIA		0x434d	C-Media
 vendor	INTEL		0x8086	Intel
 vendor	SIGMATEL	0x8384	Sigmatel
 
@@ -72,6 +77,8 @@ product	REALTEK		ALC270		0x0270	ALC270
 product	REALTEK		ALC272		0x0272	ALC272
 product	REALTEK		ALC275		0x0275	ALC275
 product	REALTEK		ALC280		0x0280	ALC280
+product	REALTEK		ALC292		0x0292	ALC292
+product	REALTEK		ALC293		0x0293	ALC293
 product	REALTEK		ALC660_VD	0x0660	ALC660-VD
 product	REALTEK		ALC662		0x0662	ALC662
 product	REALTEK		ALC663		0x0663	ALC663
@@ -170,6 +177,14 @@ product	INTEL		G45_HDMI_1	0x2801	G45 HDMI/1
 product	INTEL		G45_HDMI_2	0x2802	G45 HDMI/2
 product	INTEL		G45_HDMI_3	0x2803	G45 HDMI/3
 product	INTEL		G45_HDMI_4	0x2804	G45 HDMI/4
+product	INTEL		HASWELL_HDMI	0x2807	HDMI/DP
+product	INTEL		BROADWELL_HDMI	0x2808	HDMI/DP
+product	INTEL		SKYLAKE_HDMI	0x2809	HDMI/DP
+product	INTEL		BROXTON_HDMI	0x280a	HDMI/DP
+product	INTEL		KABYLAKE_HDMI	0x280b	HDMI/DP
+product	INTEL		CANNONLAKE_HDMI	0x280c	HDMI/DP
+product	INTEL		GEMINILAKE_HDMI	0x280d	HDMI/DP
+product	INTEL		ICELAKE_HDMI	0x280f	HDMI/DP
 product	INTEL		G45_HDMI_FB	0x29fb	G45 HDMI/FB
 
 /* Sigmatel */

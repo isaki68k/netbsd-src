@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_descrip.c,v 1.243 2019/02/20 19:42:14 christos Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.251 2021/06/29 22:40:53 dholland Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.243 2019/02/20 19:42:14 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.251 2021/06/29 22:40:53 dholland Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -186,7 +186,7 @@ fd_isused(filedesc_t *fdp, unsigned fd)
 {
 	u_int off = fd >> NDENTRYSHIFT;
 
-	KASSERT(fd < fdp->fd_dt->dt_nfiles);
+	KASSERT(fd < atomic_load_consume(&fdp->fd_dt)->dt_nfiles);
 
 	return (fdp->fd_lomap[off] & (1U << (fd & NDENTRYMASK))) != 0;
 }
@@ -200,6 +200,8 @@ fd_checkmaps(filedesc_t *fdp)
 #ifdef DEBUG
 	fdtab_t *dt;
 	u_int fd;
+
+	KASSERT(fdp->fd_refcnt <= 1 || mutex_owned(&fdp->fd_lock));
 
 	dt = fdp->fd_dt;
 	if (fdp->fd_refcnt == -1) {
@@ -324,13 +326,7 @@ fd_unused(filedesc_t *fdp, unsigned fd)
 
 	ff = fdp->fd_dt->dt_ff[fd];
 
-	/*
-	 * Don't assert the lock is held here, as we may be copying
-	 * the table during exec() and it is not needed there.
-	 * procfs and sysctl are locked out by proc::p_reflock.
-	 *
-	 * KASSERT(mutex_owned(&fdp->fd_lock));
-	 */
+	KASSERT(mutex_owned(&fdp->fd_lock));
 	KASSERT(ff != NULL);
 	KASSERT(ff->ff_file == NULL);
 	KASSERT(ff->ff_allocated);
@@ -373,7 +369,7 @@ fd_getfile(unsigned fd)
 	 * We are doing this unlocked.  See fd_tryexpand().
 	 */
 	fdp = curlwp->l_fd;
-	dt = fdp->fd_dt;
+	dt = atomic_load_consume(&fdp->fd_dt);
 	if (__predict_false(fd >= dt->dt_nfiles)) {
 		return NULL;
 	}
@@ -407,7 +403,7 @@ fd_getfile(unsigned fd)
 	 * If the file is not open or is being closed then put the
 	 * reference back.
 	 */
-	fp = ff->ff_file;
+	fp = atomic_load_consume(&ff->ff_file);
 	if (__predict_true(fp != NULL)) {
 		return fp;
 	}
@@ -426,9 +422,9 @@ fd_putfile(unsigned fd)
 	u_int u, v;
 
 	fdp = curlwp->l_fd;
-	ff = fdp->fd_dt->dt_ff[fd];
+	KASSERT(fd < atomic_load_consume(&fdp->fd_dt)->dt_nfiles);
+	ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 
-	KASSERT(fd < fdp->fd_dt->dt_nfiles);
 	KASSERT(ff != NULL);
 	KASSERT((ff->ff_refcnt & FR_MASK) > 0);
 	KASSERT(fd >= NDFDFILE || ff == (fdfile_t *)fdp->fd_dfdfile[fd]);
@@ -561,7 +557,7 @@ fd_getfile2(proc_t *p, unsigned fd)
 		mutex_exit(&fdp->fd_lock);
 		return NULL;
 	}
-	if ((fp = ff->ff_file) == NULL) {
+	if ((fp = atomic_load_consume(&ff->ff_file)) == NULL) {
 		mutex_exit(&fdp->fd_lock);
 		return NULL;
 	}
@@ -593,13 +589,14 @@ fd_close(unsigned fd)
 	l = curlwp;
 	p = l->l_proc;
 	fdp = l->l_fd;
-	ff = fdp->fd_dt->dt_ff[fd];
+	ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 
 	KASSERT(fd >= NDFDFILE || ff == (fdfile_t *)fdp->fd_dfdfile[fd]);
 
 	mutex_enter(&fdp->fd_lock);
 	KASSERT((ff->ff_refcnt & FR_MASK) > 0);
-	if (__predict_false(ff->ff_file == NULL)) {
+	fp = atomic_load_consume(&ff->ff_file);
+	if (__predict_false(fp == NULL)) {
 		/*
 		 * Another user of the file is already closing, and is
 		 * waiting for other users of the file to drain.  Release
@@ -624,7 +621,6 @@ fd_close(unsigned fd)
 	 * will prevent them from adding additional uses to this file
 	 * while we are closing it.
 	 */
-	fp = ff->ff_file;
 	ff->ff_file = NULL;
 	ff->ff_exclose = false;
 
@@ -726,6 +722,7 @@ int
 fd_dup(file_t *fp, int minfd, int *newp, bool exclose)
 {
 	proc_t *p = curproc;
+	fdtab_t *dt;
 	int error;
 
 	while ((error = fd_alloc(p, minfd, newp)) != 0) {
@@ -735,7 +732,8 @@ fd_dup(file_t *fp, int minfd, int *newp, bool exclose)
 		fd_tryexpand(p);
 	}
 
-	curlwp->l_fd->fd_dt->dt_ff[*newp]->ff_exclose = exclose;
+	dt = atomic_load_consume(&curlwp->l_fd->fd_dt);
+	dt->dt_ff[*newp]->ff_exclose = exclose;
 	fd_affix(p, fp, *newp);
 	return 0;
 }
@@ -756,7 +754,7 @@ fd_dup2(file_t *fp, unsigned newfd, int flags)
 	 * Ensure there are enough slots in the descriptor table,
 	 * and allocate an fdfile_t up front in case we need it.
 	 */
-	while (newfd >= fdp->fd_dt->dt_nfiles) {
+	while (newfd >= atomic_load_consume(&fdp->fd_dt)->dt_nfiles) {
 		fd_tryexpand(curproc);
 	}
 	ff = pool_cache_get(fdfile_cache, PR_WAITOK);
@@ -1003,7 +1001,7 @@ fd_tryexpand(proc_t *p)
 	fdp = p->p_fd;
 	newhimap = NULL;
 	newlomap = NULL;
-	oldnfiles = fdp->fd_dt->dt_nfiles;
+	oldnfiles = atomic_load_consume(&fdp->fd_dt)->dt_nfiles;
 
 	if (oldnfiles < NDEXTENT)
 		numfiles = NDEXTENT;
@@ -1070,8 +1068,7 @@ fd_tryexpand(proc_t *p)
 	 * All other modifications must become globally visible before
 	 * the change to fd_dt.  See fd_getfile().
 	 */
-	membar_producer();
-	fdp->fd_dt = newdt;
+	atomic_store_release(&fdp->fd_dt, newdt);
 	KASSERT(newdt->dt_ff[0] == (fdfile_t *)fdp->fd_dfdfile[0]);
 	fd_checkmaps(fdp);
 	mutex_exit(&fdp->fd_lock);
@@ -1138,6 +1135,7 @@ fd_affix(proc_t *p, file_t *fp, unsigned fd)
 {
 	fdfile_t *ff;
 	filedesc_t *fdp;
+	fdtab_t *dt;
 
 	KASSERT(p == curproc || p == &proc0);
 
@@ -1152,10 +1150,12 @@ fd_affix(proc_t *p, file_t *fp, unsigned fd)
 	 * The memory barriers provided by lock activity in this routine
 	 * ensure that any updates to the file structure become globally
 	 * visible before the file becomes visible to other LWPs in the
-	 * current process.
+	 * current process; otherwise we would set ff->ff_file with
+	 * atomic_store_release(&ff->ff_file, fp) at the bottom.
 	 */
 	fdp = p->p_fd;
-	ff = fdp->fd_dt->dt_ff[fd];
+	dt = atomic_load_consume(&fdp->fd_dt);
+	ff = dt->dt_ff[fd];
 
 	KASSERT(ff != NULL);
 	KASSERT(ff->ff_file == NULL);
@@ -1179,7 +1179,7 @@ fd_abort(proc_t *p, file_t *fp, unsigned fd)
 	KASSERT(p == curproc || p == &proc0);
 
 	fdp = p->p_fd;
-	ff = fdp->fd_dt->dt_ff[fd];
+	ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 	ff->ff_exclose = false;
 
 	KASSERT(fd >= NDFDFILE || ff == (fdfile_t *)fdp->fd_dfdfile[fd]);
@@ -1463,7 +1463,8 @@ fd_copy(void)
 		KASSERT(i >= NDFDFILE ||
 		    *nffp == (fdfile_t *)newfdp->fd_dfdfile[i]);
 		ff = *ffp;
-		if (ff == NULL || (fp = ff->ff_file) == NULL) {
+		if (ff == NULL ||
+		    (fp = atomic_load_consume(&ff->ff_file)) == NULL) {
 			/* Descriptor unused, or descriptor half open. */
 			KASSERT(!fd_isused(newfdp, i));
 			continue;
@@ -1525,7 +1526,8 @@ fd_free(void)
 	filedesc_t * const fdp = l->l_fd;
 	const bool noadvlock = (l->l_proc->p_flag & PK_ADVLOCK) == 0;
 
-	KASSERT(fdp->fd_dt->dt_ff[0] == (fdfile_t *)fdp->fd_dfdfile[0]);
+	KASSERT(atomic_load_consume(&fdp->fd_dt)->dt_ff[0] ==
+	    (fdfile_t *)fdp->fd_dfdfile[0]);
 	KASSERT(fdp->fd_dtbuiltin.dt_nfiles == NDFILE);
 	KASSERT(fdp->fd_dtbuiltin.dt_link == NULL);
 
@@ -1549,7 +1551,7 @@ fd_free(void)
 		    ff == (fdfile_t *)fdp->fd_dfdfile[fd]);
 		if (ff == NULL)
 			continue;
-		if ((fp = ff->ff_file) != NULL) {
+		if ((fp = atomic_load_consume(&ff->ff_file)) != NULL) {
 			/*
 			 * Must use fd_close() here if there is
 			 * a reference from kqueue or we might have posix
@@ -1644,54 +1646,67 @@ filedescopen(dev_t dev, int mode, int type, lwp_t *l)
 
 /*
  * Duplicate the specified descriptor to a free descriptor.
+ *
+ * old is the original fd.
+ * moveit is true if we should move rather than duplicate.
+ * flags are the open flags (converted from O_* to F*).
+ * newp returns the new fd on success.
+ *
+ * These two cases are produced by the EDUPFD and EMOVEFD magic
+ * errnos, but in the interest of removing that regrettable interface,
+ * vn_open has been changed to intercept them. Now vn_open returns
+ * either a vnode or a filehandle, and the filehandle is accompanied
+ * by a boolean that says whether we should dup (moveit == false) or
+ * move (moveit == true) the fd.
+ *
+ * The dup case is used by /dev/stderr, /proc/self/fd, and such. The
+ * move case is used by cloner devices that allocate a fd of their
+ * own (a layering violation that should go away eventually) that
+ * then needs to be put in the place open() expects it.
  */
 int
-fd_dupopen(int old, int *newp, int mode, int error)
+fd_dupopen(int old, bool moveit, int flags, int *newp)
 {
 	filedesc_t *fdp;
 	fdfile_t *ff;
 	file_t *fp;
 	fdtab_t *dt;
+	int error;
 
 	if ((fp = fd_getfile(old)) == NULL) {
 		return EBADF;
 	}
 	fdp = curlwp->l_fd;
-	dt = fdp->fd_dt;
+	dt = atomic_load_consume(&fdp->fd_dt);
 	ff = dt->dt_ff[old];
 
 	/*
 	 * There are two cases of interest here.
 	 *
-	 * For EDUPFD simply dup (old) to file descriptor
-	 * (new) and return.
+	 * 1. moveit == false (used to be the EDUPFD magic errno):
+	 *    simply dup (old) to file descriptor (new) and return.
 	 *
-	 * For EMOVEFD steal away the file structure from (old) and
-	 * store it in (new).  (old) is effectively closed by
-	 * this operation.
-	 *
-	 * Any other error code is just returned.
+	 * 2. moveit == true (used to be the EMOVEFD magic errno):
+	 *    steal away the file structure from (old) and store it in
+	 *    (new).  (old) is effectively closed by this operation.
 	 */
-	switch (error) {
-	case EDUPFD:
+	if (moveit == false) {
 		/*
 		 * Check that the mode the file is being opened for is a
 		 * subset of the mode of the existing descriptor.
 		 */
-		if (((mode & (FREAD|FWRITE)) | fp->f_flag) != fp->f_flag) {
+		if (((flags & (FREAD|FWRITE)) | fp->f_flag) != fp->f_flag) {
 			error = EACCES;
-			break;
+			goto out;
 		}
 
 		/* Copy it. */
 		error = fd_dup(fp, 0, newp, ff->ff_exclose);
-		break;
-
-	case EMOVEFD:
+	} else {
 		/* Copy it. */
 		error = fd_dup(fp, 0, newp, ff->ff_exclose);
 		if (error != 0) {
-			break;
+			goto out;
 		}
 
 		/* Steal away the file pointer from 'old'. */
@@ -1699,6 +1714,7 @@ fd_dupopen(int old, int *newp, int mode, int error)
 		return 0;
 	}
 
+out:
 	fd_putfile(old);
 	return error;
 }
@@ -1730,7 +1746,7 @@ fd_closeexec(void)
 		return;
 	}
 	fdp->fd_exclose = false;
-	dt = fdp->fd_dt;
+	dt = atomic_load_consume(&fdp->fd_dt);
 
 	for (fd = 0; fd <= fdp->fd_lastfile; fd++) {
 		if ((ff = dt->dt_ff[fd]) == NULL) {
@@ -1765,6 +1781,9 @@ fsetown(pid_t *pgid, u_long cmd, const void *data)
 	pid_t id = *(const pid_t *)data;
 	int error;
 
+	if (id == INT_MIN)
+		return EINVAL;
+
 	switch (cmd) {
 	case TIOCSPGRP:
 		if (id < 0)
@@ -1775,9 +1794,9 @@ fsetown(pid_t *pgid, u_long cmd, const void *data)
 		break;
 	}
 	if (id > 0) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		error = proc_find(id) ? 0 : ESRCH;
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	} else if (id < 0) {
 		error = pgid_in_session(curproc, -id);
 	} else {
@@ -1793,7 +1812,7 @@ void
 fd_set_exclose(struct lwp *l, int fd, bool exclose)
 {
 	filedesc_t *fdp = l->l_fd;
-	fdfile_t *ff = fdp->fd_dt->dt_ff[fd];
+	fdfile_t *ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 
 	ff->ff_exclose = exclose;
 	if (exclose)
@@ -1839,7 +1858,7 @@ fownsignal(pid_t pgid, int signo, int code, int band, void *fdescdata)
 	ksi.ksi_code = code;
 	ksi.ksi_band = band;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (pgid > 0) {
 		struct proc *p1;
 
@@ -1856,7 +1875,7 @@ fownsignal(pid_t pgid, int signo, int code, int band, void *fdescdata)
 			kpgsignal(pgrp, &ksi, fdescdata, 0);
 		}
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 int
@@ -1868,7 +1887,7 @@ fd_clone(file_t *fp, unsigned fd, int flag, const struct fileops *fops,
 
 	fp->f_flag = flag & FMASK;
 	fdp = curproc->p_fd;
-	ff = fdp->fd_dt->dt_ff[fd];
+	ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 	KASSERT(ff != NULL);
 	ff->ff_exclose = (flag & O_CLOEXEC) != 0;
 	fp->f_type = DTYPE_MISC;
@@ -1977,7 +1996,7 @@ sysctl_file_marker_reset(void)
 			if ((ff = dt->dt_ff[i]) == NULL) {
 				continue;
 			}
-			if ((fp = ff->ff_file) == NULL) {
+			if ((fp = atomic_load_consume(&ff->ff_file)) == NULL) {
 				continue;
 			}
 			fp->f_marker = 0;
@@ -2037,7 +2056,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 	 * followed by an array of file structures
 	 */
 	mutex_enter(&sysctl_file_marker_lock);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	PROCLIST_FOREACH(p, &allproc) {
 		struct filedesc *fd;
 		fdtab_t *dt;
@@ -2068,7 +2087,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		if (!rw_tryenter(&p->p_reflock, RW_READER)) {
 			continue;
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 
 		fd = p->p_fd;
 		mutex_enter(&fd->fd_lock);
@@ -2079,7 +2098,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 			if ((ff = dt->dt_ff[i]) == NULL) {
 				continue;
 			}
-			if ((fp = ff->ff_file) == NULL) {
+			if ((fp = atomic_load_consume(&ff->ff_file)) == NULL) {
 				continue;
 			}
 
@@ -2115,7 +2134,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		/*
 		 * Release reference to process.
 		 */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		rw_exit(&p->p_reflock);
 
 		if (error)
@@ -2129,7 +2148,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		sysctl_file_marker++;
 	}
 
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	mutex_exit(&sysctl_file_marker_lock);
 
 	*oldlenp = where - start;
@@ -2193,7 +2212,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 		sysctl_unlock();
 		if (op == KERN_FILE_BYFILE)
 			mutex_enter(&sysctl_file_marker_lock);
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		PROCLIST_FOREACH(p, &allproc) {
 			if (p->p_stat == SIDL) {
 				/* skip embryonic processes */
@@ -2225,7 +2244,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 			if (!rw_tryenter(&p->p_reflock, RW_READER)) {
 				continue;
 			}
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 
 			fd = p->p_fd;
 			mutex_enter(&fd->fd_lock);
@@ -2234,7 +2253,8 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 				if ((ff = dt->dt_ff[i]) == NULL) {
 					continue;
 				}
-				if ((fp = ff->ff_file) == NULL) {
+				if ((fp = atomic_load_consume(&ff->ff_file)) ==
+				    NULL) {
 					continue;
 				}
 
@@ -2266,7 +2286,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 			/*
 			 * Release reference to process.
 			 */
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			rw_exit(&p->p_reflock);
 		}
 		if (op == KERN_FILE_BYFILE) {
@@ -2278,7 +2298,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 				sysctl_file_marker++;
 			}
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		if (op == KERN_FILE_BYFILE)
 			mutex_exit(&sysctl_file_marker_lock);
 		sysctl_relock();
@@ -2302,11 +2322,10 @@ fill_file(struct file *fp, const struct file *fpsrc)
 	memset(fp, 0, sizeof(*fp));
 
 	fp->f_offset = fpsrc->f_offset;
-	COND_SET_VALUE(fp->f_cred, fpsrc->f_cred, allowaddr);
-	COND_SET_VALUE(fp->f_ops, fpsrc->f_ops, allowaddr);
-	COND_SET_VALUE(fp->f_undata, fpsrc->f_undata, allowaddr);
-	COND_SET_VALUE(fp->f_list, fpsrc->f_list, allowaddr);
-	COND_SET_VALUE(fp->f_lock, fpsrc->f_lock, allowaddr);
+	COND_SET_PTR(fp->f_cred, fpsrc->f_cred, allowaddr);
+	COND_SET_CPTR(fp->f_ops, fpsrc->f_ops, allowaddr);
+	COND_SET_STRUCT(fp->f_undata, fpsrc->f_undata, allowaddr);
+	COND_SET_STRUCT(fp->f_list, fpsrc->f_list, allowaddr);
 	fp->f_flag = fpsrc->f_flag;
 	fp->f_marker = fpsrc->f_marker;
 	fp->f_type = fpsrc->f_type;
@@ -2314,7 +2333,7 @@ fill_file(struct file *fp, const struct file *fpsrc)
 	fp->f_count = fpsrc->f_count;
 	fp->f_msgcount = fpsrc->f_msgcount;
 	fp->f_unpcount = fpsrc->f_unpcount;
-	COND_SET_VALUE(fp->f_unplist, fpsrc->f_unplist, allowaddr);
+	COND_SET_STRUCT(fp->f_unplist, fpsrc->f_unplist, allowaddr);
 }
 
 static void

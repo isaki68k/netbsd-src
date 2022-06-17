@@ -1,4 +1,4 @@
-;	$NetBSD: milli.S,v 1.1 2002/06/06 20:03:39 fredette Exp $
+;	$NetBSD: milli.S,v 1.3 2022/06/13 16:00:05 skrll Exp $
 ;
 ;	$OpenBSD: milli.S,v 1.5 2001/03/29 04:08:20 mickey Exp $
 ;
@@ -182,7 +182,7 @@ pidr2: .equ	9
 
 cr10: .equ	10
 
-ccr: .equ	10			; Coprocessor Confiquration Register
+ccr: .equ	10			; Coprocessor Configuration Register
 
 cr11: .equ	11
 
@@ -230,7 +230,7 @@ ior: .equ	21			; Interruption Offset Register
 
 cr22: .equ	22
 
-ipsw: .equ	22			; Interrpution Processor Status Word
+ipsw: .equ	22			; Interruption Processor Status Word
 
 cr23: .equ	23
 
@@ -238,7 +238,7 @@ eirr: .equ	23			; External Interrupt Request
 
 cr24: .equ	24
 
-ppda: .equ	24			; Physcial Page Directory Address
+ppda: .equ	24			; Physical Page Directory Address
 
 tr0: .equ	24			; Temporary register 0
 
@@ -443,7 +443,6 @@ noshlibs:
 	be	0(sr0,r22)
 	stw	rp,-24(sp)
 	.procend
-#endif
 
 $$sh_func_adrs:
 	.proc
@@ -456,6 +455,7 @@ $$sh_func_adrs:
 	bv	r0(r31)
 	ldws	0(r26),ret1
 	.procend
+#endif
 
 temp: .EQU	r1
 

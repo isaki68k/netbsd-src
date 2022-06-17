@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_carp.c,v 1.103 2019/06/01 19:13:41 joerg Exp $	*/
+/*	$NetBSD: ip_carp.c,v 1.116 2021/09/30 03:43:25 yamaguchi Exp $	*/
 /*	$OpenBSD: ip_carp.c,v 1.113 2005/11/04 08:11:54 mcbride Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.103 2019/06/01 19:13:41 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.116 2021/09/30 03:43:25 yamaguchi Exp $");
 
 /*
  * TODO:
@@ -72,13 +72,6 @@ __KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.103 2019/06/01 19:13:41 joerg Exp $");
 #include <net/net_stats.h>
 #include <netinet/if_inarp.h>
 #include <netinet/wqinput.h>
-
-#if NFDDI > 0
-#include <net/if_fddi.h>
-#endif
-#if NTOKEN > 0
-#include <net/if_token.h>
-#endif
 
 #ifdef INET
 #include <netinet/in.h>
@@ -120,6 +113,7 @@ struct carp_softc {
 	struct ethercom sc_ac;
 #define	sc_if		sc_ac.ec_if
 #define	sc_carpdev	sc_ac.ec_if.if_carpdev
+	void *sc_linkstate_hook;
 	int ah_cookie;
 	int lh_cookie;
 	struct ip_moptions sc_imo;
@@ -233,6 +227,7 @@ static int	carp_clone_destroy(struct ifnet *);
 static int	carp_ether_addmulti(struct carp_softc *, struct ifreq *);
 static int	carp_ether_delmulti(struct carp_softc *, struct ifreq *);
 static void	carp_ether_purgemulti(struct carp_softc *);
+static void	carp_update_link_state(struct carp_softc *sc);
 
 static void	sysctl_net_inet_carp_setup(struct sysctllog **);
 
@@ -714,13 +709,12 @@ carp_proto_input_c(struct mbuf *m, struct carp_header *ch, sa_family_t af)
 	}
 
 	nanotime(&sc->sc_if.if_lastchange);
-	sc->sc_if.if_ipackets++;
-	sc->sc_if.if_ibytes += m->m_pkthdr.len;
+	if_statadd2(&sc->sc_if, if_ipackets, 1, if_ibytes, m->m_pkthdr.len);
 
 	/* verify the CARP version. */
 	if (ch->carp_version != CARP_VERSION) {
 		CARP_STATINC(CARP_STAT_BADVER);
-		sc->sc_if.if_ierrors++;
+		if_statinc(&sc->sc_if, if_ierrors);
 		CARP_LOG(sc, ("invalid version %d != %d",
 		    ch->carp_version, CARP_VERSION));
 		m_freem(m);
@@ -737,7 +731,7 @@ carp_proto_input_c(struct mbuf *m, struct carp_header *ch, sa_family_t af)
 #endif
 
 		CARP_STATINC(CARP_STAT_BADAUTH);
-		sc->sc_if.if_ierrors++;
+		if_statinc(&sc->sc_if, if_ierrors);
 
 		switch(af) {
 		case AF_INET:
@@ -850,7 +844,6 @@ carp_clone_create(struct if_clone *ifc, int unit)
 	extern int ifqmaxlen;
 	struct carp_softc *sc;
 	struct ifnet *ifp;
-	int rv;
 
 	sc = malloc(sizeof(*sc), M_DEVBUF, M_NOWAIT|M_ZERO);
 	if (!sc)
@@ -884,20 +877,13 @@ carp_clone_create(struct if_clone *ifc, int unit)
 	ifp->if_start = carp_start;
 	IFQ_SET_MAXLEN(&ifp->if_snd, ifqmaxlen);
 	IFQ_SET_READY(&ifp->if_snd);
-	rv = if_initialize(ifp);
-	if (rv != 0) {	
-		callout_destroy(&sc->sc_ad_tmo);
-		callout_destroy(&sc->sc_md_tmo);
-		callout_destroy(&sc->sc_md6_tmo);
-		free(ifp->if_softc, M_DEVBUF);
-
-		return rv;
-	}
+	if_initialize(ifp);
 	ether_ifattach(ifp, NULL);
-	carp_set_enaddr(sc);
 	/* Overwrite ethernet defaults */
 	ifp->if_type = IFT_CARP;
 	ifp->if_output = carp_output;
+	ifp->if_link_state = LINK_STATE_DOWN;
+	carp_set_enaddr(sc);
 	if_register(ifp);
 
 	return (0);
@@ -922,6 +908,7 @@ carp_clone_destroy(struct ifnet *ifp)
 static void
 carpdetach(struct carp_softc *sc)
 {
+	struct ifnet *ifp;
 	struct carp_if *cif;
 	int s;
 
@@ -944,13 +931,16 @@ carpdetach(struct carp_softc *sc)
 
 	KERNEL_LOCK(1, NULL);
 	s = splnet();
-	if (sc->sc_carpdev != NULL) {
-		/* XXX linkstatehook removal */
-		cif = (struct carp_if *)sc->sc_carpdev->if_carp;
+	ifp = sc->sc_carpdev;
+	if (ifp != NULL) {
+		if_linkstate_change_disestablish(ifp,
+		    sc->sc_linkstate_hook, NULL);
+
+		cif = (struct carp_if *)ifp->if_carp;
 		TAILQ_REMOVE(&cif->vhif_vrs, sc, sc_list);
 		if (!--cif->vhif_nvrs) {
-			ifpromisc(sc->sc_carpdev, 0);
-			sc->sc_carpdev->if_carp = NULL;
+			ifpromisc(ifp, 0);
+			ifp->if_carp = NULL;
 			free(cif, M_IFADDR);
 		}
 	}
@@ -1037,7 +1027,7 @@ carp_send_ad(void *v)
 
 	advbase = advskew = 0; /* Sssssh compiler */
 	if (sc->sc_carpdev == NULL) {
-		sc->sc_if.if_oerrors++;
+		if_statinc(&sc->sc_if, if_oerrors);
 		goto retry_later;
 	}
 
@@ -1074,7 +1064,7 @@ carp_send_ad(void *v)
 
 		MGETHDR(m, M_DONTWAIT, MT_HEADER);
 		if (m == NULL) {
-			sc->sc_if.if_oerrors++;
+			if_statinc(&sc->sc_if, if_oerrors);
 			CARP_STATINC(CARP_STAT_ONOMEM);
 			/* XXX maybe less ? */
 			goto retry_later;
@@ -1118,8 +1108,7 @@ carp_send_ad(void *v)
 		m->m_data -= sizeof(*ip);
 
 		nanotime(&sc->sc_if.if_lastchange);
-		sc->sc_if.if_opackets++;
-		sc->sc_if.if_obytes += len;
+		if_statadd2(&sc->sc_if, if_opackets, 1, if_obytes, len);
 		CARP_STATINC(CARP_STAT_OPACKETS);
 
 		error = ip_output(m, NULL, NULL, IP_RAWOUTPUT, &sc->sc_imo,
@@ -1129,7 +1118,7 @@ carp_send_ad(void *v)
 				CARP_STATINC(CARP_STAT_ONOMEM);
 			else
 				CARP_LOG(sc, ("ip_output failed: %d", error));
-			sc->sc_if.if_oerrors++;
+			if_statinc(&sc->sc_if, if_oerrors);
 			if (sc->sc_sendad_errors < INT_MAX)
 				sc->sc_sendad_errors++;
 			if (sc->sc_sendad_errors == CARP_SENDAD_MAX_ERRORS) {
@@ -1158,7 +1147,7 @@ carp_send_ad(void *v)
 
 		MGETHDR(m, M_DONTWAIT, MT_HEADER);
 		if (m == NULL) {
-			sc->sc_if.if_oerrors++;
+			if_statinc(&sc->sc_if, if_oerrors);
 			CARP_STATINC(CARP_STAT_ONOMEM);
 			/* XXX maybe less ? */
 			goto retry_later;
@@ -1192,7 +1181,7 @@ carp_send_ad(void *v)
 		ip6->ip6_dst.s6_addr16[0] = htons(0xff02);
 		ip6->ip6_dst.s6_addr8[15] = 0x12;
 		if (in6_setscope(&ip6->ip6_dst, &sc->sc_if, NULL) != 0) {
-			sc->sc_if.if_oerrors++;
+			if_statinc(&sc->sc_if, if_oerrors);
 			m_freem(m);
 			CARP_LOG(sc, ("in6_setscope failed"));
 			goto retry_later;
@@ -1206,8 +1195,7 @@ carp_send_ad(void *v)
 		    len - sizeof(*ip6));
 
 		nanotime(&sc->sc_if.if_lastchange);
-		sc->sc_if.if_opackets++;
-		sc->sc_if.if_obytes += len;
+		if_statadd2(&sc->sc_if, if_opackets, 1, if_obytes, len);
 		CARP_STATINC(CARP_STAT_OPACKETS6);
 
 		error = ip6_output(m, NULL, NULL, 0, &sc->sc_im6o, NULL, NULL);
@@ -1216,7 +1204,7 @@ carp_send_ad(void *v)
 				CARP_STATINC(CARP_STAT_ONOMEM);
 			else
 				CARP_LOG(sc, ("ip6_output failed: %d", error));
-			sc->sc_if.if_oerrors++;
+			if_statinc(&sc->sc_if, if_oerrors);
 			if (sc->sc_sendad_errors < INT_MAX)
 				sc->sc_sendad_errors++;
 			if (sc->sc_sendad_errors == CARP_SENDAD_MAX_ERRORS) {
@@ -1508,7 +1496,7 @@ carp_input(struct mbuf *m, u_int8_t *shost, u_int8_t *dhost, u_int16_t etype)
 	m_set_rcvif(m, ifp);
 
 	bpf_mtap(ifp, m, BPF_D_IN);
-	ifp->if_ipackets++;
+	if_statinc(ifp, if_ipackets);
 	ether_input(ifp, m);
 	return (0);
 }
@@ -1655,9 +1643,7 @@ carp_set_ifp(struct carp_softc *sc, struct ifnet *ifp)
 			return (EINVAL);
 
 		if (ifp->if_carp == NULL) {
-			ncif = malloc(sizeof(*cif), M_IFADDR, M_NOWAIT);
-			if (ncif == NULL)
-				return (ENOBUFS);
+			ncif = malloc(sizeof(*cif), M_IFADDR, M_WAITOK);
 			if ((error = ifpromisc(ifp, 1))) {
 				free(ncif, M_IFADDR);
 				return (error);
@@ -1727,9 +1713,10 @@ carp_set_ifp(struct carp_softc *sc, struct ifnet *ifp)
 		if (sc->sc_naddrs || sc->sc_naddrs6)
 			sc->sc_if.if_flags |= IFF_UP;
 		carp_set_enaddr(sc);
+		sc->sc_linkstate_hook = if_linkstate_change_establish(ifp,
+		    carp_carpdev_state, (void *)ifp);
 		KERNEL_LOCK(1, NULL);
 		s = splnet();
-		/* XXX linkstatehooks establish */
 		carp_carpdev_state(ifp);
 		splx(s);
 		KERNEL_UNLOCK_ONE(NULL);
@@ -1743,7 +1730,15 @@ carp_set_ifp(struct carp_softc *sc, struct ifnet *ifp)
 static void
 carp_set_enaddr(struct carp_softc *sc)
 {
+	struct ifnet *ifp = &sc->sc_if;
 	uint8_t enaddr[ETHER_ADDR_LEN];
+
+	if (sc->sc_vhid == -1) {
+		ifp->if_addrlen = 0;
+		if_alloc_sadl(ifp);
+		return;
+	}
+
 	if (sc->sc_carpdev && sc->sc_carpdev->if_type == IFT_ISO88025) {
 		enaddr[0] = 3;
 		enaddr[1] = 0;
@@ -1759,7 +1754,8 @@ carp_set_enaddr(struct carp_softc *sc)
 		enaddr[4] = 1;
 		enaddr[5] = sc->sc_vhid;
 	}
-	if_set_sadl(&sc->sc_if, enaddr, sizeof(enaddr), false);
+
+	if_set_sadl(ifp, enaddr, sizeof(enaddr), false);
 }
 
 #if 0
@@ -2071,6 +2067,7 @@ carp_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			sc->sc_if.if_flags |= IFF_UP;
 			carp_setrun(sc, 0);
 		}
+		carp_update_link_state(sc);
 		break;
 
 	case SIOCSVH:
@@ -2215,7 +2212,6 @@ static void
 carp_set_state(struct carp_softc *sc, int state)
 {
 	static const char *carp_states[] = { CARP_STATES };
-	int link_state;
 
 	if (sc->sc_state == state)
 		return;
@@ -2223,7 +2219,15 @@ carp_set_state(struct carp_softc *sc, int state)
 	CARP_LOG(sc, ("state transition from: %s -> to: %s", carp_states[sc->sc_state], carp_states[state]));
 
 	sc->sc_state = state;
-	switch (state) {
+	carp_update_link_state(sc);
+}
+
+static void
+carp_update_link_state(struct carp_softc *sc)
+{
+	int link_state;
+
+	switch (sc->sc_state) {
 	case BACKUP:
 		link_state = LINK_STATE_DOWN;
 		break;
@@ -2231,16 +2235,11 @@ carp_set_state(struct carp_softc *sc, int state)
 		link_state = LINK_STATE_UP;
 		break;
 	default:
-		link_state = LINK_STATE_UNKNOWN;
+		/* Not useable, so down makes perfect sense. */
+		link_state = LINK_STATE_DOWN;
 		break;
 	}
-	/*
-	 * The lock is needed to serialize a call of
-	 * if_link_state_change_softint from here and a call from softint.
-	 */
-	KERNEL_LOCK(1, NULL);
-	if_link_state_change_softint(&sc->sc_if, link_state);
-	KERNEL_UNLOCK_ONE(NULL);
+	if_link_state_change(&sc->sc_if, link_state);
 }
 
 void

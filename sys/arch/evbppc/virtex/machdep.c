@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.22 2018/07/15 05:16:42 maxv Exp $ */
+/*	$NetBSD: machdep.c,v 1.30 2021/08/03 09:25:44 rin Exp $ */
 
 /*
  * Copyright (c) 2006 Jachym Holecek
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.22 2018/07/15 05:16:42 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.30 2021/08/03 09:25:44 rin Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_ddb.h"
@@ -88,23 +88,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.22 2018/07/15 05:16:42 maxv Exp $");
 #include <sys/kgdb.h>
 #endif
 
-/*
- * Global variables used here and there
- */
-struct vm_map *phys_map = NULL;
-
-/*
- * This should probably be in autoconf!				XXX
- */
-char machine[] = MACHINE;		/* from <machine/param.h> */
-char machine_arch[] = MACHINE_ARCH;	/* from <machine/param.h> */
-
-char bootpath[256];
-vaddr_t msgbuf_vaddr;
-
 void initppc(vaddr_t, vaddr_t);
-
-static void dumpsys(void);
 
 /* BSS segment start & end. */
 extern char 		edata[], end[];
@@ -157,11 +141,6 @@ initppc(vaddr_t startkernel, vaddr_t endkernel)
 	 */
 	kgdb_connect(1);
 #endif /* KGDB */
-
-	/*
-	 * Look for the ibm4xx modules in the right place.
-	 */
-	module_machine = module_machine_ibm4xx;
 }
 
 /*
@@ -202,7 +181,7 @@ cpu_startup(void)
 	 * pool pages.
 	 */
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -230,103 +209,10 @@ cpu_startup(void)
 	fake_mapiodev = 0;
 }
 
-
-static void
-dumpsys(void)
-{
-	printf("dumpsys: TBD\n");
-}
-
 /* Hook used by 405 pmap module. */
 void
 mem_regions(struct mem_region **mem, struct mem_region **avail)
 {
 	*mem 	= physmemr;
 	*avail 	= availmemr;
-}
-
-/*
- * Halt or reboot the machine after syncing/dumping according to howto.
- */
-void
-cpu_reboot(int howto, char *what)
-{
-	static int syncing;
-	static char str[256];
-	char *ap = str, *ap1 = ap;
-
-	boothowto = howto;
-	if (!cold && !(howto & RB_NOSYNC) && !syncing) {
-		syncing = 1;
-		vfs_shutdown();		/* sync */
-		resettodr();		/* set wall clock */
-	}
-
-	splhigh();
-
-	if (!cold && (howto & RB_DUMP))
-		dumpsys();
-
-	doshutdownhooks();
-
-	pmf_system_shutdown(boothowto);
-
-	if ((howto & RB_POWERDOWN) == RB_POWERDOWN) {
-		/* Power off here if we know how...*/
-	}
-
-	if (howto & RB_HALT) {
-		printf("halted\n\n");
-
-		goto reboot;	/* XXX for now... */
-
-#ifdef DDB
-		printf("dropping to debugger\n");
-		while(1)
-			Debugger();
-#endif
-#ifdef KGDB
-		printf("dropping to kgdb\n");
-		while(1)
-			kgdb_connect(1);
-#endif
-	}
-
-	printf("rebooting\n\n");
-	if (what && *what) {
-		if (strlen(what) > sizeof str - 5)
-			printf("boot string too large, ignored\n");
-		else {
-			strcpy(str, what);
-			ap1 = ap = str + strlen(str);
-			*ap++ = ' ';
-		}
-	}
-	*ap++ = '-';
-	if (howto & RB_SINGLE)
-		*ap++ = 's';
-	if (howto & RB_KDB)
-		*ap++ = 'd';
-	*ap++ = 0;
-	if (ap[-2] == '-')
-		*ap1 = 0;
-
-	/* flush cache for msgbuf */
-	__syncicache((void *)msgbuf_paddr, round_page(MSGBUFSIZE));
-
- reboot:
-	ppc4xx_reset();
-
-	printf("ppc4xx_reset() failed!\n");
-#ifdef DDB
-	while(1)
-		Debugger();
-#endif
-#ifdef KGDB
-	while(1)
-		kgdb_connect(1);
-#else
-	while (1)
-		/* nothing */;
-#endif
 }

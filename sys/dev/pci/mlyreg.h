@@ -1,4 +1,4 @@
-/*	$NetBSD: mlyreg.h,v 1.6 2017/11/21 10:55:23 maxv Exp $	*/
+/*	$NetBSD: mlyreg.h,v 1.8 2021/10/24 20:00:11 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -387,8 +387,8 @@ struct mly_status {
 #define	MDACMD_MEMCOPY		0x1	/* memory to memory copy */
 #define	MDACMD_SCSIPT		0x2	/* SCSI passthrough (small command) */
 #define	MDACMD_SCSILCPT		0x3	/* SCSI passthrough (large command) */
-#define	MDACMD_SCSI		0x4	/* SCSI command for logical/phyiscal device (small command) */
-#define	MDACMD_SCSILC		0x5	/* SCSI command for logical/phyiscal device (large command) */
+#define	MDACMD_SCSI		0x4	/* SCSI command for logical/physical device (small command) */
+#define	MDACMD_SCSILC		0x5	/* SCSI command for logical/physical device (large command) */
 #define	MDACMD_IOCTL		0x20	/* Management command */
 #define	MDACMD_IOCTLCHECK	0x23	/* Validate management command (not implemented) */
 
@@ -724,7 +724,7 @@ struct mly_ioctl_getlogdevinfovalid {
 	u_int8_t	ar5_algo;
 	u_int16_t	logical_device_number;
 	u_int16_t	bios_control;
-	/* erorr counters */
+	/* error counters */
 	u_int16_t	soft_errors;				/* N/A */
 	u_int16_t	commands_failed;			/* N/A */
 	u_int16_t	host_command_aborts;			/* N/A */

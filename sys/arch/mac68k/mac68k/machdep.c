@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.355 2019/08/18 07:05:16 rin Exp $	*/
+/*	$NetBSD: machdep.c,v 1.363 2021/10/09 20:00:41 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -74,15 +74,17 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.355 2019/08/18 07:05:16 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.363 2021/10/09 20:00:41 tsutsui Exp $");
 
 #include "opt_adb.h"
+#include "opt_compat_netbsd.h"
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
 #include "opt_ddbparam.h"
 #include "opt_kgdb.h"
+#include "opt_mac68k.h"
 #include "opt_modular.h"
-#include "opt_compat_netbsd.h"
+
 #include "akbd.h"
 #include "genfb.h"
 #include "macfb.h"
@@ -414,7 +416,7 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -498,7 +500,9 @@ cpu_reboot(int howto, char *bootstr)
 		printf("\n");
 		printf("The operating system has halted.\n");
 		printf("Please press any key to reboot.\n\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 	}
 
 	/* Map the last physical page VA = PA for doboot() */
@@ -902,7 +906,11 @@ getenvvars(u_long flag, char *buf)
 	 */
 	mac68k_machine.machineid = machineid = getenv("MACHINEID");
 	mac68k_machine.mach_processor = getenv("PROCESSOR");
+#ifndef MAC68K_MEMSIZE
 	mac68k_machine.mach_memsize = getenv("MEMSIZE");
+#else
+	mac68k_machine.mach_memsize = MAC68K_MEMSIZE;
+#endif
 	mac68k_machine.do_graybars = getenv("GRAYBARS");
 	mac68k_machine.serial_boot_echo = getenv("SERIALECHO");
 	mac68k_machine.serial_console = getenv("SERIALCONSOLE");
@@ -2104,24 +2112,33 @@ void
 mac68k_set_io_offsets(vaddr_t base)
 {
 
+	Via1Base = (volatile u_char *)base;
+	Via2Base = Via1Base + 0x2000 * VIA2;
 	switch (current_mac_model->class) {
 	case MACH_CLASSQ:
-		Via1Base = (volatile u_char *)base;
-
-		/* The following two may be overridden. */
-		sccA = (volatile u_char *)base + 0xc000;
-		SCSIBase = base + 0xf000;
-
 		switch (current_mac_model->machineid) {
 		case MACH_MACQ900:
 		case MACH_MACQ950:
-			mac68k_machine.scsi96_2 = 1;
 			sccA = (volatile u_char *)base + 0xc020;
+			SCSIBase = base + 0xf000;
+			mac68k_machine.scsi96_2 = 1;
 			iop_init(0);	/* For console */
 			break;
+		case MACH_MACQ800:
+			/*
+			 * The H/W partially decode address for sccA; it is
+			 * available at offsets 0xc000, 0xc020, .... Here,
+			 * we choose 0xc020, where Mac toolbox ROM uses.
+			 */
+			sccA = (volatile u_char *)base + 0xc020;
+			SCSIBase = base + 0x10000;
+			break;
 		case MACH_MACQ700:
+			sccA = (volatile u_char *)base + 0xc000;
+			SCSIBase = base + 0xf000;
 			break;
 		default:
+			sccA = (volatile u_char *)base + 0xc000;
 			SCSIBase = base + 0x10000;
 			break;
 		}
@@ -2132,7 +2149,6 @@ mac68k_set_io_offsets(vaddr_t base)
 		 * machines.  This seems to be common on many of the
 		 * Quadra-type machines.
 		 */
-		Via1Base = (volatile u_char *)base;
 		sccA = (volatile u_char *)base + 0xc020;
 		SCSIBase = base + 0x10000;
 		break;
@@ -2141,12 +2157,10 @@ mac68k_set_io_offsets(vaddr_t base)
 		 * Here's a queer bird... it seems to be a cross between
 		 * the two different Quadra classes.
 		 */
-		Via1Base = (volatile u_char *) base;
-		sccA = (volatile u_char *) base + 0xc020;
+		sccA = (volatile u_char *)base + 0xc020;
 		SCSIBase = base;
 		break;
 	case MACH_CLASSAV:
-		Via1Base = (volatile u_char *)base;
 		sccA = (volatile u_char *)base + 0x4000;
 		SCSIBase = base + 0x18000;
 		PSCBase = (volatile u_char *)base + 0x31000;
@@ -2158,8 +2172,7 @@ mac68k_set_io_offsets(vaddr_t base)
 	case MACH_CLASSIIsi:
 	case MACH_CLASSIIvx:
 	case MACH_CLASSLC:
-		Via1Base = (volatile u_char *)base;
-		sccA = (volatile u_char *) base + 0x4000;
+		sccA = (volatile u_char *)base + 0x4000;
 		SCSIBase = base;
 		break;
 	case MACH_CLASSIIfx:
@@ -2168,7 +2181,6 @@ mac68k_set_io_offsets(vaddr_t base)
 		 * the serial port in `compatible' mode (set in
 		 * the Serial Switch control panel before booting).
 		 */
-		Via1Base = (volatile u_char *)base;
 		sccA = (volatile u_char *)base + 0x4020;
 		SCSIBase = base;
 		iop_init(0);	/* For console */
@@ -2179,7 +2191,6 @@ mac68k_set_io_offsets(vaddr_t base)
 		    current_mac_model->class);
 		break;
 	}
-	Via2Base = Via1Base + 0x2000 * VIA2;
 }
 
 #if GRAYBARS

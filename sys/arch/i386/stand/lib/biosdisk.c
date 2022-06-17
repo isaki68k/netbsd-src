@@ -1,4 +1,4 @@
-/*	$NetBSD: biosdisk.c,v 1.52 2019/09/13 02:19:46 manu Exp $	*/
+/*	$NetBSD: biosdisk.c,v 1.58 2022/05/03 10:09:40 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 1996, 1998
@@ -186,6 +186,7 @@ const struct gpt_part gpt_parts[] = {
 
 struct btinfo_bootdisk bi_disk;
 struct btinfo_bootwedge bi_wedge;
+struct btinfo_rootdevice bi_root;
 
 #define MBR_PARTS(buf) ((char *)(buf) + offsetof(struct mbr_sector, mbr_parts))
 
@@ -543,7 +544,7 @@ ingest_label(struct biosdisk *d, struct disklabel *lp)
 		d->part[part].size = lp->d_partitions[part].p_size;
 	}
 }
-	
+
 static int
 check_label(struct biosdisk *d, daddr_t sector)
 {
@@ -786,7 +787,6 @@ read_partitions(struct biosdisk *d, daddr_t offset, daddr_t size)
 #endif
 #ifndef NO_DISKLABEL
 	error = read_label(d, offset);
-	
 #endif
 	return error;
 }
@@ -892,7 +892,7 @@ biosdisk_probe(void)
 
 		if (read_partitions(d, 0, 0) != 0)
 			goto next_disk;
-			
+
 		for (part = 0; part < BIOSDISKNPART; part++) {
 			if (d->part[part].size == 0)
 				continue;
@@ -908,7 +908,8 @@ biosdisk_probe(void)
 				first = 0;
 			}
 #ifndef NO_GPT
-			if (d->part[part].part_name != NULL)
+			if (d->part[part].part_name &&
+			    d->part[part].part_name[0])
 				printf(" NAME=%s(", d->part[part].part_name);
 			else
 #endif
@@ -967,7 +968,7 @@ next_disk:
 		    raidframe[i].offset + RF_PROTECTED_SECTORS,
 		    raidframe[i].size) != 0)
 			goto next_raidrame;
-			
+
 		first = 1;
 		for (part = 0; part < BIOSDISKNPART; part++) {
 #ifndef NO_GPT
@@ -987,7 +988,8 @@ next_disk:
 				first = 0;
 			}
 #ifndef NO_GPT
-			if (d->part[part].part_name != NULL)
+			if (d->part[part].part_name &&
+			    d->part[part].part_name[0])
 				printf(" NAME=%s(", d->part[part].part_name);
 			else
 #endif
@@ -1025,7 +1027,8 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 {
 #if defined(NO_DISKLABEL) && defined(NO_GPT)
 	*partition = 0;
-	*part_name = NULL;
+	if (part_name)
+		*part_name = NULL;
 	return 0;
 #else
 	int i;
@@ -1042,9 +1045,10 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 	printf("looking for partition device %x, sector %"PRId64"\n", biosdev, sector);
 #endif
 
-	/* default ot first partition */
+	/* default to first partition */
 	*partition = 0;
-	*part_name = NULL;
+	if (part_name)
+		*part_name = NULL;
 
 	/* Look for netbsd partition that is the dos boot one */
 	d = alloc_biosdisk(biosdev);
@@ -1095,7 +1099,9 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 
 		*partition = boot_part;
 #ifndef NO_GPT
-		if (part_name && d->part[boot_part].part_name) {
+		if (part_name &&
+		    d->part[boot_part].part_name &&
+		    d->part[boot_part].part_name[0]) {
 			strlcpy(namebuf, d->part[boot_part].part_name,
 				BIOSDISK_PART_NAME_LEN);
 			*part_name = namebuf;
@@ -1233,7 +1239,7 @@ raidframe_part_offset(struct biosdisk *d, int part)
 	return RF_PROTECTED_SECTORS + raidframe.part[candidate].offset;
 }
 #endif
-	
+
 int
 biosdisk_open(struct open_file *f, ...)
 /* struct open_file *f, int biosdev, int partition */
@@ -1349,7 +1355,7 @@ biosdisk_find_name(const char *fname, int *biosdev,
 
 		if (read_partitions(d, 0, 0) != 0)
 			goto next_disk;
-			
+
 		for (part = 0; part < BIOSDISKNPART; part++) {
 			if (d->part[part].size == 0)
 				continue;
@@ -1394,16 +1400,16 @@ next_disk:
 		    raidframe[i].offset + RF_PROTECTED_SECTORS,
 		    raidframe[i].size) != 0)
 			goto next_raidframe;
-			
+
 		for (part = 0; part < BIOSDISKNPART; part++) {
 			bool bootme = d->part[part].attr & GPT_ENT_ATTR_BOOTME;
 			if (d->part[part].size == 0)
 				continue;
 			if (d->part[part].fstype == FS_UNUSED)
 				continue;
-			if (d->part[part].part_name == NULL)
-				continue;
-			if (strcmp(d->part[part].part_name, name) == 0) {
+
+			if (d->part[part].part_name != NULL &&
+			    strcmp(d->part[part].part_name, name) == 0) {
 				*biosdev = raidframe[i].biosdev;
 				*offset = raidframe[i].offset
 					+ RF_PROTECTED_SECTORS
@@ -1492,7 +1498,7 @@ biosdisk_find_raid(const char *name, int *biosdev,
 
 		if (read_partitions(d, 0, 0) != 0)
 			goto next_disk;
-			
+
 		for (part = 0; part < BIOSDISKNPART; part++) {
 			if (d->part[part].size == 0)
 				continue;
@@ -1520,7 +1526,7 @@ next_disk:
 		    raidframe[i].offset + RF_PROTECTED_SECTORS,
 		    raidframe[i].size) != 0)
 			goto next_raidframe;
-			
+
 		for (part = 0; part < BIOSDISKNPART; part++) {
 			if (d->part[part].size == 0)
 				continue;

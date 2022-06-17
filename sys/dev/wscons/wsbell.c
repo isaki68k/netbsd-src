@@ -1,4 +1,4 @@
-/* $NetBSD: wsbell.c,v 1.12 2019/06/22 08:03:01 isaki Exp $ */
+/* $NetBSD: wsbell.c,v 1.14 2022/03/31 19:30:17 pgoyette Exp $ */
 
 /*-
  * Copyright (c) 2017 Nathanial Sloss <nathanialsloss@yahoo.com.au>
@@ -107,7 +107,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsbell.c,v 1.12 2019/06/22 08:03:01 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsbell.c,v 1.14 2022/03/31 19:30:17 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "wsmux.h"
@@ -174,8 +174,6 @@ static int  wsbell_do_ioctl(struct wsbell_softc *, u_long, void *,
 
 CFATTACH_DECL_NEW(wsbell, sizeof (struct wsbell_softc),
     wsbell_match, wsbell_attach, wsbell_detach, wsbell_activate);
-
-extern struct cfdriver wsbell_cd;
 
 extern dev_type_open(spkropen);
 extern dev_type_close(spkrclose);
@@ -534,12 +532,10 @@ wsbell_modcmd(modcmd_t cmd, void *arg)
 
 	case MODULE_CMD_FINI:
 #ifdef _MODULE
-		devsw_detach(NULL, &wsbell_cdevsw);
 		error = config_fini_component(cfdriver_ioconf_wsbell,
 		    cfattach_ioconf_wsbell, cfdata_ioconf_wsbell);
-		if (error)
-			devsw_attach("wsbell", NULL, &wsbell_bmajor,
-			    &wsbell_cdevsw, &wsbell_cmajor);
+		if (error == 0)
+			devsw_detach(NULL, &wsbell_cdevsw);
 #endif
 		break;
 

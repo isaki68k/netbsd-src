@@ -1,4 +1,4 @@
-/*	$NetBSD: cbus.c,v 1.2 2016/07/18 19:32:44 palle Exp $	*/
+/*	$NetBSD: cbus.c,v 1.8 2022/01/22 11:49:17 thorpej Exp $	*/
 /*	$OpenBSD: cbus.c,v 1.15 2015/09/27 11:29:20 kettenis Exp $	*/
 /*
  * Copyright (c) 2008 Mark Kettenis
@@ -18,7 +18,7 @@
 
 #include <sys/param.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <machine/autoconf.h>
@@ -101,6 +101,7 @@ cbus_attach(device_t parent, device_t self, void *aux)
 	  return;
 	}
 
+	devhandle_t selfh = device_handle(self);
 	for (node = OF_child(va->va_node); node; node = OF_peer(node)) {
 		struct cbus_attach_args ca;
 		char buf[32];
@@ -118,11 +119,11 @@ cbus_attach(device_t parent, device_t self, void *aux)
 		int rc = cbus_get_channel_endpoint(sc, &ca);
 		DPRINTF(CBUSDB_AC, ("cbus_attach() - cbus_get_channel_endpoint() %d\n", rc));
 		if ( rc != 0) {
-		  continue;
+			continue;
 		}
 
-		config_found(self, &ca, cbus_print);
-
+		config_found(self, &ca, cbus_print,
+		    CFARGS(.devhandle = devhandle_from_of(selfh, ca.ca_node)));
 	}
 }
 
@@ -238,10 +239,7 @@ cbus_alloc_bus_tag(struct cbus_softc *sc, bus_space_tag_t parent)
 {
 	struct sparc_bus_space_tag *bt;
 
-	bt = malloc(sizeof(*bt), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (bt == NULL)
-		panic("could not allocate cbus bus tag");
-
+	bt = kmem_zalloc(sizeof(*bt), KM_SLEEP);
 	bt->cookie = sc;
 	bt->parent = parent;
 	bt->sparc_bus_map = parent->sparc_bus_map;

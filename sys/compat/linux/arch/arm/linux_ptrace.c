@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_ptrace.c,v 1.21 2018/01/26 09:29:15 christos Exp $	*/
+/*	$NetBSD: linux_ptrace.c,v 1.23 2021/09/07 11:43:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_ptrace.c,v 1.21 2018/01/26 09:29:15 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_ptrace.c,v 1.23 2021/09/07 11:43:04 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -133,9 +133,9 @@ linux_sys_ptrace_arch(struct lwp *l, const struct linux_sys_ptrace_args *uap,
 	}
 
 	/* Find the process we are supposed to be operating on. */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if ((t = proc_find(SCARG(uap, pid))) == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		error = ESRCH;
 		goto out;
 	}
@@ -147,7 +147,7 @@ linux_sys_ptrace_arch(struct lwp *l, const struct linux_sys_ptrace_args *uap,
 	 */
 	if (!ISSET(t->p_slflag, PSL_TRACED)) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		error = EPERM;
 		goto out;
 	}
@@ -159,11 +159,11 @@ linux_sys_ptrace_arch(struct lwp *l, const struct linux_sys_ptrace_args *uap,
 	 */
 	if (t->p_pptr != p || t->p_stat != SSTOP || !t->p_waited) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		error = EBUSY;
 		goto out;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	/* XXX: ptrace needs revamp for multi-threading support. */
 	if (t->p_nlwps > 1) {
 		mutex_exit(t->p_lock);
@@ -180,6 +180,7 @@ linux_sys_ptrace_arch(struct lwp *l, const struct linux_sys_ptrace_args *uap,
 		if (error) {
 			break;
 		}
+		memset(linux_regs, 0, sizeof(*linux_regs));
 		memcpy(linux_regs->uregs, regs->r, 13 * sizeof(register_t));
 		linux_regs->uregs[LINUX_REG_SP] = regs->r_sp;
 		linux_regs->uregs[LINUX_REG_LR] = regs->r_lr;

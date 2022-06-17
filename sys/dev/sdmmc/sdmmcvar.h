@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmcvar.h,v 1.34 2019/10/28 06:20:01 mlelstv Exp $	*/
+/*	$NetBSD: sdmmcvar.h,v 1.36 2021/03/13 23:22:44 mlelstv Exp $	*/
 /*	$OpenBSD: sdmmcvar.h,v 1.13 2009/01/09 10:55:22 jsg Exp $	*/
 
 /*
@@ -89,8 +89,6 @@ do {									\
 	(xtask)->sc = NULL;						\
 } while (/*CONSTCOND*/0)
 
-#define sdmmc_task_pending(xtask) ((xtask)->onqueue)
-
 struct sdmmc_command {
 	struct sdmmc_task c_task;	/* task queue entry */
 	uint16_t	 c_opcode;	/* SD or MMC command index */
@@ -127,6 +125,7 @@ struct sdmmc_command {
 #define SCF_XFER_SDHC	(1U << 15)	/* card is SDHC */
 #define SCF_POLL	(1U << 16)	/* polling required */
 #define SCF_NEED_BOUNCE	(1U << 17)	/* (driver) transfer requires bounce buffer */
+#define SCF_NO_STOP	(1U << 18)	/* don't enable automatic stop CMD12 */
 /* response types */
 #define SCF_RSP_R0	0	/* none */
 #define SCF_RSP_R1	(SCF_RSP_PRESENT|SCF_RSP_CRC|SCF_RSP_IDX)
@@ -267,6 +266,7 @@ struct sdmmc_softc {
 	TAILQ_HEAD(, sdmmc_task) sc_tskq;   /* task thread work queue */
 	struct kmutex sc_tskq_mtx;
 	struct kcondvar sc_tskq_cv;
+	struct sdmmc_task *sc_curtask;
 
 	/* discover task */
 	struct sdmmc_task sc_discover_task; /* card attach/detach task */
@@ -274,7 +274,6 @@ struct sdmmc_softc {
 
 	/* interrupt task */
 	struct sdmmc_task sc_intr_task;	/* card interrupt task */
-	struct kmutex sc_intr_task_mtx;
 	TAILQ_HEAD(, sdmmc_intr_handler) sc_intrq; /* interrupt handlers */
 
 	u_int sc_clkmin;		/* host min bus clock */
@@ -327,7 +326,7 @@ extern int sdmmcdebug;
 #endif
 
 void	sdmmc_add_task(struct sdmmc_softc *, struct sdmmc_task *);
-void	sdmmc_del_task(struct sdmmc_task *);
+bool	sdmmc_del_task(struct sdmmc_softc *, struct sdmmc_task *, kmutex_t *);
 
 struct	sdmmc_function *sdmmc_function_alloc(struct sdmmc_softc *);
 void	sdmmc_function_free(struct sdmmc_function *);

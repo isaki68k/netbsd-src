@@ -28,7 +28,7 @@ POSSIBILITY OF SUCH DAMAGE.
 ***************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cxgb_main.c,v 1.7 2018/12/09 11:49:06 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cxgb_main.c,v 1.10 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -468,8 +468,9 @@ cxgb_controller_attach(device_t parent, device_t dev, void *context)
         locs[0] = 1;
         locs[1] = i;
 	printf("\n"); // for cleaner formatting in dmesg
-        child = config_found_sm_loc(dev, "cxgbc", locs, &cxgb_args,
-                    cxgb_cfprint, config_stdsubmatch);
+        child = config_found(dev, &cxgb_args, cxgb_cfprint,
+	    CFARGS(.submatch = config_stdsubmatch,
+		   .locators = locs));
 	printf("\n"); // for cleaner formatting in dmesg
         sc->portdev[i] = child;
     }
@@ -809,6 +810,8 @@ cxgb_port_detach(device_t self, int flags)
      */
     PORT_LOCK_DEINIT(p);
     if_detach(p->ifp);
+
+    ifmedia_fini(&p->media);
 
     return (0);
 }

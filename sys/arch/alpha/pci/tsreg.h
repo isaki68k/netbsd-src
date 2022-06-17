@@ -1,4 +1,4 @@
-/* $NetBSD: tsreg.h,v 1.7 2014/02/21 12:23:30 jdc Exp $ */
+/* $NetBSD: tsreg.h,v 1.11 2022/05/30 09:56:02 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999 by Ross Harvey.  All rights reserved.
@@ -124,6 +124,12 @@
 
 #define TS_C_TTR	0x101##a000##0580UL
 #define TS_C_TDR	0x101##a000##05c0UL
+#define TS_C_DIM2	0x101##a000##0600UL
+#define TS_C_DIM3	0x101##a000##0640UL
+#define TS_C_DIR2	0x101##a000##0680UL
+#define TS_C_DIR3	0x101##a000##06c0UL
+#define TS_C_IIC2	0x101##a000##0700UL
+#define TS_C_IIC3	0x101##a000##0740UL
 
 /*
  * Dchip CSR Map
@@ -144,13 +150,28 @@
 #define P_WSBA3		0x00c0
 
 #	define	WSBA_ADDR(r) (TSFIELDBB((r), 31, 20) << 20)
-#	define	WSBA_SG	     2
-#	define	WSBA_ENA     1
+#	define	WSBA3_DAC    __BIT(39)
+#	define	WSBA_SG	     __BIT(1)
+#	define	WSBA_ENA     __BIT(0)
 
 #define P_WSM0		0x0100
 #define P_WSM1		0x0140
 #define P_WSM2		0x0180
 #define P_WSM3		0x01c0
+
+#	define	WSM_1MB      (0x000UL << 20)
+#	define	WSM_2MB      (0x001UL << 20)
+#	define	WSM_4MB      (0x003UL << 20)
+#	define	WSM_8MB      (0x007UL << 20)
+#	define	WSM_16MB     (0x00fUL << 20)
+#	define	WSM_32MB     (0x01fUL << 20)
+#	define	WSM_64MB     (0x03fUL << 20)
+#	define	WSM_128MB    (0x07fUL << 20)
+#	define	WSM_256MB    (0x0ffUL << 20)
+#	define	WSM_512MB    (0x1ffUL << 20)
+#	define	WSM_1GB      (0x3ffUL << 20)
+#	define	WSM_2GB      (0x7ffUL << 20)
+/*#	define	WSM_4GB      N/A		monster window / DAC only */
 
 #	define	WSM_AM(r)    TSFIELDBB((r), 31, 20)
 #	define	WSM_LEN(r)   ((WSM_AM(r) + 1) << 20)
@@ -161,6 +182,29 @@
 #define P_TBA3		0x02c0
 
 #define P_PCTL		0x0300
+
+#define	PCTL_FDSC	__BIT(0)	/* fast discard enable */
+#define	PCTL_FBTB	__BIT(1)	/* fast back-to-back enable */
+#define	PCTL_THDIS	__BIT(2)	/* disable TLB anti-thrash (debug) */
+#define	PCTL_CHAINDIS	__BIT(3)	/* disable chaining */
+#define	PCTL_TGTLAT	__BIT(4)	/* target latency timers enable */
+#define	PCTL_HOLE	__BIT(5)	/* 512KB->1M hole enable */
+#define	PCTL_MWIN	__BIT(6)	/* monster window enable */
+#define	PCTL_PRIGRP	__BITS(8,14)	/* arbiter priority group */
+#define	PCTL_PPRI	__BIT(15)	/* arbiter priority group for Pchip */
+#define	PCTL_ECCEN	__BIT(18)	/* ECC enable for DMA and SGTE */
+#define	PCTL_PADM	__BIT(19)	/* PADbus mode */
+#define	PCTL_CDQMAX	__BITS(20,23)	/* see manual */
+#define	PCTL_REV	__BITS(24,31)	/* Pchip revision */
+#define	PCTL_CRQMAX	__BITS(32,35)	/* see manual */
+#define	PCTL_PTPMAX	__BITS(36,39)	/* see manual */
+#define	PCTL_PCLKX	__BITS(40,41)	/* PCI clock freq multiplier */
+#define	PCTL_FDSDIS	__BIT(42)	/* fast DMA start and SGTE disable */
+#define	PCTL_FDWDIS	__BIT(43)	/* fast DMA read cache block disable */
+#define	PCTL_PTEVRFY	__BIT(44)	/* PTE verify for DMA read */
+#define	PCTL_RPP	__BIT(45)	/* remote Pchip present */
+#define	PCTL_PID	__BITS(46,47)	/* Pchip ID */
+
 #define P_PLAT		0x0340
 	/* reserved	0x0380 */
 #define P_PERROR	0x03c0

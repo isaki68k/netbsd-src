@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.24 2019/01/07 22:00:32 jdolecek Exp $	*/
+/*	$NetBSD: param.h,v 1.26 2021/05/31 14:38:55 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc. All rights reserved.
@@ -45,6 +45,9 @@
 #if defined(_KERNEL) && !defined(_LOCORE)
 #include <machine/cpu.h>
 #endif
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
 
 /* NetBSD/sh3 is 4KB page */
 #define	PGSHIFT			12
@@ -90,5 +93,10 @@
  */
 #define	NKMEMPAGES_MIN_DEFAULT	((16 * 1024 * 1024) >> PAGE_SHIFT)
 #define	NKMEMPAGES_MAX_DEFAULT	((128 * 1024 * 1024) >> PAGE_SHIFT)
+
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#if defined(_KERNEL)
+#define	__AUDIO_BLK_MS (40)
+#endif
 
 #endif /* !_SH3_PARAM_H_ */

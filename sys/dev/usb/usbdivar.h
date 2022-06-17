@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdivar.h,v 1.119 2019/09/26 01:35:08 christos Exp $	*/
+/*	$NetBSD: usbdivar.h,v 1.137 2022/03/13 11:28:52 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012 The NetBSD Foundation, Inc.
@@ -30,6 +30,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef	_DEV_USB_USBDIVAR_H_
+#define	_DEV_USB_USBDIVAR_H_
+
 /*
  * Discussion about locking in the USB code:
  *
@@ -41,18 +44,21 @@
  *	BUS METHOD		LOCK	NOTES
  *	----------------------- -------	-------------------------
  *	ubm_open		-	might want to take lock?
- *	ubm_softint		x
+ *	ubm_softint		x	may release/reacquire lock
  *	ubm_dopoll		-	might want to take lock?
  *	ubm_allocx		-
  *	ubm_freex		-
+ *	ubm_abortx		x	must not release/reacquire lock
  *	ubm_getlock 		-	Called at attach time
  *	ubm_newdev		-	Will take lock
-	ubm_rhctrl
+ *	ubm_rhctrl              -
  *
  *	PIPE METHOD		LOCK	NOTES
  *	----------------------- -------	-------------------------
- *	upm_transfer		-
- *	upm_start		-	might want to take lock?
+ *	upm_init		-
+ *	upm_fini		-
+ *	upm_transfer		x
+ *	upm_start		x
  *	upm_abort		x
  *	upm_close		x
  *	upm_cleartoggle		-
@@ -64,7 +70,6 @@
  * USB functions known to expect the lock taken include (this list is
  * probably not exhaustive):
  *    usb_transfer_complete()
- *    usb_insert_transfer()
  *    usb_start_next()
  *
  */
@@ -96,6 +101,8 @@ struct usbd_bus_methods {
 	void		      (*ubm_dopoll)(struct usbd_bus *);
 	struct usbd_xfer     *(*ubm_allocx)(struct usbd_bus *, unsigned int);
 	void		      (*ubm_freex)(struct usbd_bus *, struct usbd_xfer *);
+	void		      (*ubm_abortx)(struct usbd_xfer *);
+	bool		      (*ubm_dying)(struct usbd_bus *);
 	void		      (*ubm_getlock)(struct usbd_bus *, kmutex_t **);
 	usbd_status	      (*ubm_newdev)(device_t, struct usbd_bus *, int,
 					    int, int, struct usbd_port *);
@@ -155,7 +162,15 @@ struct usbd_bus {
 #define USBREV_3_0	5
 #define USBREV_3_1	6
 #define USBREV_STR { "unknown", "pre 1.0", "1.0", "1.1", "2.0", "3.0", "3.1" }
-
+	int			ub_hctype;
+#define USBHCTYPE_UNKNOWN	0
+#define USBHCTYPE_MOTG		1
+#define USBHCTYPE_OHCI		2
+#define USBHCTYPE_UHCI		3
+#define USBHCTYPE_EHCI		4
+#define USBHCTYPE_XHCI		5
+#define USBHCTYPE_VHCI		6
+	int			ub_busnum;
 	const struct usbd_bus_methods
 			       *ub_methods;
 	uint32_t		ub_pipesize;	/* size of a pipe struct */
@@ -166,6 +181,8 @@ struct usbd_bus {
 	/* Filled by usb driver */
 	kmutex_t	       *ub_lock;
 	struct usbd_device     *ub_roothub;
+	struct usbd_xfer       *ub_rhxfer;	/* roothub xfer in progress */
+	kcondvar_t		ub_rhxfercv;
 	uint8_t			ub_rhaddr;	/* roothub address */
 	uint8_t			ub_rhconf;	/* roothub configuration */
 	struct usbd_device     *ub_devices[USB_TOTAL_DEVICES];
@@ -181,7 +198,7 @@ struct usbd_bus {
 struct usbd_device {
 	struct usbd_bus	       *ud_bus;		/* our controller */
 	struct usbd_pipe       *ud_pipe0;	/* pipe 0 */
-	uint8_t			ud_addr;	/* device addess */
+	uint8_t			ud_addr;	/* device address */
 	uint8_t			ud_config;	/* current configuration # */
 	uint8_t			ud_depth;	/* distance from root hub */
 	uint8_t			ud_speed;	/* low/full/high speed */
@@ -220,8 +237,7 @@ struct usbd_interface {
 	int			ui_index;
 	int			ui_altindex;
 	struct usbd_endpoint   *ui_endpoints;
-	void		       *ui_priv;
-	LIST_HEAD(, usbd_pipe)	ui_pipes;
+	int64_t			ui_busy;	/* #pipes, or -1 if setting */
 };
 
 struct usbd_pipe {
@@ -233,13 +249,17 @@ struct usbd_pipe {
 	bool			up_serialise;
 	SIMPLEQ_HEAD(, usbd_xfer)
 			        up_queue;
-	LIST_ENTRY(usbd_pipe)	up_next;
 	struct usb_task		up_async_task;
 
 	struct usbd_xfer       *up_intrxfer; /* used for repeating requests */
 	char			up_repeat;
 	int			up_interval;
 	uint8_t			up_flags;
+
+	struct usbd_xfer       *up_callingxfer; /* currently in callback */
+	kcondvar_t		up_callingcv;
+
+	struct lwp	       *up_abortlwp;	/* lwp currently aborting */
 
 	/* Filled by HC driver. */
 	const struct usbd_pipe_methods
@@ -288,6 +308,19 @@ struct usbd_xfer {
 
 	struct usb_task		ux_aborttask;
 	struct callout		ux_callout;
+
+	/*
+	 * Protected by bus lock.
+	 *
+	 * - ux_timeout_set: The timeout is scheduled as a callout or
+	 *   usb task, and has not yet acquired the bus lock.
+	 *
+	 * - ux_timeout_reset: The xfer completed, and was resubmitted
+	 *   before the callout or task was able to acquire the bus
+	 *   lock, so one or the other needs to schedule a new callout.
+	 */
+	bool			ux_timeout_set;
+	bool			ux_timeout_reset;
 };
 
 void usbd_init(void);
@@ -324,18 +357,25 @@ usbd_status	usbd_reattach_device(device_t, struct usbd_device *,
 				     int, const int *);
 
 void		usbd_remove_device(struct usbd_device *, struct usbd_port *);
+bool		usbd_iface_locked(struct usbd_interface *);
+usbd_status	usbd_iface_lock(struct usbd_interface *);
+void		usbd_iface_unlock(struct usbd_interface *);
+usbd_status	usbd_iface_piperef(struct usbd_interface *);
+void		usbd_iface_pipeunref(struct usbd_interface *);
 usbd_status	usbd_fill_iface_data(struct usbd_device *, int, int);
 void		usb_free_device(struct usbd_device *);
 
-usbd_status	usb_insert_transfer(struct usbd_xfer *);
 void		usb_transfer_complete(struct usbd_xfer *);
 int		usb_disconnect_port(struct usbd_port *, device_t, int);
+
+usbd_status	usbd_endpoint_acquire(struct usbd_device *,
+		    struct usbd_endpoint *, int);
+void		usbd_endpoint_release(struct usbd_device *,
+		    struct usbd_endpoint *);
 
 void		usbd_kill_pipe(struct usbd_pipe *);
 usbd_status	usbd_attach_roothub(device_t, struct usbd_device *);
 usbd_status	usbd_probe_and_attach(device_t, struct usbd_device *, int, int);
-usbd_status	usbd_get_initial_ddesc(struct usbd_device *,
-				       usb_device_descriptor_t *);
 
 /* Routines from usb.c */
 void		usb_needs_explore(struct usbd_device *);
@@ -365,3 +405,5 @@ usb_addr2dindex(int addr)
 
 #define usbd_lock_pipe(p)	mutex_enter((p)->up_dev->ud_bus->ub_lock)
 #define usbd_unlock_pipe(p)	mutex_exit((p)->up_dev->ud_bus->ub_lock)
+
+#endif	/* _DEV_USB_USBDIVAR_H_ */

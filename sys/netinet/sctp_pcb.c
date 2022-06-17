@@ -1,5 +1,5 @@
 /* $KAME: sctp_pcb.c,v 1.39 2005/06/16 18:29:25 jinmei Exp $ */
-/* $NetBSD: sctp_pcb.c,v 1.18 2018/12/11 14:38:45 christos Exp $ */
+/* $NetBSD: sctp_pcb.c,v 1.25 2022/05/28 22:16:44 andvar Exp $ */
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,7 +33,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.18 2018/12/11 14:38:45 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.25 2022/05/28 22:16:44 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -53,7 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.18 2018/12/11 14:38:45 christos Exp $
 #include <sys/kauth.h>
 #include <sys/kernel.h>
 #include <sys/sysctl.h>
-#include <sys/rnd.h>
 #include <sys/callout.h>
 
 #include <machine/limits.h>
@@ -212,7 +211,7 @@ sctp_fill_pcbinfo(struct sctp_pcbinfo *spcb)
  * Notes on locks for FreeBSD 5 and up. All association
  * lookups that have a definte ep, the INP structure is
  * assumed to be locked for reading. If we need to go
- * find the INP (ususally when a **inp is passed) then
+ * find the INP (usually when a **inp is passed) then
  * we must lock the INFO structure first and if needed
  * lock the INP too. Note that if we lock it we must
  *
@@ -743,7 +742,7 @@ sctp_endpoint_probe(struct sockaddr *nam, struct sctppcbhead *head,
 		}
 #ifdef SCTP_DEBUG
 		if (sctp_debug_on & SCTP_DEBUG_PCB1) {
-			printf("Ok, found maching local port\n");
+			printf("Ok, found matching local port\n");
 		}
 #endif
 		LIST_FOREACH(laddr, &inp->sctp_addr_list, sctp_nxt_addr) {
@@ -1321,7 +1320,7 @@ sctp_inpcb_alloc(struct socket *so)
 	 * be taken out ... since the last set of fixes I
 	 * have not seen the "Found a GONE on list" has not
 	 * came out. But i am paranoid and we will leave this
-	 * in at the cost of efficency on allocation of PCB's.
+	 * in at the cost of efficiency on allocation of PCB's.
 	 * Probably we should move this to the invariant
 	 * compile options
 	 */
@@ -1464,29 +1463,6 @@ sctp_inpcb_alloc(struct socket *so)
 
 	/* Add adaption cookie */
 	m->adaption_layer_indicator = 0x504C5253;
-
-	/* seed random number generator */
-	m->random_counter = 1;
-	m->store_at = SCTP_SIGNATURE_SIZE;
-#if NRND > 0
-	rnd_extract_data(m->random_numbers, sizeof(m->random_numbers),
-			 RND_EXTRACT_ANY);
-#else
-	{
-		u_int32_t *ranm, *ranp;
-		ranp = (u_int32_t *)&m->random_numbers;
-		ranm = ranp + (SCTP_SIGNATURE_ALOC_SIZE/sizeof(u_int32_t));
-		if ((u_long)ranp % 4) {
-			/* not a even boundary? */
-			ranp = (u_int32_t *)SCTP_SIZE32((u_long)ranp);
-		}
-		while (ranp < ranm) {
-			*ranp = random();
-			ranp++;
-		}
-	}
-#endif
-	sctp_fill_random_store(m);
 
 	/* Minimum cookie size */
 	m->size_of_a_cookie = (sizeof(struct sctp_init_msg) * 2) +
@@ -4040,7 +4016,7 @@ sctp_load_addresses_from_init(struct sctp_tcb *stcb, struct mbuf *m,
 			return (-1);
 		}
 	}
-	/* since a unlock occured we must check the
+	/* since a unlock occurred we must check the
 	 * TCB's state and the pcb's gone flags.
 	 */
 	if (l_inp->sctp_flags & (SCTP_PCB_FLAGS_SOCKET_GONE|SCTP_PCB_FLAGS_SOCKET_ALLGONE)) {
@@ -4641,7 +4617,7 @@ sctp_drain_mbufs(struct sctp_inpcb *inp, struct sctp_tcb *stcb)
 
 	/*
 	 * Another issue, in un-setting the TSN's in the mapping array we
-	 * DID NOT adjust the higest_tsn marker.  This will cause one of
+	 * DID NOT adjust the highest_tsn marker.  This will cause one of
 	 * two things to occur. It may cause us to do extra work in checking
 	 * for our mapping array movement. More importantly it may cause us
 	 * to SACK every datagram. This may not be a bad thing though since

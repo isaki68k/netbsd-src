@@ -1,4 +1,4 @@
-/* $NetBSD: efiblock.h,v 1.3 2018/11/01 00:43:38 jmcneill Exp $ */
+/* $NetBSD: efiblock.h,v 1.7 2022/04/24 06:49:38 mlelstv Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,8 @@
 
 enum efi_block_part_type {
 	EFI_BLOCK_PART_DISKLABEL,
-	EFI_BLOCK_PART_GPT
+	EFI_BLOCK_PART_GPT,
+	EFI_BLOCK_PART_CD9660
 };
 
 struct efi_block_part;
@@ -42,6 +43,7 @@ struct efi_block_dev {
 	uint16_t index;
 	EFI_DEVICE_PATH *path;
 	EFI_BLOCK_IO *bio;
+	EFI_DISK_IO *dio;
 	UINT32 media_id;
 	TAILQ_HEAD(, efi_block_part) partitions;
 
@@ -77,4 +79,7 @@ struct efi_block_part *efi_block_boot_part(void);
 
 int efi_block_open(struct open_file *, ...);
 int efi_block_close(struct open_file *);
+int efi_block_ioctl(struct open_file *, u_long, void *);
 int efi_block_strategy(void *, int, daddr_t, size_t, void *, size_t *);
+
+void efi_block_set_readahead(bool);

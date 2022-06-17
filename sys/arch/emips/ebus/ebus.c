@@ -1,4 +1,4 @@
-/*	$NetBSD: ebus.c,v 1.2 2011/06/12 03:52:13 tsutsui Exp $	*/
+/*	$NetBSD: ebus.c,v 1.4 2021/08/07 16:18:48 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
-__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.2 2011/06/12 03:52:13 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.4 2021/08/07 16:18:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -82,8 +82,9 @@ ebusattach(device_t parent, device_t self, void *aux)
 
 		locs[EBUSCF_ADDR] = ia->ia_paddr;
 
-		if (NULL == config_found_sm_loc(self, "ebus", locs, ia,
-		    ebusprint, config_stdsubmatch)) {
+		if (config_found(self, ia, ebusprint,
+				 CFARGS(.submatch = config_stdsubmatch,
+					.locators = locs)) == NULL) {
 			/* do we need to say anything? */
 			if (ia->ia_basz != 0) {
 				mips_unmap_physmem((vaddr_t)ia->ia_vaddr,

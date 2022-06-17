@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.67 2019/06/29 16:41:18 tsutsui Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.72 2022/03/28 12:38:57 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.67 2019/06/29 16:41:18 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.72 2022/03/28 12:38:57 riastradh Exp $");
 
 #include "opt_md.h"
 
@@ -41,9 +41,10 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.67 2019/06/29 16:41:18 tsutsui Exp $"
 #include <sys/conf.h>
 #include <sys/buf.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/disklabel.h>
 #include <sys/disk.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <machine/disklabel.h>
 #include <machine/cpu.h>
 #include <atari/atari/device.h>
@@ -105,8 +106,7 @@ cpu_rootconf(void)
 		md_major = devsw_name2blk("md", NULL, 0);
 		if (md_major >= 0) {
 			for (i = 0; i < RAMD_NDEV; i++) {
-				cf = malloc(sizeof(*cf), M_DEVBUF,
-				    M_ZERO|M_WAITOK);
+				cf = kmem_zalloc(sizeof(*cf), KM_SLEEP);
 				if (cf == NULL)
 					break;	/* XXX */
 				cf->cf_name = md_cd.cd_name;
@@ -139,14 +139,18 @@ simple_devprint(void *aux, const char *pnp)
  * by checking for NULL.
  */
 int
-atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
+atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn,
+    const struct cfargs *cfargs)
 {
 	struct device temp;
 	cfdata_t cf;
 	const struct cfattach *ca;
+	int rv = 0;
 
-	if (atari_realconfig)
-		return config_found(parent, aux, pfn) != NULL;
+	if (atari_realconfig) {
+		rv = config_found(parent, aux, pfn, cfargs) != NULL;
+		goto out;
+	}
 
 	memset(&temp, 0, sizeof(temp));
 	if (parent == NULL)
@@ -156,16 +160,17 @@ atari_config_found(cfdata_t pcfp, device_t parent, void *aux, cfprint_t pfn)
 	parent->dv_cfdriver = config_cfdriver_lookup(pcfp->cf_name);
 	parent->dv_unit = pcfp->cf_unit;
 
-	if ((cf = config_search_ia(NULL, parent, NULL, aux)) != NULL) {
+	if ((cf = config_search(parent, aux, cfargs)) != NULL) {
 		ca = config_cfattach_lookup(cf->cf_name, cf->cf_atname);
 		if (ca != NULL) {
 			(*ca->ca_attach)(parent, NULL, aux);
-			parent->dv_cfdata = NULL;
-			return 1;
+			rv = 1;
+			goto out;
 		}
 	}
 	parent->dv_cfdata = NULL;
-	return 0;
+ out:
+	return rv;
 }
 
 /*
@@ -193,9 +198,9 @@ config_console(void)
 	 * some setup for the 'grf-side'. This make it possible to use
 	 * a PCI card for both wscons and grfabs.
 	 */
-	atari_config_found(cf, NULL, __UNCONST("pcib")  , NULL);
-	atari_config_found(cf, NULL, __UNCONST("isab")  , NULL);
-	atari_config_found(cf, NULL, __UNCONST("grfbus"), NULL);
+	atari_config_found(cf, NULL, __UNCONST("pcib")  , NULL, CFARGS_NONE);
+	atari_config_found(cf, NULL, __UNCONST("isab")  , NULL, CFARGS_NONE);
+	atari_config_found(cf, NULL, __UNCONST("grfbus"), NULL, CFARGS_NONE);
 }
 
 /*
@@ -315,20 +320,20 @@ mbattach(device_t parent, device_t self, void *aux)
 	mb_attached = 1;
 
 	printf ("\n");
-	config_found(self, __UNCONST("clock")   , simple_devprint);
-	config_found(self, __UNCONST("grfbus")  , simple_devprint);
-	config_found(self, __UNCONST("kbd")     , simple_devprint);
-	config_found(self, __UNCONST("fdc")     , simple_devprint);
-	config_found(self, __UNCONST("ser")     , simple_devprint);
-	config_found(self, __UNCONST("zs")      , simple_devprint);
-	config_found(self, __UNCONST("ncrscsi") , simple_devprint);
-	config_found(self, __UNCONST("nvr")     , simple_devprint);
-	config_found(self, __UNCONST("lpt")     , simple_devprint);
-	config_found(self, __UNCONST("wdc")     , simple_devprint);
-	config_found(self, __UNCONST("ne")      , simple_devprint);
-	config_found(self, __UNCONST("isab")    , simple_devprint);
-	config_found(self, __UNCONST("pcib")    , simple_devprint);
-	config_found(self, __UNCONST("avmebus") , simple_devprint);
+	config_found(self, __UNCONST("clock")   , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("grfbus")  , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("kbd")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("fdc")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("ser")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("zs")      , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("ncrscsi") , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("nvr")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("lpt")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("wdc")     , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("ne")      , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("isab")    , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("pcib")    , simple_devprint, CFARGS_NONE);
+	config_found(self, __UNCONST("avmebus") , simple_devprint, CFARGS_NONE);
 }
 
 #if 0

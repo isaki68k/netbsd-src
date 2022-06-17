@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3duart.c,v 1.5 2018/12/08 17:46:12 thorpej Exp $	*/
+/*	$NetBSD: pq3duart.c,v 1.8 2021/08/07 16:19:02 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,15 +35,14 @@
  */
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3duart.c,v 1.8 2021/08/07 16:19:02 thorpej Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: pq3duart.c,v 1.5 2018/12/08 17:46:12 thorpej Exp $");
+#include "ioconf.h"
 
 #include <sys/param.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/tty.h>
-
-#include "ioconf.h"
 
 #include <sys/intr.h>
 #include <sys/bus.h>
@@ -170,8 +169,7 @@ pq3duart_attach(device_t parent, device_t self, void *aux)
 		da.da_port = port;
 		da.da_addr = cnl->cnl_addr + (port - 1) * DUART_SIZE;
 		da.da_size = COM_NPORTS;
-		(void)config_found_sm_loc(self, "duart", NULL,
-		    &da, pq3duart_print, NULL);
+		config_found(self, &da, pq3duart_print, CFARGS_NONE);
 	}
 
 	if (dsc->dsc_sc[0] != NULL || dsc->dsc_sc[1] != NULL) {

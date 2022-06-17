@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_compat80.c,v 1.13 2019/03/01 11:06:56 pgoyette Exp $	*/
+/*	$NetBSD: rf_compat80.c,v 1.16 2021/12/11 19:24:21 mrg Exp $	*/
 
 /*
  * Copyright (c) 2017 Matthew R. Green
@@ -12,8 +12,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -215,6 +213,10 @@ rf_get_component_label80(RF_Raid_t *raidPtr, void *data)
 	}
 
 	rf_get_component_label(raidPtr, clabel);
+	/* Fix-up for userland. */
+	if (clabel->version == bswap32(RF_COMPONENT_LABEL_VERSION))
+		clabel->version = RF_COMPONENT_LABEL_VERSION;
+
 	retcode = copyout(clabel, *clabel_ptr, sizeof(**clabel_ptr));
 	RF_Free(clabel, sizeof(*clabel));
 
@@ -348,7 +350,7 @@ static void
 raidframe_80_init(void)
 {
   
-	MODULE_HOOK_SET(raidframe_ioctl_80_hook, "raid80", raidframe_ioctl_80);
+	MODULE_HOOK_SET(raidframe_ioctl_80_hook, raidframe_ioctl_80);
 }
  
 static void

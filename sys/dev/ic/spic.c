@@ -1,4 +1,4 @@
-/*	$NetBSD: spic.c,v 1.19 2013/10/17 21:24:24 christos Exp $	*/
+/*	$NetBSD: spic.c,v 1.22 2022/04/10 09:50:45 andvar Exp $	*/
 
 /*
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
  *
  * The general way of talking to the SPIC was gleaned from the Linux and
  * FreeBSD drivers.  The hex numbers were taken from these drivers (they
- * come from reverese engineering.)
+ * come from reverse engineering.)
  *
  * TODO:
  *   Make it handle more models.
@@ -49,7 +49,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spic.c,v 1.19 2013/10/17 21:24:24 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spic.c,v 1.22 2022/04/10 09:50:45 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -268,7 +268,8 @@ spic_attach(struct spic_softc *sc)
 
 	a.accessops = &spic_accessops;
 	a.accesscookie = sc;
-	sc->sc_wsmousedev = config_found(sc->sc_dev, &a, wsmousedevprint);
+	sc->sc_wsmousedev = config_found(sc->sc_dev, &a, wsmousedevprint,
+	    CFARGS_NONE);
 
 	sc->sc_smpsw[SPIC_PSWITCH_LID].smpsw_name = "spiclid0";
 	sc->sc_smpsw[SPIC_PSWITCH_LID].smpsw_type = PSWITCH_TYPE_LID;

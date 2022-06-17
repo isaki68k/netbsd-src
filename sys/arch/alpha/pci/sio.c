@@ -1,4 +1,4 @@
-/* $NetBSD: sio.c,v 1.52 2012/02/06 02:14:15 matt Exp $ */
+/* $NetBSD: sio.c,v 1.57 2021/08/07 16:18:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -63,13 +63,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: sio.c,v 1.52 2012/02/06 02:14:15 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sio.c,v 1.57 2021/08/07 16:18:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/intr.h>
 #include <sys/bus.h>
@@ -105,14 +105,14 @@ struct sio_softc {
 	isa_chipset_tag_t sc_ic;
 };
 
-int	siomatch(device_t, cfdata_t, void *);
-void	sioattach(device_t, device_t, void *);
+static int	siomatch(device_t, cfdata_t, void *);
+static void	sioattach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(sio, sizeof(struct sio_softc),
     siomatch, sioattach, NULL, NULL);
 
 #if NPCEB > 0
-int	pcebmatch(device_t, cfdata_t, void *);
+static int	pcebmatch(device_t, cfdata_t, void *);
 
 CFATTACH_DECL_NEW(pceb, sizeof(struct sio_softc),
     pcebmatch, sioattach, NULL, NULL);
@@ -123,19 +123,19 @@ union sio_attach_args {
 	struct eisabus_attach_args sa_eba;
 };
 
-void	sio_isa_attach_hook(device_t, device_t,
-	    struct isabus_attach_args *);
-void	sio_isa_detach_hook(isa_chipset_tag_t, device_t);
+static void	sio_isa_attach_hook(device_t, device_t,
+		    struct isabus_attach_args *);
+static void	sio_isa_detach_hook(isa_chipset_tag_t, device_t);
 #if NPCEB > 0
-void	sio_eisa_attach_hook(device_t, device_t,
-	    struct eisabus_attach_args *);
-int	sio_eisa_maxslots(void *);
-int	sio_eisa_intr_map(void *, u_int, eisa_intr_handle_t *);
+static void	sio_eisa_attach_hook(device_t, device_t,
+		    struct eisabus_attach_args *);
+static int	sio_eisa_maxslots(void *);
+static int	sio_eisa_intr_map(void *, u_int, eisa_intr_handle_t *);
 #endif
 
-void	sio_bridge_callback(device_t);
+static void	sio_bridge_callback(device_t);
 
-int
+static int
 siomatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct pci_attach_args *pa = aux;
@@ -162,7 +162,7 @@ siomatch(device_t parent, cfdata_t match, void *aux)
 }
 
 #if NPCEB > 0
-int
+static int
 pcebmatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct pci_attach_args *pa = aux;
@@ -175,7 +175,7 @@ pcebmatch(device_t parent, cfdata_t match, void *aux)
 }
 #endif
 
-void
+static void
 sioattach(device_t parent, device_t self, void *aux)
 {
 	struct sio_softc *sc = device_private(self);
@@ -201,7 +201,7 @@ sioattach(device_t parent, device_t self, void *aux)
 	config_defer(self, sio_bridge_callback);
 }
 
-void
+static void
 sio_bridge_callback(device_t self)
 {
 	struct sio_softc *sc = device_private(self);
@@ -229,7 +229,7 @@ sio_bridge_callback(device_t self)
 			ec.ec_intr_map = sio_eisa_intr_map;
 			ec.ec_intr_string = sio_intr_string;
 			ec.ec_intr_evcnt = sio_intr_evcnt;
-			ec.ec_intr_establish = sio_intr_establish;
+			ec.ec_intr_establish = sio_isa_intr_establish;
 			ec.ec_intr_disestablish = sio_intr_disestablish;
 		}
 
@@ -238,8 +238,8 @@ sio_bridge_callback(device_t self)
 		sa.sa_eba.eba_dmat =
 		    alphabus_dma_get_tag(sc->sc_parent_dmat, ALPHA_BUS_EISA);
 		sa.sa_eba.eba_ec = &ec;
-		config_found_ia(sc->sc_dev, "eisabus", &sa.sa_eba,
-				eisabusprint);
+		config_found(sc->sc_dev, &sa.sa_eba, eisabusprint,
+		    CFARGS(.iattr = "eisabus"));
 	}
 #endif /* NPCEB */
 
@@ -254,8 +254,7 @@ sio_bridge_callback(device_t self)
 		break;
 #endif
 	default:
-		sc->sc_ic = malloc(sizeof(*sc->sc_ic), M_DEVBUF, M_WAITOK);
-		memset(sc->sc_ic, 0, sizeof(*sc->sc_ic));
+		sc->sc_ic = kmem_zalloc(sizeof(*sc->sc_ic), KM_SLEEP);
 	}
 
 	sc->sc_ic->ic_v = NULL;
@@ -274,7 +273,7 @@ sio_bridge_callback(device_t self)
 #endif
 	default:
 		sc->sc_ic->ic_intr_evcnt = sio_intr_evcnt;
-		sc->sc_ic->ic_intr_establish = sio_intr_establish;
+		sc->sc_ic->ic_intr_establish = sio_isa_intr_establish;
 		sc->sc_ic->ic_intr_disestablish = sio_intr_disestablish;
 		sc->sc_ic->ic_intr_alloc = sio_intr_alloc;
 	}
@@ -284,17 +283,18 @@ sio_bridge_callback(device_t self)
 	sa.sa_iba.iba_dmat =
 	    alphabus_dma_get_tag(sc->sc_parent_dmat, ALPHA_BUS_ISA);
 	sa.sa_iba.iba_ic = sc->sc_ic;
-	config_found_ia(sc->sc_dev, "isabus", &sa.sa_iba, isabusprint);
+	config_found(sc->sc_dev, &sa.sa_iba, isabusprint,
+	    CFARGS(.iattr = "isabus"));
 }
 
-void
+static void
 sio_isa_attach_hook(device_t parent, device_t self, struct isabus_attach_args *iba)
 {
 
 	/* Nothing to do. */
 }
 
-void
+static void
 sio_isa_detach_hook(isa_chipset_tag_t ic, device_t self)
 {
 
@@ -303,7 +303,7 @@ sio_isa_detach_hook(isa_chipset_tag_t ic, device_t self)
 
 #if NPCEB > 0
 
-void
+static void
 sio_eisa_attach_hook(device_t parent, device_t self, struct eisabus_attach_args *eba)
 {
 
@@ -312,14 +312,14 @@ sio_eisa_attach_hook(device_t parent, device_t self, struct eisabus_attach_args 
 #endif
 }
 
-int
+static int
 sio_eisa_maxslots(void *v)
 {
 
 	return 16;		/* as good a number as any.  only 8, maybe? */
 }
 
-int
+static int
 sio_eisa_intr_map(void *v, u_int irq, eisa_intr_handle_t *ihp)
 {
 

@@ -1,4 +1,4 @@
-/* $NetBSD: anxedp.c,v 1.2 2019/02/03 13:56:38 jmcneill Exp $ */
+/* $NetBSD: anxedp.c,v 1.8 2021/12/19 11:01:10 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,31 +27,32 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: anxedp.c,v 1.2 2019/02/03 13:56:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: anxedp.c,v 1.8 2021/12/19 11:01:10 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/conf.h>
+#include <sys/systm.h>
 
 #include <dev/ic/dw_hdmi.h>
 
-#include <dev/i2c/i2cvar.h>
-#include <dev/i2c/ddcvar.h>
 #include <dev/i2c/ddcreg.h>
-#include <dev/videomode/videomode.h>
+#include <dev/i2c/ddcvar.h>
+#include <dev/i2c/i2cvar.h>
 #include <dev/videomode/edidvar.h>
 
-#include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_port.h>
+#include <dev/fdt/fdtvar.h>
 
-#include <drm/drmP.h>
+#include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_edid.h>
+#include <drm/drm_probe_helper.h>
 
 #define	ANX_DP_AUX_CH_CTL_1	0xe5
 #define	 ANX_AUX_LENGTH		__BITS(7,4)
@@ -68,8 +69,8 @@ __KERNEL_RCSID(0, "$NetBSD: anxedp.c,v 1.2 2019/02/03 13:56:38 jmcneill Exp $");
 #define	 ANX_RPLY_RECEIV	__BIT(1)
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "analogix,anx6345",		1 },
-	{ NULL }
+	{ .compat = "analogix,anx6345" },
+	DEVICE_COMPAT_EOL
 };
 
 struct anxedp_softc;
@@ -99,7 +100,7 @@ anxedp_read(struct anxedp_softc *sc, u_int off, uint8_t reg)
 {
 	uint8_t val;
 
-	if (iic_smbus_read_byte(sc->sc_i2c, sc->sc_addr + off, reg, &val, I2C_F_POLL) != 0)
+	if (iic_smbus_read_byte(sc->sc_i2c, sc->sc_addr + off, reg, &val, 0) != 0)
 		val = 0xff;
 
 	return val;
@@ -108,7 +109,7 @@ anxedp_read(struct anxedp_softc *sc, u_int off, uint8_t reg)
 static void
 anxedp_write(struct anxedp_softc *sc, u_int off, uint8_t reg, uint8_t val)
 {
-	(void)iic_smbus_write_byte(sc->sc_i2c, sc->sc_addr + off, reg, val, I2C_F_POLL);
+	(void)iic_smbus_write_byte(sc->sc_i2c, sc->sc_addr + off, reg, val, 0);
 }
 
 static int
@@ -247,43 +248,21 @@ anxedp_connector_get_modes(struct drm_connector *connector)
 	struct edid *pedid = NULL;
 	int error;
 
-	iic_acquire_bus(sc->sc_i2c, I2C_F_POLL);
+	iic_acquire_bus(sc->sc_i2c, 0);
 	error = anxedp_read_edid(sc, edid, sizeof(edid));
-	iic_release_bus(sc->sc_i2c, I2C_F_POLL);
+	iic_release_bus(sc->sc_i2c, 0);
 	if (error == 0)
 		pedid = (struct edid *)edid;
 
-	drm_mode_connector_update_edid_property(connector, pedid);
+	drm_connector_update_edid_property(connector, pedid);
 	if (pedid == NULL)
 		return 0;
 
-	error = drm_add_edid_modes(connector, pedid);
-	drm_edid_to_eld(connector, pedid);
-
-	return error;
-}
-
-static struct drm_encoder *
-anxedp_connector_best_encoder(struct drm_connector *connector)
-{
-	int enc_id = connector->encoder_ids[0];
-	struct drm_mode_object *obj;
-	struct drm_encoder *encoder = NULL;
-
-	if (enc_id) {
-		obj = drm_mode_object_find(connector->dev, enc_id,
-		    DRM_MODE_OBJECT_ENCODER);
-		if (obj == NULL)
-			return NULL;
-		encoder = obj_to_encoder(obj);
-	}
-
-	return encoder;
+	return drm_add_edid_modes(connector, pedid);
 }
 
 static const struct drm_connector_helper_funcs anxedp_connector_helper_funcs = {
 	.get_modes = anxedp_connector_get_modes,
-	.best_encoder = anxedp_connector_best_encoder,
 };
 
 static int
@@ -304,7 +283,7 @@ anxedp_bridge_attach(struct drm_bridge *bridge)
 	    connector->connector_type);
 	drm_connector_helper_add(connector, &anxedp_connector_helper_funcs);
 
-	error = drm_mode_connector_attach_encoder(connector, bridge->encoder);
+	error = drm_connector_attach_encoder(connector, bridge->encoder);
 	if (error != 0)
 		return error;
 
@@ -333,7 +312,8 @@ anxedp_bridge_post_disable(struct drm_bridge *bridge)
 
 static void
 anxedp_bridge_mode_set(struct drm_bridge *bridge,
-    struct drm_display_mode *mode, struct drm_display_mode *adjusted_mode)
+    const struct drm_display_mode *mode,
+    const struct drm_display_mode *adjusted_mode)
 {
 	struct anxedp_softc * const sc = bridge->driver_private;
 
@@ -394,11 +374,9 @@ anxedp_ep_activate(device_t dev, struct fdt_endpoint *ep, bool activate)
 	sc->sc_bridge.funcs = &anxedp_bridge_funcs;
 	sc->sc_bridge.encoder = encoder;
 
-	error = drm_bridge_attach(encoder->dev, &sc->sc_bridge);
+	error = drm_bridge_attach(encoder, &sc->sc_bridge, NULL);
 	if (error != 0)
 		return EIO;
-
-	encoder->bridge = &sc->sc_bridge;
 
 	return 0;
 }

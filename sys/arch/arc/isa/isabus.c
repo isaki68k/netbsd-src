@@ -1,4 +1,4 @@
-/*	$NetBSD: isabus.c,v 1.49 2012/10/27 17:17:35 chs Exp $	*/
+/*	$NetBSD: isabus.c,v 1.53 2021/08/07 16:18:42 thorpej Exp $	*/
 /*	$OpenBSD: isabus.c,v 1.15 1998/03/16 09:38:46 pefo Exp $	*/
 /*	NetBSD: isa.c,v 1.33 1995/06/28 04:30:51 cgd Exp 	*/
 
@@ -120,7 +120,7 @@ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isabus.c,v 1.49 2012/10/27 17:17:35 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isabus.c,v 1.53 2021/08/07 16:18:42 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -129,7 +129,7 @@ __KERNEL_RCSID(0, "$NetBSD: isabus.c,v 1.49 2012/10/27 17:17:35 chs Exp $");
 #include <sys/time.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/extent.h>
 
 #include <uvm/uvm_extern.h>
@@ -207,7 +207,8 @@ isabrattach(struct isabr_softc *sc)
 	iba.iba_memt = &arc_bus_mem;
 	iba.iba_dmat = &sc->sc_dmat;
 	iba.iba_ic = &sc->arc_isa_cs;
-	config_found_ia(sc->sc_dev, "isabus", &iba, isabrprint);
+	config_found(sc->sc_dev, &iba, isabrprint,
+	    CFARGS(.iattr = "isabus"));
 }
 
 static int
@@ -340,10 +341,7 @@ isabr_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
 	struct isa_intrhand **p, *q, *ih;
 	static struct isa_intrhand fakehand = {NULL, fakeintr};
 
-	/* no point in sleeping unless someone can free memory. */
-	ih = malloc(sizeof *ih, M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (ih == NULL)
-		panic("isa_intr_establish: can't malloc handler info");
+	ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 
 	if (!LEGAL_IRQ(irq) || type == IST_NONE)
 		panic("intr_establish: bogus irq or type");

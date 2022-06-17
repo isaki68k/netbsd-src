@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_srvsubs.c,v 1.14 2012/11/05 19:06:27 dholland Exp $	*/
+/*	$NetBSD: nfs_srvsubs.c,v 1.16 2022/04/27 17:38:52 hannken Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_srvsubs.c,v 1.14 2012/11/05 19:06:27 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_srvsubs.c,v 1.16 2022/04/27 17:38:52 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -116,7 +116,7 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_srvsubs.c,v 1.14 2012/11/05 19:06:27 dholland Ex
  * it is not.
  */
 int
-nfs_namei(struct nameidata *ndp, nfsrvfh_t *nsfh, uint32_t len, struct nfssvc_sock *slp, struct mbuf *nam, struct mbuf **mdp, char **dposp, struct vnode **retdirp, struct lwp *l, int kerbflag, int pubflag)
+nfs_namei(struct nameidata *ndp, nfsrvfh_t *nsfh, uint32_t len, struct nfssvc_sock *slp, struct mbuf *nam, struct mbuf **mdp, char **dposp, struct vnode **retdirp, int *dirattr_retp, struct vattr *dirattrp, struct lwp *l, int kerbflag, int pubflag)
 {
 	int i, rem;
 	struct mbuf *md;
@@ -188,6 +188,11 @@ nfs_namei(struct nameidata *ndp, nfsrvfh_t *nsfh, uint32_t len, struct nfssvc_so
 		cnp->cn_flags |= RDONLY;
 
 	*retdirp = dp;
+	if (dirattr_retp != NULL) {
+		vn_lock(dp, LK_SHARED | LK_RETRY);
+		*dirattr_retp = VOP_GETATTR(dp, dirattrp, ndp->ni_cnd.cn_cred);
+		VOP_UNLOCK(dp);
+	}
 
 	if (pubflag) {
 		/*
@@ -311,7 +316,7 @@ nfsrv_fhtovp(nfsrvfh_t *nsfh, int lockflag, struct vnode **vpp,
 		return error;
 	}
 
-	error = VFS_FHTOVP(mp, &fhp->fh_fid, vpp);
+	error = VFS_FHTOVP(mp, &fhp->fh_fid, LK_EXCLUSIVE, vpp);
 	if (error)
 		return (error);
 

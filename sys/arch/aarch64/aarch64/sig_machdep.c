@@ -1,4 +1,4 @@
-/* $NetBSD: sig_machdep.c,v 1.3 2018/07/17 00:36:30 christos Exp $ */
+/* $NetBSD: sig_machdep.c,v 1.8 2021/11/01 05:07:15 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sig_machdep.c,v 1.3 2018/07/17 00:36:30 christos Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sig_machdep.c,v 1.8 2021/11/01 05:07:15 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -47,8 +47,8 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 {
 	struct lwp * const l = curlwp;
 	struct proc * const p = l->l_proc;
-	struct trapframe * const tf = l->l_md.md_utf;
-	struct sigaltstack * const ss = &l->l_sigstk;
+	struct trapframe * const tf = lwp_trapframe(l);
+	stack_t * const ss = &l->l_sigstk;
 	const struct sigact_sigdesc * const sd =
 	    &p->p_sigacts->sa_sigdesc[ksi->ksi_signo];
 
@@ -71,6 +71,8 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	uc.uc_flags = _UC_SIGMASK;
 	uc.uc_sigmask = *mask;
 	uc.uc_link = l->l_ctxlink;
+	uc.uc_flags |= (l->l_sigstk.ss_flags & SS_ONSTACK)
+	    ? _UC_SETSTACK : _UC_CLRSTACK;
 	sendsig_reset(l, ksi->ksi_signo);
 	mutex_exit(p->p_lock);
 	cpu_getmcontext(l, &uc.uc_mcontext, &uc.uc_flags);
@@ -85,7 +87,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 
 	mutex_enter(p->p_lock);
 
-	if (error || sd->sd_vers != 2) {
+	if (error || sd->sd_vers != __SIGTRAMP_SIGINFO_VERSION) {
 		/*
 		 * Thread has trashed its stack.  Blow it away.
 		 */
@@ -108,7 +110,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	tf->tf_pc = handler;
 
 	/*
-	 * Remember if we'ere now on the signal stack.
+	 * Remember if we're now on the signal stack.
 	 */
 	if (onstack_p)
 		ss->ss_flags |= SS_ONSTACK;

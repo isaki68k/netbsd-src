@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_xcall.c,v 1.27 2019/10/06 15:11:17 uwe Exp $	*/
+/*	$NetBSD: subr_xcall.c,v 1.34 2020/12/22 01:57:29 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007-2010 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007-2010, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -48,12 +48,12 @@
  *	prohibitive, another way must be found.
  *
  *	Cross calls help to solve these types of problem by allowing
- *	any CPU in the system to request that an arbitrary function be
- *	executed on any other CPU.
+ *	any LWP in the system to request that an arbitrary function be
+ *	executed on a specific CPU.
  *
  * Implementation
  *
- *	A slow mechanism for making 'low priority' cross calls is
+ *	A slow mechanism for making low priority cross calls is
  *	provided.  The function to be executed runs on the remote CPU
  *	within a bound kthread.  No queueing is provided, and the
  *	implementation uses global state.  The function being called may
@@ -64,17 +64,17 @@
  *	CPU, and so has exclusive access to the CPU.  Since this facility
  *	is heavyweight, it's expected that it will not be used often.
  *
- *	Cross calls must not allocate memory, as the pagedaemon uses
- *	them (and memory allocation may need to wait on the pagedaemon).
+ *	Cross calls must not allocate memory, as the pagedaemon uses cross
+ *	calls (and memory allocation may need to wait on the pagedaemon).
  *
  *	A low-overhead mechanism for high priority calls (XC_HIGHPRI) is
- *	also provided.  The function to be executed runs on a software
- *	interrupt context, at IPL_SOFTSERIAL level, and is expected to
+ *	also provided.  The function to be executed runs in software
+ *	interrupt context at IPL_SOFTSERIAL level, and is expected to
  *	be very lightweight, e.g. avoid blocking.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.27 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.34 2020/12/22 01:57:29 ad Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -84,6 +84,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.27 2019/10/06 15:11:17 uwe Exp $");
 #include <sys/evcnt.h>
 #include <sys/kthread.h>
 #include <sys/cpu.h>
+#include <sys/atomic.h>
 
 #ifdef _RUMPKERNEL
 #include "rump_private.h"
@@ -259,6 +260,11 @@ xc_broadcast(unsigned int flags, xcfunc_t func, void *arg1, void *arg2)
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
 
+	if (__predict_false(!mp_online)) {
+		(*func)(arg1, arg2);
+		return 0;
+	}
+
 	if ((flags & XC_HIGHPRI) != 0) {
 		int ipl = xc_extract_ipl(flags);
 		return xc_highpri(func, arg1, arg2, NULL, ipl);
@@ -267,14 +273,12 @@ xc_broadcast(unsigned int flags, xcfunc_t func, void *arg1, void *arg2)
 	}
 }
 
-
 static void
 xc_nop(void *arg1, void *arg2)
 {
 
-    return;
+	return;
 }
-
 
 /*
  * xc_barrier:
@@ -290,7 +294,6 @@ xc_barrier(unsigned int flags)
 	xc_wait(where);
 }
 
-
 /*
  * xc_unicast:
  *
@@ -300,10 +303,19 @@ uint64_t
 xc_unicast(unsigned int flags, xcfunc_t func, void *arg1, void *arg2,
 	   struct cpu_info *ci)
 {
+	int s;
 
 	KASSERT(ci != NULL);
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
+
+	if (__predict_false(!mp_online)) {
+		KASSERT(ci == curcpu());
+		s = splsoftserial();
+		(*func)(arg1, arg2);
+		splx(s);
+		return 0;
+	}
 
 	if ((flags & XC_HIGHPRI) != 0) {
 		int ipl = xc_extract_ipl(flags);
@@ -326,6 +338,10 @@ xc_wait(uint64_t where)
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
 
+	if (__predict_false(!mp_online)) {
+		return;
+	}
+
 	/* Determine whether it is high or low priority cross-call. */
 	if ((where & XC_PRI_BIT) != 0) {
 		xc = &xc_high_pri;
@@ -334,10 +350,12 @@ xc_wait(uint64_t where)
 		xc = &xc_low_pri;
 	}
 
+#ifdef __HAVE_ATOMIC64_LOADSTORE
 	/* Fast path, if already done. */
-	if (xc->xc_donep >= where) {
+	if (atomic_load_acquire(&xc->xc_donep) >= where) {
 		return;
 	}
+#endif
 
 	/* Slow path: block until awoken. */
 	mutex_enter(&xc->xc_lock);
@@ -422,7 +440,11 @@ xc_thread(void *cookie)
 		(*func)(arg1, arg2);
 
 		mutex_enter(&xc->xc_lock);
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+		atomic_store_release(&xc->xc_donep, xc->xc_donep + 1);
+#else
 		xc->xc_donep++;
+#endif
 	}
 	/* NOTREACHED */
 }
@@ -462,7 +484,6 @@ xc__highpri_intr(void *dummy)
 	 * Lock-less fetch of function and its arguments.
 	 * Safe since it cannot change at this point.
 	 */
-	KASSERT(xc->xc_donep < xc->xc_headp);
 	func = xc->xc_func;
 	arg1 = xc->xc_arg1;
 	arg2 = xc->xc_arg2;
@@ -475,7 +496,13 @@ xc__highpri_intr(void *dummy)
 	 * cross-call has been processed - notify waiters, if any.
 	 */
 	mutex_enter(&xc->xc_lock);
-	if (++xc->xc_donep == xc->xc_headp) {
+	KASSERT(xc->xc_donep < xc->xc_headp);
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+	atomic_store_release(&xc->xc_donep, xc->xc_donep + 1);
+#else
+	xc->xc_donep++;
+#endif
+	if (xc->xc_donep == xc->xc_headp) {
 		cv_broadcast(&xc->xc_busy);
 	}
 	mutex_exit(&xc->xc_lock);

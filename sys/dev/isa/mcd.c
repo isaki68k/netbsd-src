@@ -1,4 +1,4 @@
-/*	$NetBSD: mcd.c,v 1.118 2019/02/24 20:50:03 kamil Exp $	*/
+/*	$NetBSD: mcd.c,v 1.121 2021/09/09 23:26:36 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994, 1995 Charles M. Hannum.  All rights reserved.
@@ -56,7 +56,7 @@
 /*static char COPYRIGHT[] = "mcd-driver (C)1993 by H.Veit & B.Moore";*/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mcd.c,v 1.118 2019/02/24 20:50:03 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mcd.c,v 1.121 2021/09/09 23:26:36 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -262,6 +262,7 @@ mcdattach(device_t parent, device_t self, void *aux)
 	bus_space_handle_t ioh;
 	struct mcd_mbox mbx;
 
+	sc->sc_dev = self;
 	aprint_naive("\n");
 
 	/* Map i/o space */
@@ -452,7 +453,7 @@ mcdstrategy(struct buf *bp)
 	lp = sc->sc_dk.dk_label;
 
 	/* Test validity. */
-	MCD_TRACE("strategy: buf=0x%p blkno=%d bcount=%d\n", bp,
+	MCD_TRACE("strategy: buf=%p blkno=%d bcount=%d\n", bp,
 	    (int) bp->b_blkno, bp->b_bcount);
 	if (bp->b_blkno < 0 ||
 	    (bp->b_bcount % sc->blksize) != 0) {
@@ -522,7 +523,7 @@ loop:
 	}
 
 	/* Block found to process. */
-	MCD_TRACE("start: found block bp=0x%p\n", bp);
+	MCD_TRACE("start: found block bp=%p\n", bp);
 	splx(s);
 
 	/* Changed media? */
@@ -1213,7 +1214,7 @@ mcdintr(void *arg)
 		sc->lastmode = mbx->mode;
 
 	firstblock:
-		MCD_TRACE("doread: read blkno=%d for bp=0x%p\n",
+		MCD_TRACE("doread: read blkno=%d for bp=%p\n",
 		    (int) mbx->blkno, bp);
 
 		/* Build parameter block. */
@@ -1600,6 +1601,7 @@ mcd_read_subchannel(struct mcd_softc *sc, struct ioc_read_subchannel *ch,
 	if ((error = mcd_getqchan(sc, &q, ch->data_format)) != 0)
 		return error;
 
+	memset(info, 0, sizeof(*info));
 	info->header.audio_status = sc->audio_status;
 	info->what.media_catalog.data_format = ch->data_format;
 

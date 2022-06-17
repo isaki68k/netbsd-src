@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_pci.c,v 1.6 2018/08/28 03:41:39 riastradh Exp $	*/
+/*	$NetBSD: linux_pci.c,v 1.21 2022/02/27 14:19:20 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -29,8 +29,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _KERNEL_OPT
+#include "acpica.h"
+#include "opt_pci.h"
+#endif
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_pci.c,v 1.6 2018/08/28 03:41:39 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_pci.c,v 1.21 2022/02/27 14:19:20 riastradh Exp $");
+
+#if NACPICA > 0
+#include <dev/acpi/acpivar.h>
+#include <dev/acpi/acpi_pci.h>
+#endif
 
 #include <linux/pci.h>
 
@@ -43,12 +53,24 @@ pci_dev_dev(struct pci_dev *pdev)
 	return pdev->pd_dev;
 }
 
-/* XXX Nouveau kludge!  */
-struct drm_device *
+void
+pci_set_drvdata(struct pci_dev *pdev, void *drvdata)
+{
+	pdev->pd_drvdata = drvdata;
+}
+
+void *
 pci_get_drvdata(struct pci_dev *pdev)
 {
+	return pdev->pd_drvdata;
+}
 
-	return pdev->pd_drm_dev;
+const char *
+pci_name(struct pci_dev *pdev)
+{
+
+	/* XXX not sure this has the right format */
+	return device_xname(pci_dev_dev(pdev));
 }
 
 void
@@ -66,13 +88,15 @@ linux_pci_dev_init(struct pci_dev *pdev, device_t dev, device_t parent,
 	pdev->pd_rom_vaddr = NULL;
 	pdev->pd_dev = dev;
 #if (NACPICA > 0)
-	pdev->pd_ad = acpi_pcidev_find(0 /*XXX segment*/, pa->pa_bus,
+	const int seg = pci_get_segment(pa->pa_pc);
+	pdev->pd_ad = acpi_pcidev_find(seg, pa->pa_bus,
 	    pa->pa_device, pa->pa_function);
 #else
 	pdev->pd_ad = NULL;
 #endif
 	pdev->pd_saved_state = NULL;
 	pdev->pd_intr_handles = NULL;
+	pdev->pd_drvdata = NULL;
 	pdev->bus = kmem_zalloc(sizeof(*pdev->bus), KM_NOSLEEP);
 	pdev->bus->pb_pc = pa->pa_pc;
 	pdev->bus->pb_dev = parent;
@@ -257,7 +281,6 @@ pci_bus_write_config_byte(struct pci_bus *bus, unsigned devfn, int reg,
 int
 pci_enable_msi(struct pci_dev *pdev)
 {
-#ifdef notyet
 	const struct pci_attach_args *const pa = &pdev->pd_pa;
 
 	if (pci_msi_alloc_exact(pa, &pdev->pd_intr_handles, 1))
@@ -265,9 +288,6 @@ pci_enable_msi(struct pci_dev *pdev)
 
 	pdev->msi_enabled = 1;
 	return 0;
-#else
-	return -ENOSYS;
-#endif
 }
 
 void
@@ -343,7 +363,7 @@ pci_bus_alloc_resource(struct pci_bus *bus, struct resource *resource,
 	if (error)
 		return error;
 
-	resource->size = size;
+	resource->end = start + (size - 1);
 	return 0;
 }
 
@@ -359,6 +379,7 @@ static int
 pci_kludgey_match_bus0_dev0_func0(const struct pci_attach_args *pa)
 {
 
+	/* XXX domain */
 	if (pa->pa_bus != 0)
 		return 0;
 	if (pa->pa_device != 0)
@@ -370,10 +391,11 @@ pci_kludgey_match_bus0_dev0_func0(const struct pci_attach_args *pa)
 }
 
 struct pci_dev *
-pci_get_bus_and_slot(int bus, int slot)
+pci_get_domain_bus_and_slot(int domain, int bus, int slot)
 {
 	struct pci_attach_args pa;
 
+	KASSERT(domain == 0);
 	KASSERT(bus == 0);
 	KASSERT(slot == PCI_DEVFN(0, 0));
 
@@ -429,6 +451,14 @@ pci_get_class(uint32_t class_subclass_shifted __unused, struct pci_dev *from)
 	linux_pci_dev_init(pdev, NULL, NULL, &pa, NBPCI_KLUDGE_GET_MUMBLE);
 
 	return pdev;
+}
+
+int
+pci_dev_present(const struct pci_device_id *ids)
+{
+
+	/* XXX implement me -- pci_find_device doesn't pass a cookie */
+	return 0;
 }
 
 void
@@ -673,6 +703,14 @@ pci_dma_supported(struct pci_dev *pdev, uintmax_t mask)
 		return pci_dma64_available(&pdev->pd_pa);
 	else
 		return true;
+}
+
+bool
+pci_is_thunderbolt_attached(struct pci_dev *pdev)
+{
+
+	/* XXX Cop-out.  */
+	return false;
 }
 
 bool

@@ -1,4 +1,4 @@
-/*	$NetBSD: altq_rio.c,v 1.23 2016/05/16 09:53:59 ozaki-r Exp $	*/
+/*	$NetBSD: altq_rio.c,v 1.25 2021/09/21 14:30:15 christos Exp $	*/
 /*	$KAME: altq_rio.c,v 1.19 2005/04/13 03:44:25 suz Exp $	*/
 
 /*
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: altq_rio.c,v 1.23 2016/05/16 09:53:59 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: altq_rio.c,v 1.25 2021/09/21 14:30:15 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altq.h"
@@ -153,7 +153,7 @@ __KERNEL_RCSID(0, "$NetBSD: altq_rio.c,v 1.23 2016/05/16 09:53:59 ozaki-r Exp $"
 #define	TH_MIN		 5	/* min threshold */
 #define	TH_MAX		15	/* max threshold */
 
-#define	RIO_LIMIT	60	/* default max queue lenght */
+#define	RIO_LIMIT	60	/* default max queue length */
 #define	RIO_STATS		/* collect statistics */
 
 #define	TV_DELTA(a, b, delta) {					\
@@ -500,15 +500,10 @@ rioioctl(dev_t dev, ioctlcmd_t cmd, void *addr, int flag,
 	case RIO_GETSTATS:
 		break;
 	default:
-#if (__FreeBSD_version > 400000)
-		if ((error = suser(p)) != 0)
-			return (error);
-#else
 		if ((error = kauth_authorize_network(l->l_cred,
 		    KAUTH_NETWORK_ALTQ, KAUTH_REQ_NETWORK_ALTQ_RIO, NULL,
 		    NULL, NULL)) != 0)
 			return (error);
-#endif
 		break;
 	}
 

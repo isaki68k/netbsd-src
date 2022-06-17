@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.200 2019/04/04 04:31:01 isaki Exp $	*/
+/*	$NetBSD: machdep.c,v 1.207 2021/10/09 20:00:42 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.200 2019/04/04 04:31:01 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.207 2021/10/09 20:00:42 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -299,7 +299,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -518,7 +518,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 		printf("\n");
 	}
 #endif
@@ -551,7 +553,9 @@ cpu_reboot(int howto, char *bootstr)
 		/* PASSTHROUGH even if came back */
 	} else if ((howto & RB_HALT) == RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 	}
 
 	printf("rebooting...\n");
@@ -568,7 +572,10 @@ cpu_init_kcore_hdr(void)
 {
 	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
 	struct m68k_kcore_hdr *m = &h->un._m68k;
-	uvm_physseg_t i;
+	psize_t size;
+#ifdef EXTENDED_MEMORY
+	int i, seg;
+#endif
 
 	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
 
@@ -617,25 +624,20 @@ cpu_init_kcore_hdr(void)
 	/*
 	 * X68k has multiple RAM segments on some models.
 	 */
-	m->ram_segs[0].start = lowram;
-	m->ram_segs[0].size = mem_size - lowram;
-
-	i = uvm_physseg_get_first();
-	
-        for (uvm_physseg_get_next(i); uvm_physseg_valid_p(i); i = uvm_physseg_get_next(i)) {
-		if (uvm_physseg_valid_p(i) == false)
-			break;
-
-		const paddr_t startpfn = uvm_physseg_get_start(i);
-		const paddr_t endpfn = uvm_physseg_get_end(i);
-
-		KASSERT(startpfn != -1 && endpfn != -1);
-
-		m->ram_segs[i].start = 
-		    ctob(startpfn);
-		m->ram_segs[i].size  =			
-		    ctob(endpfn - startpfn);
+	size = phys_basemem_seg.end - phys_basemem_seg.start;
+	m->ram_segs[0].start = phys_basemem_seg.start;
+	m->ram_segs[0].size  = size;
+#ifdef EXTENDED_MEMORY
+	seg = 1;
+	for (i = 0; i < EXTMEM_SEGS; i++) {
+		size = phys_extmem_seg[i].end - phys_extmem_seg[i].start;
+		if (size == 0)
+			continue;
+		m->ram_segs[seg].start = phys_extmem_seg[i].start;
+		m->ram_segs[seg].size  = size;
+		seg++;
 	}
+#endif
 }
 
 /*
@@ -959,7 +961,7 @@ candbtimer(void *arg)
 #endif
 
 /*
- * Level 7 interrupts can be caused by the keyboard or parity errors.
+ * Level 7 interrupts can be caused by the NMI button.
  */
 void
 nmihand(struct frame frame)
@@ -977,7 +979,7 @@ nmihand(struct frame frame)
 		 */
 		if (innmihand == 0) {
 			innmihand = 1;
-			printf("Got a keyboard NMI\n");
+			printf("NMI button pressed\n");
 			innmihand = 0;
 		}
 #ifdef DDB
@@ -1254,15 +1256,28 @@ cpu_intr_p(void)
 int
 mm_md_physacc(paddr_t pa, vm_prot_t prot)
 {
-	uvm_physseg_t i;
+	int i;
 
-	for (i = uvm_physseg_get_first(); uvm_physseg_valid_p(i); i = uvm_physseg_get_next(i)) {
-		if (uvm_physseg_valid_p(i) == false)
-			break;
+	/* Main memory */
+	if (phys_basemem_seg.start <= pa && pa < phys_basemem_seg.end)
+		return 0;
 
-		if (ctob(uvm_physseg_get_start(i)) <= pa &&
-		    pa < ctob(uvm_physseg_get_end(i)))
+#ifdef EXTENDED_MEMORY
+	for (i = 0; i < EXTMEM_SEGS; i++) {
+		if (phys_extmem_seg[i].start == phys_extmem_seg[i].end)
+			continue;
+		if (phys_extmem_seg[i].start <= pa &&
+		    pa < phys_extmem_seg[i].end) {
 			return 0;
+		}
 	}
+#endif
+
+	/* I/O space */
+	if (INTIOBASE <= pa && pa < INTIOTOP) {
+		return kauth_authorize_machdep(kauth_cred_get(),
+		    KAUTH_MACHDEP_UNMANAGEDMEM, NULL, NULL, NULL, NULL);
+	}
+
 	return EFAULT;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: lxtphy.c,v 1.53 2019/03/25 09:29:08 msaitoh Exp $	*/
+/*	$NetBSD: lxtphy.c,v 1.56 2021/08/20 20:25:28 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lxtphy.c,v 1.53 2019/03/25 09:29:08 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lxtphy.c,v 1.56 2021/08/20 20:25:28 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -137,30 +137,30 @@ lxtphyattach(device_t parent, device_t self, void *aux)
 		sc->mii_funcs = &lxtphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
 	sc->mii_capabilities &= ma->mii_capmask;
-	aprint_normal_dev(self, "");
+
+	mii_unlock(mii);
 
 	if (sc->mii_flags & MIIF_HAVEFIBER) {
 #define	ADD(m, c)	ifmedia_add(&mii->mii_media, (m), (c), NULL)
+		mii_lock(mii);
+		sc->mii_anegticks = MII_ANEGTICKS;
+		mii_unlock(mii);
 		ADD(IFM_MAKEWORD(IFM_ETHER, IFM_100_FX, 0, sc->mii_inst),
 		    MII_MEDIA_100_TX);
-		aprint_normal("100baseFX, ");
 		ADD(IFM_MAKEWORD(IFM_ETHER, IFM_100_FX, IFM_FDX, sc->mii_inst),
 		    MII_MEDIA_100_TX_FDX);
-		aprint_normal("100baseFX-FDX, ");
+		aprint_normal_dev(self, "100baseFX, 100baseFX-FDX\n");
 #undef ADD
 	}
 
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -168,6 +168,8 @@ lxtphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -228,13 +230,15 @@ lxtphy_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, bmsr, csr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
 	/*
 	 * Get link status from the CSR; we need to read the CSR
 	 * for media type anyhow, and the link status in the CSR
-	 * doens't latch, so fewer register reads are required.
+	 * doesn't latch, so fewer register reads are required.
 	 */
 	PHY_READ(sc, MII_LXTPHY_CSR, &csr);
 	if (csr & CSR_LINK)
@@ -275,6 +279,8 @@ static void
 lxtphy_reset(struct mii_softc *sc)
 {
 	uint16_t ier;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	mii_phy_reset(sc);
 	PHY_READ(sc, MII_LXTPHY_IER, &ier);

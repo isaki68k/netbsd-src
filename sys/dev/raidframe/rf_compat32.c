@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_compat32.c,v 1.6 2019/03/01 11:06:56 pgoyette Exp $	*/
+/*	$NetBSD: rf_compat32.c,v 1.9 2021/12/11 19:24:21 mrg Exp $	*/
 
 /*
  * Copyright (c) 2017 Matthew R. Green
@@ -12,8 +12,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -101,7 +99,7 @@ rf_config_netbsd32(struct raid_softc *rs, void *data)
 	k_cfg = RF_Malloc(sizeof(*k_cfg));
 	if (k_cfg == NULL) {
 		RF_Free(k_cfg32, sizeof(RF_Config_t32));
-		RF_Free(k_cfg, sizeof(RF_Config_t));
+		return ENOMEM;
 	}
 	k_cfg->numCol = k_cfg32->numCol;
 	k_cfg->numSpare = k_cfg32->numSpare;
@@ -166,7 +164,7 @@ static void
 raidframe_netbsd32_init(void)
 {
   
-	MODULE_HOOK_SET(raidframe_netbsd32_ioctl_hook, "raid32",
+	MODULE_HOOK_SET(raidframe_netbsd32_ioctl_hook,
 	    raidframe_netbsd32_ioctl);
 }
  

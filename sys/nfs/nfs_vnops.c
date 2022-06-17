@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_vnops.c,v 1.312 2019/09/10 23:19:34 christos Exp $	*/
+/*	$NetBSD: nfs_vnops.c,v 1.324 2022/05/24 06:28:02 andvar Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.312 2019/09/10 23:19:34 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.324 2022/05/24 06:28:02 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"
@@ -70,8 +70,11 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.312 2019/09/10 23:19:34 christos Exp
 #include <sys/kauth.h>
 #include <sys/cprng.h>
 
-#include <uvm/uvm_extern.h>
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_stat.h>
 
 #include <miscfs/fifofs/fifo.h>
 #include <miscfs/genfs/genfs.h>
@@ -97,12 +100,14 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.312 2019/09/10 23:19:34 christos Exp
 int (**nfsv2_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc nfsv2_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, nfs_lookup },		/* lookup */
 	{ &vop_create_desc, nfs_create },		/* create */
 	{ &vop_mknod_desc, nfs_mknod },			/* mknod */
 	{ &vop_open_desc, nfs_open },			/* open */
 	{ &vop_close_desc, nfs_close },			/* close */
 	{ &vop_access_desc, nfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfs_read },			/* read */
@@ -110,13 +115,13 @@ const struct vnodeopv_entry_desc nfsv2_vnodeop_entries[] = {
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
 	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
-	{ &vop_ioctl_desc, nfs_ioctl },			/* ioctl */
-	{ &vop_poll_desc, nfs_poll },			/* poll */
+	{ &vop_ioctl_desc, genfs_enoioctl },		/* ioctl */
+	{ &vop_poll_desc, genfs_poll },			/* poll */
 	{ &vop_kqfilter_desc, nfs_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, nfs_revoke },		/* revoke */
-	{ &vop_mmap_desc, nfs_mmap },			/* mmap */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
+	{ &vop_mmap_desc, genfs_mmap },			/* mmap */
 	{ &vop_fsync_desc, nfs_fsync },			/* fsync */
-	{ &vop_seek_desc, nfs_seek },			/* seek */
+	{ &vop_seek_desc, genfs_seek },			/* seek */
 	{ &vop_remove_desc, nfs_remove },		/* remove */
 	{ &vop_link_desc, nfs_link },			/* link */
 	{ &vop_rename_desc, nfs_rename },		/* rename */
@@ -125,15 +130,15 @@ const struct vnodeopv_entry_desc nfsv2_vnodeop_entries[] = {
 	{ &vop_symlink_desc, nfs_symlink },		/* symlink */
 	{ &vop_readdir_desc, nfs_readdir },		/* readdir */
 	{ &vop_readlink_desc, nfs_readlink },		/* readlink */
-	{ &vop_abortop_desc, nfs_abortop },		/* abortop */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, nfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, nfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, nfs_lock },			/* lock */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
 	{ &vop_unlock_desc, nfs_unlock },		/* unlock */
 	{ &vop_bmap_desc, nfs_bmap },			/* bmap */
 	{ &vop_strategy_desc, nfs_strategy },		/* strategy */
 	{ &vop_print_desc, nfs_print },			/* print */
-	{ &vop_islocked_desc, nfs_islocked },		/* islocked */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, nfs_pathconf },		/* pathconf */
 	{ &vop_advlock_desc, nfs_advlock },		/* advlock */
 	{ &vop_bwrite_desc, genfs_badop },		/* bwrite */
@@ -150,48 +155,23 @@ const struct vnodeopv_desc nfsv2_vnodeop_opv_desc =
 int (**spec_nfsv2nodeop_p)(void *);
 const struct vnodeopv_entry_desc spec_nfsv2nodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
-	{ &vop_lookup_desc, spec_lookup },		/* lookup */
-	{ &vop_create_desc, spec_create },		/* create */
-	{ &vop_mknod_desc, spec_mknod },		/* mknod */
-	{ &vop_open_desc, spec_open },			/* open */
+	GENFS_SPECOP_ENTRIES,
 	{ &vop_close_desc, nfsspec_close },		/* close */
 	{ &vop_access_desc, nfsspec_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfsspec_read },		/* read */
 	{ &vop_write_desc, nfsspec_write },		/* write */
-	{ &vop_fallocate_desc, spec_fallocate },	/* fallocate */
-	{ &vop_fdiscard_desc, spec_fdiscard },		/* fdiscard */
 	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
-	{ &vop_ioctl_desc, spec_ioctl },		/* ioctl */
-	{ &vop_poll_desc, spec_poll },			/* poll */
-	{ &vop_kqfilter_desc, spec_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, spec_revoke },		/* revoke */
-	{ &vop_mmap_desc, spec_mmap },			/* mmap */
 	{ &vop_fsync_desc, spec_fsync },		/* fsync */
-	{ &vop_seek_desc, spec_seek },			/* seek */
-	{ &vop_remove_desc, spec_remove },		/* remove */
-	{ &vop_link_desc, spec_link },			/* link */
-	{ &vop_rename_desc, spec_rename },		/* rename */
-	{ &vop_mkdir_desc, spec_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, spec_rmdir },		/* rmdir */
-	{ &vop_symlink_desc, spec_symlink },		/* symlink */
-	{ &vop_readdir_desc, spec_readdir },		/* readdir */
-	{ &vop_readlink_desc, spec_readlink },		/* readlink */
-	{ &vop_abortop_desc, spec_abortop },		/* abortop */
 	{ &vop_inactive_desc, nfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, nfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, nfs_lock },			/* lock */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
 	{ &vop_unlock_desc, nfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, spec_bmap },			/* bmap */
-	{ &vop_strategy_desc, spec_strategy },		/* strategy */
 	{ &vop_print_desc, nfs_print },			/* print */
-	{ &vop_islocked_desc, nfs_islocked },		/* islocked */
-	{ &vop_pathconf_desc, spec_pathconf },		/* pathconf */
-	{ &vop_advlock_desc, spec_advlock },		/* advlock */
-	{ &vop_bwrite_desc, spec_bwrite },		/* bwrite */
-	{ &vop_getpages_desc, spec_getpages },		/* getpages */
-	{ &vop_putpages_desc, spec_putpages },		/* putpages */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
+	{ &vop_bwrite_desc, vn_bwrite },		/* bwrite */
 	{ NULL, NULL }
 };
 const struct vnodeopv_desc spec_nfsv2nodeop_opv_desc =
@@ -200,47 +180,24 @@ const struct vnodeopv_desc spec_nfsv2nodeop_opv_desc =
 int (**fifo_nfsv2nodeop_p)(void *);
 const struct vnodeopv_entry_desc fifo_nfsv2nodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
-	{ &vop_lookup_desc, vn_fifo_bypass },		/* lookup */
-	{ &vop_create_desc, vn_fifo_bypass },		/* create */
-	{ &vop_mknod_desc, vn_fifo_bypass },		/* mknod */
-	{ &vop_open_desc, vn_fifo_bypass },		/* open */
+	GENFS_FIFOOP_ENTRIES,
 	{ &vop_close_desc, nfsfifo_close },		/* close */
 	{ &vop_access_desc, nfsspec_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfsfifo_read },		/* read */
 	{ &vop_write_desc, nfsfifo_write },		/* write */
-	{ &vop_fallocate_desc, vn_fifo_bypass },	/* fallocate */
-	{ &vop_fdiscard_desc, vn_fifo_bypass },		/* fdiscard */
 	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
-	{ &vop_ioctl_desc, vn_fifo_bypass },		/* ioctl */
-	{ &vop_poll_desc, vn_fifo_bypass },		/* poll */
-	{ &vop_kqfilter_desc, vn_fifo_bypass },		/* kqfilter */
-	{ &vop_revoke_desc, vn_fifo_bypass },		/* revoke */
-	{ &vop_mmap_desc, vn_fifo_bypass },		/* mmap */
 	{ &vop_fsync_desc, nfs_fsync },			/* fsync */
-	{ &vop_seek_desc, vn_fifo_bypass },		/* seek */
-	{ &vop_remove_desc, vn_fifo_bypass },		/* remove */
-	{ &vop_link_desc, vn_fifo_bypass },		/* link */
-	{ &vop_rename_desc, vn_fifo_bypass },		/* rename */
-	{ &vop_mkdir_desc, vn_fifo_bypass },		/* mkdir */
-	{ &vop_rmdir_desc, vn_fifo_bypass },		/* rmdir */
-	{ &vop_symlink_desc, vn_fifo_bypass },		/* symlink */
-	{ &vop_readdir_desc, vn_fifo_bypass },		/* readdir */
-	{ &vop_readlink_desc, vn_fifo_bypass },		/* readlink */
-	{ &vop_abortop_desc, vn_fifo_bypass },		/* abortop */
 	{ &vop_inactive_desc, nfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, nfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, nfs_lock },			/* lock */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
 	{ &vop_unlock_desc, nfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, vn_fifo_bypass },		/* bmap */
-	{ &vop_strategy_desc, genfs_badop },		/* strategy */
+	{ &vop_strategy_desc, vn_fifo_bypass },		/* strategy */
 	{ &vop_print_desc, nfs_print },			/* print */
-	{ &vop_islocked_desc, nfs_islocked },		/* islocked */
-	{ &vop_pathconf_desc, vn_fifo_bypass },		/* pathconf */
-	{ &vop_advlock_desc, vn_fifo_bypass },		/* advlock */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_bwrite_desc, genfs_badop },		/* bwrite */
-	{ &vop_putpages_desc, vn_fifo_bypass }, 	/* putpages */
 	{ NULL, NULL }
 };
 const struct vnodeopv_desc fifo_nfsv2nodeop_opv_desc =
@@ -316,7 +273,7 @@ nfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int  a_mode;
+		accmode_t  a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
@@ -344,9 +301,9 @@ nfs_access(void *v)
 	 */
 	if (cachevalid) {
 		if (!np->n_accerror) {
-			if  ((np->n_accmode & ap->a_mode) == ap->a_mode)
+			if  ((np->n_accmode & ap->a_accmode) == ap->a_accmode)
 				return np->n_accerror;
-		} else if ((np->n_accmode & ap->a_mode) == np->n_accmode)
+		} else if ((np->n_accmode & ap->a_accmode) == np->n_accmode)
 			return np->n_accerror;
 	}
 
@@ -364,20 +321,20 @@ nfs_access(void *v)
 		nfsm_reqhead(np, NFSPROC_ACCESS, NFSX_FH(v3) + NFSX_UNSIGNED);
 		nfsm_fhtom(np, v3);
 		nfsm_build(tl, u_int32_t *, NFSX_UNSIGNED);
-		if (ap->a_mode & VREAD)
+		if (ap->a_accmode & VREAD)
 			mode = NFSV3ACCESS_READ;
 		else
 			mode = 0;
 		if (vp->v_type != VDIR) {
-			if (ap->a_mode & VWRITE)
+			if (ap->a_accmode & VWRITE)
 				mode |= (NFSV3ACCESS_MODIFY | NFSV3ACCESS_EXTEND);
-			if (ap->a_mode & VEXEC)
+			if (ap->a_accmode & VEXEC)
 				mode |= NFSV3ACCESS_EXECUTE;
 		} else {
-			if (ap->a_mode & VWRITE)
+			if (ap->a_accmode & VWRITE)
 				mode |= (NFSV3ACCESS_MODIFY | NFSV3ACCESS_EXTEND |
 					 NFSV3ACCESS_DELETE);
-			if (ap->a_mode & VEXEC)
+			if (ap->a_accmode & VEXEC)
 				mode |= NFSV3ACCESS_LOOKUP;
 		}
 		*tl = txdr_unsigned(mode);
@@ -404,7 +361,7 @@ nfs_access(void *v)
 	 * unless the file is a socket, fifo, or a block or character
 	 * device resident on the filesystem.
 	 */
-	if (!error && (ap->a_mode & VWRITE) &&
+	if (!error && (ap->a_accmode & VWRITE) &&
 	    (vp->v_mount->mnt_flag & MNT_RDONLY)) {
 		switch (vp->v_type) {
 		case VREG:
@@ -425,13 +382,13 @@ nfs_access(void *v)
 		if (cachevalid && np->n_accstamp != -1 &&
 		    error == np->n_accerror) {
 			if (!error)
-				np->n_accmode |= ap->a_mode;
-			else if ((np->n_accmode & ap->a_mode) == ap->a_mode)
-				np->n_accmode = ap->a_mode;
+				np->n_accmode |= ap->a_accmode;
+			else if ((np->n_accmode & ap->a_accmode) == ap->a_accmode)
+				np->n_accmode = ap->a_accmode;
 		} else {
 			np->n_accstamp = time_uptime;
 			np->n_accuid = kauth_cred_geteuid(ap->a_cred);
-			np->n_accmode = ap->a_mode;
+			np->n_accmode = ap->a_accmode;
 			np->n_accerror = error;
 		}
 	}
@@ -695,7 +652,6 @@ nfs_setattr(void *v)
 		}
 		genfs_node_unlock(vp);
 	}
-	VN_KNOTE(vp, NOTE_ATTRIB);
 	return (error);
 }
 
@@ -1390,7 +1346,7 @@ retry:
 				commit = fxdr_unsigned(int, *tl++);
 
 				/*
-				 * Return the lowest committment level
+				 * Return the lowest commitment level
 				 * obtained by any of the RPCs.
 				 */
 				if (committed == NFSV3WRITE_FILESYNC)
@@ -1579,7 +1535,6 @@ nfs_mknod(void *v)
 	int error;
 
 	error = nfs_mknodrpc(dvp, ap->a_vpp, cnp, ap->a_vap);
-	VN_KNOTE(dvp, NOTE_WRITE);
 	if (error == 0 || error == EEXIST)
 		cache_purge1(dvp, cnp->cn_nameptr, cnp->cn_namelen, 0);
 	return (error);
@@ -1720,7 +1675,6 @@ again:
 	VTONFS(dvp)->n_flag |= NMODIFIED;
 	if (!wccflag)
 		NFS_INVALIDATE_ATTRCACHE(VTONFS(dvp));
-	VN_KNOTE(ap->a_dvp, NOTE_WRITE);
 	return (error);
 }
 
@@ -1729,7 +1683,7 @@ again:
  * To try and make nfs semantics closer to ufs semantics, a file that has
  * other processes using the vnode is renamed instead of removed and then
  * removed later on the last close.
- * - If v_usecount > 1
+ * - If vrefcnt(vp) > 1
  *	  If a rename is not already in the works
  *	     call nfs_sillyrename() to set it up
  *     else
@@ -1738,11 +1692,12 @@ again:
 int
 nfs_remove(void *v)
 {
-	struct vop_remove_v2_args /* {
+	struct vop_remove_v3_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode * a_dvp;
 		struct vnode * a_vp;
 		struct componentname * a_cnp;
+		nlink_t ctx_vp_new_nlink;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct vnode *dvp = ap->a_dvp;
@@ -1752,12 +1707,12 @@ nfs_remove(void *v)
 	struct vattr vattr;
 
 #ifndef DIAGNOSTIC
-	if (vp->v_usecount < 1)
-		panic("nfs_remove: bad v_usecount");
+	if (vrefcnt(vp) < 1)
+		panic("nfs_remove: bad vrefcnt(vp)");
 #endif
 	if (vp->v_type == VDIR)
 		error = EPERM;
-	else if (vp->v_usecount == 1 || (np->n_sillyrename &&
+	else if (vrefcnt(vp) == 1 || (np->n_sillyrename &&
 	    VOP_GETATTR(vp, &vattr, cnp->cn_cred) == 0 &&
 	    vattr.va_nlink > 1)) {
 		/*
@@ -1779,13 +1734,12 @@ nfs_remove(void *v)
 				cnp->cn_namelen, cnp->cn_cred, curlwp);
 	} else if (!np->n_sillyrename)
 		error = nfs_sillyrename(dvp, vp, cnp, false);
-	if (!error && nfs_getattrcache(vp, &vattr) == 0 &&
-	    vattr.va_nlink == 1) {
-		np->n_flag |= NREMOVED;
+	if (error == 0 && nfs_getattrcache(vp, &vattr) == 0) {
+		ap->ctx_vp_new_nlink = vattr.va_nlink - 1;
+		if (vattr.va_nlink == 1)
+			np->n_flag |= NREMOVED;
 	}
 	NFS_INVALIDATE_ATTRCACHE(np);
-	VN_KNOTE(vp, NOTE_DELETE);
-	VN_KNOTE(dvp, NOTE_WRITE);
 	if (dvp == vp)
 		vrele(vp);
 	else
@@ -1855,7 +1809,7 @@ nfs_removerpc(struct vnode *dvp, const char *name, int namelen, kauth_cred_t cre
 int
 nfs_rename(void *v)
 {
-	struct vop_rename_args  /* {
+	struct vop_rename_args /* {
 		struct vnode *a_fdvp;
 		struct vnode *a_fvp;
 		struct componentname *a_fcnp;
@@ -1886,7 +1840,7 @@ nfs_rename(void *v)
 	 * so that we don't lose the file if the rename fails, and so
 	 * that there's no window when the "to" file doesn't exist.
 	 */
-	if (tvp && tvp->v_usecount > 1 && !VTONFS(tvp)->n_sillyrename &&
+	if (tvp && vrefcnt(tvp) > 1 && !VTONFS(tvp)->n_sillyrename &&
 	    tvp->v_type != VDIR && !nfs_sillyrename(tdvp, tvp, tcnp, true)) {
 		VN_KNOTE(tvp, NOTE_DELETE);
 		vput(tvp);
@@ -2050,14 +2004,18 @@ nfs_link(void *v)
 	struct vnode *vp = ap->a_vp;
 	struct vnode *dvp = ap->a_dvp;
 	struct componentname *cnp = ap->a_cnp;
-	int error = 0;
+	int error = 0, abrt = 1;
 
 	error = vn_lock(vp, LK_EXCLUSIVE);
-	if (error != 0) {
-		VOP_ABORTOP(dvp, cnp);
-		return error;
-	}
+	if (error != 0)
+		goto out;
 
+	error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_ADD_LINK, vp,
+	    dvp, 0);
+	if (error)
+		goto out1;
+
+	abrt = 0;
 	/*
 	 * Push all writes to the server, so that the attribute cache
 	 * doesn't get "out of sync" with the server.
@@ -2071,9 +2029,11 @@ nfs_link(void *v)
 	if (error == 0) {
 		cache_purge1(dvp, cnp->cn_nameptr, cnp->cn_namelen, 0);
 	}
+out1:
 	VOP_UNLOCK(vp);
-	VN_KNOTE(vp, NOTE_LINK);
-	VN_KNOTE(dvp, NOTE_WRITE);
+out:
+	if (abrt)
+		VOP_ABORTOP(dvp, cnp);
 	return (error);
 }
 
@@ -2163,7 +2123,6 @@ nfs_symlink(void *v)
 	VTONFS(dvp)->n_flag |= NMODIFIED;
 	if (!wccflag)
 		NFS_INVALIDATE_ATTRCACHE(VTONFS(dvp));
-	VN_KNOTE(dvp, NOTE_WRITE);
 	return (error);
 }
 
@@ -2250,7 +2209,6 @@ nfs_mkdir(void *v)
 				vrele(newvp);
 		}
 	} else {
-		VN_KNOTE(dvp, NOTE_WRITE | NOTE_LINK);
 		nfs_cache_enter(dvp, newvp, cnp);
 		*ap->a_vpp = newvp;
 		VOP_UNLOCK(newvp);
@@ -2305,8 +2263,6 @@ nfs_rmdir(void *v)
 	VTONFS(dvp)->n_flag |= NMODIFIED;
 	if (!wccflag)
 		NFS_INVALIDATE_ATTRCACHE(VTONFS(dvp));
-	VN_KNOTE(dvp, NOTE_WRITE | NOTE_LINK);
-	VN_KNOTE(vp, NOTE_DELETE);
 	cache_purge(vp);
 	vput(vp);
 	/*
@@ -3162,7 +3118,7 @@ nfs_flush(struct vnode *vp, kauth_cred_t cred, int waitfor, struct lwp *l,
 	int flushflags = PGO_ALLPAGES|PGO_CLEANIT|PGO_SYNCIO;
 	UVMHIST_FUNC("nfs_flush"); UVMHIST_CALLED(ubchist);
 
-	mutex_enter(vp->v_interlock);
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	error = VOP_PUTPAGES(vp, 0, 0, flushflags);
 	if (np->n_flag & NWRITEERR) {
 		error = np->n_error;
@@ -3267,7 +3223,7 @@ nfs_pathconf(void *v)
 		}
 		break;
 	default:
-		error = EINVAL;
+		error = genfs_pathconf(ap);
 		break;
 	}
 
@@ -3346,7 +3302,7 @@ nfsspec_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int  a_mode;
+		accmode_t  a_accmode;
 		kauth_cred_t a_cred;
 		struct lwp *a_l;
 	} */ *ap = v;
@@ -3363,7 +3319,7 @@ nfsspec_access(void *v)
 	 * unless the file is a socket, fifo, or a block or character
 	 * device resident on the filesystem.
 	 */
-	if ((ap->a_mode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY)) {
+	if ((ap->a_accmode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY)) {
 		switch (vp->v_type) {
 		case VREG:
 		case VDIR:
@@ -3374,9 +3330,10 @@ nfsspec_access(void *v)
 		}
 	}
 
-	return kauth_authorize_vnode(ap->a_cred, KAUTH_ACCESS_ACTION(ap->a_mode,
-	    va.va_type, va.va_mode), vp, NULL, genfs_can_access(va.va_type,
-	    va.va_mode, va.va_uid, va.va_gid, ap->a_mode, ap->a_cred));
+	return kauth_authorize_vnode(ap->a_cred, KAUTH_ACCESS_ACTION(
+	    ap->a_accmode, va.va_type, va.va_mode), vp, NULL, genfs_can_access(
+	    vp, ap->a_cred, va.va_uid, va.va_gid, va.va_mode, NULL,
+	    ap->a_accmode));
 }
 
 /*
@@ -3443,7 +3400,7 @@ nfsspec_close(void *v)
 
 	if (np->n_flag & (NACC | NUPD)) {
 		np->n_flag |= NCHG;
-		if (vp->v_usecount == 1 &&
+		if (vrefcnt(vp) == 1 &&
 		    (vp->v_mount->mnt_flag & MNT_RDONLY) == 0) {
 			vattr_null(&vattr);
 			if (np->n_flag & NACC)
@@ -3527,7 +3484,7 @@ nfsfifo_close(void *v)
 		if (np->n_flag & NUPD)
 			np->n_mtim = ts;
 		np->n_flag |= NCHG;
-		if (vp->v_usecount == 1 &&
+		if (vrefcnt(vp) == 1 &&
 		    (vp->v_mount->mnt_flag & MNT_RDONLY) == 0) {
 			vattr_null(&vattr);
 			if (np->n_flag & NACC)

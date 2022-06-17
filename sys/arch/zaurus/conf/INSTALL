@@ -1,4 +1,4 @@
-# $NetBSD: INSTALL,v 1.39 2019/02/07 20:56:27 rin Exp $
+# $NetBSD: INSTALL,v 1.41 2021/01/21 06:18:22 nia Exp $
 #
 # INSTALL config file (GENERIC with memory disk root)
 #
@@ -40,8 +40,6 @@ no options 		COMPAT_13
 no options 		COMPAT_43
 no options 		COMPAT_44
 
-no options 		COMPAT_OSSAUDIO
-
 no options		DKWEDGE_AUTODISCOVER
 
 no options 		SYSVMSG
@@ -59,7 +57,6 @@ options 		RASOPS_SMALL
 no options 		DIAGNOSTIC
 no options 		DDB
 no options 		DDB_HISTORY_SIZE
-no makeoptions	COPY_SYMTAB
 
 no options 		PXA2X0_DMAC_DMOVER_CONCURRENCY
 

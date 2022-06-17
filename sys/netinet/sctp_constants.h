@@ -1,5 +1,5 @@
 /*	$KAME: sctp_constants.h,v 1.17 2005/03/06 16:04:17 itojun Exp $	*/
-/*	$NetBSD: sctp_constants.h,v 1.1 2015/10/13 21:28:35 rjs Exp $ */
+/*	$NetBSD: sctp_constants.h,v 1.4 2022/05/18 13:37:52 andvar Exp $ */
 
 #ifndef __SCTP_CONSTANTS_H__
 #define __SCTP_CONSTANTS_H__
@@ -353,7 +353,7 @@
 /* Maximum the mapping array will  grow to (TSN mapping array) */
 #define SCTP_MAPPING_ARRAY	512
 
-/* size of the inital malloc on the mapping array */
+/* size of the initial malloc on the mapping array */
 #define SCTP_INITIAL_MAPPING_ARRAY  16
 /* how much we grow the mapping array each call */
 #define SCTP_MAPPING_ARRAY_INCR     32
@@ -404,7 +404,7 @@
  * of decerning taste. However we do count them, if we get too
  * many before the association comes up.. we give up. Below is
  * the constant that dictates when we give it up...this is a
- * implemenation dependent treatment. In ours we do not ask for
+ * implementation dependent treatment. In ours we do not ask for
  * a extension of time, but just retry this many times...
  */
 #define SCTP_MAX_STALE_COOKIES_I_COLLECT 10
@@ -755,7 +755,7 @@
  * course the overhead of the next pointer as well). Using 15 as
  * an example will yield * ((8 * 15) + 8) or 128 bytes of overhead
  * for each timewait block that gets initialized. Increasing it to
- * 31 would yeild 256 bytes per block.
+ * 31 would yield 256 bytes per block.
  */
 /* Undef the following turns on per EP behavior */
 #define SCTP_VTAG_TIMEWAIT_PER_STACK 1

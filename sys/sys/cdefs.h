@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.147 2019/10/16 18:29:49 christos Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.159 2022/01/22 08:58:48 skrll Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -35,11 +35,6 @@
 
 #ifndef	_SYS_CDEFS_H_
 #define	_SYS_CDEFS_H_
-
-#ifdef _KERNEL_OPT
-#include "opt_diagnostic.h"
-#include "opt_kasan.h"
-#endif
 
 /*
  * Macro to test if we're using a GNU C compiler of a specific vintage
@@ -119,6 +114,14 @@
 #define	__const		const		/* define reserved names to standard */
 #define	__signed	signed
 #define	__volatile	volatile
+
+#define	__CONCAT3(a,b,c)		a ## b ## c
+#define	__CONCAT4(a,b,c,d)		a ## b ## c ## d
+#define	__CONCAT5(a,b,c,d,e)		a ## b ## c ## d ## e
+#define	__CONCAT6(a,b,c,d,e,f)		a ## b ## c ## d ## e ## f
+#define	__CONCAT7(a,b,c,d,e,f,g)	a ## b ## c ## d ## e ## f ## g
+#define	__CONCAT8(a,b,c,d,e,f,g,h)	a ## b ## c ## d ## e ## f ## g ## h
+
 #if defined(__cplusplus) || defined(__PCC__)
 #define	__inline	inline		/* convert to C++/C99 keyword */
 #else
@@ -174,9 +177,9 @@
 #endif
 #define	__CTASSERT0(x, y, z)	__CTASSERT1(x, y, z)
 #define	__CTASSERT1(x, y, z)	\
-	typedef struct { \
+	struct y ## z ## _struct { \
 		unsigned int y ## z : /*CONSTCOND*/(x) ? 1 : -1; \
-	} y ## z ## _struct __unused
+	}
 
 /*
  * The following macro is used to remove const cast-away warnings
@@ -271,6 +274,12 @@
 #define	__always_inline	/* nothing */
 #endif
 
+#if __GNUC_PREREQ__(4, 0) || defined(__lint__)
+#define	__null_sentinel	__attribute__((__sentinel__))
+#else
+#define	__null_sentinel	/* nothing */
+#endif
+
 #if __GNUC_PREREQ__(4, 1) || defined(__lint__)
 #define	__returns_twice	__attribute__((__returns_twice__))
 #else
@@ -334,16 +343,32 @@
 #define	__unreachable()	do {} while (/*CONSTCOND*/0)
 #endif
 
-#if defined(_KERNEL)
-#if __GNUC_PREREQ__(4, 9) && defined(KASAN)
+#if defined(_KERNEL) || defined(_RUMPKERNEL)
+#if defined(__clang__) && __has_feature(address_sanitizer)
+#define	__noasan	__attribute__((no_sanitize("kernel-address", "address")))
+#elif __GNUC_PREREQ__(4, 9) && defined(__SANITIZE_ADDRESS__)
 #define	__noasan	__attribute__((no_sanitize_address))
 #else
 #define	__noasan	/* nothing */
 #endif
 
-#if defined(__clang__)
+#if defined(__clang__) && __has_feature(thread_sanitizer)
+#define	__nocsan	__attribute__((no_sanitize("thread")))
+#elif __GNUC_PREREQ__(4, 9) && defined(__SANITIZE_THREAD__)
+#define	__nocsan	__attribute__((no_sanitize_thread))
+#else
+#define	__nocsan	/* nothing */
+#endif
+
+#if defined(__clang__) && __has_feature(memory_sanitizer)
+#define	__nomsan	__attribute__((no_sanitize("kernel-memory", "memory")))
+#else
+#define	__nomsan	/* nothing */
+#endif
+
+#if defined(__clang__) && __has_feature(undefined_behavior_sanitizer)
 #define __noubsan	__attribute__((no_sanitize("undefined")))
-#elif __GNUC_PREREQ__(4, 9)
+#elif __GNUC_PREREQ__(4, 9) && defined(__SANITIZE_UNDEFINED__)
 #define __noubsan	__attribute__((no_sanitize_undefined))
 #else
 #define __noubsan	/* nothing */
@@ -444,11 +469,9 @@
  * C99 defines the restrict type qualifier keyword, which was made available
  * in GCC 2.92.
  */
-#if defined(__lint__)
-#define	__restrict	/* delete __restrict when not supported */
-#elif __STDC_VERSION__ >= 199901L
+#if __STDC_VERSION__ >= 199901L
 #define	__restrict	restrict
-#elif __GNUC_PREREQ__(2, 92) || defined(__lint__)
+#elif __GNUC_PREREQ__(2, 92)
 #define	__restrict	__restrict__
 #else
 #define	__restrict	/* delete __restrict when not supported */
@@ -466,12 +489,12 @@
 #endif
 #endif /* !(__STDC_VERSION__ >= 199901L) && !(__cplusplus - 0 >= 201103L) */
 
-#if defined(_KERNEL)
-#if defined(NO_KERNEL_RCSIDS)
-#undef __KERNEL_RCSID
-#define	__KERNEL_RCSID(_n, _s)		/* nothing */
-#endif /* NO_KERNEL_RCSIDS */
-#endif /* _KERNEL */
+#if defined(_KERNEL) && defined(NO_KERNEL_RCSIDS)
+#undef	__KERNEL_RCSID
+#define	__KERNEL_RCSID(_n, _s)	/* nothing */
+#undef	__RCSID
+#define	__RCSID(_s)		/* nothing */
+#endif
 
 #if !defined(_STANDALONE) && !defined(_KERNEL)
 #if defined(__GNUC__) || defined(__PCC__)
@@ -625,6 +648,9 @@
 #define	__BIT(__n)	\
     (((uintmax_t)(__n) >= NBBY * sizeof(uintmax_t)) ? 0 : \
     ((uintmax_t)1 << (uintmax_t)((__n) & (NBBY * sizeof(uintmax_t) - 1))))
+
+/* __MASK(n): first n bits all set, where __MASK(4) == 0b1111. */
+#define	__MASK(__n)	(__BIT(__n) - 1)
 
 /* Macros for min/max. */
 #define	__MIN(a,b)	((/*CONSTCOND*/(a)<=(b))?(a):(b))

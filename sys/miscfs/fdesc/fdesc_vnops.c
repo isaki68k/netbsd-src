@@ -1,4 +1,4 @@
-/*	$NetBSD: fdesc_vnops.c,v 1.130 2018/09/03 16:29:35 riastradh Exp $	*/
+/*	$NetBSD: fdesc_vnops.c,v 1.140 2022/03/27 17:10:55 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -41,13 +41,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdesc_vnops.c,v 1.130 2018/09/03 16:29:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdesc_vnops.c,v 1.140 2022/03/27 17:10:55 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/time.h>
 #include <sys/proc.h>
-#include <sys/kernel.h>	/* boottime */
 #include <sys/resourcevar.h>
 #include <sys/socketvar.h>
 #include <sys/filedesc.h>
@@ -76,11 +75,7 @@ FD_STDIN, FD_STDOUT, FD_STDERR must be a sequence n, n+1, n+2
 #endif
 
 int	fdesc_lookup(void *);
-#define	fdesc_create	genfs_eopnotsupp
-#define	fdesc_mknod	genfs_eopnotsupp
 int	fdesc_open(void *);
-#define	fdesc_close	genfs_nullop
-#define	fdesc_access	genfs_nullop
 int	fdesc_getattr(void *);
 int	fdesc_setattr(void *);
 int	fdesc_read(void *);
@@ -88,44 +83,26 @@ int	fdesc_write(void *);
 int	fdesc_ioctl(void *);
 int	fdesc_poll(void *);
 int	fdesc_kqfilter(void *);
-#define	fdesc_mmap	genfs_eopnotsupp
-#define	fdesc_fcntl	genfs_fcntl
-#define	fdesc_fsync	genfs_nullop
-#define	fdesc_seek	genfs_seek
-#define	fdesc_remove	genfs_eopnotsupp
-int	fdesc_link(void *);
-#define	fdesc_rename	genfs_eopnotsupp
-#define	fdesc_mkdir	genfs_eopnotsupp
-#define	fdesc_rmdir	genfs_eopnotsupp
-int	fdesc_symlink(void *);
 int	fdesc_readdir(void *);
 int	fdesc_readlink(void *);
-#define	fdesc_abortop	genfs_abortop
 int	fdesc_inactive(void *);
 int	fdesc_reclaim(void *);
-#define	fdesc_lock	genfs_lock
-#define	fdesc_unlock	genfs_unlock
-#define	fdesc_bmap	genfs_badop
-#define	fdesc_strategy	genfs_badop
 int	fdesc_print(void *);
 int	fdesc_pathconf(void *);
-#define	fdesc_islocked	genfs_islocked
-#define	fdesc_advlock	genfs_einval
-#define	fdesc_bwrite	genfs_eopnotsupp
-#define fdesc_revoke	genfs_revoke
-#define fdesc_putpages	genfs_null_putpages
 
 static int fdesc_attr(int, struct vattr *, kauth_cred_t);
 
 int (**fdesc_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc fdesc_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, fdesc_lookup },		/* lookup */
-	{ &vop_create_desc, fdesc_create },		/* create */
-	{ &vop_mknod_desc, fdesc_mknod },		/* mknod */
+	{ &vop_create_desc, genfs_eopnotsupp },		/* create */
+	{ &vop_mknod_desc, genfs_eopnotsupp },		/* mknod */
 	{ &vop_open_desc, fdesc_open },			/* open */
-	{ &vop_close_desc, fdesc_close },		/* close */
-	{ &vop_access_desc, fdesc_access },		/* access */
+	{ &vop_close_desc, genfs_nullop },		/* close */
+	{ &vop_access_desc, genfs_nullop },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, fdesc_getattr },		/* getattr */
 	{ &vop_setattr_desc, fdesc_setattr },		/* setattr */
 	{ &vop_read_desc, fdesc_read },			/* read */
@@ -133,34 +110,34 @@ const struct vnodeopv_entry_desc fdesc_vnodeop_entries[] = {
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
 	{ &vop_ioctl_desc, fdesc_ioctl },		/* ioctl */
-	{ &vop_fcntl_desc, fdesc_fcntl },		/* fcntl */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
 	{ &vop_poll_desc, fdesc_poll },			/* poll */
 	{ &vop_kqfilter_desc, fdesc_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, fdesc_revoke },		/* revoke */
-	{ &vop_mmap_desc, fdesc_mmap },			/* mmap */
-	{ &vop_fsync_desc, fdesc_fsync },		/* fsync */
-	{ &vop_seek_desc, fdesc_seek },			/* seek */
-	{ &vop_remove_desc, fdesc_remove },		/* remove */
-	{ &vop_link_desc, fdesc_link },			/* link */
-	{ &vop_rename_desc, fdesc_rename },		/* rename */
-	{ &vop_mkdir_desc, fdesc_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, fdesc_rmdir },		/* rmdir */
-	{ &vop_symlink_desc, fdesc_symlink },		/* symlink */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
+	{ &vop_mmap_desc, genfs_eopnotsupp },		/* mmap */
+	{ &vop_fsync_desc, genfs_nullop },		/* fsync */
+	{ &vop_seek_desc, genfs_seek },			/* seek */
+	{ &vop_remove_desc, genfs_eopnotsupp },		/* remove */
+	{ &vop_link_desc, genfs_erofs_link },		/* link */
+	{ &vop_rename_desc, genfs_eopnotsupp },		/* rename */
+	{ &vop_mkdir_desc, genfs_eopnotsupp },		/* mkdir */
+	{ &vop_rmdir_desc, genfs_eopnotsupp },		/* rmdir */
+	{ &vop_symlink_desc, genfs_erofs_symlink },	/* symlink */
 	{ &vop_readdir_desc, fdesc_readdir },		/* readdir */
 	{ &vop_readlink_desc, fdesc_readlink },		/* readlink */
-	{ &vop_abortop_desc, fdesc_abortop },		/* abortop */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, fdesc_inactive },		/* inactive */
 	{ &vop_reclaim_desc, fdesc_reclaim },		/* reclaim */
-	{ &vop_lock_desc, fdesc_lock },			/* lock */
-	{ &vop_unlock_desc, fdesc_unlock },		/* unlock */
-	{ &vop_bmap_desc, fdesc_bmap },			/* bmap */
-	{ &vop_strategy_desc, fdesc_strategy },		/* strategy */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
+	{ &vop_bmap_desc, genfs_eopnotsupp },		/* bmap */
+	{ &vop_strategy_desc, genfs_badop },		/* strategy */
 	{ &vop_print_desc, fdesc_print },		/* print */
-	{ &vop_islocked_desc, fdesc_islocked },		/* islocked */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, fdesc_pathconf },		/* pathconf */
-	{ &vop_advlock_desc, fdesc_advlock },		/* advlock */
-	{ &vop_bwrite_desc, fdesc_bwrite },		/* bwrite */
-	{ &vop_putpages_desc, fdesc_putpages },		/* putpages */
+	{ &vop_advlock_desc, genfs_einval },		/* advlock */
+	{ &vop_bwrite_desc, genfs_eopnotsupp },		/* bwrite */
+	{ &vop_putpages_desc, genfs_null_putpages },	/* putpages */
 	{ NULL, NULL }
 };
 
@@ -207,7 +184,7 @@ fdesc_lookup(void *v)
 	int error, ix = -1;
 	fdtab_t *dt;
 
-	dt = curlwp->l_fd->fd_dt;
+	dt = atomic_load_consume(&curlwp->l_fd->fd_dt);
 
 	if (cnp->cn_namelen == 1 && *pname == '.') {
 		*vpp = dvp;
@@ -295,9 +272,20 @@ bad:
 good:
 	KASSERT(ix != -1);
 	error = vcache_get(dvp->v_mount, &ix, sizeof(ix), vpp);
-	if (error == 0 && ix == FD_CTTY)
+	if (error)
+		return error;
+
+	/*
+	 * Prevent returning VNON nodes.
+	 * Operation fdesc_inactive() will reset the type to VNON.
+	 */
+	if (ix == FD_CTTY)
 		(*vpp)->v_type = VCHR;
-	return error;
+	else if (ix >= FD_DESC)
+		(*vpp)->v_type = VREG;
+	KASSERT((*vpp)->v_type != VNON);
+
+	return 0;
 }
 
 int
@@ -314,11 +302,13 @@ fdesc_open(void *v)
 	case Fdesc:
 		/*
 		 * XXX Kludge: set dupfd to contain the value of the
-		 * the file descriptor being sought for duplication. The error
-		 * return ensures that the vnode for this device will be
-		 * released by vn_open. Open will detect this special error and
-		 * take the actions in dupfdopen.  Other callers of vn_open or
-		 * VOP_OPEN will simply report the error.
+		 * the file descriptor being sought for duplication.
+		 * The error return ensures that the vnode for this
+		 * device will be released by vn_open. vn_open will
+		 * then detect this special error and take the actions
+		 * in fd_dupopen. Other callers of vn_open or VOP_OPEN
+		 * not prepared to deal with this situation will
+		 * report a real error.
 		 */
 		curlwp->l_dupfd = VTOFDESC(vp)->fd_fd;	/* XXX */
 		return EDUPFD;
@@ -412,6 +402,7 @@ fdesc_getattr(void *v)
 	struct vattr *vap = ap->a_vap;
 	unsigned fd;
 	int error = 0;
+	struct timeval tv;
 
 	switch (VTOFDESC(vp)->fd_type) {
 	case Froot:
@@ -454,7 +445,8 @@ fdesc_getattr(void *v)
 		vap->va_gid = 0;
 		vap->va_fsid = vp->v_mount->mnt_stat.f_fsidx.__fsid_val[0];
 		vap->va_blocksize = DEV_BSIZE;
-		vap->va_atime.tv_sec = boottime.tv_sec;
+		getmicroboottime(&tv);
+		vap->va_atime.tv_sec = tv.tv_sec;
 		vap->va_atime.tv_nsec = 0;
 		vap->va_mtime = vap->va_atime;
 		vap->va_ctime = vap->va_mtime;
@@ -566,7 +558,7 @@ fdesc_readdir(void *v)
 		break;
 	}
 
-	dt = curlwp->l_fd->fd_dt;
+	dt = atomic_load_consume(&curlwp->l_fd->fd_dt);
 
 	if (uio->uio_resid < UIO_MX)
 		return EINVAL;
@@ -628,7 +620,6 @@ fdesc_readdir(void *v)
 				*cookies++ = i + 1;
 		}
 	} else {
-		membar_consumer();
 		if (ap->a_ncookies) {
 			ncookies = uimin(ncookies, dt->dt_nfiles + 2);
 			cookies = malloc(ncookies * sizeof(off_t),
@@ -904,7 +895,7 @@ fdesc_pathconf(void *v)
 		*ap->a_retval = 1;
 		return (0);
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 	/* NOTREACHED */
 }
@@ -918,32 +909,4 @@ fdesc_print(void *v)
 {
 	printf("tag VT_NON, fdesc vnode\n");
 	return (0);
-}
-
-int
-fdesc_link(void *v)
-{
-	struct vop_link_v2_args /* {
-		struct vnode *a_dvp;
-		struct vnode *a_vp;
-		struct componentname *a_cnp;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
-}
-
-int
-fdesc_symlink(void *v)
-{
-	struct vop_symlink_v3_args /* {
-		struct vnode *a_dvp;
-		struct vnode **a_vpp;
-		struct componentname *a_cnp;
-		struct vattr *a_vap;
-		char *a_target;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
 }

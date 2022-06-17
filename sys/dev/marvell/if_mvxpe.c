@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mvxpe.c,v 1.30 2019/10/15 00:13:53 chs Exp $	*/
+/*	$NetBSD: if_mvxpe.c,v 1.40 2022/04/04 19:33:45 andvar Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.30 2019/10/15 00:13:53 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.40 2022/04/04 19:33:45 andvar Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -88,7 +88,7 @@ STATIC int mvxpe_miibus_readreg(device_t, int, int, uint16_t *);
 STATIC int mvxpe_miibus_writereg(device_t, int, int, uint16_t);
 STATIC void mvxpe_miibus_statchg(struct ifnet *);
 
-/* Addres Decoding Window */
+/* Address Decoding Window */
 STATIC void mvxpe_wininit(struct mvxpe_softc *, enum marvell_tags *);
 
 /* Device Register Initialization */
@@ -218,7 +218,7 @@ STATIC struct mvxpe_mib_def {
 	    "Frame Size  256 -  511"},
 	{MVXPE_MIB_RX_FRAME1023_OCT, 0,	"rx_frame_512_1023",
 	    "Frame Size  512 - 1023", 0},
-	{MVXPE_MIB_RX_FRAMEMAX_OCT, 0,	"rx_fame_1024_max",
+	{MVXPE_MIB_RX_FRAMEMAX_OCT, 0,	"rx_frame_1024_max",
 	    "Frame Size 1024 -  Max", 0},
 	{MVXPE_MIB_TX_GOOD_OCT, 1,	"tx_good_oct",
 	    "Good Octets Tx", 0},
@@ -482,7 +482,8 @@ mvxpe_attach(device_t parent, device_t self, void *aux)
 	 * we assume phyaddress == MAC unit number here,
 	 * but some boards may not.
 	 */
-	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, sc->sc_dev->dv_unit, 0);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, device_unit(sc->sc_dev),
+	    0);
 	child = LIST_FIRST(&mii->mii_phys);
 	if (child == NULL) {
 		aprint_error_dev(self, "no PHY found!\n");
@@ -558,11 +559,11 @@ mvxpe_evcnt_attach(struct mvxpe_softc *sc)
 	evcnt_attach_dynamic(&sc->sc_ev.ev_misc_srse, EVCNT_TYPE_INTR,
 	    NULL, device_xname(sc->sc_dev), "MISC SERDES sync error");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_misc_txreq, EVCNT_TYPE_INTR,
-	    NULL, device_xname(sc->sc_dev), "MISC Tx resource erorr");
+	    NULL, device_xname(sc->sc_dev), "MISC Tx resource error");
 
 	/* RxTx Interrupt */
 	evcnt_attach_dynamic(&sc->sc_ev.ev_rxtx_rreq, EVCNT_TYPE_INTR,
-	    NULL, device_xname(sc->sc_dev), "RxTx Rx resource erorr");
+	    NULL, device_xname(sc->sc_dev), "RxTx Rx resource error");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_rxtx_rpq, EVCNT_TYPE_INTR,
 	    NULL, device_xname(sc->sc_dev), "RxTx Rx packet");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_rxtx_tbrq, EVCNT_TYPE_INTR,
@@ -600,7 +601,7 @@ mvxpe_evcnt_attach(struct mvxpe_softc *sc)
 	evcnt_attach_dynamic(&sc->sc_ev.ev_txd_ur, EVCNT_TYPE_MISC,
 	    NULL, device_xname(sc->sc_dev), "Tx FIFO underrun counter");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_txd_oth, EVCNT_TYPE_MISC,
-	    NULL, device_xname(sc->sc_dev), "Tx unkonwn erorr counter");
+	    NULL, device_xname(sc->sc_dev), "Tx unknown error counter");
 
 	/* Status Registers */
 	evcnt_attach_dynamic(&sc->sc_ev.ev_reg_pdfc, EVCNT_TYPE_MISC,
@@ -610,7 +611,7 @@ mvxpe_evcnt_attach(struct mvxpe_softc *sc)
 	evcnt_attach_dynamic(&sc->sc_ev.ev_reg_txbadfcs, EVCNT_TYPE_MISC,
 	    NULL, device_xname(sc->sc_dev), "Tx bad FCS counter");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_reg_txdropped, EVCNT_TYPE_MISC,
-	    NULL, device_xname(sc->sc_dev), "Tx dorpped counter");
+	    NULL, device_xname(sc->sc_dev), "Tx dropped counter");
 	evcnt_attach_dynamic(&sc->sc_ev.ev_reg_lpic, EVCNT_TYPE_MISC,
 	    NULL, device_xname(sc->sc_dev), "LP_IDLE counter");
 
@@ -875,7 +876,7 @@ mvxpe_initreg(struct ifnet *ifp)
 	/* Tx MTU Limit */
 	MVXPE_WRITE(sc, MVXPE_TXMTU, MVXPE_MTU);
 
-	/* Check SGMII or SERDES(asume IPL/U-BOOT initialize this) */
+	/* Check SGMII or SERDES(assume IPL/U-BOOT initialize this) */
 	reg = MVXPE_READ(sc, MVXPE_PMACC0);
 	if ((reg & MVXPE_PMACC0_PORTTYPE) != 0)
 		serdes = 1;
@@ -1447,7 +1448,7 @@ mvxpe_rxtxth_intr(void *arg)
 
 	DPRINTIFNET(ifp, 2, "PRXTXTIC: %#x\n", ic);
 
-	/* ack maintance interrupt first */
+	/* ack maintenance interrupt first */
 	if (ic & MVXPE_PRXTXTI_PTXERRORSUMMARY) {
 		DPRINTIFNET(ifp, 1, "PRXTXTIC: +PTXERRORSUMMARY\n");
 		MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtxth_txerr);
@@ -1600,15 +1601,15 @@ mvxpe_rxtx_intr(void *arg)
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_tbrq);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PRXTXTHICSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PRXTXTHIC Sumary\n");
+			DPRINTIFNET(ifp, 1, "PRXTXTHIC Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_rxtxth);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PTXERRORSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PTXERROR Sumary\n");
+			DPRINTIFNET(ifp, 1, "PTXERROR Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_txerr);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PMISCICSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PMISCIC Sumary\n");
+			DPRINTIFNET(ifp, 1, "PMISCIC Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_misc);
 		}
 	}
@@ -1709,7 +1710,7 @@ mvxpe_start(struct ifnet *ifp)
 		    sc->sc_tx_ring[q].tx_queue_len);
 		DPRINTIFNET(ifp, 1, "a packet is added to tx ring\n");
 		sc->sc_tx_pending++;
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		ifp->if_timer = 1;
 		sc->sc_wdogsoft = 1;
 		bpf_mtap(ifp, m, BPF_D_OUT);
@@ -1937,7 +1938,7 @@ mvxpe_watchdog(struct ifnet *ifp)
 				MVXPE_EVCNT_INCR(&sc->sc_ev.ev_drv_wdogsoft);
 			} else {
 				aprint_error_ifnet(ifp, "watchdog timeout\n");
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 				mvxpe_linkreset(sc);
 				mvxpe_sc_unlock(sc);
 
@@ -2610,7 +2611,7 @@ mvxpe_rx_queue_add(struct mvxpe_softc *sc, int q)
 		return ENOBUFS;
 	}
 
-	/* Add the packet to descritor */
+	/* Add the packet to descriptor */
 	KASSERT(MVXPE_RX_PKTBUF(sc, q, rx->rx_cpu) == NULL);
 	MVXPE_RX_PKTBUF(sc, q, rx->rx_cpu) = chunk;
 	mvxpbm_dmamap_sync(chunk, BM_SYNC_ALL, BUS_DMASYNC_PREREAD);
@@ -3264,13 +3265,13 @@ mvxpe_update_mib(struct mvxpe_softc *sc)
 
 		switch (mvxpe_mib_list[i].ext) {
 		case MVXPE_MIBEXT_IF_OERRORS:
-			ifp->if_oerrors += val;
+			if_statadd(ifp, if_oerrors,  val);
 			break;
 		case MVXPE_MIBEXT_IF_IERRORS:
-			ifp->if_ierrors += val;
+			if_statadd(ifp, if_ierrors,  val);
 			break;
 		case MVXPE_MIBEXT_IF_COLLISIONS:
-			ifp->if_collisions += val;
+			if_statadd(ifp, if_collisions, val);
 			break;
 		default:
 			break;

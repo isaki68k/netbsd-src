@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_params.c,v 1.2 2019/08/11 20:26:34 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_params.c,v 1.5 2022/04/28 17:28:15 martin Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -49,14 +49,54 @@ struct npf_paraminfo {
 	thmap_t *		map;
 };
 
+static inline void
+npf_param_general_register(npf_t *npf)
+{
+	npf_param_t param_map[] = {
+		{
+			"ip4.reassembly",
+			&npf->ip4_reassembly,
+			.default_val = 0, // false
+			.min = 0, .max = 1
+		},
+		{
+			"ip6.reassembly",
+			&npf->ip6_reassembly,
+			.default_val = 0, // false
+			.min = 0, .max = 1
+		},
+	};
+	npf_param_register(npf, param_map, __arraycount(param_map));
+}
+
+static uintptr_t
+npf_param_thmap_alloc(size_t len)
+{
+	return (uintptr_t)kmem_alloc(len, KM_SLEEP);
+}
+
+static void
+npf_param_thmap_free(uintptr_t addr, size_t len)  
+{
+        kmem_free((void *)addr, len);
+} 
+
+static const thmap_ops_t npf_param_thmap_ops = {
+        .alloc = npf_param_thmap_alloc,
+        .free = npf_param_thmap_free
+};
+
 void
 npf_param_init(npf_t *npf)
 {
 	npf_paraminfo_t *paraminfo;
 
 	paraminfo = kmem_zalloc(sizeof(npf_paraminfo_t), KM_SLEEP);
-	paraminfo->map = thmap_create(0, NULL, THMAP_NOCOPY);
+	paraminfo->map = thmap_create(0, &npf_param_thmap_ops, THMAP_NOCOPY);
 	npf->paraminfo = paraminfo;
+
+	/* Register some general parameters. */
+	npf_param_general_register(npf);
 }
 
 void
@@ -89,6 +129,32 @@ npf_param_fini(npf_t *npf)
 	}
 	thmap_destroy(pinfo->map);
 	kmem_free(pinfo, sizeof(npf_paraminfo_t));
+}
+
+int
+npf_params_export(const npf_t *npf, nvlist_t *nv)
+{
+	nvlist_t *params, *dparams;
+
+	/*
+	 * Export both the active and default values.  The latter are to
+	 * accommodate npfctl so it could distinguish what has been set.
+	 */
+	params = nvlist_create(0);
+	dparams = nvlist_create(0);
+	for (npf_paramreg_t *pr = npf->paraminfo->list; pr; pr = pr->next) {
+		for (unsigned i = 0; i < pr->count; i++) {
+			const npf_param_t *param = &pr->params[i];
+			const uint64_t val = *param->valp;
+			const uint64_t defval = param->default_val;
+
+			nvlist_add_number(params, param->name, val);
+			nvlist_add_number(dparams, param->name, defval);
+		}
+	}
+	nvlist_add_nvlist(nv, "params", params);
+	nvlist_add_nvlist(nv, "params-defaults", dparams);
+	return 0;
 }
 
 void *
@@ -135,7 +201,9 @@ npf_param_register(npf_t *npf, npf_param_t *params, unsigned count)
 		void *ret __diagused;
 
 		ret = thmap_put(pinfo->map, name, strlen(name), param);
-		KASSERT(ret == param);
+		KASSERTMSG(ret == param,
+		    "parameter insertion failed: ret=%p, param=%p",
+		    ret, param);
 
 		/* Assign the default value. */
 		KASSERT(param->default_val >= param->min);

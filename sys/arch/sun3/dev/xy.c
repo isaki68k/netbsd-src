@@ -1,4 +1,4 @@
-/*	$NetBSD: xy.c,v 1.78 2015/04/26 15:15:19 mlelstv Exp $	*/
+/*	$NetBSD: xy.c,v 1.82 2021/08/07 16:19:06 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 Charles D. Cranor
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xy.c,v 1.78 2015/04/26 15:15:19 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xy.c,v 1.82 2021/08/07 16:19:06 thorpej Exp $");
 
 #undef XYC_DEBUG		/* full debug */
 #undef XYC_DIAG			/* extra sanity checks */
@@ -64,7 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: xy.c,v 1.78 2015/04/26 15:15:19 mlelstv Exp $");
 #include <sys/buf.h>
 #include <sys/bufq.h>
 #include <sys/uio.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/disklabel.h>
 #include <sys/disk.h>
@@ -390,10 +390,8 @@ xycattach(device_t parent, device_t self, void *aux)
 	xyc->iopbase = tmp;
 	xyc->dvmaiopb =
 	    (struct xy_iopb *)dvma_kvtopa(xyc->iopbase, xyc->bustype);
-	xyc->reqs = malloc(XYC_MAXIOPB * sizeof(struct xy_iorq),
-	    M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (xyc->reqs == NULL)
-		panic("xyc malloc");
+	xyc->reqs = kmem_zalloc(XYC_MAXIOPB * sizeof(struct xy_iorq),
+	    KM_SLEEP);
 
 	/*
 	 * init iorq to iopb pointers, and non-zero fields in the
@@ -450,7 +448,7 @@ xycattach(device_t parent, device_t self, void *aux)
 
 	/* now we must look for disks using autoconfig */
 	for (xa.driveno = 0; xa.driveno < XYC_MAXDEV; xa.driveno++)
-		(void)config_found(self, (void *)&xa, xyc_print);
+		(void)config_found(self, (void *)&xa, xyc_print, CFARGS_NONE);
 
 	/* start the watchdog clock */
 	callout_reset(&xyc->sc_tick_ch, XYC_TICKCNT, xyc_tick, xyc);

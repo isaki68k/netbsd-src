@@ -1,3 +1,5 @@
+/* $NetBSD: smscphy.c,v 1.4 2021/08/25 21:50:29 andvar Exp $ */
+
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
  *
@@ -24,12 +26,14 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
 /* $FreeBSD: head/sys/dev/mii/smscphy.c 326255 2017-11-27 14:52:40Z pfg $ */
 
 /*
  * Driver for the SMSC LAN8710A
  */
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: smscphy.c,v 1.4 2021/08/25 21:50:29 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -107,18 +111,17 @@ smscphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_mpd_rev = MII_REV(ma->mii_id2);
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
 	sc->mii_capabilities &= ma->mii_capmask;
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static void
@@ -140,6 +143,8 @@ smscphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct	ifmedia_entry *ife;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	ife = mii->mii_media.ifm_cur;
 
@@ -212,6 +217,8 @@ smscphy_status(struct mii_softc *sc)
 {
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmcr, bmsr, status;
+
+	KASSERT(mii_locked(mii));
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;

@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm_x86.h,v 1.18 2019/10/28 08:30:49 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.h,v 1.21 2021/03/26 15:59:53 reinoud Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,17 +15,17 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #ifndef _NVMM_X86_H_
@@ -75,6 +74,7 @@ struct nvmm_x86_exit_invalid {
 
 /* Generic. */
 #define NVMM_VCPU_EXIT_NONE		0x0000000000000000ULL
+#define NVMM_VCPU_EXIT_STOPPED		0xFFFFFFFFFFFFFFFEULL
 #define NVMM_VCPU_EXIT_INVALID		0xFFFFFFFFFFFFFFFFULL
 /* x86: operations. */
 #define NVMM_VCPU_EXIT_MEMORY		0x0000000000000001ULL
@@ -320,6 +320,8 @@ extern const struct nvmm_x64_state nvmm_x86_reset_state;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000007;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001;
+extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000007;
+extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000008;
 bool nvmm_x86_pat_validate(uint64_t);
 #endif
 

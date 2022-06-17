@@ -1,4 +1,4 @@
-/* $NetBSD: ep93xx_intr.c,v 1.24 2015/04/08 08:35:54 ozaki-r Exp $ */
+/* $NetBSD: ep93xx_intr.c,v 1.27 2021/11/21 08:25:26 skrll Exp $ */
 
 /*
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ep93xx_intr.c,v 1.24 2015/04/08 08:35:54 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ep93xx_intr.c,v 1.27 2021/11/21 08:25:26 skrll Exp $");
 
 /*
  * Interrupt support for the Cirrus Logic EP93XX
@@ -41,7 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: ep93xx_intr.c,v 1.24 2015/04/08 08:35:54 ozaki-r Exp
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/termios.h>
 #include <sys/lwp.h>
 
@@ -50,8 +50,8 @@ __KERNEL_RCSID(0, "$NetBSD: ep93xx_intr.c,v 1.24 2015/04/08 08:35:54 ozaki-r Exp
 
 #include <arm/locore.h>
 
-#include <arm/ep93xx/ep93xxreg.h> 
-#include <arm/ep93xx/ep93xxvar.h> 
+#include <arm/ep93xx/ep93xxreg.h>
+#include <arm/ep93xx/ep93xxvar.h>
 
 /* Interrupt handler queues. */
 struct intrq intrq[NIRQ];
@@ -287,10 +287,7 @@ ep93xx_intr_establish(int irq, int ipl, int (*ih_func)(void *), void *arg)
 	if (ipl < 0 || ipl > NIPL)
 		panic("ep93xx_intr_establish: IPL %d out of range", ipl);
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		return (NULL);
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = ih_func;
 	ih->ih_arg = arg;
 	ih->ih_irq = irq;
@@ -317,6 +314,8 @@ ep93xx_intr_disestablish(void *cookie)
 	TAILQ_REMOVE(&iq->iq_list, ih, ih_list);
 	ep93xx_intr_calculate_masks();
 	restore_interrupts(oldirqstate);
+
+	kmem_free(ih, sizeof(*ih));
 }
 
 void

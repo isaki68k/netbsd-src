@@ -1,4 +1,4 @@
-/*	$NetBSD: mvcesa.c,v 1.2 2018/09/03 16:29:31 riastradh Exp $	*/
+/*	$NetBSD: mvcesa.c,v 1.6 2022/05/22 11:39:27 riastradh Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvcesa.c,v 1.2 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvcesa.c,v 1.6 2022/05/22 11:39:27 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -56,7 +56,6 @@ struct mvcesa_session {
 	int ses_used;
 
 	int ses_klen;
-	uint32_t ses_iv[4];
 	uint32_t ses_key[8];
 
 	uint32_t ses_hminner[5];	/* HMAC inner state */
@@ -81,7 +80,7 @@ static void mvcesa_attach(device_t, device_t, void *);
 static int mvcesa_intr(void *);
 
 static int mvcesa_newsession(void *, u_int32_t *, struct cryptoini *);
-static int mvcesa_freesession(void *, u_int64_t);
+static void mvcesa_freesession(void *, u_int64_t);
 static int mvcesa_process(void *, struct cryptop *, int);
 
 static int mvcesa_authentication(struct mvcesa_softc *, struct mvcesa_session *,
@@ -236,9 +235,6 @@ mvcesa_newsession(void *arg, u_int32_t *sidp, struct cryptoini *cri)
 				return EINVAL;
 			enc = 1;
 
-			cprng_fast(ses->ses_iv,
-			    c->cri_alg == CRYPTO_AES_CBC ? 16 : 8);
-
 			/* Go ahead and compute key in CESA's byte order */
 			ses->ses_klen = c->cri_klen;
 			memcpy(ses->ses_key, c->cri_key, c->cri_klen / 8);
@@ -329,27 +325,25 @@ mvcesa_newsession(void *arg, u_int32_t *sidp, struct cryptoini *cri)
 /*
  * Deallocate a session.
  */
-static int
+static void
 mvcesa_freesession(void *arg, u_int64_t tid)
 {
 	struct mvcesa_softc *sc = (struct mvcesa_softc *)arg;
 	int session;
 	uint32_t sid = ((uint32_t)tid) & 0xffffffff;
 
-	KASSERT(sc != NULL /*, ("mvcesa_freesession: null softc")*/);
-
 	session = MVCESA_SESSION(sid);
-	if (session >= sc->sc_nsessions)
-		return EINVAL;
+	KASSERTMSG(session >= 0, "session=%d", session);
+	KASSERTMSG(session < sc->sc_nsessions, "session=%d nsessions=%d",
+	    session, sc->sc_nsessions);
 
 	memset(&sc->sc_sessions[session], 0, sizeof(sc->sc_sessions[session]));
-	return (0);
 }
 
 static int
 mvcesa_process(void *arg, struct cryptop *crp, int hint)
 {
-	struct mvcesa_softc *sc = (struct mvcesa_softc *)arg;
+	struct mvcesa_softc *sc = arg;
 	struct mvcesa_session *ses;
 	struct cryptodesc *crd;
 	struct mbuf *m = NULL;
@@ -357,20 +351,9 @@ mvcesa_process(void *arg, struct cryptop *crp, int hint)
 	int session;
 	char *buf = NULL;
 
-	KASSERT(sc != NULL /*, ("mvcesa_process: null softc")*/);
-
-	if (crp == NULL)
-		return EINVAL;
-	if (crp->crp_callback == NULL || sc == NULL) {
-		crp->crp_etype = EINVAL;
-		goto done;
-	}
-
 	session = MVCESA_SESSION(crp->crp_sid);
-	if (session >= sc->sc_nsessions) {
-		crp->crp_etype = ENOENT;
-		goto done;
-	}
+	KASSERTMSG(session < sc->sc_nsessions, "session=%d nsessions=%d",
+	    session, sc->sc_nsessions);
 	ses = &sc->sc_sessions[session];
 
 	if (crp->crp_flags & CRYPTO_F_IMBUF)
@@ -406,8 +389,10 @@ mvcesa_process(void *arg, struct cryptop *crp, int hint)
 				dir = MVCESA_DESE_C_DIRECTION_ENC;
 				if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 					iv = (uint32_t *)crd->crd_iv;
-				else
-					iv = ses->ses_iv;
+				else {
+					cprng_fast(ivbuf, sizeof(ivbuf));
+					iv = ivbuf;
+				}
 				if (!(crd->crd_flags & CRD_F_IV_PRESENT)) {
 					if (m != NULL)
 						m_copyback(m, crd->crd_inject,
@@ -718,7 +703,7 @@ mvcesa_des_encdec(struct mvcesa_softc *sc, struct mvcesa_session *ses,
 		}
 
 		/*
-		 * Encryption/Decription calculation time is 9 cycles in DES
+		 * Encryption/Decryption calculation time is 9 cycles in DES
 		 * mode and 25 cycles in 3DES mode.
 		 */
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, MVCESA_DESE_DBL,
@@ -759,9 +744,6 @@ mvcesa_des_encdec(struct mvcesa_softc *sc, struct mvcesa_session *ses,
 				break;
 		}
 	}
-
-	if (dir == MVCESA_DESE_C_DIRECTION_ENC)
-		memcpy(ses->ses_iv, iv, sizeof(ses->ses_iv));
 
 	return 0;
 }

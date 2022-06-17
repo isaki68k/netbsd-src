@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3gpio.c,v 1.11 2014/12/27 16:19:33 nonaka Exp $	*/
+/*	$NetBSD: pq3gpio.c,v 1.14 2021/08/07 16:19:02 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -37,11 +37,12 @@
 #define	GLOBAL_PRIVATE
 #define	GPIO_PRIVATE
 
-#include "opt_mpc85xx.h"
-
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3gpio.c,v 1.14 2021/08/07 16:19:02 thorpej Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: pq3gpio.c,v 1.11 2014/12/27 16:19:33 nonaka Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_mpc85xx.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -236,7 +237,8 @@ pq3gpio_group_create(device_t self, bus_space_tag_t bst, bus_space_handle_t bsh,
 		.gba_npins = pin - gc->gc_pins,
 	};
 
-	config_found_ia(self, "gpiobus", &gba, gpiobus_print);
+	config_found(self, &gba, gpiobus_print,
+	    CFARGS(.iattr = "gpiobus"));
 }
 
 #ifdef MPC8536

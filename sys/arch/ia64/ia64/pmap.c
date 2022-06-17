@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.c,v 1.38 2019/05/09 15:48:55 scole Exp $ */
+/* $NetBSD: pmap.c,v 1.42 2022/04/09 23:38:32 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -81,9 +81,10 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.38 2019/05/09 15:48:55 scole Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.42 2022/04/09 23:38:32 riastradh Exp $");
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
 #include <sys/reboot.h>
@@ -1515,9 +1516,11 @@ pmap_destroy(pmap_t pmap)
 
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist, "(pm=%p)", pmap, 0, 0, 0);
-	
+
+	membar_release();
 	if (atomic_dec_64_nv(&pmap->pm_refcount) > 0)
 		return;
+	membar_acquire();
 
 	KASSERT(pmap->pm_stats.resident_count == 0);
 	KASSERT(pmap->pm_stats.wired_count == 0);
@@ -1855,10 +1858,11 @@ pmap_remove(pmap_t pmap, vaddr_t sva, vaddr_t eva)
  *	entries in pmap will be removed before any more entries are
  *	entered.
  */
-void
+bool
 pmap_remove_all(pmap_t pmap)
 {
 	/* XXX do nothing */
+	return false;
 }
 
 /*

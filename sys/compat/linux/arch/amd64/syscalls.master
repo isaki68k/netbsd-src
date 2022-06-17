@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.60 2017/02/03 16:18:19 christos Exp $
+	$NetBSD: syscalls.master,v 1.67 2021/12/02 04:29:48 ryo Exp $
 
 ;	@(#)syscalls.master	8.1 (Berkeley) 7/19/93
 
@@ -423,11 +423,15 @@
 220	UNIMPL		semtimedop
 221	STD		{ int|linux_sys||fadvise64(int fd, off_t offset, \
 			    size_t len, int advice); }
-222	UNIMPL		timer_create
-223	UNIMPL		timer_settime
-224	UNIMPL		timer_gettime
-225	UNIMPL		timer_getoverrun
-226	UNIMPL		timer_delete
+222	STD		{ int|linux_sys||timer_create(clockid_t clockid, \
+			    struct linux_sigevent *evp, timer_t *timerid); }
+223	STD		{ int|linux_sys||timer_settime(timer_t timerid, \
+			    int flags, const struct linux_itimerspec *tim, \
+			    struct linux_itimerspec *otim); }
+224	STD		{ int|linux_sys||timer_gettime(timer_t timerid, \
+			    struct linux_itimerspec *tim); }
+225	NOARGS		{ int|sys||timer_getoverrun(timer_t timerid); }
+226	NOARGS		{ int|sys||timer_delete(timer_t timerid); }
 227	STD		{ int|linux_sys||clock_settime(clockid_t which, \
 			    struct linux_timespec *tp); }
 228	STD		{ int|linux_sys||clock_gettime(clockid_t which, \
@@ -497,11 +501,15 @@
 			    struct linux_timespec *timeout, \
 			    linux_sigset_t *sigset); }
 272	UNIMPL		unshare
-273	STD		{ int|linux_sys||set_robust_list( \
-			    struct linux_robust_list_head *head, size_t len); }
-274	STD		{ int|linux_sys||get_robust_list(int pid, \
-			    struct linux_robust_list_head **head, \
-			    size_t *len); }
+			;
+			; The NetBSD native robust list calls have different
+			; argument names / types, but they are ABI-compatible
+			; with Linux.
+			;
+273	NOARGS		{ int|sys||__futex_set_robust_list(void *head, \
+			    size_t len); }
+274	NOARGS		{ int|sys||__futex_get_robust_list(lwpid_t lwpid, \
+			    void **headp, size_t *lenp); }
 275	UNIMPL		splice
 276	UNIMPL		tee
 277	UNIMPL		sync_file_range
@@ -511,22 +519,32 @@
 			    struct linux_timespec *times, int flag); }
 281	UNIMPL		epoll_pwait
 282	UNIMPL		signalfd
-283	UNIMPL		timerfd_create
-284	UNIMPL		eventfd
-285	UNIMPL		fallocate
-286	UNIMPL		timerfd_settime
-287	UNIMPL		timerfd_gettime
+283	STD		{ int|linux_sys||timerfd_create(clockid_t clock_id, \
+			    int flags); }
+284	STD		{ int|linux_sys||eventfd(unsigned int initval); }
+285	STD		{ int|linux_sys||fallocate(int fd, int mode, \
+			    off_t offset, off_t len); }
+286	STD		{ int|linux_sys||timerfd_settime(int fd, int flags, \
+			    const struct linux_itimerspec *tim, \
+			    struct linux_itimerspec *otim); }
+287	STD		{ int|linux_sys||timerfd_gettime(int fd, \
+			    struct linux_itimerspec *tim); }
 288	STD		{ int|linux_sys||accept4(int s, \
 			    struct osockaddr *name, \
 			    int *anamelen, int flags); }
 289	UNIMPL		signalfd4
-290	UNIMPL		eventfd2
+290	STD		{ int|linux_sys||eventfd2(unsigned int initval, \
+			    int flags); }
 291	UNIMPL		epoll_create1
 292	STD		{ int|linux_sys||dup3(int from, int to, int flags); }
 293	STD		{ int|linux_sys||pipe2(int *pfds, int flags); }
 294	UNIMPL		inotify_init1
-295	UNIMPL		preadv
-296	UNIMPL		pwritev
+295	STD		{ int|linux_sys||preadv(int fd, \
+			    const struct iovec *iovp, int iovcnt, \
+			    unsigned long off_lo, unsigned long off_hi); }
+296	STD		{ int|linux_sys||pwritev(int fd, \
+			    const struct iovcnt *iovp, int iovcnt, \
+			    unsigned long off_lo, unsigned long off_hi); }
 297	UNIMPL		rt_tgsigqueueinfo
 298	UNIMPL		perf_counter_open
 299	STD		{ int|linux_sys||recvmmsg(int s, \
@@ -534,7 +552,8 @@
 			    unsigned int flags, struct timespec *timeout); }
 300	UNIMPL		fanotify_init
 301	UNIMPL		fanotify_mark
-302	UNIMPL		prlimit64
+302	STD		{ int|linux_sys||prlimit64(pid_t pid, int which, \
+			    struct rlimit *new_rlp, struct rlimit *old_rlp); }
 303	UNIMPL		name_to_handle_at
 304	UNIMPL		open_by_handle_at
 305	UNIMPL		clock_adjtime

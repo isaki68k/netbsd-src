@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_vnops.c,v 1.199 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: genfs_vnops.c,v 1.219 2022/03/27 17:10:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.199 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.219 2022/03/27 17:10:55 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -74,17 +74,40 @@ __KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.199 2017/10/25 08:12:39 maya Exp $
 #include <sys/file.h>
 #include <sys/kauth.h>
 #include <sys/stat.h>
+#include <sys/extattr.h>
 
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/genfs/genfs_node.h>
 #include <miscfs/specfs/specdev.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_pager.h>
-
 static void filt_genfsdetach(struct knote *);
 static int filt_genfsread(struct knote *, long);
 static int filt_genfsvnode(struct knote *, long);
+
+/*
+ * Find the end of the first path component in NAME and return its
+ * length.
+ */
+int
+genfs_parsepath(void *v)
+{
+	struct vop_parsepath_args /* {
+		struct vnode *a_dvp;
+		const char *a_name;
+		size_t *a_ret;
+	} */ *ap = v;
+	const char *name = ap->a_name;
+	size_t pos;
+
+	(void)ap->a_dvp;
+
+	pos = 0;
+	while (name[pos] != '\0' && name[pos] != '/') {
+		pos++;
+	}
+	*ap->a_retval = pos;
+	return 0;
+}
 
 int
 genfs_poll(void *v)
@@ -167,6 +190,20 @@ genfs_einval(void *v)
 {
 
 	return (EINVAL);
+}
+
+int
+genfs_erofs_link(void *v)
+{
+	/* also for symlink */
+	struct vop_link_v2_args /* {
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
+	} */ *ap = v;
+
+	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
+	return EROFS;
 }
 
 /*
@@ -292,12 +329,21 @@ genfs_deadlock(void *v)
 	if (! ISSET(flags, LK_RETRY))
 		return ENOENT;
 
-	op = (ISSET(flags, LK_EXCLUSIVE) ? RW_WRITER : RW_READER);
-	if (ISSET(flags, LK_NOWAIT)) {
-		if (! rw_tryenter(&vip->vi_lock, op))
+	if (ISSET(flags, LK_DOWNGRADE)) {
+		rw_downgrade(&vip->vi_lock);
+	} else if (ISSET(flags, LK_UPGRADE)) {
+		KASSERT(ISSET(flags, LK_NOWAIT));
+		if (!rw_tryupgrade(&vip->vi_lock)) {
 			return EBUSY;
-	} else {
-		rw_enter(&vip->vi_lock, op);
+		}
+	} else if ((flags & (LK_EXCLUSIVE | LK_SHARED)) != 0) {
+		op = (ISSET(flags, LK_EXCLUSIVE) ? RW_WRITER : RW_READER);
+		if (ISSET(flags, LK_NOWAIT)) {
+			if (!rw_tryenter(&vip->vi_lock, op))
+				return EBUSY;
+		} else {
+			rw_enter(&vip->vi_lock, op);
+		}
 	}
 	VSTATE_ASSERT_UNLOCKED(vp, VS_RECLAIMED);
 	return 0;
@@ -335,12 +381,21 @@ genfs_lock(void *v)
 	int flags = ap->a_flags;
 	krw_t op;
 
-	op = (ISSET(flags, LK_EXCLUSIVE) ? RW_WRITER : RW_READER);
-	if (ISSET(flags, LK_NOWAIT)) {
-		if (! rw_tryenter(&vip->vi_lock, op))
+	if (ISSET(flags, LK_DOWNGRADE)) {
+		rw_downgrade(&vip->vi_lock);
+	} else if (ISSET(flags, LK_UPGRADE)) {
+		KASSERT(ISSET(flags, LK_NOWAIT));
+		if (!rw_tryupgrade(&vip->vi_lock)) {
 			return EBUSY;
-	} else {
-		rw_enter(&vip->vi_lock, op);
+		}
+	} else if ((flags & (LK_EXCLUSIVE | LK_SHARED)) != 0) {
+		op = (ISSET(flags, LK_EXCLUSIVE) ? RW_WRITER : RW_READER);
+		if (ISSET(flags, LK_NOWAIT)) {
+			if (!rw_tryenter(&vip->vi_lock, op))
+				return EBUSY;
+		} else {
+			rw_enter(&vip->vi_lock, op);
+		}
 	}
 	VSTATE_ASSERT_UNLOCKED(vp, VS_ACTIVE);
 	return 0;
@@ -384,30 +439,6 @@ genfs_islocked(void *v)
 	return 0;
 }
 
-/*
- * Stubs to use when there is no locking to be done on the underlying object.
- */
-int
-genfs_nolock(void *v)
-{
-
-	return (0);
-}
-
-int
-genfs_nounlock(void *v)
-{
-
-	return (0);
-}
-
-int
-genfs_noislocked(void *v)
-{
-
-	return (0);
-}
-
 int
 genfs_mmap(void *v)
 {
@@ -431,7 +462,7 @@ genfs_null_putpages(void *v)
 	struct vnode *vp = ap->a_vp;
 
 	KASSERT(vp->v_uobj.uo_npages == 0);
-	mutex_exit(vp->v_interlock);
+	rw_exit(vp->v_uobj.vmobjlock);
 	return (0);
 }
 
@@ -466,9 +497,7 @@ filt_genfsdetach(struct knote *kn)
 {
 	struct vnode *vp = (struct vnode *)kn->kn_hook;
 
-	mutex_enter(vp->v_interlock);
-	SLIST_REMOVE(&vp->v_klist, kn, knote, kn_selnext);
-	mutex_exit(vp->v_interlock);
+	vn_knote_detach(vp, kn);
 }
 
 static int
@@ -484,7 +513,7 @@ filt_genfsread(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= (EV_EOF | EV_ONESHOT);
+		knote_set_eof(kn, EV_ONESHOT);
 		return (1);
 	case 0:
 		mutex_enter(vp->v_interlock);
@@ -511,7 +540,7 @@ filt_genfswrite(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= (EV_EOF | EV_ONESHOT);
+		knote_set_eof(kn, EV_ONESHOT);
 		return (1);
 	case 0:
 		mutex_enter(vp->v_interlock);
@@ -534,7 +563,7 @@ filt_genfsvnode(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		if ((kn->kn_sfflags & hint) != 0)
 			kn->kn_fflags |= hint;
 		return (1);
@@ -555,21 +584,21 @@ filt_genfsvnode(struct knote *kn, long hint)
 }
 
 static const struct filterops genfsread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfsread,
 };
 
 static const struct filterops genfswrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfswrite,
 };
 
 static const struct filterops genfsvnode_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfsvnode,
@@ -603,9 +632,7 @@ genfs_kqfilter(void *v)
 
 	kn->kn_hook = vp;
 
-	mutex_enter(vp->v_interlock);
-	SLIST_INSERT_HEAD(&vp->v_klist, kn, kn_selnext);
-	mutex_exit(vp->v_interlock);
+	vn_knote_attach(vp, kn);
 
 	return (0);
 }
@@ -651,52 +678,504 @@ genfs_node_wrlocked(struct vnode *vp)
 }
 
 /*
- * Do the usual access checking.
- * file_mode, uid and gid are from the vnode in question,
- * while acc_mode and cred are from the VOP_ACCESS parameter list
+ * Common filesystem object access control check routine.  Accepts a
+ * vnode, cred, uid, gid, mode, acl, requested access mode.
+ * Returns 0 on success, or an errno on failure.
  */
 int
-genfs_can_access(enum vtype type, mode_t file_mode, uid_t uid, gid_t gid,
-    mode_t acc_mode, kauth_cred_t cred)
+genfs_can_access(vnode_t *vp, kauth_cred_t cred, uid_t file_uid, gid_t file_gid,
+    mode_t file_mode, struct acl *acl, accmode_t accmode)
 {
-	mode_t mask;
-	int error, ismember;
+	accmode_t dac_granted;
+	int error;
 
-	mask = 0;
+	KASSERT((accmode & ~(VEXEC | VWRITE | VREAD | VADMIN | VAPPEND)) == 0);
+	KASSERT((accmode & VAPPEND) == 0 || (accmode & VWRITE));
 
-	/* Otherwise, check the owner. */
-	if (kauth_cred_geteuid(cred) == uid) {
-		if (acc_mode & VEXEC)
-			mask |= S_IXUSR;
-		if (acc_mode & VREAD)
-			mask |= S_IRUSR;
-		if (acc_mode & VWRITE)
-			mask |= S_IWUSR;
-		return ((file_mode & mask) == mask ? 0 : EACCES);
+	/*
+	 * Look for a normal, non-privileged way to access the file/directory
+	 * as requested.  If it exists, go with that.
+	 */
+
+	dac_granted = 0;
+
+	/* Check the owner. */
+	if (kauth_cred_geteuid(cred) == file_uid) {
+		dac_granted |= VADMIN;
+		if (file_mode & S_IXUSR)
+			dac_granted |= VEXEC;
+		if (file_mode & S_IRUSR)
+			dac_granted |= VREAD;
+		if (file_mode & S_IWUSR)
+			dac_granted |= (VWRITE | VAPPEND);
+
+		goto privchk;
 	}
 
+	/* Otherwise, check the groups (first match) */
 	/* Otherwise, check the groups. */
-	error = kauth_cred_ismember_gid(cred, gid, &ismember);
-	if (error)
-		return (error);
-	if (kauth_cred_getegid(cred) == gid || ismember) {
-		if (acc_mode & VEXEC)
-			mask |= S_IXGRP;
-		if (acc_mode & VREAD)
-			mask |= S_IRGRP;
-		if (acc_mode & VWRITE)
-			mask |= S_IWGRP;
-		return ((file_mode & mask) == mask ? 0 : EACCES);
+	error = kauth_cred_groupmember(cred, file_gid);
+	if (error > 0)
+		return error;
+	if (error == 0) {
+		if (file_mode & S_IXGRP)
+			dac_granted |= VEXEC;
+		if (file_mode & S_IRGRP)
+			dac_granted |= VREAD;
+		if (file_mode & S_IWGRP)
+			dac_granted |= (VWRITE | VAPPEND);
+
+		goto privchk;
 	}
 
 	/* Otherwise, check everyone else. */
-	if (acc_mode & VEXEC)
-		mask |= S_IXOTH;
-	if (acc_mode & VREAD)
-		mask |= S_IROTH;
-	if (acc_mode & VWRITE)
-		mask |= S_IWOTH;
-	return ((file_mode & mask) == mask ? 0 : EACCES);
+	if (file_mode & S_IXOTH)
+		dac_granted |= VEXEC;
+	if (file_mode & S_IROTH)
+		dac_granted |= VREAD;
+	if (file_mode & S_IWOTH)
+		dac_granted |= (VWRITE | VAPPEND);
+
+privchk:
+	if ((accmode & dac_granted) == accmode)
+		return 0;
+
+	return (accmode & VADMIN) ? EPERM : EACCES;
+}
+
+/*
+ * Implement a version of genfs_can_access() that understands POSIX.1e ACL
+ * semantics;
+ * the access ACL has already been prepared for evaluation by the file system
+ * and is passed via 'uid', 'gid', and 'acl'.  Return 0 on success, else an
+ * errno value.
+ */
+int
+genfs_can_access_acl_posix1e(vnode_t *vp, kauth_cred_t cred, uid_t file_uid,
+    gid_t file_gid, mode_t file_mode, struct acl *acl, accmode_t accmode)
+{
+	struct acl_entry *acl_other, *acl_mask;
+	accmode_t dac_granted;
+	accmode_t acl_mask_granted;
+	int group_matched, i;
+	int error;
+
+	KASSERT((accmode & ~(VEXEC | VWRITE | VREAD | VADMIN | VAPPEND)) == 0);
+	KASSERT((accmode & VAPPEND) == 0 || (accmode & VWRITE));
+
+	/*
+	 * The owner matches if the effective uid associated with the
+	 * credential matches that of the ACL_USER_OBJ entry.  While we're
+	 * doing the first scan, also cache the location of the ACL_MASK and
+	 * ACL_OTHER entries, preventing some future iterations.
+	 */
+	acl_mask = acl_other = NULL;
+	for (i = 0; i < acl->acl_cnt; i++) {
+		struct acl_entry *ae = &acl->acl_entry[i];
+		switch (ae->ae_tag) {
+		case ACL_USER_OBJ:
+			if (kauth_cred_geteuid(cred) != file_uid)
+				break;
+			dac_granted = 0;
+			dac_granted |= VADMIN;
+			if (ae->ae_perm & ACL_EXECUTE)
+				dac_granted |= VEXEC;
+			if (ae->ae_perm & ACL_READ)
+				dac_granted |= VREAD;
+			if (ae->ae_perm & ACL_WRITE)
+				dac_granted |= (VWRITE | VAPPEND);
+			goto out;
+
+		case ACL_MASK:
+			acl_mask = ae;
+			break;
+
+		case ACL_OTHER:
+			acl_other = ae;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	/*
+	 * An ACL_OTHER entry should always exist in a valid access ACL.  If
+	 * it doesn't, then generate a serious failure.	 For now, this means
+	 * a debugging message and EPERM, but in the future should probably
+	 * be a panic.
+	 */
+	if (acl_other == NULL) {
+		/*
+		 * XXX This should never happen
+		 */
+		printf("%s: ACL_OTHER missing\n", __func__);
+		return EPERM;
+	}
+
+	/*
+	 * Checks against ACL_USER, ACL_GROUP_OBJ, and ACL_GROUP fields are
+	 * masked by an ACL_MASK entry, if any.	 As such, first identify the
+	 * ACL_MASK field, then iterate through identifying potential user
+	 * matches, then group matches.	 If there is no ACL_MASK, assume that
+	 * the mask allows all requests to succeed.
+	 */
+	if (acl_mask != NULL) {
+		acl_mask_granted = 0;
+		if (acl_mask->ae_perm & ACL_EXECUTE)
+			acl_mask_granted |= VEXEC;
+		if (acl_mask->ae_perm & ACL_READ)
+			acl_mask_granted |= VREAD;
+		if (acl_mask->ae_perm & ACL_WRITE)
+			acl_mask_granted |= (VWRITE | VAPPEND);
+	} else
+		acl_mask_granted = VEXEC | VREAD | VWRITE | VAPPEND;
+
+	/*
+	 * Check ACL_USER ACL entries.	There will either be one or no
+	 * matches; if there is one, we accept or rejected based on the
+	 * match; otherwise, we continue on to groups.
+	 */
+	for (i = 0; i < acl->acl_cnt; i++) {
+		struct acl_entry *ae = &acl->acl_entry[i];
+		switch (ae->ae_tag) {
+		case ACL_USER:
+			if (kauth_cred_geteuid(cred) != ae->ae_id)
+				break;
+			dac_granted = 0;
+			if (ae->ae_perm & ACL_EXECUTE)
+				dac_granted |= VEXEC;
+			if (ae->ae_perm & ACL_READ)
+				dac_granted |= VREAD;
+			if (ae->ae_perm & ACL_WRITE)
+				dac_granted |= (VWRITE | VAPPEND);
+			dac_granted &= acl_mask_granted;
+			goto out;
+		}
+	}
+
+	/*
+	 * Group match is best-match, not first-match, so find a "best"
+	 * match.  Iterate across, testing each potential group match.	Make
+	 * sure we keep track of whether we found a match or not, so that we
+	 * know if we should try again with any available privilege, or if we
+	 * should move on to ACL_OTHER.
+	 */
+	group_matched = 0;
+	for (i = 0; i < acl->acl_cnt; i++) {
+		struct acl_entry *ae = &acl->acl_entry[i];
+		switch (ae->ae_tag) {
+		case ACL_GROUP_OBJ:
+			error = kauth_cred_groupmember(cred, file_gid);
+			if (error > 0)
+				return error;
+			if (error)
+				break;
+			dac_granted = 0;
+			if (ae->ae_perm & ACL_EXECUTE)
+				dac_granted |= VEXEC;
+			if (ae->ae_perm & ACL_READ)
+				dac_granted |= VREAD;
+			if (ae->ae_perm & ACL_WRITE)
+				dac_granted |= (VWRITE | VAPPEND);
+			dac_granted  &= acl_mask_granted;
+
+			if ((accmode & dac_granted) == accmode)
+				return 0;
+
+			group_matched = 1;
+			break;
+
+		case ACL_GROUP:
+			error = kauth_cred_groupmember(cred, ae->ae_id);
+			if (error > 0)
+				return error;
+			if (error)
+				break;
+			dac_granted = 0;
+			if (ae->ae_perm & ACL_EXECUTE)
+				dac_granted |= VEXEC;
+			if (ae->ae_perm & ACL_READ)
+				dac_granted |= VREAD;
+			if (ae->ae_perm & ACL_WRITE)
+				dac_granted |= (VWRITE | VAPPEND);
+			dac_granted  &= acl_mask_granted;
+
+			if ((accmode & dac_granted) == accmode)
+				return 0;
+
+			group_matched = 1;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	if (group_matched == 1) {
+		/*
+		 * There was a match, but it did not grant rights via pure
+		 * DAC.	 Try again, this time with privilege.
+		 */
+		for (i = 0; i < acl->acl_cnt; i++) {
+			struct acl_entry *ae = &acl->acl_entry[i];
+			switch (ae->ae_tag) {
+			case ACL_GROUP_OBJ:
+				error = kauth_cred_groupmember(cred, file_gid);
+				if (error > 0)
+					return error;
+				if (error)
+					break;
+				dac_granted = 0;
+				if (ae->ae_perm & ACL_EXECUTE)
+					dac_granted |= VEXEC;
+				if (ae->ae_perm & ACL_READ)
+					dac_granted |= VREAD;
+				if (ae->ae_perm & ACL_WRITE)
+					dac_granted |= (VWRITE | VAPPEND);
+				dac_granted &= acl_mask_granted;
+				goto out;
+
+			case ACL_GROUP:
+				error = kauth_cred_groupmember(cred, ae->ae_id);
+				if (error > 0)
+					return error;
+				if (error)
+					break;
+				dac_granted = 0;
+				if (ae->ae_perm & ACL_EXECUTE)
+				dac_granted |= VEXEC;
+				if (ae->ae_perm & ACL_READ)
+					dac_granted |= VREAD;
+				if (ae->ae_perm & ACL_WRITE)
+					dac_granted |= (VWRITE | VAPPEND);
+				dac_granted &= acl_mask_granted;
+
+				goto out;
+			default:
+				break;
+			}
+		}
+		/*
+		 * Even with privilege, group membership was not sufficient.
+		 * Return failure.
+		 */
+		dac_granted = 0;
+		goto out;
+	}
+		
+	/*
+	 * Fall back on ACL_OTHER.  ACL_MASK is not applied to ACL_OTHER.
+	 */
+	dac_granted = 0;
+	if (acl_other->ae_perm & ACL_EXECUTE)
+		dac_granted |= VEXEC;
+	if (acl_other->ae_perm & ACL_READ)
+		dac_granted |= VREAD;
+	if (acl_other->ae_perm & ACL_WRITE)
+		dac_granted |= (VWRITE | VAPPEND);
+
+out:
+	if ((accmode & dac_granted) == accmode)
+		return 0;
+	return (accmode & VADMIN) ? EPERM : EACCES;
+}
+
+static struct {
+	accmode_t accmode;
+	int mask;
+} accmode2mask[] = {
+	{ VREAD, ACL_READ_DATA },
+	{ VWRITE, ACL_WRITE_DATA },
+	{ VAPPEND, ACL_APPEND_DATA },
+	{ VEXEC, ACL_EXECUTE },
+	{ VREAD_NAMED_ATTRS, ACL_READ_NAMED_ATTRS },
+	{ VWRITE_NAMED_ATTRS, ACL_WRITE_NAMED_ATTRS },
+	{ VDELETE_CHILD, ACL_DELETE_CHILD },
+	{ VREAD_ATTRIBUTES, ACL_READ_ATTRIBUTES },
+	{ VWRITE_ATTRIBUTES, ACL_WRITE_ATTRIBUTES },
+	{ VDELETE, ACL_DELETE },
+	{ VREAD_ACL, ACL_READ_ACL },
+	{ VWRITE_ACL, ACL_WRITE_ACL },
+	{ VWRITE_OWNER, ACL_WRITE_OWNER },
+	{ VSYNCHRONIZE, ACL_SYNCHRONIZE },
+	{ 0, 0 },
+};
+
+static int
+_access_mask_from_accmode(accmode_t accmode)
+{
+	int access_mask = 0, i;
+
+	for (i = 0; accmode2mask[i].accmode != 0; i++) {
+		if (accmode & accmode2mask[i].accmode)
+			access_mask |= accmode2mask[i].mask;
+	}
+
+	/*
+	 * VAPPEND is just a modifier for VWRITE; if the caller asked
+	 * for 'VAPPEND | VWRITE', we want to check for ACL_APPEND_DATA only.
+	 */
+	if (access_mask & ACL_APPEND_DATA)
+		access_mask &= ~ACL_WRITE_DATA;
+
+	return (access_mask);
+}
+
+/*
+ * Return 0, iff access is allowed, 1 otherwise.
+ */
+static int
+_acl_denies(const struct acl *aclp, int access_mask, kauth_cred_t cred,
+    int file_uid, int file_gid, int *denied_explicitly)
+{
+	int i, error;
+	const struct acl_entry *ae;
+
+	if (denied_explicitly != NULL)
+		*denied_explicitly = 0;
+
+	KASSERT(aclp->acl_cnt <= ACL_MAX_ENTRIES);
+
+	for (i = 0; i < aclp->acl_cnt; i++) {
+		ae = &(aclp->acl_entry[i]);
+
+		if (ae->ae_entry_type != ACL_ENTRY_TYPE_ALLOW &&
+		    ae->ae_entry_type != ACL_ENTRY_TYPE_DENY)
+			continue;
+		if (ae->ae_flags & ACL_ENTRY_INHERIT_ONLY)
+			continue;
+		switch (ae->ae_tag) {
+		case ACL_USER_OBJ:
+			if (kauth_cred_geteuid(cred) != file_uid)
+				continue;
+			break;
+		case ACL_USER:
+			if (kauth_cred_geteuid(cred) != ae->ae_id)
+				continue;
+			break;
+		case ACL_GROUP_OBJ:
+			error = kauth_cred_groupmember(cred, file_gid);
+			if (error > 0)
+				return error;
+			if (error != 0)
+				continue;
+			break;
+		case ACL_GROUP:
+			error = kauth_cred_groupmember(cred, ae->ae_id);
+			if (error > 0)
+				return error;
+			if (error != 0)
+				continue;
+			break;
+		default:
+			KASSERT(ae->ae_tag == ACL_EVERYONE);
+		}
+
+		if (ae->ae_entry_type == ACL_ENTRY_TYPE_DENY) {
+			if (ae->ae_perm & access_mask) {
+				if (denied_explicitly != NULL)
+					*denied_explicitly = 1;
+				return (1);
+			}
+		}
+
+		access_mask &= ~(ae->ae_perm);
+		if (access_mask == 0)
+			return (0);
+	}
+
+	if (access_mask == 0)
+		return (0);
+
+	return (1);
+}
+
+int
+genfs_can_access_acl_nfs4(vnode_t *vp, kauth_cred_t cred, uid_t file_uid,
+    gid_t file_gid, mode_t file_mode, struct acl *aclp, accmode_t accmode)
+{
+	int denied, explicitly_denied, access_mask, is_directory,
+	    must_be_owner = 0;
+	file_mode = 0;
+
+	KASSERT((accmode & ~(VEXEC | VWRITE | VREAD | VADMIN | VAPPEND |
+	    VEXPLICIT_DENY | VREAD_NAMED_ATTRS | VWRITE_NAMED_ATTRS |
+	    VDELETE_CHILD | VREAD_ATTRIBUTES | VWRITE_ATTRIBUTES | VDELETE |
+	    VREAD_ACL | VWRITE_ACL | VWRITE_OWNER | VSYNCHRONIZE)) == 0);
+	KASSERT((accmode & VAPPEND) == 0 || (accmode & VWRITE));
+
+	if (accmode & VADMIN)
+		must_be_owner = 1;
+
+	/*
+	 * Ignore VSYNCHRONIZE permission.
+	 */
+	accmode &= ~VSYNCHRONIZE;
+
+	access_mask = _access_mask_from_accmode(accmode);
+
+	if (vp && vp->v_type == VDIR)
+		is_directory = 1;
+	else
+		is_directory = 0;
+
+	/*
+	 * File owner is always allowed to read and write the ACL
+	 * and basic attributes.  This is to prevent a situation
+	 * where user would change ACL in a way that prevents him
+	 * from undoing the change.
+	 */
+	if (kauth_cred_geteuid(cred) == file_uid)
+		access_mask &= ~(ACL_READ_ACL | ACL_WRITE_ACL |
+		    ACL_READ_ATTRIBUTES | ACL_WRITE_ATTRIBUTES);
+
+	/*
+	 * Ignore append permission for regular files; use write
+	 * permission instead.
+	 */
+	if (!is_directory && (access_mask & ACL_APPEND_DATA)) {
+		access_mask &= ~ACL_APPEND_DATA;
+		access_mask |= ACL_WRITE_DATA;
+	}
+
+	denied = _acl_denies(aclp, access_mask, cred, file_uid, file_gid,
+	    &explicitly_denied);
+
+	if (must_be_owner) {
+		if (kauth_cred_geteuid(cred) != file_uid)
+			denied = EPERM;
+	}
+
+	/*
+	 * For VEXEC, ensure that at least one execute bit is set for
+	 * non-directories. We have to check the mode here to stay
+	 * consistent with execve(2). See the test in
+	 * exec_check_permissions().
+	 */
+	__acl_nfs4_sync_mode_from_acl(&file_mode, aclp);
+	if (!denied && !is_directory && (accmode & VEXEC) &&
+	    (file_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) == 0)
+		denied = EACCES;
+
+	if (!denied)
+		return (0);
+
+	/*
+	 * Access failed.  Iff it was not denied explicitly and
+	 * VEXPLICIT_DENY flag was specified, allow access.
+	 */
+	if ((accmode & VEXPLICIT_DENY) && explicitly_denied == 0)
+		return (0);
+
+	accmode &= ~VEXPLICIT_DENY;
+
+	if (accmode & (VADMIN_PERMS | VDELETE_CHILD | VDELETE))
+		denied = EPERM;
+	else
+		denied = EACCES;
+
+	return (denied);
 }
 
 /*
@@ -706,29 +1185,32 @@ genfs_can_access(enum vtype type, mode_t file_mode, uid_t uid, gid_t gid,
  *   - You must own the file, and
  *     - You must not set the "sticky" bit (meaningless, see chmod(2))
  *     - You must be a member of the group if you're trying to set the
- *       SGIDf bit
+ *	 SGIDf bit
  *
- * cred - credentials of the invoker
  * vp - vnode of the file-system object
+ * cred - credentials of the invoker
  * cur_uid, cur_gid - current uid/gid of the file-system object
  * new_mode - new mode for the file-system object
  *
  * Returns 0 if the change is allowed, or an error value otherwise.
  */
 int
-genfs_can_chmod(enum vtype type, kauth_cred_t cred, uid_t cur_uid,
+genfs_can_chmod(vnode_t *vp, kauth_cred_t cred, uid_t cur_uid,
     gid_t cur_gid, mode_t new_mode)
 {
 	int error;
 
-	/* The user must own the file. */
-	if (kauth_cred_geteuid(cred) != cur_uid)
-		return (EPERM);
+	/*
+	 * To modify the permissions on a file, must possess VADMIN
+	 * for that file.
+	 */
+	if ((error = VOP_ACCESSX(vp, VWRITE_ACL, cred)) != 0)
+		return (error);
 
 	/*
 	 * Unprivileged users can't set the sticky bit on files.
 	 */
-	if ((type != VDIR) && (new_mode & S_ISTXT))
+	if ((vp->v_type != VDIR) && (new_mode & S_ISTXT))
 		return (EFTYPE);
 
 	/*
@@ -744,6 +1226,12 @@ genfs_can_chmod(enum vtype type, kauth_cred_t cred, uid_t cur_uid,
 			return (EPERM);
 	}
 
+	/*
+	 * Deny setting setuid if we are not the file owner.
+	 */
+	if ((new_mode & S_ISUID) && cur_uid != kauth_cred_geteuid(cred))
+		return (EPERM);
+
 	return (0);
 }
 
@@ -755,6 +1243,7 @@ genfs_can_chmod(enum vtype type, kauth_cred_t cred, uid_t cur_uid,
  *     - You must not try to change ownership, and
  *     - You must be member of the new group
  *
+ * vp - vnode
  * cred - credentials of the invoker
  * cur_uid, cur_gid - current uid/gid of the file-system object
  * new_uid, new_gid - target uid/gid of the file-system object
@@ -762,10 +1251,17 @@ genfs_can_chmod(enum vtype type, kauth_cred_t cred, uid_t cur_uid,
  * Returns 0 if the change is allowed, or an error value otherwise.
  */
 int	
-genfs_can_chown(kauth_cred_t cred, uid_t cur_uid,
+genfs_can_chown(vnode_t *vp, kauth_cred_t cred, uid_t cur_uid,
     gid_t cur_gid, uid_t new_uid, gid_t new_gid)
 {
 	int error, ismember;
+
+	/*
+	 * To modify the ownership of a file, must possess VADMIN for that
+	 * file.
+	 */
+	if ((error = VOP_ACCESSX(vp, VWRITE_OWNER, cred)) != 0)
+		return (error);
 
 	/*
 	 * You can only change ownership of a file if:
@@ -804,10 +1300,23 @@ genfs_can_chown(kauth_cred_t cred, uid_t cur_uid,
 }
 
 int
-genfs_can_chtimes(vnode_t *vp, u_int vaflags, uid_t owner_uid,
-    kauth_cred_t cred)
+genfs_can_chtimes(vnode_t *vp, kauth_cred_t cred, uid_t owner_uid,
+    u_int vaflags)
 {
 	int error;
+	/*
+	 * Grant permission if the caller is the owner of the file, or
+	 * the super-user, or has ACL_WRITE_ATTRIBUTES permission on
+	 * on the file.	 If the time pointer is null, then write
+	 * permission on the file is also sufficient.
+	 *
+	 * From NFSv4.1, draft 21, 6.2.1.3.1, Discussion of Mask Attributes: 
+	 * A user having ACL_WRITE_DATA or ACL_WRITE_ATTRIBUTES
+	 * will be allowed to set the times [..] to the current 
+	 * server time.
+	 */
+	if ((error = VOP_ACCESSX(vp, VWRITE_ATTRIBUTES, cred)) != 0)
+		return (vaflags & VA_UTIMES_NULL) == 0 ? EPERM : EACCES;
 
 	/* Must be owner, or... */
 	if (kauth_cred_geteuid(cred) == owner_uid)
@@ -833,13 +1342,14 @@ genfs_can_chtimes(vnode_t *vp, u_int vaflags, uid_t owner_uid,
  *   - You must not change system flags, and
  *   - You must not change flags on character/block devices.
  *
+ * vp - vnode
  * cred - credentials of the invoker
  * owner_uid - uid of the file-system object
  * changing_sysflags - true if the invoker wants to change system flags
  */
 int
-genfs_can_chflags(kauth_cred_t cred, enum vtype type, uid_t owner_uid,
-    bool changing_sysflags)
+genfs_can_chflags(vnode_t *vp, kauth_cred_t cred,
+     uid_t owner_uid, bool changing_sysflags)
 {
 
 	/* The user must own the file. */
@@ -855,7 +1365,7 @@ genfs_can_chflags(kauth_cred_t cred, enum vtype type, uid_t owner_uid,
 	 * Unprivileged users cannot change the flags on devices, even if they
 	 * own them.
 	 */
-	if (type == VCHR || type == VBLK) {
+	if (vp->v_type == VCHR || vp->v_type == VBLK) {
 		return EPERM;
 	}
 
@@ -873,7 +1383,7 @@ genfs_can_chflags(kauth_cred_t cred, enum vtype type, uid_t owner_uid,
  *   directory or the file being deleted.
  */
 int
-genfs_can_sticky(kauth_cred_t cred, uid_t dir_uid, uid_t file_uid)
+genfs_can_sticky(vnode_t *vp, kauth_cred_t cred, uid_t dir_uid, uid_t file_uid)
 {
 	if (kauth_cred_geteuid(cred) != dir_uid &&
 	    kauth_cred_geteuid(cred) != file_uid)
@@ -883,12 +1393,75 @@ genfs_can_sticky(kauth_cred_t cred, uid_t dir_uid, uid_t file_uid)
 }
 
 int
-genfs_can_extattr(kauth_cred_t cred, int access_mode, vnode_t *vp,
-    const char *attr)
+genfs_can_extattr(vnode_t *vp, kauth_cred_t cred, accmode_t accmode,
+    int attrnamespace)
 {
-	/* We can't allow privileged namespaces. */
-	if (strncasecmp(attr, "system", 6) == 0)
-		return EPERM;
+	/*
+	 * Kernel-invoked always succeeds.
+	 */
+	if (cred == NOCRED)
+		return 0;
 
-	return VOP_ACCESS(vp, access_mode, cred);
+	switch (attrnamespace) {
+	case EXTATTR_NAMESPACE_SYSTEM:
+		return kauth_authorize_system(cred, KAUTH_SYSTEM_FS_EXTATTR,
+		    0, vp->v_mount, NULL, NULL);
+	case EXTATTR_NAMESPACE_USER:
+		return VOP_ACCESS(vp, accmode, cred);
+	default:
+		return EPERM;
+	}
+}
+
+int
+genfs_access(void *v)
+{
+	struct vop_access_args *ap = v;
+
+	KASSERT((ap->a_accmode & ~(VEXEC | VWRITE | VREAD | VADMIN |
+	    VAPPEND)) == 0);
+
+	return VOP_ACCESSX(ap->a_vp, ap->a_accmode, ap->a_cred);
+}
+
+int
+genfs_accessx(void *v)
+{
+	struct vop_accessx_args *ap = v;
+	int error;
+	accmode_t accmode = ap->a_accmode;
+	error = vfs_unixify_accmode(&accmode);
+	if (error != 0)
+		return error;
+
+	if (accmode == 0)
+		return 0;
+
+	return VOP_ACCESS(ap->a_vp, accmode, ap->a_cred);
+}
+
+/*
+ * genfs_pathconf:
+ *
+ * Standard implementation of POSIX pathconf, to get information about limits
+ * for a filesystem.
+ * Override per filesystem for the case where the filesystem has smaller
+ * limits.
+ */
+int
+genfs_pathconf(void *v)
+{
+	struct vop_pathconf_args *ap = v;
+
+	switch (ap->a_name) {
+	case _PC_PATH_MAX:
+		*ap->a_retval = PATH_MAX;
+		return 0;
+	case _PC_ACL_EXTENDED:
+	case _PC_ACL_NFS4:
+		*ap->a_retval = 0;
+		return 0;
+	default:
+		return EINVAL;
+	}
 }

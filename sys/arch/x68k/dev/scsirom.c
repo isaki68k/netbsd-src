@@ -1,4 +1,4 @@
-/*	$NetBSD: scsirom.c,v 1.20 2014/03/26 08:17:59 christos Exp $	*/
+/*	$NetBSD: scsirom.c,v 1.22 2021/08/07 16:19:07 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsirom.c,v 1.20 2014/03/26 08:17:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsirom.c,v 1.22 2021/08/07 16:19:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -156,9 +156,10 @@ scsirom_attach(device_t parent, device_t self, void *aux)
 	else
 		aprint_normal(": External at %p\n", (void *)ia->ia_addr);
 
-	cf = config_search_ia(NULL, self, "scsirom", ia);
+	cf = config_search(self, ia,
+	    CFARGS_NONE);
 	if (cf) {
-		config_attach(self, cf, ia, NULL);
+		config_attach(self, cf, ia, NULL, CFARGS_NONE);
 	} else {
 		aprint_normal_dev(self, "no matching device; ignored.\n");
 	}

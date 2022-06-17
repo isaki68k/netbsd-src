@@ -1,4 +1,4 @@
-/*	$NetBSD: mace.c,v 1.23 2016/07/13 21:33:28 macallan Exp $	*/
+/*	$NetBSD: mace.c,v 1.25 2021/08/07 16:19:04 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Christopher Sekiya
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mace.c,v 1.23 2016/07/13 21:33:28 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mace.c,v 1.25 2021/08/07 16:19:04 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -196,7 +196,8 @@ mace_attach(device_t parent, device_t self, void *aux)
 		maceintrtab[scratch].irq = 0;
 	}
 
-	config_search_ia(mace_search, self, "mace", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = mace_search));
 }
 
 
@@ -235,8 +236,8 @@ mace_search(device_t parent, struct cfdata *cf, const int *ldesc, void *aux)
 		maa.isa_ringbuffer = sc->isa_ringbuffer;
 
 		tryagain = 0;
-		if (config_match(parent, cf, &maa) > 0) {
-			config_attach(parent, cf, &maa, mace_print);
+		if (config_probe(parent, cf, &maa)) {
+			config_attach(parent, cf, &maa, mace_print, CFARGS_NONE);
 			tryagain = (cf->cf_fstate == FSTATE_STAR);
 		}
 

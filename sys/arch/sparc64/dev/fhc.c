@@ -1,4 +1,4 @@
-/*	$NetBSD: fhc.c,v 1.5 2016/07/07 06:55:38 msaitoh Exp $	*/
+/*	$NetBSD: fhc.c,v 1.11 2022/01/22 11:49:17 thorpej Exp $	*/
 /*	$OpenBSD: fhc.c,v 1.17 2010/11/11 17:58:23 miod Exp $	*/
 
 /*
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fhc.c,v 1.5 2016/07/07 06:55:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fhc.c,v 1.11 2022/01/22 11:49:17 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -37,6 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: fhc.c,v 1.5 2016/07/07 06:55:38 msaitoh Exp $");
 #include <sys/device.h>
 #include <sys/conf.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/bus.h>
 
 #include <machine/autoconf.h>
@@ -90,6 +91,7 @@ fhc_attach(struct fhc_softc *sc)
 	prom_getprop(sc->sc_node, "ranges", sizeof(struct fhc_range),
 	    &sc->sc_nrange, (void **)&sc->sc_range);
 
+	devhandle_t selfh = device_handle(sc->sc_dev);
 	node0 = firstchild(sc->sc_node);
 	for (node = node0; node; node = nextsibling(node)) {
 		struct fhc_attach_args fa;
@@ -115,7 +117,8 @@ fhc_attach(struct fhc_softc *sc)
 		prom_getprop(node, "address", sizeof(*fa.fa_promvaddrs),
 		    &fa.fa_npromvaddrs, (void **)&fa.fa_promvaddrs);
 
-		(void)config_found(sc->sc_dev, (void *)&fa, fhc_print);
+		(void)config_found(sc->sc_dev, (void *)&fa, fhc_print,
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 
 		if (fa.fa_name != NULL)
 			free(fa.fa_name, M_DEVBUF);
@@ -151,10 +154,7 @@ fhc_get_string(int node, const char *name, char **buf)
 	len = prom_getproplen(node, name);
 	if (len < 0)
 		return (len);
-	*buf = (char *)malloc(len + 1, M_DEVBUF, M_NOWAIT);
-	if (*buf == NULL)
-		return (-1);
-
+	*buf = (char *)malloc(len + 1, M_DEVBUF, M_WAITOK);
 	if (len != 0)
 		prom_getpropstringA(node, name, *buf, len + 1);
 	(*buf)[len] = '\0';
@@ -166,10 +166,7 @@ fhc_alloc_bus_tag(struct fhc_softc *sc)
 {
 	struct sparc_bus_space_tag *bt;
 
-	bt = malloc(sizeof(*bt), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (bt == NULL)
-		panic("fhc: couldn't alloc bus tag");
-
+	bt = kmem_zalloc(sizeof(*bt), KM_SLEEP);
 	bt->cookie = sc;
 	bt->parent = sc->sc_bt;
 	bt->type = 0;	/* XXX asi? */

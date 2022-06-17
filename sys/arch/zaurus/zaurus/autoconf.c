@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.12 2012/07/29 18:05:47 mlelstv Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.16 2022/03/19 13:51:35 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.12 2012/07/29 18:05:47 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.16 2022/03/19 13:51:35 hannken Exp $");
 
 #include "opt_md.h"
 
@@ -42,6 +42,8 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.12 2012/07/29 18:05:47 mlelstv Exp $"
 #include <sys/proc.h>
 #include <sys/disk.h>
 #include <sys/kauth.h>
+
+#include <dev/i2c/i2cvar.h>
 
 #include <machine/intr.h>
 #include <machine/bootconfig.h>
@@ -107,7 +109,9 @@ match_bootdisk(device_t dv, struct btinfo_bootdisk *bid)
 	if ((tmpvn = opendisk(dv)) == NULL)
 		return 0;
 
+	VOP_UNLOCK(tmpvn);
 	error = VOP_IOCTL(tmpvn, DIOCGDINFO, &label, FREAD, NOCRED);
+	vn_lock(tmpvn, LK_EXCLUSIVE | LK_RETRY);
 	if (error) {
 		/*
 		 * XXX Can't happen -- open() would have errored out
@@ -219,5 +223,13 @@ void
 device_register(device_t dev, void *aux)
 {
 
-	/* Nothing to do */
+	/*
+	 * I2C bus conntected to pxaiic(4) for zaudio(4) devices has
+	 * limited capabilities.
+	 */
+	if (device_is_a(dev, "iic") &&
+	    device_is_a(device_parent(dev), "ziic")) {
+		(void)prop_dictionary_set_string_nocopy(device_properties(dev),
+		    I2C_PROP_INDIRECT_PROBE_STRATEGY, I2C_PROBE_STRATEGY_NONE);
+	}
 }

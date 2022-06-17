@@ -1,4 +1,4 @@
-/*	$NetBSD: efi.c,v 1.20 2019/10/18 00:56:25 manu Exp $	*/
+/*	$NetBSD: efi.c,v 1.22 2021/10/07 12:52:27 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efi.c,v 1.20 2019/10/18 00:56:25 manu Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efi.c,v 1.22 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include <sys/kmem.h>
 #include <sys/param.h>
@@ -51,12 +51,12 @@ const struct uuid EFI_UUID_ACPI10 = EFI_TABLE_ACPI10;
 const struct uuid EFI_UUID_SMBIOS = EFI_TABLE_SMBIOS;
 const struct uuid EFI_UUID_SMBIOS3 = EFI_TABLE_SMBIOS3;
 
-static vaddr_t 	efi_getva(paddr_t);
-static void 	efi_relva(paddr_t, vaddr_t);
+static vaddr_t	efi_getva(paddr_t);
+static void	efi_relva(paddr_t, vaddr_t);
 struct efi_cfgtbl *efi_getcfgtblhead(void);
-void 		efi_aprintcfgtbl(void);
-void 		efi_aprintuuid(const struct uuid *);
-bool 		efi_uuideq(const struct uuid *, const struct uuid *);
+void		efi_aprintcfgtbl(void);
+void		efi_aprintuuid(const struct uuid *);
+bool		efi_uuideq(const struct uuid *, const struct uuid *);
 
 static bool efi_is32x64 = false;
 static paddr_t efi_systbl_pa;
@@ -77,13 +77,8 @@ efi_getva(paddr_t pa)
 	vaddr_t va;
 	int rv;
 
-#ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
-	if (mm_md_direct_mapped_phys(pa, &va))
-		return va;
-#endif
-
-	rv = _x86_memio_map(x86_bus_space_mem, pa,     
-	    PAGE_SIZE, 0, (bus_space_handle_t *)&va);   
+	rv = _x86_memio_map(x86_bus_space_mem, pa,
+	    PAGE_SIZE, 0, (bus_space_handle_t *)&va);
 	if (rv != 0) {
 		aprint_debug("efi: unable to allocate va\n");
 		return 0;
@@ -98,15 +93,6 @@ efi_getva(paddr_t pa)
 static void
 efi_relva(paddr_t pa, vaddr_t va)
 {
-
-#ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
-	vaddr_t va0 __diagused;
-	if (mm_md_direct_mapped_phys(pa, &va0)) {
-		KASSERT(va0 == va);
-		return;
-	}
-#endif
-
 	(void)_x86_memio_unmap(x86_bus_space_mem, (bus_space_handle_t)va,
 	    PAGE_SIZE, NULL);
 }
@@ -419,7 +405,7 @@ efi_init(void)
 		return;
 	}
 	bootmethod_efi = true;
-#if NPCI > 0	
+#if NPCI > 0
 	pci_mapreg_map_enable_decode = true; /* PR port-amd64/53286 */
 #endif
 }

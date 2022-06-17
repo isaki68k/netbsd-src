@@ -1,4 +1,4 @@
-/*	$NetBSD: tx39spi.c,v 1.5 2012/10/27 17:17:54 chs Exp $	*/
+/*	$NetBSD: tx39spi.c,v 1.7 2021/08/07 16:18:54 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2005 HAMAJIMA Katsuomi. All rights reserved.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: tx39spi.c,v 1.5 2012/10/27 17:17:54 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tx39spi.c,v 1.7 2021/08/07 16:18:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -87,7 +87,8 @@ tx39spi_attach(device_t parent, device_t self, void *aux)
 #endif
 	printf("\n");
 
-	config_search_ia(tx39spi_search, self, "txspiif", tx39spi_print);
+	config_search(self, NULL,
+	    CFARGS(.search = tx39spi_search));
 }
 
 int
@@ -105,8 +106,8 @@ tx39spi_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	}
 	
 	if (!(sc->sc_attached & (1 << sa.sa_slot)) && /* not attached slot */
-	    config_match(parent, cf, &sa)) {
-		config_attach(parent, cf, &sa, tx39spi_print);
+	    config_probe(parent, cf, &sa)) {
+		config_attach(parent, cf, &sa, tx39spi_print, CFARGS_NONE);
 		sc->sc_attached |= (1 << sa.sa_slot);
 	}
 

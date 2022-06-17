@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.efiboot,v 1.8 2019/07/21 17:01:39 rin Exp $
+# $NetBSD: Makefile.efiboot,v 1.26 2022/03/25 21:23:00 jmcneill Exp $
 
 S=		${.CURDIR}/../../..
 
@@ -8,7 +8,7 @@ NOLIBCSANITIZER=# defined
 NOSANITIZER=	# defined
 NORELRO=	# defined
 PROG?=		boot.efi
-NEWVERSWHAT?=	"EFI Boot"
+NEWVERSWHAT?=	"efiboot"
 
 EFIDIR= ${S}/external/bsd/gnu-efi/dist
 GNUEFIARCH?= ${MACHINE_CPU}
@@ -21,13 +21,25 @@ AFLAGS.start.S= ${${ACTIVE_CC} == "clang":?-no-integrated-as:}
 
 .PATH: ${EFIDIR}/gnuefi
 SOURCES=	crt0-efi-${GNUEFIARCH}.S reloc_${GNUEFIARCH}.c
-SOURCES+=	boot.c conf.c console.c dev_net.c devopen.c exec.c panic.c prompt.c
-SOURCES+=	efiboot.c efichar.c efidev.c efienv.c efigetsecs.c efifdt.c efifile.c efiblock.c efinet.c efipxe.c efiacpi.c
+SOURCES+=	boot.c bootmenu.c conf.c console.c dev_net.c devopen.c exec.c \
+		module.c panic.c prompt.c userconf.c
+SOURCES+=	efiboot.c efichar.c efidev.c efigetsecs.c \
+		efifile.c efiblock.c efinet.c efipxe.c efirng.c \
+		efiwatchdog.c efigop.c smbios.c
 
+.if ${EFIBOOT_FDT:Uno} == "yes"
+CPPFLAGS+=	-DEFIBOOT_FDT
+SOURCES+=	efifdt.c overlay.c
 .PATH: ${S}/external/bsd/libfdt/dist
 CPPFLAGS+=	-I${S}/external/bsd/libfdt/dist
 SOURCES+=	fdt.c fdt_addresses.c fdt_empty_tree.c fdt_overlay.c
 SOURCES+=	fdt_ro.c fdt_rw.c fdt_strerror.c fdt_sw.c fdt_wip.c
+.endif
+
+.if ${EFIBOOT_ACPI:Uno} == "yes"
+CPPFLAGS+=	-DEFIBOOT_ACPI
+SOURCES+=	efiacpi.c
+.endif
 
 SRCS= ${SOURCES} ${EXTRA_SOURCES}
 
@@ -47,6 +59,7 @@ BINMODE=444
 .PATH:	${.CURDIR} ${.CURDIR}/..
 .PATH:	${.CURDIR}/../../lib
 
+LDFLAGS+= --no-dynamic-linker --noinhibit-exec
 LDFLAGS+= -nostdlib -T${LDSCRIPT} -Bsymbolic -shared
 CPPFLAGS+= -I$S -I${.CURDIR} -I${.CURDIR}/../common -I$S/lib/libsa
 CPPFLAGS+= -I${.OBJDIR}
@@ -68,7 +81,7 @@ CPPFLAGS+= -Wall -Wmissing-prototypes
 CPPFLAGS+= -Wno-pointer-sign
 
 CPPFLAGS+= -DHEAP_VARIABLE
-#CPPFLAGS+= -DSUPPORT_CD9660
+CPPFLAGS+= -DSUPPORT_CD9660
 CPPFLAGS+= -D"devb2cdb(bno)=(bno)"
 CPPFLAGS+= -DSUPPORT_DOSFS
 #CPPFLAGS+= -DSUPPORT_EXT2FS
@@ -77,6 +90,9 @@ CPPFLAGS+= -DSUPPORT_DHCP
 #CPPFLAGS+= -DSUPPORT_NFS
 CPPFLAGS+= -DSUPPORT_TFTP
 CPPFLAGS+= -DLIBSA_ENABLE_LS_OP
+CPPFLAGS+= -DLIBSA_FFS_EI
+CPPFLAGS+= -DLIBSA_DISKLABEL_EI
+CPPFLAGS+= -DDEFAULT_TIMEOUT=5
 
 #CPPFLAGS+= -DEFIBOOT_DEBUG
 #CPPFLAGS+= -DARP_DEBUG
@@ -86,6 +102,12 @@ CPPFLAGS+= -DLIBSA_ENABLE_LS_OP
 #CPPFLAGS+= -DNFS_DEBUG
 #CPPFLAGS+= -DRARP_DEBUG
 #CPPFLAGS+= -DRPC_DEBUG
+
+# Follow the suit of Makefile.kern.inc; needed for the lfs64 union
+# accessors -- they don't actually dereference the resulting pointer,
+# just use it for type-checking.
+CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_LONGLONG_SUPPORT
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_WIDTH_SUPPORT
@@ -128,15 +150,15 @@ cleanlibdir:
 
 LIBLIST= ${LIBGNUEFI} ${LIBSA} ${LIBZ} ${LIBKERN} ${LIBSA}
 
-VERSIONMACHINE=evbarm
+VERSIONMACHINE=${MACHINE}
 .include "${S}/conf/newvers_stand.mk"
 
 CLEANFILES+=	${PROG}.so ${PROG}.tmp
 
 ${PROG}: ${PROG}.so
-	${OBJCOPY} -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel \
+	${OBJCOPY} -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
 	    -j .rela -j .rel.* -j .rela.* -j .rel* -j .rela* \
-	    -j .reloc -O binary ${PROG}.so ${.TARGET}
+	    -j .reloc ${OBJCOPY_FORMAT} ${PROG}.so ${.TARGET}
 
 .include <bsd.prog.mk>
 

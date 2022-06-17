@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.171 2018/12/19 13:57:48 maxv Exp $	*/
+/*	$NetBSD: locore.s,v 1.175 2022/05/30 09:56:03 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -275,16 +275,16 @@ Lstart3:
 
 #if defined(DJMEMCMAX)
 	movl	%a3,%sp@-
-	cmp	#MACH_MACC610,_C_LABEL(machineid)
-	jra	Ldjmemc610
-	cmp	#MACH_MACQ610,_C_LABEL(machineid)
-	jra	Ldjmemc610
-	cmp	#MACH_MACC650,_C_LABEL(machineid)
-	jra	Ldjmemccfg
-	cmp	#MACH_MACQ650,_C_LABEL(machineid)
-	jra	Ldjmemccfg
-	cmp	#MACH_MACQ800,_C_LABEL(machineid)
-	jra	Ldjmemccfg
+	cmpl	#MACH_MACC610,_C_LABEL(machineid)
+	jeq	Ldjmemc610
+	cmpl	#MACH_MACQ610,_C_LABEL(machineid)
+	jeq	Ldjmemc610
+	cmpl	#MACH_MACC650,_C_LABEL(machineid)
+	jeq	Ldjmemccfg
+	cmpl	#MACH_MACQ650,_C_LABEL(machineid)
+	jeq	Ldjmemccfg
+	cmpl	#MACH_MACQ800,_C_LABEL(machineid)
+	jeq	Ldjmemccfg
 
 	jra	Lnodjmemc
        
@@ -794,6 +794,7 @@ ENTRY_NOPROFILE(rtclock_intr)
 	movw	_C_LABEL(ipl2psl_table)+IPL_CLOCK*2,%sr
 					| raise SPL to splclock()
 	movl	%a6@,%a1		| unwind to frame in intr_dispatch
+					| XXX FIXME
 	lea	%a1@(28),%a1		| push pointer to interrupt frame
 	movl	%a1,%sp@-			| 28 = 16 for regs in intrhand,
 					|    + 4 for args to intr_dispatch
@@ -817,7 +818,7 @@ ENTRY_NOPROFILE(rtclock_intr)
  * (profiling, scheduling) and software interrupts (network, softclock).
  * We check for ASTs first, just like the VAX.  To avoid excess overhead
  * the T_ASTFLT handling code will also check for software interrupts so we
- * do not have to do it here.  After identifing that we need an AST we
+ * do not have to do it here.  After identifying that we need an AST we
  * drop the IPL to allow device interrupts.
  *
  * This code is complicated by the fact that sendsig may have been called
@@ -1014,7 +1015,7 @@ ENTRY(delay)
 	movl	%sp@(4),%d0		| get microseconds to delay
 	cmpl	#0x40000,%d0		| is it a "large" delay?
 	bls	.Ldelayshort		| no, normal calculation
-	movql	#0x7f,%d1		| adjust for scaled multipler (to
+	movql	#0x7f,%d1		| adjust for scaled multiplier (to
 	addl	%d1,%d0			|   avoid overflow)
 	lsrl	#7,%d0
 	mulul	_C_LABEL(delay_factor),%d0 | calculate number of loop iterations
@@ -1367,6 +1368,7 @@ GLOBAL(sanity_check)
 	.long	0x18621862	| this is our stack overflow checker.
 
 	.space	4 * PAGE_SIZE
+	.align	4
 ASLOCAL(tmpstk)
 
 GLOBAL(machineid)

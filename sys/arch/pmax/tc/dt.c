@@ -1,4 +1,4 @@
-/*	$NetBSD: dt.c,v 1.12 2015/06/28 09:15:45 maxv Exp $	*/
+/*	$NetBSD: dt.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2003 The NetBSD Foundation, Inc.
@@ -133,7 +133,7 @@ SOFTWARE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dt.c,v 1.12 2015/06/28 09:15:45 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dt.c,v 1.16 2021/08/07 16:19:02 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -143,7 +143,7 @@ __KERNEL_RCSID(0, "$NetBSD: dt.c,v 1.12 2015/06/28 09:15:45 maxv Exp $");
 #include <sys/file.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/intr.h>
 
 #include <dev/dec/lk201.h>
@@ -215,16 +215,11 @@ dt_attach(device_t parent, device_t self, void *aux)
 
 	dt_cninit();
 
-	msg = malloc(sizeof(*msg) * DT_BUF_CNT, M_DEVBUF, M_NOWAIT);
-	if (msg == NULL) {
-		printf("%s: memory exhausted\n", device_xname(self));
-		return;
-	}
-
+	msg = kmem_alloc(sizeof(*msg) * DT_BUF_CNT, KM_SLEEP);
 	sc->sc_sih = softint_establish(SOFTINT_SERIAL, dt_dispatch, sc);
 	if (sc->sc_sih == NULL) {
 		printf("%s: memory exhausted\n", device_xname(self));
-		free(msg, M_DEVBUF);
+		kmem_free(msg, sizeof(*msg) * DT_BUF_CNT);
 		return;
 	}
 
@@ -237,9 +232,9 @@ dt_attach(device_t parent, device_t self, void *aux)
 	printf("\n");
 
 	dta.dta_addr = DT_ADDR_KBD;
-	config_found(self, &dta, dt_print);
+	config_found(self, &dta, dt_print, CFARGS_NONE);
 	dta.dta_addr = DT_ADDR_MOUSE;
-	config_found(self, &dta, dt_print);
+	config_found(self, &dta, dt_print, CFARGS_NONE);
 }
 
 void

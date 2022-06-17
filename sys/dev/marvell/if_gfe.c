@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gfe.c,v 1.54 2019/05/28 07:41:49 msaitoh Exp $	*/
+/*	$NetBSD: if_gfe.c,v 1.59 2021/08/07 16:19:13 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2002 Allegro Networks, Inc., Wasabi Systems, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gfe.c,v 1.54 2019/05/28 07:41:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gfe.c,v 1.59 2021/08/07 16:19:13 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -56,7 +56,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_gfe.c,v 1.54 2019/05/28 07:41:49 msaitoh Exp $");
 #include <sys/mutex.h>
 #include <sys/socket.h>
 
-#include <uvm/uvm.h>
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_ether.h>
@@ -250,8 +249,8 @@ gfec_attach(device_t parent, device_t self, void *aux)
 		gfea.mva_unit = i;
 		gfea.mva_dmat = mva->mva_dmat;
 		gfea.mva_irq = gfe_irqs[i];
-		config_found_sm_loc(sc->sc_dev, "gfec", NULL, &gfea,
-		    gfec_print, gfec_search);
+		config_found(sc->sc_dev, &gfea, gfec_print,
+		    CFARGS(.submatch = gfec_search));
 	}
 }
 
@@ -747,7 +746,7 @@ gfe_ifwatchdog(struct ifnet *ifp)
 		GE_TXDPRESYNC(sc, txq, curtxdnum);
 	}
 	aprint_error("\n");
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	(void) gfe_whack(sc, GE_WHACK_RESTART);
 	GE_FUNC_EXIT(sc, "");
 }
@@ -906,8 +905,8 @@ gfe_rx_get(struct gfe_softc *sc, enum gfe_rxprio rxprio)
 		    (buflen > sc->sc_max_frame_length)) {
 			GE_DPRINTF(sc, ("!"));
 			--rxq->rxq_active;
-			ifp->if_ipackets++;
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ipackets);
+			if_statinc(ifp, if_ierrors);
 			goto give_it_back;
 		}
 
@@ -1008,7 +1007,7 @@ gfe_rx_process(struct gfe_softc *sc, uint32_t cause, uint32_t intrmask)
 			sc->sc_tickflags |= GE_TICK_RX_RESTART;
 			callout_reset(&sc->sc_co, 1, gfe_tick, sc);
 		}
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		GE_DPRINTF(sc, ("%s: rx queue %d filled at %u\n",
 		    device_xname(sc->sc_dev), rxprio, rxq->rxq_fi));
 		memset(masks, 0, sizeof(masks));
@@ -1249,9 +1248,9 @@ gfe_tx_enqueue(struct gfe_softc *sc, enum gfe_txprio txprio)
 		txq->txq_nactive--;
 
 		/* statistics */
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		if (cmdsts & TX_STS_ES)
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 		GE_DPRINTF(sc, ("%%"));
 	}
 
@@ -1424,9 +1423,9 @@ gfe_tx_done(struct gfe_softc *sc, enum gfe_txprio txprio, uint32_t intrmask)
 		txq->txq_inptr += roundup(pktlen, dcache_line_size);
 
 		/* statistics */
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		if (cmdsts & TX_STS_ES)
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 
 		/* txd->ed_bufptr = 0; */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: r128fb.c,v 1.41 2017/06/21 21:40:36 macallan Exp $	*/
+/*	$NetBSD: r128fb.c,v 1.44 2021/08/07 16:19:14 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2007, 2012 Michael Lorenz
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: r128fb.c,v 1.41 2017/06/21 21:40:36 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: r128fb.c,v 1.44 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,8 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: r128fb.c,v 1.41 2017/06/21 21:40:36 macallan Exp $")
 #include <sys/malloc.h>
 #include <sys/lwp.h>
 #include <sys/kauth.h>
-
-#include <dev/videomode/videomode.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
@@ -56,8 +54,6 @@ __KERNEL_RCSID(0, "$NetBSD: r128fb.c,v 1.41 2017/06/21 21:40:36 macallan Exp $")
 #include <dev/wscons/wsdisplay_vconsvar.h>
 #include <dev/pci/wsdisplay_pci.h>
 #include <dev/wscons/wsdisplay_glyphcachevar.h>
-
-#include <dev/i2c/i2cvar.h>
 
 #include "opt_r128fb.h"
 #include "opt_vcons.h"
@@ -360,7 +356,7 @@ r128fb_attach(device_t parent, device_t self, void *aux)
 	aa.accessops = &r128fb_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint);
+	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static int

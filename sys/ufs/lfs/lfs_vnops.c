@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_vnops.c,v 1.325 2019/09/18 17:59:15 christos Exp $	*/
+/*	$NetBSD: lfs_vnops.c,v 1.340 2021/10/20 03:08:19 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003 The NetBSD Foundation, Inc.
@@ -125,7 +125,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_vnops.c,v 1.325 2019/09/18 17:59:15 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_vnops.c,v 1.340 2021/10/20 03:08:19 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -157,10 +157,7 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_vnops.c,v 1.325 2019/09/18 17:59:15 christos Exp
 #include <ufs/lfs/ulfs_bswap.h>
 #include <ufs/lfs/ulfs_extern.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_pmap.h>
-#include <uvm/uvm_stat.h>
-#include <uvm/uvm_pager.h>
+#include <uvm/uvm_extern.h>
 
 #include <ufs/lfs/lfs.h>
 #include <ufs/lfs/lfs_accessors.h>
@@ -185,6 +182,7 @@ static int lfs_makeinode(struct vattr *vap, struct vnode *,
 int (**lfs_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc lfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, ulfs_lookup },		/* lookup */
 	{ &vop_create_desc, lfs_create },		/* create */
 	{ &vop_whiteout_desc, ulfs_whiteout },		/* whiteout */
@@ -192,20 +190,21 @@ const struct vnodeopv_entry_desc lfs_vnodeop_entries[] = {
 	{ &vop_open_desc, ulfs_open },			/* open */
 	{ &vop_close_desc, lfs_close },			/* close */
 	{ &vop_access_desc, ulfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, lfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, lfs_setattr },		/* setattr */
 	{ &vop_read_desc, lfs_read },			/* read */
 	{ &vop_write_desc, lfs_write },			/* write */
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
-	{ &vop_ioctl_desc, ulfs_ioctl },		/* ioctl */
+	{ &vop_ioctl_desc, genfs_enoioctl },		/* ioctl */
 	{ &vop_fcntl_desc, lfs_fcntl },			/* fcntl */
-	{ &vop_poll_desc, ulfs_poll },			/* poll */
+	{ &vop_poll_desc, genfs_poll },			/* poll */
 	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, ulfs_revoke },		/* revoke */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
 	{ &vop_mmap_desc, lfs_mmap },			/* mmap */
 	{ &vop_fsync_desc, lfs_fsync },			/* fsync */
-	{ &vop_seek_desc, ulfs_seek },			/* seek */
+	{ &vop_seek_desc, genfs_seek },			/* seek */
 	{ &vop_remove_desc, lfs_remove },		/* remove */
 	{ &vop_link_desc, lfs_link },			/* link */
 	{ &vop_rename_desc, lfs_rename },		/* rename */
@@ -214,15 +213,15 @@ const struct vnodeopv_entry_desc lfs_vnodeop_entries[] = {
 	{ &vop_symlink_desc, lfs_symlink },		/* symlink */
 	{ &vop_readdir_desc, ulfs_readdir },		/* readdir */
 	{ &vop_readlink_desc, ulfs_readlink },		/* readlink */
-	{ &vop_abortop_desc, ulfs_abortop },		/* abortop */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, lfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, lfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, ulfs_lock },			/* lock */
-	{ &vop_unlock_desc, ulfs_unlock },		/* unlock */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
 	{ &vop_bmap_desc, ulfs_bmap },			/* bmap */
 	{ &vop_strategy_desc, lfs_strategy },		/* strategy */
 	{ &vop_print_desc, ulfs_print },		/* print */
-	{ &vop_islocked_desc, ulfs_islocked },		/* islocked */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, ulfs_pathconf },		/* pathconf */
 	{ &vop_advlock_desc, ulfs_advlock },		/* advlock */
 	{ &vop_bwrite_desc, lfs_bwrite },		/* bwrite */
@@ -242,48 +241,23 @@ const struct vnodeopv_desc lfs_vnodeop_opv_desc =
 int (**lfs_specop_p)(void *);
 const struct vnodeopv_entry_desc lfs_specop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
-	{ &vop_lookup_desc, spec_lookup },		/* lookup */
-	{ &vop_create_desc, spec_create },		/* create */
-	{ &vop_mknod_desc, spec_mknod },		/* mknod */
-	{ &vop_open_desc, spec_open },			/* open */
+	GENFS_SPECOP_ENTRIES,
 	{ &vop_close_desc, lfsspec_close },		/* close */
 	{ &vop_access_desc, ulfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, lfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, lfs_setattr },		/* setattr */
 	{ &vop_read_desc, ulfsspec_read },		/* read */
 	{ &vop_write_desc, ulfsspec_write },		/* write */
-	{ &vop_fallocate_desc, spec_fallocate },	/* fallocate */
-	{ &vop_fdiscard_desc, spec_fdiscard },		/* fdiscard */
-	{ &vop_ioctl_desc, spec_ioctl },		/* ioctl */
-	{ &vop_fcntl_desc, ulfs_fcntl },		/* fcntl */
-	{ &vop_poll_desc, spec_poll },			/* poll */
-	{ &vop_kqfilter_desc, spec_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, spec_revoke },		/* revoke */
-	{ &vop_mmap_desc, spec_mmap },			/* mmap */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
 	{ &vop_fsync_desc, spec_fsync },		/* fsync */
-	{ &vop_seek_desc, spec_seek },			/* seek */
-	{ &vop_remove_desc, spec_remove },		/* remove */
-	{ &vop_link_desc, spec_link },			/* link */
-	{ &vop_rename_desc, spec_rename },		/* rename */
-	{ &vop_mkdir_desc, spec_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, spec_rmdir },		/* rmdir */
-	{ &vop_symlink_desc, spec_symlink },		/* symlink */
-	{ &vop_readdir_desc, spec_readdir },		/* readdir */
-	{ &vop_readlink_desc, spec_readlink },		/* readlink */
-	{ &vop_abortop_desc, spec_abortop },		/* abortop */
 	{ &vop_inactive_desc, lfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, lfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, ulfs_lock },			/* lock */
-	{ &vop_unlock_desc, ulfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, spec_bmap },			/* bmap */
-	{ &vop_strategy_desc, spec_strategy },		/* strategy */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
 	{ &vop_print_desc, ulfs_print },		/* print */
-	{ &vop_islocked_desc, ulfs_islocked },		/* islocked */
-	{ &vop_pathconf_desc, spec_pathconf },		/* pathconf */
-	{ &vop_advlock_desc, spec_advlock },		/* advlock */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_bwrite_desc, vn_bwrite },		/* bwrite */
-	{ &vop_getpages_desc, spec_getpages },		/* getpages */
-	{ &vop_putpages_desc, spec_putpages },		/* putpages */
 	{ &vop_openextattr_desc, lfs_openextattr },	/* openextattr */
 	{ &vop_closeextattr_desc, lfs_closeextattr },	/* closeextattr */
 	{ &vop_getextattr_desc, lfs_getextattr },	/* getextattr */
@@ -298,47 +272,24 @@ const struct vnodeopv_desc lfs_specop_opv_desc =
 int (**lfs_fifoop_p)(void *);
 const struct vnodeopv_entry_desc lfs_fifoop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
-	{ &vop_lookup_desc, vn_fifo_bypass },		/* lookup */
-	{ &vop_create_desc, vn_fifo_bypass },		/* create */
-	{ &vop_mknod_desc, vn_fifo_bypass },		/* mknod */
-	{ &vop_open_desc, vn_fifo_bypass },		/* open */
+	GENFS_FIFOOP_ENTRIES,
 	{ &vop_close_desc, lfsfifo_close },		/* close */
 	{ &vop_access_desc, ulfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, lfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, lfs_setattr },		/* setattr */
 	{ &vop_read_desc, ulfsfifo_read },		/* read */
 	{ &vop_write_desc, ulfsfifo_write },		/* write */
-	{ &vop_fallocate_desc, vn_fifo_bypass },	/* fallocate */
-	{ &vop_fdiscard_desc, vn_fifo_bypass },		/* fdiscard */
-	{ &vop_ioctl_desc, vn_fifo_bypass },		/* ioctl */
-	{ &vop_fcntl_desc, ulfs_fcntl },		/* fcntl */
-	{ &vop_poll_desc, vn_fifo_bypass },		/* poll */
-	{ &vop_kqfilter_desc, vn_fifo_bypass },		/* kqfilter */
-	{ &vop_revoke_desc, vn_fifo_bypass },		/* revoke */
-	{ &vop_mmap_desc, vn_fifo_bypass },		/* mmap */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
 	{ &vop_fsync_desc, vn_fifo_bypass },		/* fsync */
-	{ &vop_seek_desc, vn_fifo_bypass },		/* seek */
-	{ &vop_remove_desc, vn_fifo_bypass },		/* remove */
-	{ &vop_link_desc, vn_fifo_bypass },		/* link */
-	{ &vop_rename_desc, vn_fifo_bypass },		/* rename */
-	{ &vop_mkdir_desc, vn_fifo_bypass },		/* mkdir */
-	{ &vop_rmdir_desc, vn_fifo_bypass },		/* rmdir */
-	{ &vop_symlink_desc, vn_fifo_bypass },		/* symlink */
-	{ &vop_readdir_desc, vn_fifo_bypass },		/* readdir */
-	{ &vop_readlink_desc, vn_fifo_bypass },		/* readlink */
-	{ &vop_abortop_desc, vn_fifo_bypass },		/* abortop */
 	{ &vop_inactive_desc, lfs_inactive },		/* inactive */
 	{ &vop_reclaim_desc, lfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, ulfs_lock },			/* lock */
-	{ &vop_unlock_desc, ulfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, vn_fifo_bypass },		/* bmap */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
 	{ &vop_strategy_desc, vn_fifo_bypass },		/* strategy */
 	{ &vop_print_desc, ulfs_print },		/* print */
-	{ &vop_islocked_desc, ulfs_islocked },		/* islocked */
-	{ &vop_pathconf_desc, vn_fifo_bypass },		/* pathconf */
-	{ &vop_advlock_desc, vn_fifo_bypass },		/* advlock */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_bwrite_desc, lfs_bwrite },		/* bwrite */
-	{ &vop_putpages_desc, vn_fifo_bypass },		/* putpages */
 	{ &vop_openextattr_desc, lfs_openextattr },	/* openextattr */
 	{ &vop_closeextattr_desc, lfs_closeextattr },	/* closeextattr */
 	{ &vop_getextattr_desc, lfs_getextattr },	/* getextattr */
@@ -381,8 +332,9 @@ lfs_makeinode(struct vattr *vap, struct vnode *dvp,
 
 	/* Authorize setting SGID if needed. */
 	if (ip->i_mode & ISGID) {
-		error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_WRITE_SECURITY,
-		    tvp, NULL, genfs_can_chmod(tvp->v_type, cnp->cn_cred, ip->i_uid,
+		error = kauth_authorize_vnode(cnp->cn_cred,
+		    KAUTH_VNODE_WRITE_SECURITY,
+		    tvp, NULL, genfs_can_chmod(tvp, cnp->cn_cred, ip->i_uid,
 		    ip->i_gid, MAKEIMODE(vap->va_type, vap->va_mode)));
 		if (error) {
 			ip->i_mode &= ~ISGID;
@@ -482,7 +434,7 @@ lfs_fsync(void *v)
 
 	wait = (ap->a_flags & FSYNC_WAIT);
 	do {
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(vp, trunc_page(ap->a_offlo),
 				     round_page(ap->a_offhi),
 				     PGO_CLEANIT | (wait ? PGO_SYNCIO : 0));
@@ -733,7 +685,6 @@ lfs_symlink(void *v)
 	}
 	KASSERT(VOP_ISLOCKED(*vpp) == LK_EXCLUSIVE);
 
-	VN_KNOTE(ap->a_dvp, NOTE_WRITE);
 	ip = VTOI(*vpp);
 
 	/*
@@ -828,7 +779,6 @@ lfs_mknod(void *v)
 	}
 	KASSERT(VOP_ISLOCKED(*vpp) == LK_EXCLUSIVE);
 
-	VN_KNOTE(dvp, NOTE_WRITE);
 	ip = VTOI(*vpp);
 	ino = ip->i_number;
 	ip->i_state |= IN_ACCESS | IN_CHANGE | IN_UPDATE;
@@ -898,7 +848,6 @@ lfs_create(void *v)
 		goto out;
 	}
 	KASSERT(VOP_ISLOCKED(*vpp) == LK_EXCLUSIVE);
-	VN_KNOTE(dvp, NOTE_WRITE);
 	VOP_UNLOCK(*vpp);
 
 out:
@@ -1050,7 +999,6 @@ lfs_mkdir(void *v)
 			      cnp, ip->i_number, LFS_IFTODT(ip->i_mode), bp);
  bad:
 	if (error == 0) {
-		VN_KNOTE(dvp, NOTE_WRITE | NOTE_LINK);
 		VOP_UNLOCK(tvp);
 	} else {
 		dp->i_nlink--;
@@ -1083,10 +1031,11 @@ out:
 int
 lfs_remove(void *v)
 {
-	struct vop_remove_v2_args /* {
+	struct vop_remove_v3_args /* {
 		struct vnode *a_dvp;
 		struct vnode *a_vp;
 		struct componentname *a_cnp;
+		nlink_t ctx_vp_new_nlink;
 	} */ *ap = v;
 	struct vnode *dvp, *vp;
 	struct inode *ip;
@@ -1346,7 +1295,7 @@ lfs_close(void *v)
 	    vp->v_mount->mnt_iflag & IMNT_UNMOUNT)
 		return 0;
 
-	if (vp->v_usecount > 1 && vp != ip->i_lfs->lfs_ivnode) {
+	if (vrefcnt(vp) > 1 && vp != ip->i_lfs->lfs_ivnode) {
 		LFS_ITIMES(ip, NULL, NULL, NULL);
 	}
 	return (0);
@@ -1373,7 +1322,7 @@ lfsspec_close(void *v)
 	KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 
 	ip = VTOI(vp);
-	if (vp->v_usecount > 1) {
+	if (vrefcnt(vp) > 1) {
 		LFS_ITIMES(ip, NULL, NULL, NULL);
 	}
 	return (VOCALL (spec_vnodeop_p, VOFFSET(vop_close), ap));
@@ -1400,7 +1349,7 @@ lfsfifo_close(void *v)
 	KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 
 	ip = VTOI(vp);
-	if (ap->a_vp->v_usecount > 1) {
+	if (vrefcnt(ap->a_vp) > 1) {
 		LFS_ITIMES(ip, NULL, NULL, NULL);
 	}
 	return (VOCALL (fifo_vnodeop_p, VOFFSET(vop_close), ap));
@@ -1603,7 +1552,7 @@ lfs_strategy(void *v)
 int
 lfs_flush_dirops(struct lfs *fs)
 {
-	struct inode *ip, *nip;
+	struct inode *ip, *marker;
 	struct vnode *vp;
 	extern int lfs_dostats; /* XXX this does not belong here */
 	struct segment *sp;
@@ -1612,7 +1561,8 @@ lfs_flush_dirops(struct lfs *fs)
 	int error = 0;
 
 	ASSERT_MAYBE_SEGLOCK(fs);
-	KASSERT(fs->lfs_nadirop == 0);
+	KASSERT(fs->lfs_nadirop == 0); /* stable during lfs_writer */
+	KASSERT(fs->lfs_dirops == 0);  /* stable during lfs_writer */
 
 	if (fs->lfs_ronly)
 		return EROFS;
@@ -1626,6 +1576,12 @@ lfs_flush_dirops(struct lfs *fs)
 
 	if (lfs_dostats)
 		++lfs_stats.flush_invoked;
+
+	marker = pool_get(&lfs_inode_pool, PR_WAITOK);
+	memset(marker, 0, sizeof(*marker));
+	marker->inode_ext.lfs = pool_get(&lfs_inoext_pool, PR_WAITOK);
+	memset(marker->inode_ext.lfs, 0, sizeof(*marker->inode_ext.lfs));
+	marker->i_state = IN_MARKER;
 
 	lfs_imtime(fs);
 	lfs_seglock(fs, flags);
@@ -1645,15 +1601,41 @@ lfs_flush_dirops(struct lfs *fs)
 	 *
 	 */
 	mutex_enter(&lfs_lock);
-	for (ip = TAILQ_FIRST(&fs->lfs_dchainhd); ip != NULL; ip = nip) {
-		nip = TAILQ_NEXT(ip, i_lfs_dchain);
-		mutex_exit(&lfs_lock);
+	KASSERT(fs->lfs_writer);
+	TAILQ_INSERT_HEAD(&fs->lfs_dchainhd, marker, i_lfs_dchain);
+	while ((ip = TAILQ_NEXT(marker, i_lfs_dchain)) != NULL) {
+		TAILQ_REMOVE(&fs->lfs_dchainhd, marker, i_lfs_dchain);
+		TAILQ_INSERT_AFTER(&fs->lfs_dchainhd, ip, marker,
+		    i_lfs_dchain);
+		if (ip->i_state & IN_MARKER)
+			continue;
 		vp = ITOV(ip);
-		mutex_enter(vp->v_interlock);
 
+		/*
+		 * Prevent the vnode from going away if it's just been
+		 * put out in the segment and lfs_unmark_dirop is about
+		 * to release it.  While it is on the list it is always
+		 * referenced, so it cannot be reclaimed until we
+		 * release it.
+		 */
+		vref(vp);
+
+		/*
+		 * Since we hold lfs_writer, the node can't be in an
+		 * active dirop.  Since it's on the list and we hold a
+		 * reference to it, it can't be reclaimed now.
+		 */
 		KASSERT((ip->i_state & IN_ADIROP) == 0);
 		KASSERT(vp->v_uflag & VU_DIROP);
-		KASSERT(vdead_check(vp, VDEAD_NOWAIT) == 0);
+
+		/*
+		 * After we release lfs_lock, if we were in the middle
+		 * of writing a segment, lfs_unmark_dirop may end up
+		 * clearing VU_DIROP, and we have no way to stop it.
+		 * That should be OK -- we'll just have less to do
+		 * here.
+		 */
+		mutex_exit(&lfs_lock);
 
 		/*
 		 * All writes to directories come from dirops; all
@@ -1662,15 +1644,6 @@ lfs_flush_dirops(struct lfs *fs)
 		 * and/or directories will not be affected by writing
 		 * directory blocks inodes and file inodes.  So we don't
 		 * really need to lock.
-		 */
-		if (vdead_check(vp, VDEAD_NOWAIT) != 0) {
-			mutex_exit(vp->v_interlock);
-			mutex_enter(&lfs_lock);
-			continue;
-		}
-		mutex_exit(vp->v_interlock);
-		/* XXX see below
-		 * waslocked = VOP_ISLOCKED(vp);
 		 */
 		if (vp->v_type != VREG &&
 		    ((ip->i_state & IN_ALLMOD) || !VPISEMPTY(vp))) {
@@ -1682,15 +1655,17 @@ lfs_flush_dirops(struct lfs *fs)
 			    	mutex_exit(&lfs_lock);
 			}
 			if (error && (sp->seg_flags & SEGM_SINGLE)) {
+				vrele(vp);
 				mutex_enter(&lfs_lock);
 				error = EAGAIN;
 				break;
 			}
 		}
-		KDASSERT(ip->i_number != LFS_IFILE_INUM);
+		KASSERT(ip->i_number != LFS_IFILE_INUM);
 		error = lfs_writeinode(fs, sp, ip);
-		mutex_enter(&lfs_lock);
 		if (error && (sp->seg_flags & SEGM_SINGLE)) {
+			vrele(vp);
+			mutex_enter(&lfs_lock);
 			error = EAGAIN;
 			break;
 		}
@@ -1703,15 +1678,25 @@ lfs_flush_dirops(struct lfs *fs)
 		 * write them.
 		 */
 		/* XXX only for non-directories? --KS */
+		mutex_enter(&lfs_lock);
 		LFS_SET_UINO(ip, IN_MODIFIED);
+		mutex_exit(&lfs_lock);
+
+		vrele(vp);
+		mutex_enter(&lfs_lock);
 	}
+	TAILQ_REMOVE(&fs->lfs_dchainhd, marker, i_lfs_dchain);
 	mutex_exit(&lfs_lock);
+
 	/* We've written all the dirops there are */
 	ssp = (SEGSUM *)sp->segsum;
 	lfs_ss_setflags(fs, ssp, lfs_ss_getflags(fs, ssp) & ~(SS_CONT));
 	lfs_finalize_fs_seguse(fs);
 	(void) lfs_writeseg(fs, sp);
 	lfs_segunlock(fs);
+
+	pool_put(&lfs_inoext_pool, marker->inode_ext.lfs);
+	pool_put(&lfs_inode_pool, marker);
 
 	return error;
 }
@@ -1733,6 +1718,7 @@ lfs_flush_pchain(struct lfs *fs)
 	int error, error2;
 
 	ASSERT_NO_SEGLOCK(fs);
+	KASSERT(fs->lfs_writer);
 
 	if (fs->lfs_ronly)
 		return EROFS;
@@ -1803,7 +1789,7 @@ lfs_flush_pchain(struct lfs *fs)
 			LFS_SET_UINO(ip, IN_MODIFIED);
 		    	mutex_exit(&lfs_lock);
 		}
-		KDASSERT(ip->i_number != LFS_IFILE_INUM);
+		KASSERT(ip->i_number != LFS_IFILE_INUM);
 		error2 = lfs_writeinode(fs, sp, ip);
 
 		VOP_UNLOCK(vp);
@@ -1884,7 +1870,7 @@ lfs_fcntl(void *v)
 	/* Only respect LFS fcntls on fs root or Ifile */
 	if (VTOI(ap->a_vp)->i_number != ULFS_ROOTINO &&
 	    VTOI(ap->a_vp)->i_number != LFS_IFILE_INUM) {
-		return ulfs_fcntl(v);
+		return genfs_fcntl(v);
 	}
 
 	/* Avoid locking a draining lock */
@@ -2163,7 +2149,7 @@ segwait_common:
 		return 0;
 
 	    default:
-		return ulfs_fcntl(v);
+		return genfs_fcntl(v);
 	}
 	return 0;
 }
@@ -2225,7 +2211,7 @@ lfs_mmap(void *v)
 
 	if (VTOI(ap->a_vp)->i_number == LFS_IFILE_INUM)
 		return EOPNOTSUPP;
-	return ulfs_mmap(v);
+	return genfs_mmap(v);
 }
 
 static int

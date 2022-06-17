@@ -1,4 +1,4 @@
-/* $NetBSD: pxa2x0_lcd.c,v 1.36 2015/10/17 16:34:43 jmcneill Exp $ */
+/* $NetBSD: pxa2x0_lcd.c,v 1.39 2021/11/20 00:15:04 rin Exp $ */
 
 /*
  * Copyright (c) 2002  Genetec Corporation.  All rights reserved.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pxa2x0_lcd.c,v 1.36 2015/10/17 16:34:43 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pxa2x0_lcd.c,v 1.39 2021/11/20 00:15:04 rin Exp $");
 
 #include "opt_pxa2x0_lcd.h"
 
@@ -46,7 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: pxa2x0_lcd.c,v 1.36 2015/10/17 16:34:43 jmcneill Exp
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/uio.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kernel.h>			/* for cold */
 
 #include <uvm/uvm_extern.h>
@@ -515,12 +515,7 @@ pxa2x0_lcd_new_screen(struct pxa2x0_lcd_softc *sc, int depth,
 		return EINVAL;
 	}
 
-	scr = malloc(sizeof(*scr), M_DEVBUF, M_NOWAIT);
-	if (scr == NULL)
-		return ENOMEM;
-
-	memset(scr, 0, sizeof(*scr));
-
+	scr = kmem_zalloc(sizeof(*scr), KM_SLEEP);
 	scr->nsegs = 0;
 	scr->depth = depth;
 	scr->buf_size = size;
@@ -632,7 +627,7 @@ pxa2x0_lcd_new_screen(struct pxa2x0_lcd_softc *sc, int depth,
 			bus_dmamem_unmap(dma_tag, scr->buf_va, size);
 		if (scr->nsegs)
 			bus_dmamem_free(dma_tag, scr->segs, scr->nsegs);
-		free(scr, M_DEVBUF);
+		kmem_free(scr, sizeof(*scr));
 	}
 	*scrpp = NULL;
 	return error;
@@ -649,7 +644,7 @@ pxa2x0_lcd_setup_rasops(struct pxa2x0_lcd_softc *sc, struct rasops_info *rinfo,
     const struct lcd_panel_geometry *geom)
 {
 
-	rinfo->ri_flg = descr->flags;
+	rinfo->ri_flg = descr->flags | RI_ENABLE_ALPHA;
 	rinfo->ri_depth = descr->depth;
 	rinfo->ri_width = geom->panel_width;
 	rinfo->ri_height = geom->panel_height;
@@ -753,7 +748,7 @@ pxa2x0_lcd_setup_wsscreen(struct pxa2x0_wsscreen_descr *descr,
 	}
 
 	/* let rasops_init calculate # of cols and rows in character */
-	rinfo.ri_flg = 0;
+	rinfo.ri_flg = RI_ENABLE_ALPHA;
 	rinfo.ri_depth = descr->depth;
 	rinfo.ri_bits = NULL;
 	rinfo.ri_width = width;
@@ -811,7 +806,7 @@ pxa2x0_lcd_alloc_screen(void *v, const struct wsscreen_descr *_type,
 	/*
 	 * initialize raster operation for this screen.
 	 */
-	scr->rinfo.ri_flg = 0;
+	scr->rinfo.ri_flg = RI_ENABLE_ALPHA;
 	scr->rinfo.ri_depth = type->depth;
 	scr->rinfo.ri_bits = scr->buf_va;
 	scr->rinfo.ri_width = sc->geometry->panel_width;
@@ -855,7 +850,7 @@ pxa2x0_lcd_free_screen(void *v, void *cookie)
 		bus_dmamem_unmap(sc->dma_tag, scr->buf_va, scr->map_size);
 	if (scr->nsegs > 0)
 		bus_dmamem_free(sc->dma_tag, scr->segs, scr->nsegs);
-	free(scr, M_DEVBUF);
+	kmem_free(scr, sizeof(*scr));
 }
 
 int

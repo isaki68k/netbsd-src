@@ -1,4 +1,4 @@
-/*	$NetBSD: hdlg_machdep.c,v 1.28 2019/07/16 14:41:45 skrll Exp $	*/
+/*	$NetBSD: hdlg_machdep.c,v 1.33 2022/01/04 10:38:04 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003 Wasabi Systems, Inc.
@@ -73,13 +73,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hdlg_machdep.c,v 1.28 2019/07/16 14:41:45 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hdlg_machdep.c,v 1.33 2022/01/04 10:38:04 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_pmap_debug.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -148,10 +147,6 @@ pv_addr_t minidataclean;
 
 paddr_t msgbufphys;
 
-#ifdef PMAP_DEBUG
-extern int pmap_debug_level;
-#endif
-
 #define KERNEL_PT_SYS		0	/* L2 table for mapping zero page */
 
 #define KERNEL_PT_KERNEL	1	/* L2 table for mapping kernel */
@@ -160,7 +155,7 @@ extern int pmap_debug_level;
 					/* L2 table for mapping i80321 */
 #define	KERNEL_PT_IOPXS		(KERNEL_PT_KERNEL + KERNEL_PT_KERNEL_NUM)
 
-					/* L2 tables for mapping kernel VM */ 
+					/* L2 tables for mapping kernel VM */
 #define KERNEL_PT_VMDATA	(KERNEL_PT_IOPXS + 1)
 #define	KERNEL_PT_VMDATA_NUM	4	/* start with 16MB of KVM */
 #define NUM_KERNEL_PTS		(KERNEL_PT_VMDATA + KERNEL_PT_VMDATA_NUM)
@@ -233,9 +228,7 @@ vaddr_t
 initarm(void *arg)
 {
 	extern vaddr_t xscale_cache_clean_addr;
-#ifdef DIAGNOSTIC
 	extern vsize_t xscale_minidata_clean_size;
-#endif
 	int loop;
 	int loop1;
 	u_int l1pagetable;
@@ -289,7 +282,7 @@ initarm(void *arg)
 	bootconfig.dram[0].pages = memsize / PAGE_SIZE;
 
 	/*
-	 * Set up the variables that define the availablilty of
+	 * Set up the variables that define the availability of
 	 * physical memory.  For now, we're going to set
 	 * physical_freestart to 0xa0200000 (where the kernel
 	 * was loaded), and allocate the memory we need downwards.
@@ -310,7 +303,7 @@ initarm(void *arg)
 
 #ifdef VERBOSE_INIT_ARM
 	/* Tell the user about the memory */
-	printf("physmemory: %d pages at 0x%08lx -> 0x%08lx\n", physmem,
+	printf("physmemory: %ld pages at 0x%08lx -> 0x%08lx\n", physmem,
 	    physical_start, physical_end - 1);
 #endif
 
@@ -392,13 +385,13 @@ initarm(void *arg)
 
 #ifdef VERBOSE_INIT_ARM
 	printf("IRQ stack: p0x%08lx v0x%08lx\n", irqstack.pv_pa,
-	    irqstack.pv_va); 
+	    irqstack.pv_va);
 	printf("ABT stack: p0x%08lx v0x%08lx\n", abtstack.pv_pa,
-	    abtstack.pv_va); 
+	    abtstack.pv_va);
 	printf("UND stack: p0x%08lx v0x%08lx\n", undstack.pv_pa,
-	    undstack.pv_va); 
+	    undstack.pv_va);
 	printf("SVC stack: p0x%08lx v0x%08lx\n", kernelstack.pv_pa,
-	    kernelstack.pv_va); 
+	    kernelstack.pv_va);
 #endif
 
 	/*
@@ -452,7 +445,7 @@ initarm(void *arg)
 
 		textsize = (textsize + PGOFSET) & ~PGOFSET;
 		totalsize = (totalsize + PGOFSET) & ~PGOFSET;
-		
+
 		logical = 0x00200000;	/* offset of kernel in RAM */
 
 		logical += pmap_map_chunk(l1pagetable, KERNEL_BASE + logical,

@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.191 2019/02/15 16:36:33 hannken Exp $ */
+/*	$NetBSD: trap.c,v 1.194 2022/05/16 21:28:05 mrg Exp $ */
 
 /*
  * Copyright (c) 1996-2002 Eduardo Horvath.  All rights reserved.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.191 2019/02/15 16:36:33 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.194 2022/05/16 21:28:05 mrg Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -561,6 +561,11 @@ trap(struct trapframe64 *tf, unsigned int type, vaddr_t pc, long tstate)
 		} else if (type == T_ECCERR) {
 			ecc_corrected_error(type, pc);
 			return;
+		} else if (type == T_FAST_ECC_ERROR) {
+			/* Disable D$, clear error, enable D$, continue. */
+			membar_Sync();
+			sp_blast_dcache_disabled(dcache_size, dcache_line_size);
+			return;
 		}
 		goto dopanic;
 	}
@@ -613,8 +618,6 @@ dopanic:
 			l->l_pflag &= ~LP_OWEUPC;
 			ADDUPROF(l);
 		}
-		if (want_resched)
-			preempt();
 		break;
 
 	case T_INST_EXCEPT:
@@ -1093,6 +1096,25 @@ data_access_fault(struct trapframe64 *tf, unsigned int type, vaddr_t pc,
 	LWP_CACHE_CREDS(l, p);
 	sticks = p->p_sticks;
 	tstate = tf->tf_tstate;
+
+#ifdef _LP64
+	/* deal with invalid VAs early */
+	if (__predict_false(addr >= (1UL<<HOLESHIFT) && addr < (1UL<<63))) {
+
+		if (tstate & TSTATE_PRIV)
+			panic("fault type %u for invalid va %lx", type, addr);
+
+		KSI_INIT_TRAP(&ksi);
+		ksi.ksi_signo = SIGSEGV;
+		ksi.ksi_code = SEGV_ACCERR;
+		ksi.ksi_trap = type;
+		ksi.ksi_addr = (void *)pc;
+		trapsignal(l, &ksi);
+		userret(l, pc, sticks);
+		share_fpu(l, tf);
+		return;
+	}
+#endif
 
 	/* Find the faulting va to give to uvm_fault */
 	va = trunc_page(addr);

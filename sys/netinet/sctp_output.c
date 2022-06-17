@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_output.c,v 1.18 2018/12/22 14:28:57 maxv Exp $ */
+/*	$NetBSD: sctp_output.c,v 1.31 2022/05/31 08:43:16 andvar Exp $ */
 /*	$KAME: sctp_output.c,v 1.48 2005/06/16 18:29:24 jinmei Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.18 2018/12/22 14:28:57 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.31 2022/05/31 08:43:16 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -743,7 +743,7 @@ sctp_choose_v4_boundspecific_stcb(struct sctp_inpcb *inp,
 		 */
 #ifdef SCTP_DEBUG
 		if (sctp_debug_on & SCTP_DEBUG_OUTPUT1) {
-			printf("Have a STCB - no asconf allowed, not bound all have a postive list\n");
+			printf("Have a STCB - no asconf allowed, not bound all have a positive list\n");
 		}
 #endif
 		/* First look at all addresses for one that is on
@@ -1280,7 +1280,7 @@ sctp_choose_v6_boundspecific_stcb(struct sctp_inpcb *inp,
 	 *   Each endpoint has a list of local addresses associated
 	 *   with it. The address list is either a "negative list" i.e.
 	 *   those addresses that are NOT allowed to be used as a source OR
-	 *   a "postive list" i.e. those addresses that CAN be used.
+	 *   a "positive list" i.e. those addresses that CAN be used.
 	 *
 	 *   Its a negative list if asconf is allowed. What we do
 	 *   in this case is use the ep address list BUT we have
@@ -1394,7 +1394,7 @@ sctp_choose_v6_boundspecific_stcb(struct sctp_inpcb *inp,
 	} else {
 #ifdef SCTP_DEBUG
 		if (sctp_debug_on & SCTP_DEBUG_OUTPUT1) {
-			printf("Have a STCB - no asconf allowed, not bound all have a postive list\n");
+			printf("Have a STCB - no asconf allowed, not bound all have a positive list\n");
 		}
 #endif
 		/* First try for interface output match */
@@ -1761,7 +1761,7 @@ sctp_choose_v6_boundall(struct sctp_inpcb *inp,
 			/* by definition the scope (from to->sin6_scopeid)
 			 * must match that of the interface. If not then
 			 * we could pick a wrong scope for the address.
-			 * Ususally we don't hit plan-b since the route
+			 * Usually we don't hit plan-b since the route
 			 * handles this. However we can hit plan-b when
 			 * we send to local-host so the route is the
 			 * loopback interface, but the destination is a
@@ -2187,7 +2187,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 #endif
 		/*
 		 * If source address selection fails and we find no route then
-		 * the ip_ouput should fail as well with a NO_ROUTE_TO_HOST
+		 * the ip_output should fail as well with a NO_ROUTE_TO_HOST
 		 * type error. We probably should catch that somewhere and
 		 * abort the association right away (assuming this is an INIT
 		 * being sent).
@@ -2476,11 +2476,11 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 				}
 				rtcache_unref(rt, ro);
 			} else if (ifp) {
-				if (ND_IFINFO(ifp)->linkmtu &&
-				    (stcb->asoc.smallest_mtu > ND_IFINFO(ifp)->linkmtu)) {
+				if (ifp->if_mtu &&
+				    (stcb->asoc.smallest_mtu > ifp->if_mtu)) {
 					sctp_mtu_size_reset(inp,
 							    &stcb->asoc,
-							    ND_IFINFO(ifp)->linkmtu);
+							    ifp->if_mtu);
 				}
 			}
 		}
@@ -2507,9 +2507,7 @@ int sctp_is_address_in_scope(struct ifaddr *ifa,
 			     int local_scope,
 			     int site_scope)
 {
-	if ((loopback_scope == 0) &&
-	    (ifa->ifa_ifp) &&
-	    (ifa->ifa_ifp->if_type == IFT_LOOP)) {
+	if ((loopback_scope == 0) && (ifa->ifa_ifp->if_type == IFT_LOOP)) {
 		/* skip loopback if not in scope *
 		 */
 		return (0);
@@ -3163,7 +3161,7 @@ sctp_are_there_new_addresses(struct sctp_association *asoc,
 		}
 	}
 	if (fnd == 0) {
-		/* New address added! no need to look futher. */
+		/* New address added! no need to look further. */
 		return (1);
 	}
 	/* Ok so far lets munge through the rest of the packet */
@@ -3358,7 +3356,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	stc.peerport = sh->src_port;
 
 	/*
-	 * If we wanted to honor cookie life extentions, we would add
+	 * If we wanted to honor cookie life extensions, we would add
 	 * to stc.cookie_life. For now we should NOT honor any extension
 	 */
 	stc.site_scope = stc.local_scope = stc.loopback_scope = 0;
@@ -3960,7 +3958,7 @@ sctp_prune_prsctp(struct sctp_tcb *stcb,
 							return;
 						}
 					} /* if chunk was present */
-				} /* if of sufficent priority */
+				} /* if of sufficient priority */
 			} /* if chunk has enabled */
 		} /* tailqforeach */
 
@@ -4010,7 +4008,7 @@ sctp_prepare_chunk(struct sctp_tmit_chunk *template,
 		/* If:
 		 *  Peer supports PR-SCTP
 		 *  The flags is set against this send for PR-SCTP
-		 *  And timetolive is a postive value, zero is reserved
+		 *  And timetolive is a positive value, zero is reserved
 		 *     to mean a reliable send for both buffer/time
 		 *     related one.
 		 */
@@ -4362,7 +4360,7 @@ sctp_msg_append(struct sctp_tcb *stcb,
 		chk->send_size = dataout;
 		chk->book_size = chk->send_size;
 		chk->mbcnt = mbcnt;
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -4477,7 +4475,7 @@ sctp_msg_append(struct sctp_tcb *stcb,
 		 * chain of mbufs by going through our temp array
 		 * and breaking the pointers.
 		 */
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -4699,7 +4697,7 @@ sctp_sendall_completes(void *ptr, u_int32_t val)
 	 * Kacheong suggests that the notify
 	 * be done at the send time.. so you would
 	 * push up a notification if any send failed.
-	 * Don't know if this is feasable since the
+	 * Don't know if this is feasible since the
 	 * only failures we have is "memory" related and
 	 * if you cannot get an mbuf to send the data
 	 * you surely can't get an mbuf to send up
@@ -4820,7 +4818,7 @@ sctp_sendall (struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m, struct sc
 				     (void *)ca, 0, sctp_sendall_completes, inp);
 	if (ret) {
 #ifdef SCTP_DEBUG
-		printf("Failed to initate iterator to takeover associations\n");
+		printf("Failed to initiate iterator to takeover associations\n");
 #endif
 		free(ca, M_PCB);
 		return (EFAULT);
@@ -4902,7 +4900,7 @@ sctp_clean_up_datalist(struct sctp_tcb *stcb,
 		if (i) {
 			/* Any chunk NOT 0 you zap the time
 			 * chunk 0 gets zapped or set based on
-			 * if a RTO measurment is needed.
+			 * if a RTO measurement is needed.
 			 */
 			data_list[i]->do_rtt = 0;
 		}
@@ -5782,7 +5780,7 @@ sctp_med_chunk_output(struct sctp_inpcb *inp,
 						}
 						return (ENOMEM);
 					}
-					/* upate our MTU size */
+					/* update our MTU size */
 					/* Do clear IP_DF ? */
 					if (chk->flags & CHUNK_FLAGS_FRAGMENT_OK) {
 						no_fragmentflg = 0;
@@ -6681,7 +6679,7 @@ sctp_chunk_retransmission(struct sctp_inpcb *inp,
 			if (m == NULL) {
 				return (ENOMEM);
 			}
-			/* upate our MTU size */
+			/* update our MTU size */
 			/* Do clear IP_DF ? */
 			if (chk->flags & CHUNK_FLAGS_FRAGMENT_OK) {
 				no_fragmentflg = 0;
@@ -6712,7 +6710,7 @@ sctp_chunk_retransmission(struct sctp_inpcb *inp,
 					if (m == NULL) {
 						return (ENOMEM);
 					}
-					/* upate our MTU size */
+					/* update our MTU size */
 					/* Do clear IP_DF ? */
 					if (fwd->flags & CHUNK_FLAGS_FRAGMENT_OK) {
 						no_fragmentflg = 0;
@@ -8168,7 +8166,7 @@ static struct sctp_nets *
 sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 {
 	struct sctp_nets *net, *hnet;
-	int ms_goneby, highest_ms, state_overide=0;
+	int ms_goneby, highest_ms, state_override=0;
 
 	SCTP_GETTIME_TIMEVAL(now);
 	highest_ms = 0;
@@ -8211,15 +8209,15 @@ sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 #endif
 		/* When the address state is unconfirmed but still considered reachable, we
 		 * HB at a higher rate. Once it goes confirmed OR reaches the "unreachable"
-		 * state, thenw we cut it back to HB at a more normal pace.
+		 * state, then we cut it back to HB at a more normal pace.
 		 */
 		if ((net->dest_state & (SCTP_ADDR_UNCONFIRMED|SCTP_ADDR_NOT_REACHABLE)) == SCTP_ADDR_UNCONFIRMED) {
-			state_overide = 1;
+			state_override = 1;
 		} else {
-			state_overide = 0;
+			state_override = 0;
 		}
 
-		if ((((unsigned int)ms_goneby >= net->RTO) || (state_overide)) &&
+		if ((((unsigned int)ms_goneby >= net->RTO) || (state_override)) &&
 		    (ms_goneby > highest_ms)) {
 			highest_ms = ms_goneby;
 			hnet = net;
@@ -8233,12 +8231,12 @@ sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 	}
 	if (hnet &&
 	   ((hnet->dest_state & (SCTP_ADDR_UNCONFIRMED|SCTP_ADDR_NOT_REACHABLE)) == SCTP_ADDR_UNCONFIRMED)) {
-		state_overide = 1;
+		state_override = 1;
 	} else {
-		state_overide = 0;
+		state_override = 0;
 	}
 
-	if (highest_ms && (((unsigned int)highest_ms >= hnet->RTO) || state_overide)) {
+	if (highest_ms && (((unsigned int)highest_ms >= hnet->RTO) || state_override)) {
 		/* Found the one with longest delay bounds
 		 * OR it is unconfirmed and still not marked
 		 * unreachable.
@@ -9415,7 +9413,7 @@ sctp_copy_it_in(struct sctp_inpcb *inp,
 			}
 			error = sblock(&so->so_snd, M_WAITOK);
 			if (error) {
-				/* Can't aquire the lock */
+				/* Can't acquire the lock */
 				goto out_locked;
 			}
 #if defined(__FreeBSD__) && __FreeBSD_version >= 502115
@@ -9579,7 +9577,7 @@ sctp_copy_it_in(struct sctp_inpcb *inp,
 		/* fix up the send_size if it is not present */
 		chk->send_size = tot_out;
 		chk->book_size = chk->send_size;
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -9951,7 +9949,7 @@ sctp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		/* UDP style, we must go ahead and start the INIT process */
 		if ((use_rcvinfo) &&
 		    (srcv.sinfo_flags & SCTP_ABORT)) {
-			/* User asks to abort a non-existant asoc */
+			/* User asks to abort a non-existent asoc */
 			error = ENOENT;
 			sounlock(so);
 			goto out;

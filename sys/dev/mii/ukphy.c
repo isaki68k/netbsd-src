@@ -1,4 +1,4 @@
-/*	$NetBSD: ukphy.c,v 1.51 2019/03/25 09:20:46 msaitoh Exp $	*/
+/*	$NetBSD: ukphy.c,v 1.55 2021/06/29 21:03:36 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ukphy.c,v 1.51 2019/03/25 09:20:46 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ukphy.c,v 1.55 2021/06/29 21:03:36 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mii.h"
@@ -81,9 +81,8 @@ __KERNEL_RCSID(0, "$NetBSD: ukphy.c,v 1.51 2019/03/25 09:20:46 msaitoh Exp $");
 static int	ukphymatch(device_t, cfdata_t, void *);
 static void	ukphyattach(device_t, device_t, void *);
 
-CFATTACH_DECL3_NEW(ukphy, sizeof(struct mii_softc),
-    ukphymatch, ukphyattach, mii_phy_detach, mii_phy_activate, NULL, NULL,
-    DVF_DETACH_SHUTDOWN);
+CFATTACH_DECL_NEW(ukphy, sizeof(struct mii_softc),
+    ukphymatch, ukphyattach, mii_phy_detach, mii_phy_activate);
 
 static int	ukphy_service(struct mii_softc *, struct mii_data *, int);
 
@@ -110,9 +109,9 @@ ukphyattach(device_t parent, device_t self, void *aux)
 	int oui = MII_OUI(ma->mii_id1, ma->mii_id2);
 	int model = MII_MODEL(ma->mii_id2);
 	int rev = MII_REV(ma->mii_id2);
-	const char *descr;
+	char descr[MII_MAX_DESCR_LEN];
 
-	if ((descr = mii_get_descr(oui, model)) != NULL)
+	if (mii_get_descr(descr, sizeof(descr), oui, model) && descr[0])
 		aprint_normal(": %s (OUI 0x%06x, model 0x%04x), rev. %d\n",
 		       descr, oui, model, rev);
 	else
@@ -129,12 +128,13 @@ ukphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &ukphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
 
 	/*
 	 * Don't do loopback on unknown PHYs.  It might confuse some of them.
 	 */
 	sc->mii_flags |= MIIF_NOLOOP;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -142,13 +142,10 @@ ukphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -156,6 +153,8 @@ ukphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_faith.c,v 1.60 2019/04/27 06:18:15 pgoyette Exp $	*/
+/*	$NetBSD: if_faith.c,v 1.62 2021/06/16 00:21:19 riastradh Exp $	*/
 /*	$KAME: if_faith.c,v 1.21 2001/02/20 07:59:26 itojun Exp $	*/
 
 /*
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_faith.c,v 1.60 2019/04/27 06:18:15 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_faith.c,v 1.62 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -137,7 +137,6 @@ static int
 faith_clone_create(struct if_clone *ifc, int unit)
 {
 	struct ifnet *ifp;
-	int rv;
 
 	ifp = if_alloc(IFT_FAITH);
 
@@ -152,11 +151,7 @@ faith_clone_create(struct if_clone *ifc, int unit)
 	ifp->if_hdrlen = 0;
 	ifp->if_addrlen = 0;
 	ifp->if_dlt = DLT_NULL;
-	rv = if_attach(ifp);
-	if (rv != 0) {
-		if_free(ifp);
-		return rv;
-	}
+	if_attach(ifp);
 	if_alloc_sadl(ifp);
 	bpf_attach(ifp, DLT_NULL, sizeof(u_int));
 	atomic_inc_uint(&faith_count);
@@ -201,8 +196,7 @@ faithoutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		        rt->rt_flags & RTF_HOST ? EHOSTUNREACH : ENETUNREACH);
 	}
 	pktlen = m->m_pkthdr.len;
-	ifp->if_opackets++;
-	ifp->if_obytes += pktlen;
+	if_statadd2(ifp, if_opackets, 1, if_obytes, pktlen);
 	switch (af) {
 #ifdef INET
 	case AF_INET:
@@ -225,8 +219,7 @@ faithoutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 
 	s = splnet();
 	if (__predict_true(pktq_enqueue(pktq, m, 0))) {
-		ifp->if_ipackets++;
-		ifp->if_ibytes += pktlen;
+		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 		error = 0;
 	} else {
 		m_freem(m);

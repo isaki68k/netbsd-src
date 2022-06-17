@@ -1,4 +1,4 @@
-/*	$NetBSD: mlx.c,v 1.67 2018/09/03 16:29:31 riastradh Exp $	*/
+/*	$NetBSD: mlx.c,v 1.70 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mlx.c,v 1.67 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mlx.c,v 1.70 2021/08/07 16:19:12 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "ld.h"
@@ -316,7 +316,7 @@ mlx_init(struct mlx_softc *mlx, const char *intrstr)
 	/*
 	 * Allocate and initialize the CCBs.
 	 */
-	mc = malloc(sizeof(*mc) * MLX_MAX_QUEUECNT, M_DEVBUF, M_NOWAIT);
+	mc = malloc(sizeof(*mc) * MLX_MAX_QUEUECNT, M_DEVBUF, M_WAITOK);
 	mlx->mlx_ccbs = mc;
 
 	for (i = 0; i < MLX_MAX_QUEUECNT; i++, mc++) {
@@ -627,8 +627,9 @@ mlx_configure(struct mlx_softc *mlx, int waitok)
 
 		locs[MLXCF_UNIT] = i;
 
-		ms->ms_dv = config_found_sm_loc(mlx->mlx_dv, "mlx", locs,
-				&mlxa, mlx_print, config_stdsubmatch);
+		ms->ms_dv = config_found(mlx->mlx_dv, &mlxa, mlx_print,
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .locators = locs));
 		nunits += (ms->ms_dv != NULL);
 	}
 

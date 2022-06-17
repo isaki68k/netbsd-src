@@ -1,4 +1,4 @@
-#	$NetBSD: majors.sparc64,v 1.37 2019/01/28 02:29:00 dholland Exp $
+#	$NetBSD: majors.sparc64,v 1.41 2021/08/21 09:59:45 andvar Exp $
 #
 # Device majors for sparc64
 #
@@ -71,8 +71,8 @@ device-major	uhid		char 79			uhid
 device-major	ulpt		char 80			ulpt
 device-major	ugen		char 81			ugen
 device-major	ucom		char 82			ucom
-device-major	urio		char 83			urio
-device-major	uscanner	char 84			uscanner
+#device-major	obsolete	char 83			obsolete (urio)
+#device-major	obsolete	char 84			obsolete (uscanner)
 device-major	radio		char 85			radio
 
 device-major	wsdisplay	char 90			wsdisplay
@@ -112,7 +112,7 @@ device-major	dmoverio	char 129		dmoverio
 #device-major	obsolete	char 131		obsolete (fwiso)
 device-major	dpt		char 132		dpt
 device-major	twe		char 133		twe
-device-major	nsmb		char 134		nsmb		
+#device-major	obsolete	char 134		obsolete (nsmb)		
 device-major	sysmon		char 135		sysmon
 
 device-major	ksyms		char 136		ksyms
@@ -124,6 +124,6 @@ device-major	joy		char 137		joy
 # New machine-independent driver majors are assigned in 
 # sys/conf/majors.
 
-# ld has (eroneously) been assigned a MD major on some ports, this one
+# ld has (erroneously) been assigned a MD major on some ports, this one
 # is from the (mostly unused) sys/conf/majors.storage
 device-major	ld		char 303 block	303	ld

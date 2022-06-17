@@ -1,4 +1,4 @@
-/*	$NetBSD: sbus.c,v 1.96 2016/11/10 06:44:35 macallan Exp $ */
+/*	$NetBSD: sbus.c,v 1.104 2022/01/22 11:49:17 thorpej Exp $ */
 
 /*
  * Copyright (c) 1999-2002 Eduardo Horvath
@@ -34,13 +34,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.96 2016/11/10 06:44:35 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.104 2022/01/22 11:49:17 thorpej Exp $");
 
 #include "opt_ddb.h"
 
 #include <sys/param.h>
 #include <sys/extent.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
@@ -246,10 +247,7 @@ sbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_sb.sb_flush = &sc->sc_flush;
 
 	/* give us a nice name.. */
-	name = (char *)malloc(32, M_DEVBUF, M_NOWAIT);
-	if (name == 0)
-		panic("couldn't malloc iommu name");
-	snprintf(name, 32, "%s dvma", device_xname(self));
+	name = kmem_asprintf("%s dvma", device_xname(self));
 
 	iommu_init(name, &sc->sc_is, 0, -1);
 
@@ -275,7 +273,7 @@ sbus_attach(device_t parent, device_t self, void *aux)
 
 		if (extent_alloc_subregion(sc->sc_is.is_dvmamap,
 		    sc->sc_is.is_dvmabase, sc->sc_is.is_dvmabase + PAGE_SIZE,
-		    PAGE_SIZE, PAGE_SIZE, 0, EX_NOWAIT|EX_BOUNDZERO,
+		    PAGE_SIZE, PAGE_SIZE, 0, EX_WAITOK|EX_BOUNDZERO,
 		    (u_long *)&dummy) != 0)
 			panic("sbus iommu: can't toss first dvma page");
 	}
@@ -286,6 +284,7 @@ sbus_attach(device_t parent, device_t self, void *aux)
 	 * `specials' is an array of device names that are treated
 	 * specially:
 	 */
+	devhandle_t selfh = device_handle(self);
 	node0 = OF_child(node);
 	for (node = node0; node; node = OF_peer(node)) {
 		char *name1 = prom_getpropstring(node, "name");
@@ -295,7 +294,8 @@ sbus_attach(device_t parent, device_t self, void *aux)
 			printf("sbus_attach: %s: incomplete\n", name1);
 			continue;
 		}
-		(void) config_found(self, &sa, sbus_print);
+		(void) config_found(self, &sa, sbus_print,
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 		sbus_destroy_attach_args(&sa);
 	}
 }
@@ -428,7 +428,7 @@ sbus_overtemp(void *arg)
 	/* Should try a clean shutdown first */
 	printf("DANGER: OVER TEMPERATURE detected\nShutting down...\n");
 	delay(20);
-	cpu_reboot(RB_POWERDOWN|RB_HALT, NULL);
+	kern_reboot(RB_POWERDOWN|RB_HALT, NULL);
 }
 
 /*
@@ -455,9 +455,7 @@ sbus_get_intr(struct sbus_softc *sc, int node, struct openprom_intr **ipp,
 
 		/* Change format to an `struct sbus_intr' array */
 		ip = malloc(*np * sizeof(struct openprom_intr), M_DEVBUF,
-		    M_NOWAIT);
-		if (ip == NULL)
-			return (ENOMEM);
+		    M_WAITOK);
 
 		/*
 		 * Now things get ugly.  We need to take this value which is
@@ -595,12 +593,7 @@ sbus_alloc_dmatag(struct sbus_softc *sc)
 {
 	bus_dma_tag_t sdt, psdt = sc->sc_dmatag;
 
-	sdt = (bus_dma_tag_t)
-		malloc(sizeof(struct sparc_bus_dma_tag), M_DEVBUF, M_NOWAIT);
-	if (sdt == NULL)
-		/* Panic? */
-		return (psdt);
-
+	sdt = kmem_alloc(sizeof(*sdt), KM_SLEEP);
 	sdt->_cookie = sc;
 	sdt->_parent = psdt;
 #define PCOPY(x)	sdt->x = psdt->x

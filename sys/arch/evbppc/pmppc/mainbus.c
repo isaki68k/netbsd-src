@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.6 2011/07/01 19:03:08 dyoung Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.8 2021/08/07 16:18:52 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.6 2011/07/01 19:03:08 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.8 2021/08/07 16:18:52 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -115,22 +115,22 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 	maa.mb_name = "cpu";
 	maa.mb_addr = MAINBUSCF_ADDR_DEFAULT;
 	maa.mb_irq = MAINBUSCF_IRQ_DEFAULT;
-	config_found(self, &maa, mainbus_print);
+	config_found(self, &maa, mainbus_print, CFARGS_NONE);
 
 	if (a_config.a_has_rtc) {
 		maa.mb_name = "rtc";
 		maa.mb_addr = PMPPC_RTC;
 		maa.mb_irq = PMPPC_I_RTC_INT;
-		config_found_sm_loc(self, "mainbus", NULL, &maa, mainbus_print,
-				    mainbus_submatch);
+		config_found(self, &maa, mainbus_print,
+		    CFARGS(.submatch = mainbus_submatch));
 	}
 
 	if (a_config.a_has_eth) {
 		maa.mb_name = "cs";
 		maa.mb_addr = PMPPC_CS_IO_BASE;
 		maa.mb_irq = PMPPC_I_ETH_INT;
-		config_found_sm_loc(self, "mainbus", NULL, &maa, mainbus_print,
-				    mainbus_submatch);
+		config_found(self, &maa, mainbus_print,
+		    CFARGS(.submatch = mainbus_submatch));
 		maa.mb_bt = &pmppc_mem_tag;
 	}
 	if (a_config.a_flash_width != 0) {
@@ -139,14 +139,14 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 		maa.mb_irq = MAINBUSCF_IRQ_DEFAULT;
 		maa.u.mb_flash.size = a_config.a_flash_size;
 		maa.u.mb_flash.width = a_config.a_flash_width;
-		config_found_sm_loc(self, "mainbus", NULL, &maa, mainbus_print,
-				    mainbus_submatch);
+		config_found(self, &maa, mainbus_print,
+		    CFARGS(.submatch = mainbus_submatch));
 	}
 
 	maa.mb_name = "cpc";
 	maa.mb_addr = MAINBUSCF_ADDR_DEFAULT;
 	maa.mb_irq = MAINBUSCF_IRQ_DEFAULT;
-	config_found(self, &maa, mainbus_print);
+	config_found(self, &maa, mainbus_print, CFARGS_NONE);
 }
 
 static int	cpu_match(device_t, cfdata_t, void *);

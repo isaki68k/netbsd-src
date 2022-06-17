@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ieee1394subr.c,v 1.65 2018/12/22 14:28:56 maxv Exp $	*/
+/*	$NetBSD: if_ieee1394subr.c,v 1.67 2021/12/31 14:25:24 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ieee1394subr.c,v 1.65 2018/12/22 14:28:56 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ieee1394subr.c,v 1.67 2021/12/31 14:25:24 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -404,16 +404,7 @@ ieee1394_input(struct ifnet *ifp, struct mbuf *m, uint16_t src)
 		return;
 	}
 
-	IFQ_LOCK(inq);
-	if (IF_QFULL(inq)) {
-		IF_DROP(inq);
-		IFQ_UNLOCK(inq);
-		m_freem(m);
-	} else {
-		IF_ENQUEUE(inq, m);
-		IFQ_UNLOCK(inq);
-		schednetisr(isr);
-	}
+	IFQ_ENQUEUE_ISR(inq, m, isr);
 }
 
 static struct mbuf *
@@ -690,13 +681,13 @@ ieee1394_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		switch (ifa->ifa_addr->sa_family) {
 #ifdef INET
 		case AF_INET:
-			if ((error = (*ifp->if_init)(ifp)) != 0)
+			if ((error = if_init(ifp)) != 0)
 				break;
 			arp_ifinit(ifp, ifa);
 			break;
 #endif /* INET */
 		default:
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 			break;
 		}
 		break;

@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_mbuf.c,v 1.235 2019/10/19 06:36:47 tnn Exp $	*/
+/*	$NetBSD: uipc_mbuf.c,v 1.246 2022/04/09 23:38:33 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1999, 2001, 2018 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.235 2019/10/19 06:36:47 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.246 2022/04/09 23:38:33 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mbuftrace.h"
@@ -165,11 +165,7 @@ nmbclusters_limit(void)
 	max_size = MIN(max_size, NMBCLUSTERS_MAX);
 #endif
 
-#ifdef NMBCLUSTERS
-	return MIN(max_size, NMBCLUSTERS);
-#else
 	return max_size;
-#endif
 }
 
 /*
@@ -199,7 +195,7 @@ mbinit(void)
 	 * Set an arbitrary default limit on the number of mbuf clusters.
 	 */
 #ifdef NMBCLUSTERS
-	nmbclusters = nmbclusters_limit();
+	nmbclusters = MIN(NMBCLUSTERS, nmbclusters_limit());
 #else
 	nmbclusters = MAX(1024,
 	    (vsize_t)physmem * PAGE_SIZE / MCLBYTES / 16);
@@ -534,6 +530,7 @@ m_get(int how, int type)
 	    how == M_WAIT ? PR_WAITOK|PR_LIMITFAIL : PR_NOWAIT);
 	if (m == NULL)
 		return NULL;
+	KASSERT(((vaddr_t)m->m_dat & PAGE_MASK) + MLEN <= PAGE_SIZE);
 
 	mbstat_type_add(type, 1);
 
@@ -586,6 +583,9 @@ m_clget(struct mbuf *m, int how)
 
 	if (m->m_ext_storage.ext_buf == NULL)
 		return;
+
+	KASSERT(((vaddr_t)m->m_ext_storage.ext_buf & PAGE_MASK) + mclbytes
+	    <= PAGE_SIZE);
 
 	MCLINITREFERENCE(m);
 	m->m_data = m->m_ext.ext_buf;
@@ -1672,6 +1672,51 @@ m_defrag(struct mbuf *m, int how)
 	if (m->m_next == NULL)
 		return m;
 
+	/* Defrag to single mbuf if at all possible */
+	if ((m->m_flags & M_EXT) == 0 && m->m_pkthdr.len <= MCLBYTES) {
+		if (m->m_pkthdr.len <= MHLEN) {
+			if (M_TRAILINGSPACE(m) < (m->m_pkthdr.len - m->m_len)) {
+				KASSERTMSG(M_LEADINGSPACE(m) +
+				    M_TRAILINGSPACE(m) >=
+				    (m->m_pkthdr.len - m->m_len),
+				    "too small leading %d trailing %d ro? %d"
+				    " pkthdr.len %d mlen %d",
+				    (int)M_LEADINGSPACE(m),
+				    (int)M_TRAILINGSPACE(m),
+				    M_READONLY(m),
+				    m->m_pkthdr.len, m->m_len);
+
+				memmove(m->m_pktdat, m->m_data, m->m_len);
+				m->m_data = m->m_pktdat;
+
+				KASSERT(M_TRAILINGSPACE(m) >=
+				    (m->m_pkthdr.len - m->m_len));
+			}
+		} else {
+			/* Must copy data before adding cluster */
+			m0 = m_get(how, MT_DATA);
+			if (m0 == NULL)
+				return NULL;
+			KASSERT(m->m_len <= MHLEN);
+			m_copydata(m, 0, m->m_len, mtod(m0, void *));
+
+			MCLGET(m, how);
+			if ((m->m_flags & M_EXT) == 0) {
+				m_free(m0);
+				return NULL;
+			}
+			memcpy(m->m_data, mtod(m0, void *), m->m_len);
+			m_free(m0);
+		}
+		KASSERT(M_TRAILINGSPACE(m) >= (m->m_pkthdr.len - m->m_len));
+		m_copydata(m->m_next, 0, m->m_pkthdr.len - m->m_len,
+			    mtod(m, char *) + m->m_len);
+		m->m_len = m->m_pkthdr.len;
+		m_freem(m->m_next);
+		m->m_next = NULL;
+		return m;
+	}
+
 	m0 = m_get(how, MT_DATA);
 	if (m0 == NULL)
 		return NULL;
@@ -1869,6 +1914,9 @@ m_ext_free(struct mbuf *m)
 	if (__predict_true(m->m_ext.ext_refcnt == 1)) {
 		refcnt = m->m_ext.ext_refcnt = 0;
 	} else {
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+		membar_release();
+#endif
 		refcnt = atomic_dec_uint_nv(&m->m_ext.ext_refcnt);
 	}
 
@@ -1885,6 +1933,9 @@ m_ext_free(struct mbuf *m)
 		/*
 		 * dropping the last reference
 		 */
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+		membar_acquire();
+#endif
 		if (!embedded) {
 			m->m_ext.ext_refcnt++; /* XXX */
 			m_ext_free(m->m_ext_ref);
@@ -2054,6 +2105,14 @@ nextchain:
 
 #if defined(MBUFTRACE)
 void
+mowner_init_owner(struct mowner *mo, const char *name, const char *descr)
+{
+	memset(mo, 0, sizeof(*mo));
+	strlcpy(mo->mo_name, name, sizeof(mo->mo_name));
+	strlcpy(mo->mo_descr, descr, sizeof(mo->mo_descr));
+}
+
+void
 mowner_attach(struct mowner *mo)
 {
 
@@ -2205,7 +2264,7 @@ m_verify_packet(struct mbuf *m)
 
 		dat = n->m_data;
 		len = n->m_len;
-		if (__predict_false(dat + len < dat)) {
+		if (__predict_false(len < 0)) {
 			panic("%s: incorrect length (len = %d)", __func__, len);
 		}
 

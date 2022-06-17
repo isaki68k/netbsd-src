@@ -1,4 +1,4 @@
-/*	$NetBSD: iscsi_main.c,v 1.32 2019/10/01 18:00:08 chs Exp $	*/
+/*	$NetBSD: iscsi_main.c,v 1.40 2022/04/14 16:50:26 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2004,2005,2006,2011 The NetBSD Foundation, Inc.
@@ -87,8 +87,15 @@ static int iscsiclose(struct file *);
 
 static const struct fileops iscsi_fileops = {
 	.fo_name = "iscsi",
+	.fo_read = fbadop_read,
+	.fo_write = fbadop_write,
 	.fo_ioctl = iscsiioctl,
+	.fo_fcntl = fnullop_fcntl,
+	.fo_poll = fnullop_poll,
+	.fo_stat = fbadop_stat,
 	.fo_close = iscsiclose,
+	.fo_kqfilter = fnullop_kqfilter,
+	.fo_restart = fnullop_restart
 };
 
 struct cdevsw iscsi_cdevsw = {
@@ -166,14 +173,11 @@ iscsiclose(struct file *fp)
 	struct iscsi_softc *sc;
 
 	sc = device_lookup_private(&iscsi_cd, d->fd_unit);
-	if (sc == NULL) {
-		DEBOUT(("%s: Cannot find private data\n",__func__));
-		return ENXIO;
+	if (sc != NULL) {
+		mutex_enter(&sc->lock);
+		TAILQ_REMOVE(&sc->fds, d, fd_link);
+		mutex_exit(&sc->lock);
 	}
-
-	mutex_enter(&sc->lock);
-	TAILQ_REMOVE(&sc->fds, d, fd_link);
-	mutex_exit(&sc->lock);
 
 	kmem_free(d, sizeof(*d));
 	fp->f_iscsi = NULL;
@@ -250,7 +254,7 @@ iscsi_attach(device_t parent, device_t self, void *aux)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
-	aprint_normal("%s: attached.  major = %d\n", iscsi_cd.cd_name,
+	aprint_verbose("%s: attached.  major = %d\n", iscsi_cd.cd_name,
 	    cdevsw_lookup_major(&iscsi_cdevsw));
 }
 
@@ -355,6 +359,7 @@ map_session(session_t *sess, device_t dev)
 	struct scsipi_adapter *adapt = &sess->s_sc_adapter;
 	struct scsipi_channel *chan = &sess->s_sc_channel;
 	const quirktab_t	*tgt;
+	int found;
 
 	mutex_enter(&sess->s_lock);
 	sess->s_send_window = max(2, window_size(sess, CCBS_FOR_SCSIPI));
@@ -387,9 +392,12 @@ map_session(session_t *sess, device_t dev)
 	chan->chan_nluns = 16;
 	chan->chan_id = sess->s_id;
 
-	sess->s_child_dev = config_found(dev, chan, scsiprint);
+	KERNEL_LOCK(1, NULL);
+	sess->s_child_dev = config_found(dev, chan, scsiprint, CFARGS_NONE);
+	found = (sess->s_child_dev != NULL);
+	KERNEL_UNLOCK_ONE(NULL);
 
-	return sess->s_child_dev != NULL;
+	return found;
 }
 
 
@@ -422,11 +430,12 @@ unmap_session(session_t *sess)
  * grow_resources
  *    Try to grow openings up to current window size
  */
-static void
+static int
 grow_resources(session_t *sess)
 {
 	struct scsipi_adapter *adapt = &sess->s_sc_adapter;
 	int win;
+	int rc = -1;
 
 	mutex_enter(&sess->s_lock);
 	if (sess->s_refcount < CCBS_FOR_SCSIPI &&
@@ -435,10 +444,13 @@ grow_resources(session_t *sess)
 		if (win > sess->s_send_window) {
 			sess->s_send_window++;
 			adapt->adapt_openings++;
+			rc = 0;
 			DEB(5, ("Grow send window to %d\n", sess->s_send_window));
 		}
 	}
 	mutex_exit(&sess->s_lock);
+
+	return rc;
 }
 
 /******************************************************************************/
@@ -508,7 +520,10 @@ iscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t req,
 
 	case ADAPTER_REQ_GROW_RESOURCES:
 		DEB(5, ("ISCSI: scsipi_request GROW_RESOURCES\n"));
-		grow_resources(sess);
+		if (grow_resources(sess)) {
+			/* reached maximum */
+			chan->chan_flags &= ~SCSIPI_CHAN_CANGROW;
+		}
 		break;
 
 	case ADAPTER_REQ_SET_XFER_MODE:
@@ -641,7 +656,7 @@ SYSCTL_SETUP(sysctl_iscsi_setup, "ISCSI subtree setup")
 
 #include <sys/module.h>
 
-MODULE(MODULE_CLASS_DRIVER, iscsi, NULL); /* Possibly a builtin module */
+MODULE(MODULE_CLASS_DRIVER, iscsi, "scsi_subr"); /* Possibly a builtin module */
 
 #ifdef _MODULE
 static const struct cfiattrdata ibescsi_info = { "scsi", 1,
@@ -677,14 +692,23 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 #ifdef _MODULE
+		error = devsw_attach(iscsi_cd.cd_name, NULL, &bmajor,
+			&iscsi_cdevsw, &cmajor);
+		if (error) {
+			aprint_error("%s: unable to register devsw\n",
+				iscsi_cd.cd_name);
+			return error;
+		}
 		error = config_cfdriver_attach(&iscsi_cd);
 		if (error) {
+			devsw_detach(NULL, &iscsi_cdevsw);
 			return error;
 		}
 
 		error = config_cfattach_attach(iscsi_cd.cd_name, &iscsi_ca);
 		if (error) {
 			config_cfdriver_detach(&iscsi_cd);
+			devsw_detach(NULL, &iscsi_cdevsw);
 			aprint_error("%s: unable to register cfattach\n",
 				iscsi_cd.cd_name);
 			return error;
@@ -696,25 +720,18 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 				iscsi_cd.cd_name);
 			config_cfattach_detach(iscsi_cd.cd_name, &iscsi_ca);
 			config_cfdriver_detach(&iscsi_cd);
-			return error;
-		}
-
-		error = devsw_attach(iscsi_cd.cd_name, NULL, &bmajor,
-			&iscsi_cdevsw, &cmajor);
-		if (error) {
-			aprint_error("%s: unable to register devsw\n",
-				iscsi_cd.cd_name);
-			config_cfdata_detach(iscsi_cfdata);
-			config_cfattach_detach(iscsi_cd.cd_name, &iscsi_ca);
-			config_cfdriver_detach(&iscsi_cd);
+			devsw_detach(NULL, &iscsi_cdevsw);
 			return error;
 		}
 
 		if (config_attach_pseudo(iscsi_cfdata) == NULL) {
 			aprint_error("%s: config_attach_pseudo failed\n",
 				iscsi_cd.cd_name);
+
+			config_cfdata_detach(iscsi_cfdata);
 			config_cfattach_detach(iscsi_cd.cd_name, &iscsi_ca);
 			config_cfdriver_detach(&iscsi_cd);
+			devsw_detach(NULL, &iscsi_cdevsw);
 			return ENXIO;
 		}
 #endif
@@ -727,6 +744,7 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 		if (error)
 			return error;
 
+		config_cfdata_detach(iscsi_cfdata);
 		config_cfattach_detach(iscsi_cd.cd_name, &iscsi_ca);
 		config_cfdriver_detach(&iscsi_cd);
 		devsw_detach(NULL, &iscsi_cdevsw);

@@ -1,4 +1,4 @@
-/*	$NetBSD: autofs.c,v 1.3 2018/01/09 16:19:39 christos Exp $	*/
+/*	$NetBSD: autofs.c,v 1.6 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autofs.c,v 1.3 2018/01/09 16:19:39 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autofs.c,v 1.6 2020/05/23 23:42:43 ad Exp $");
 
 #include "autofs.h"
 
@@ -78,9 +78,9 @@ __KERNEL_RCSID(0, "$NetBSD: autofs.c,v 1.3 2018/01/09 16:19:39 christos Exp $");
 #include <sys/queue.h>
 #include <sys/signalvar.h>
 
-dev_type_open(autofs_open);
-dev_type_close(autofs_close);
-dev_type_ioctl(autofs_ioctl);
+static dev_type_open(autofs_open);
+static dev_type_close(autofs_close);
+static dev_type_ioctl(autofs_ioctl);
 
 const struct cdevsw autofs_cdevsw = {
 	.d_open = autofs_open,
@@ -142,12 +142,12 @@ autofs_ignore_thread(void)
 	if (autofs_softc->sc_dev_opened == false)
 		return false;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (autofs_softc->sc_dev_sid == curproc->p_pgrp->pg_id) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return true;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return false;
 }
@@ -264,7 +264,7 @@ autofs_set_sigmask(sigset_t *oldset)
 
 	sigfillset(&newset);
 	/* Remove the autofs set of signals from newset */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	mutex_enter(curproc->p_lock);
 
 	for (i = 0; i < __arraycount(autofs_sig_set); i++) {
@@ -280,20 +280,20 @@ autofs_set_sigmask(sigset_t *oldset)
 	sigprocmask1(curlwp, SIG_SETMASK, &newset, oldset);
 
 	mutex_exit(curproc->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 static void
 autofs_restore_sigmask(sigset_t *set)
 {
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	mutex_enter(curproc->p_lock);
 
 	sigprocmask1(curlwp, SIG_SETMASK, set, NULL);
 
 	mutex_exit(curproc->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 static int
@@ -376,8 +376,9 @@ autofs_trigger_one(struct autofs_node *anp, const char *component,
 
 	request_error = ar->ar_error;
 	if (request_error)
-		AUTOFS_WARN("request for %s completed with error %d",
-		    ar->ar_path, request_error);
+		AUTOFS_WARN("request for %s completed with error %d, "
+		    "pid %d (%s)", ar->ar_path, request_error,
+		    curproc->p_pid, curproc->p_comm);
 
 	wildcards = ar->ar_wildcards;
 
@@ -484,9 +485,9 @@ autofs_ioctl_request(struct autofs_daemon_request *adr)
 	strlcpy(adr->adr_key, ar->ar_key, sizeof(adr->adr_key));
 	strlcpy(adr->adr_options, ar->ar_options, sizeof(adr->adr_options));
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	autofs_softc->sc_dev_sid = curproc->p_pgrp->pg_id;
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return 0;
 }
@@ -519,7 +520,7 @@ autofs_ioctl_done(struct autofs_daemon_done *add)
 	return 0;
 }
 
-int
+static int
 autofs_open(dev_t dev, int flags, int mode, struct lwp *l)
 {
 
@@ -543,7 +544,7 @@ autofs_open(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 autofs_close(dev_t dev, int flags, int mode, struct lwp *l)
 {
 
@@ -555,7 +556,7 @@ autofs_close(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 autofs_ioctl(dev_t dev, const u_long cmd, void *data, int flag, struct lwp *l)
 {
 

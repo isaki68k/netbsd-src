@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -98,12 +98,6 @@ FlInitOneFile (
 
     NewFileNode = ACPI_CAST_PTR (ASL_GLOBAL_FILE_NODE,
         UtLocalCacheCalloc (sizeof (ASL_GLOBAL_FILE_NODE)));
-
-    if (!NewFileNode)
-    {
-        AslError (ASL_ERROR, ASL_MSG_MEMORY_ALLOCATION, NULL, NULL);
-        return (AE_NO_MEMORY);
-    }
 
     NewFileNode->ParserErrorDetected = FALSE;
     NewFileNode->Next = AslGbl_FilesList;
@@ -312,8 +306,22 @@ ASL_GLOBAL_FILE_NODE *
 FlGetCurrentFileNode (
     void)
 {
-    return (FlGetFileNode (
-        ASL_FILE_INPUT,AslGbl_Files[ASL_FILE_INPUT].Filename));
+    ASL_GLOBAL_FILE_NODE    *FileNode =
+        FlGetFileNode (ASL_FILE_INPUT,AslGbl_Files[ASL_FILE_INPUT].Filename);
+
+
+    if (!FileNode)
+    {
+        /*
+         * If the current file node does not exist after initializing the file
+         * node structures, something went wrong and this is an unrecoverable
+         * condition.
+         */
+        FlFileError (ASL_FILE_INPUT, ASL_MSG_COMPILER_INTERNAL);
+        AslAbort ();
+    }
+
+    return (FileNode);
 }
 
 
@@ -719,8 +727,8 @@ ErrorExit:
  * RETURN:      Status
  *
  * DESCRIPTION: Open the specified input file, and save the directory path to
- *              the file so that include files can be opened in
- *              the same directory.
+ *              the file so that include files can be opened in the same
+ *              directory. NOTE: File is opened in text mode.
  *
  ******************************************************************************/
 

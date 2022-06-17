@@ -1,4 +1,4 @@
-/*      $NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $ */
+/*      $NetBSD: vfp_init.c,v 1.77 2022/04/01 19:57:22 riastradh Exp $ */
 
 /*
  * Copyright (c) 2008 ARM Ltd
@@ -32,12 +32,14 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.77 2022/04/01 19:57:22 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/device.h>
+#include <sys/kernel.h>
+#include <sys/kthread.h>
 #include <sys/proc.h>
 #include <sys/cpu.h>
 
@@ -46,8 +48,14 @@ __KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $");
 #include <arm/undefined.h>
 #include <arm/vfpreg.h>
 #include <arm/mcontext.h>
+#include <arm/fpu.h>
 
 #include <uvm/uvm_extern.h>		/* for pmap.h */
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/arm/aes_neon.h>
+#include <crypto/chacha/arch/arm/chacha_neon.h>
+#include <crypto/chacha/chacha_impl.h>
 
 #ifdef FPU_VFP
 
@@ -162,24 +170,6 @@ uint32_t vfp_fpscr_changable = VFP_FPSCR_CSUM;
 /* default to run fast */
 uint32_t vfp_fpscr_default = (VFP_FPSCR_DN | VFP_FPSCR_FZ | VFP_FPSCR_RN);
 
-/*
- * Used to test for a VFP. The following function is installed as a coproc10
- * handler on the undefined instruction vector and then we issue a VFP
- * instruction. If undefined_test is non zero then the VFP did not handle
- * the instruction so must be absent, or disabled.
- */
-
-static int undefined_test;
-
-static int
-vfp_test(u_int address, u_int insn, trapframe_t *frame, int fault_code)
-{
-
-	frame->tf_pc += INSN_SIZE;
-	++undefined_test;
-	return 0;
-}
-
 #else
 /* determine what bits can be changed */
 uint32_t vfp_fpscr_changable = VFP_FPSCR_CSUM|VFP_FPSCR_ESUM|VFP_FPSCR_RMODE;
@@ -231,6 +221,12 @@ vfp_fpscr_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 }
 
 #ifndef FPU_VFP
+void
+vfp_detect(struct cpu_info *ci)
+{
+	ci->ci_vfp_id = 0;
+	return;
+}
 /*
  * If we don't want VFP support, we still need to handle emulating VFP FPSCR
  * instructions.
@@ -239,7 +235,7 @@ void
 vfp_attach(struct cpu_info *ci)
 {
 	if (CPU_IS_PRIMARY(ci)) {
-		install_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
+		replace_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
 	}
 	evcnt_attach_dynamic(&ci->ci_vfp_evs[0], EVCNT_TYPE_TRAP, NULL,
 	    ci->ci_cpuname, "vfp fpscr traps");
@@ -247,9 +243,8 @@ vfp_attach(struct cpu_info *ci)
 
 #else
 void
-vfp_attach(struct cpu_info *ci)
+vfp_detect(struct cpu_info *ci)
 {
-	const char *model = NULL;
 
 	if (CPU_ID_ARM11_P(ci->ci_arm_cpuid)
 	    || CPU_ID_MV88SV58XX_P(ci->ci_arm_cpuid)
@@ -258,14 +253,7 @@ vfp_attach(struct cpu_info *ci)
 		const uint32_t nsacr = armreg_nsacr_read();
 		const uint32_t nsacr_vfp = __BITS(VFP_COPROC,VFP_COPROC2);
 		if ((nsacr & nsacr_vfp) != nsacr_vfp) {
-			aprint_normal_dev(ci->ci_dev,
-			    "VFP access denied (NSACR=%#x)\n", nsacr);
-			if (CPU_IS_PRIMARY(ci))
-				install_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
-			ci->ci_vfp_id = 0;
-			evcnt_attach_dynamic(&ci->ci_vfp_evs[0],
-			    EVCNT_TYPE_TRAP, NULL, ci->ci_cpuname,
-			    "vfp fpscr traps");
+			ci->ci_fp_id = 0;
 			return;
 		}
 #endif
@@ -280,7 +268,7 @@ vfp_attach(struct cpu_info *ci)
 		cpacr |= __SHIFTIN(CPACR_ALL, cpacr_vfp2);
 		armreg_cpacr_write(cpacr);
 
-		arm_isb();
+		isb();
 
 		/*
 		 * If we could enable them, then they exist.
@@ -289,36 +277,32 @@ vfp_attach(struct cpu_info *ci)
 		bool vfp_p = __SHIFTOUT(cpacr, cpacr_vfp2) == CPACR_ALL
 		    && __SHIFTOUT(cpacr, cpacr_vfp) == CPACR_ALL;
 		if (!vfp_p) {
-			aprint_normal_dev(ci->ci_dev,
-			    "VFP access denied (CPACR=%#x)\n", cpacr);
-			if (CPU_IS_PRIMARY(ci))
-				install_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
 			ci->ci_vfp_id = 0;
-			evcnt_attach_dynamic(&ci->ci_vfp_evs[0],
-			    EVCNT_TYPE_TRAP, NULL, ci->ci_cpuname,
-			    "vfp fpscr traps");
 			return;
 		}
 	}
 
-	void *uh = install_coproc_handler(VFP_COPROC, vfp_test);
-
-	undefined_test = 0;
+	/* borrow the ci_vfd_id field for VFP detection */
+	ci->ci_vfp_id = -1;
 
 	const uint32_t fpsid = armreg_fpsid_read();
-
-	remove_coproc_handler(uh);
-
-	if (undefined_test != 0) {
-		aprint_normal_dev(ci->ci_dev, "No VFP detected\n");
-		if (CPU_IS_PRIMARY(ci))
-			install_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
-		ci->ci_vfp_id = 0;
+	if (ci->ci_vfp_id == 0) {
 		return;
 	}
 
 	ci->ci_vfp_id = fpsid;
-	switch (fpsid & ~ VFP_FPSID_REV_MSK) {
+
+	ci->ci_mvfr[0] = armreg_mvfr0_read();
+	ci->ci_mvfr[1] = armreg_mvfr1_read();
+
+}
+
+void
+vfp_attach(struct cpu_info *ci)
+{
+	const char *model = NULL;
+
+	switch (ci->ci_vfp_id & ~ VFP_FPSID_REV_MSK) {
 	case FPU_VFP10_ARM10E:
 		model = "VFP10 R1";
 		break;
@@ -347,9 +331,9 @@ vfp_attach(struct cpu_info *ci)
 		break;
 	default:
 		aprint_normal_dev(ci->ci_dev, "unrecognized VFP version %#x\n",
-		    fpsid);
+		    ci->ci_vfp_id);
 		if (CPU_IS_PRIMARY(ci))
-			install_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
+			replace_coproc_handler(VFP_COPROC, vfp_fpscr_handler);
 		vfp_fpscr_changable = VFP_FPSCR_CSUM|VFP_FPSCR_ESUM
 		    |VFP_FPSCR_RMODE;
 		vfp_fpscr_default = 0;
@@ -357,54 +341,60 @@ vfp_attach(struct cpu_info *ci)
 	}
 
 	cpu_fpu_present = 1;
-	cpu_media_and_vfp_features[0] = armreg_mvfr0_read();
-	cpu_media_and_vfp_features[1] = armreg_mvfr1_read();
-	if (fpsid != 0) {
-		uint32_t f0 = armreg_mvfr0_read();
-		uint32_t f1 = armreg_mvfr1_read();
-		aprint_normal("vfp%d at %s: %s%s%s%s%s\n",
-		    device_unit(ci->ci_dev),
-		    device_xname(ci->ci_dev),
-		    model,
-		    ((f0 & ARM_MVFR0_ROUNDING_MASK) ? ", rounding" : ""),
-		    ((f0 & ARM_MVFR0_EXCEPT_MASK) ? ", exceptions" : ""),
-		    ((f1 & ARM_MVFR1_D_NAN_MASK) ? ", NaN propagation" : ""),
-		    ((f1 & ARM_MVFR1_FTZ_MASK) ? ", denormals" : ""));
-		aprint_debug("vfp%d: mvfr: [0]=%#x [1]=%#x\n",
-		    device_unit(ci->ci_dev), f0, f1);
-		if (CPU_IS_PRIMARY(ci)) {
-			if (f0 & ARM_MVFR0_ROUNDING_MASK) {
-				vfp_fpscr_changable |= VFP_FPSCR_RMODE;
-			}
-			if (f1 & ARM_MVFR0_EXCEPT_MASK) {
-				vfp_fpscr_changable |= VFP_FPSCR_ESUM;
-			}
-			// If hardware supports propagation of NaNs, select it.
-			if (f1 & ARM_MVFR1_D_NAN_MASK) {
-				vfp_fpscr_default &= ~VFP_FPSCR_DN;
-				vfp_fpscr_changable |= VFP_FPSCR_DN;
-			}
-			// If hardware supports denormalized numbers, use it.
-			if (cpu_media_and_vfp_features[1] & ARM_MVFR1_FTZ_MASK) {
-				vfp_fpscr_default &= ~VFP_FPSCR_FZ;
-				vfp_fpscr_changable |= VFP_FPSCR_FZ;
-			}
+
+	const uint32_t f0 = ci->ci_mvfr[0];
+	const uint32_t f1 = ci->ci_mvfr[1];
+	aprint_normal("vfp%d at %s: %s%s%s%s%s\n",
+	    device_unit(ci->ci_dev),
+	    device_xname(ci->ci_dev),
+	    model,
+	    ((f0 & ARM_MVFR0_ROUNDING_MASK) ? ", rounding" : ""),
+	    ((f0 & ARM_MVFR0_EXCEPT_MASK) ? ", exceptions" : ""),
+	    ((f1 & ARM_MVFR1_D_NAN_MASK) ? ", NaN propagation" : ""),
+	    ((f1 & ARM_MVFR1_FTZ_MASK) ? ", denormals" : ""));
+
+	aprint_debug("vfp%d: mvfr: [0]=%#x [1]=%#x\n",
+	    device_unit(ci->ci_dev), f0, f1);
+
+	if (CPU_IS_PRIMARY(ci)) {
+		cpu_media_and_vfp_features[0] = f0;
+		cpu_media_and_vfp_features[1] = f1;
+
+		if (f0 & ARM_MVFR0_ROUNDING_MASK) {
+			vfp_fpscr_changable |= VFP_FPSCR_RMODE;
 		}
+		if (f1 & ARM_MVFR0_EXCEPT_MASK) {
+			vfp_fpscr_changable |= VFP_FPSCR_ESUM;
+		}
+		// If hardware supports propagation of NaNs, select it.
+		if (f1 & ARM_MVFR1_D_NAN_MASK) {
+			vfp_fpscr_default &= ~VFP_FPSCR_DN;
+			vfp_fpscr_changable |= VFP_FPSCR_DN;
+		}
+		// If hardware supports denormalized numbers, use it.
+		if (f1 & ARM_MVFR1_FTZ_MASK) {
+			vfp_fpscr_default &= ~VFP_FPSCR_FZ;
+			vfp_fpscr_changable |= VFP_FPSCR_FZ;
+		}
+
+		replace_coproc_handler(VFP_COPROC, vfp_handler);
+		install_coproc_handler(VFP_COPROC2, vfp_handler);
+#ifdef CPU_CORTEX
+		if (cpu_neon_present) {
+			install_coproc_handler(CORE_UNKNOWN_HANDLER,
+			    neon_handler);
+			aes_md_init(&aes_neon_impl);
+			chacha_md_init(&chacha_neon_impl);
+		}
+#endif
 	}
+
 	evcnt_attach_dynamic(&ci->ci_vfp_evs[0], EVCNT_TYPE_MISC, NULL,
 	    ci->ci_cpuname, "vfp coproc use");
 	evcnt_attach_dynamic(&ci->ci_vfp_evs[1], EVCNT_TYPE_MISC, NULL,
 	    ci->ci_cpuname, "vfp coproc re-use");
 	evcnt_attach_dynamic(&ci->ci_vfp_evs[2], EVCNT_TYPE_TRAP, NULL,
 	    ci->ci_cpuname, "vfp coproc fault");
-	if (CPU_IS_PRIMARY(ci)) {
-		install_coproc_handler(VFP_COPROC, vfp_handler);
-		install_coproc_handler(VFP_COPROC2, vfp_handler);
-#ifdef CPU_CORTEX
-		if (cpu_neon_present)
-			install_coproc_handler(CORE_UNKNOWN_HANDLER, neon_handler);
-#endif
-	}
 }
 
 /* The real handler for VFP bounces.  */
@@ -412,9 +402,11 @@ static int
 vfp_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 {
 	struct cpu_info * const ci = curcpu();
+	uint32_t fpexc;
 
 	/* This shouldn't ever happen.  */
-	if (fault_code != FAULT_USER)
+	if (fault_code != FAULT_USER &&
+	    (curlwp->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) == LW_SYSTEM)
 		panic("VFP fault at %#x in non-user mode", frame->tf_pc);
 
 	if (ci->ci_vfp_id == 0) {
@@ -422,24 +414,34 @@ vfp_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 		return 1;
 	}
 
-	/* 
+	/*
 	 * If we already own the FPU and it's enabled (and no exception), raise
-	 * SIGILL.  If there is an exception, drop through to raise a SIGFPE.
+	 * SIGILL.  If there is an exception, raise SIGFPE.
 	 */
-	if (curcpu()->ci_pcu_curlwp[PCU_FPU] == curlwp
-	    && (armreg_fpexc_read() & (VFP_FPEXC_EX|VFP_FPEXC_EN)) == VFP_FPEXC_EN)
-		return 1;
+	if (curlwp->l_pcu_cpu[PCU_FPU] == ci) {
+		KASSERT(ci->ci_pcu_curlwp[PCU_FPU] == curlwp);
+
+		fpexc = armreg_fpexc_read();
+		if (fpexc & VFP_FPEXC_EN) {
+			if ((fpexc & VFP_FPEXC_EX) == 0) {
+				return 1;	/* SIGILL */
+			} else {
+				goto fpe;	/* SIGFPE; skip pcu_load(9) */
+			}
+		}
+	}
 
 	/*
 	 * Make sure we own the FP.
 	 */
 	pcu_load(&arm_vfp_ops);
 
-	uint32_t fpexc = armreg_fpexc_read();
+	fpexc = armreg_fpexc_read();
 	if (fpexc & VFP_FPEXC_EX) {
 		ksiginfo_t ksi;
 		KASSERT(fpexc & VFP_FPEXC_EN);
 
+fpe:
 		curcpu()->ci_vfp_evs[2].ev_count++;
 
 		/*
@@ -494,7 +496,8 @@ neon_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 		return 1;
 
 	/* This shouldn't ever happen.  */
-	if (fault_code != FAULT_USER)
+	if (fault_code != FAULT_USER &&
+	    (curlwp->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) == LW_SYSTEM)
 		panic("NEON fault in non-user mode");
 
 	/* if we already own the FPU and it's enabled, raise SIGILL */
@@ -656,6 +659,106 @@ vfp_setcontext(struct lwp *l, const mcontext_t *mcp)
 	pcb->pcb_vfp.vfp_fpscr = mcp->__fpu.__vfpregs.__vfp_fpscr;
 	memcpy(pcb->pcb_vfp.vfp_regs, mcp->__fpu.__vfpregs.__vfp_fstmx,
 	    sizeof(mcp->__fpu.__vfpregs.__vfp_fstmx));
+}
+
+/*
+ * True if this is a system thread with its own private FPU state.
+ */
+static inline bool
+lwp_system_fpu_p(struct lwp *l)
+{
+
+	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) ==
+	    (LW_SYSTEM|LW_SYSTEM_FPU);
+}
+
+static const struct vfpreg zero_vfpreg;
+
+void
+fpu_kern_enter(void)
+{
+	struct cpu_info *ci;
+	uint32_t fpexc;
+	int s;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	/*
+	 * Block interrupts up to IPL_VM.  We must block preemption
+	 * since -- if this is a user thread -- there is nowhere to
+	 * save the kernel fpu state, and if we want this to be usable
+	 * in interrupts, we can't let interrupts interfere with the
+	 * fpu state in use since there's nowhere for them to save it.
+	 */
+	s = splvm();
+	ci = curcpu();
+	KASSERTMSG(ci->ci_cpl <= IPL_VM || cold, "cpl=%d", ci->ci_cpl);
+	KASSERT(ci->ci_kfpu_spl == -1);
+	ci->ci_kfpu_spl = s;
+
+	/* Save any fpu state on the current CPU.  */
+	pcu_save_all_on_cpu();
+
+	/* Enable the fpu.  */
+	fpexc = armreg_fpexc_read();
+	fpexc |= VFP_FPEXC_EN;
+	fpexc &= ~VFP_FPEXC_EX;
+	armreg_fpexc_write(fpexc);
+}
+
+void
+fpu_kern_leave(void)
+{
+	struct cpu_info *ci = curcpu();
+	int s;
+	uint32_t fpexc;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	KASSERT(ci->ci_cpl == IPL_VM || cold);
+	KASSERT(ci->ci_kfpu_spl != -1);
+
+	/*
+	 * Zero the fpu registers; otherwise we might leak secrets
+	 * through Spectre-class attacks to userland, even if there are
+	 * no bugs in fpu state management.
+	 */
+	load_vfpregs(&zero_vfpreg);
+
+	/*
+	 * Disable the fpu so that the kernel can't accidentally use
+	 * it again.
+	 */
+	fpexc = armreg_fpexc_read();
+	fpexc &= ~VFP_FPEXC_EN;
+	armreg_fpexc_write(fpexc);
+
+	/* Restore interrupts.  */
+	s = ci->ci_kfpu_spl;
+	ci->ci_kfpu_spl = -1;
+	splx(s);
+}
+
+void
+kthread_fpu_enter_md(void)
+{
+
+	pcu_load(&arm_vfp_ops);
+}
+
+void
+kthread_fpu_exit_md(void)
+{
+
+	/* XXX Should vfp_state_release zero the registers itself?  */
+	load_vfpregs(&zero_vfpreg);
+	vfp_discardcontext(curlwp, 0);
 }
 
 #endif /* FPU_VFP */

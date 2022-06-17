@@ -1,4 +1,4 @@
-/* $NetBSD: if_skreg.h,v 1.26 2019/03/05 08:25:02 msaitoh Exp $ */
+/* $NetBSD: if_skreg.h,v 1.31 2022/02/23 21:54:41 andvar Exp $ */
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -1112,7 +1112,11 @@
 #define SK_RXMF1_READ_LEVEL	0x0C78
 
 /* Receive MAC FIFO 1 Control/Test */
-#define SK_RFCTL_WR_PTR_TST_ON	0x00004000	/* Write pointer test on*/
+#define SK_RFCTL_RX_MACSEC_FLUSH_ON  0x00800000
+#define SK_RFCTL_RX_MACSEC_FLUSH_OFF 0x00400000
+#define SK_RFCTL_RX_OVER_ON	0x00080000	/* Flush on RX Overrun on */
+#define SK_RFCTL_RX_OVER_OFF	0x00040000	/* Flush on RX Overrun off */
+#define SK_RFCTL_WR_PTR_TST_ON	0x00004000	/* Write pointer test on */
 #define SK_RFCTL_WR_PTR_TST_OFF	0x00002000	/* Write pointer test off */
 #define SK_RFCTL_WR_PTR_STEP	0x00001000	/* Write pointer increment */
 #define SK_RFCTL_RD_PTR_TST_ON	0x00000400	/* Read pointer test on */
@@ -1199,6 +1203,9 @@
 #define SK_TXMF1_RESTART_PTR	0x0D74
 #define SK_TXMF1_READ_LEVEL	0x0D78
 
+/* Transmit MAC FIFO End Address */
+#define SK_TXEND_WM_ON		0x00000003	/* ??? */
+
 /* Transmit MAC FIFO Control/Test */
 #define SK_TFCTL_WR_PTR_TST_ON	0x00004000	/* Write pointer test on*/
 #define SK_TFCTL_WR_PTR_TST_OFF	0x00002000	/* Write pointer test off */
@@ -1275,9 +1282,16 @@
 #define SK_TSTAMP_STOP		0x02
 #define SK_TSTAMP_START		0x04
 
-#define SK_Y2_ASF_CSR		0x0e68
+#define SK_Y2_CPU_WDOG		0x0e48
 
+#define SK_Y2_ASF_CSR		0x0e68
 #define SK_Y2_ASF_RESET		0x08
+
+#define SK_Y2_ASF_HCU_CCSR	0x0e68
+#define SK_Y2_ASF_HCU_CSSR_ARB_RST	__BIT(9)
+#define SK_Y2_ASF_HCU_CSSR_CPU_RST_MODE	__BIT(8)
+#define SK_Y2_ASF_HCU_CSSR_CPU_CLK_DIVIDE_MSK	__BITS(4, 3)
+#define SK_Y2_ASF_HCU_CSSR_UC_STATE_MSK	__BITS(1, 0)
 
 #define SK_Y2_LEV_ITIMERINIT	0x0eb0
 #define SK_Y2_LEV_ITIMERCTL	0x0eb8
@@ -1610,11 +1624,6 @@ struct sk_type {
 
 #define SK_RING_ALIGN	64
 
-#define SK_ADDR_LO(x)	((u_int64_t) (x) & 0xffffffff)
-#define SK_ADDR_HI(x)	((u_int64_t) (x) >> 32)
-
-#define SK_RING_ALIGN	64
-
 /* RX queue descriptor data structure */
 struct sk_rx_desc {
 	u_int32_t		sk_ctl;
@@ -1687,7 +1696,7 @@ struct msk_rx_desc {
 	u_int16_t		sk_len;
 	u_int8_t		sk_ctl;
 	u_int8_t		sk_opcode;
-} __packed;
+} __packed __aligned(8);
 
 #define SK_Y2_RXOPC_BUFFER	0x40
 #define SK_Y2_RXOPC_PACKET	0x41
@@ -1698,7 +1707,7 @@ struct msk_tx_desc {
 	u_int16_t		sk_len;
 	u_int8_t		sk_ctl;
 	u_int8_t		sk_opcode;
-} __packed;
+} __packed __aligned(8);
 
 #define SK_Y2_TXCTL_LASTFRAG	0x80
 
@@ -1711,19 +1720,11 @@ struct msk_status_desc {
 	u_int16_t		sk_len;
 	u_int8_t		sk_link;
 	u_int8_t		sk_opcode;
-} __packed;
+} __packed __aligned(8);
 
 #define SK_Y2_STOPC_RXSTAT	0x60
 #define SK_Y2_STOPC_TXSTAT	0x68
 #define SK_Y2_STOPC_OWN		0x80
-
-#define SK_Y2_ST_TXA1_MSKL	0x00000fff
-#define SK_Y2_ST_TXA1_SHIFT	0
-
-#define SK_Y2_ST_TXA2_MSKL	0xff000000
-#define SK_Y2_ST_TXA2_SHIFTL	24
-#define SK_Y2_ST_TXA2_MSKH	0x000f
-#define SK_Y2_ST_TXA2_SHIFTH	8
 
 #define SK_Y2_ST_TXA1_MSKL	0x00000fff
 #define SK_Y2_ST_TXA1_SHIFT	0
@@ -1915,7 +1916,7 @@ struct msk_status_desc {
 /* SMI Data Register (SMIDR) */
 #define YUKON_SMIDR		0x0084
 
-/* PHY Addres Register (PAR) */
+/* PHY Address Register (PAR) */
 #define YUKON_PAR		0x0088
 
 #define YU_PAR_MIB_CLR		0x0020	/* MIB Counters Clear Mode */
@@ -1929,7 +1930,7 @@ struct msk_status_desc {
 #define YU_RXSTAT_MIIERR        0x00000020      /* MII error */
 #define YU_RXSTAT_BADFC         0x00000040      /* bad flow-control packet */
 #define YU_RXSTAT_GOODFC        0x00000080      /* good flow-control packet */
-#define YU_RXSTAT_RXOK          0x00000100      /* receice OK (Good packet) */
+#define YU_RXSTAT_RXOK          0x00000100      /* receive OK (Good packet) */
 #define YU_RXSTAT_BROADCAST     0x00000200      /* broadcast packet */
 #define YU_RXSTAT_MULTICAST     0x00000400      /* multicast packet */
 #define YU_RXSTAT_RUNT          0x00000800      /* undersize packet */
@@ -1938,42 +1939,6 @@ struct msk_status_desc {
 #define YU_RXSTAT_LENSHIFT      16
 
 #define YU_RXSTAT_BYTES(x)      ((x) >> YU_RXSTAT_LENSHIFT)
-
-/* Receive status */
-#define YU_RXSTAT_FOFL		0x00000001	/* Rx FIFO overflow */
-#define YU_RXSTAT_CRCERR	0x00000002	/* CRC error */
-#define YU_RXSTAT_FRAGMENT	0x00000008	/* fragment */
-#define YU_RXSTAT_LONGERR	0x00000010	/* too long packet */
-#define YU_RXSTAT_MIIERR	0x00000020	/* MII error */
-#define YU_RXSTAT_BADFC		0x00000040	/* bad flow-control packet */
-#define YU_RXSTAT_GOODFC	0x00000080	/* good flow-control packet */
-#define YU_RXSTAT_RXOK		0x00000100	/* receice OK (Good packet) */
-#define YU_RXSTAT_BROADCAST	0x00000200	/* broadcast packet */
-#define YU_RXSTAT_MULTICAST	0x00000400	/* multicast packet */
-#define YU_RXSTAT_RUNT		0x00000800	/* undersize packet */
-#define YU_RXSTAT_JABBER	0x00001000	/* jabber packet */
-#define YU_RXSTAT_VLAN		0x00002000	/* VLAN packet */
-#define YU_RXSTAT_LENSHIFT	16
-
-#define	YU_RXSTAT_BYTES(x)	((x) >> YU_RXSTAT_LENSHIFT)
-
-/* Receive status */
-#define YU_RXSTAT_FOFL		0x00000001	/* Rx FIFO overflow */
-#define YU_RXSTAT_CRCERR	0x00000002	/* CRC error */
-#define YU_RXSTAT_FRAGMENT	0x00000008	/* fragment */
-#define YU_RXSTAT_LONGERR	0x00000010	/* too long packet */
-#define YU_RXSTAT_MIIERR	0x00000020	/* MII error */
-#define YU_RXSTAT_BADFC		0x00000040	/* bad flow-control packet */
-#define YU_RXSTAT_GOODFC	0x00000080	/* good flow-control packet */
-#define YU_RXSTAT_RXOK		0x00000100	/* receice OK (Good packet) */
-#define YU_RXSTAT_BROADCAST	0x00000200	/* broadcast packet */
-#define YU_RXSTAT_MULTICAST	0x00000400	/* multicast packet */
-#define YU_RXSTAT_RUNT		0x00000800	/* undersize packet */
-#define YU_RXSTAT_JABBER	0x00001000	/* jabber packet */
-#define YU_RXSTAT_VLAN		0x00002000	/* VLAN packet */
-#define YU_RXSTAT_LENSHIFT	16
-
-#define	YU_RXSTAT_BYTES(x)	((x) >> YU_RXSTAT_LENSHIFT)
 
 /*
  * Registers and data structures for the XaQti Corporation XMAC II

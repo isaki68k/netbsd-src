@@ -1,4 +1,4 @@
-/*	$NetBSD: omap_emifs.c,v 1.5 2011/07/01 20:30:21 dyoung Exp $ */
+/*	$NetBSD: omap_emifs.c,v 1.7 2021/08/07 16:18:45 thorpej Exp $ */
 
 
 /*
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap_emifs.c,v 1.5 2011/07/01 20:30:21 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap_emifs.c,v 1.7 2021/08/07 16:18:45 thorpej Exp $");
 
 #include "locators.h"
 
@@ -218,7 +218,8 @@ emifs_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach all our devices
 	 */
-	config_search_ia(emifs_search, self, "emifs", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = emifs_search));
 }
 
 static const u_int ns_per_sec = 1000000000;
@@ -382,8 +383,8 @@ emifs_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	if (cf->cf_loc[EMIFSCF_CS] != -1)
 		emifs_set_timing(sc, cf);
 
-	if (config_match(parent, cf, &aa))
-		config_attach(parent, cf, &aa, emifs_print);
+	if (config_probe(parent, cf, &aa))
+		config_attach(parent, cf, &aa, emifs_print, CFARGS_NONE);
 
 	return 0;
 }

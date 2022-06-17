@@ -1,4 +1,4 @@
-/*	$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: lock_stubs_llsc.S,v 1.17 2022/02/27 19:22:29 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -31,33 +31,14 @@
 
 #include "opt_cputype.h"
 #include "opt_lockdebug.h"
-#include "opt_multiprocessor.h"
 
 #include <sys/errno.h>
 
 #include <machine/asm.h>
 
-RCSID("$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $")
+RCSID("$NetBSD: lock_stubs_llsc.S,v 1.17 2022/02/27 19:22:29 riastradh Exp $")
 
 #include "assym.h"
-
-#if defined(DIAGNOSTIC) || defined(MULTIPROCESSOR)
-#define	FULL
-#endif
-
-#if defined(MULTIPROCESSOR)
-#if defined(__OCTEON__)
-#define	SYNC		sync 4
-#define	BDSYNC		sync 4
-#else
-#define	SYNC		sync
-#define	BDSYNC		sync
-#endif
-#else
-#define	SYNC		/* nothing */
-#define	BDSYNC		nop
-#endif /* MIPS_HAS_LLSC != 0 && defined(MULTIPROCESSOR) */
-
 
 /*
  * Set ISA level for the assembler.
@@ -82,8 +63,13 @@ RCSID("$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $")
 /*
  * unsigned long atomic_cas_ulong_llsc(volatile unsigned long *val,
  *     unsigned long old, unsigned long new);
+ *
+ *	For hysterical raisins in sys/arch/mips/include/lock.h, success
+ *	implies load-acquire.  The SYNC_ACQ here could be moved there
+ *	instead.
  */
 STATIC_LEAF(llsc_atomic_cas_ulong)
+	LLSCSYNC
 1:
 	LONG_LL	t0, (a0)
 	bne	t0, a1, 2f
@@ -91,7 +77,7 @@ STATIC_LEAF(llsc_atomic_cas_ulong)
 	LONG_SC	t1, (a0)
 	beqz	t1, 1b
 	 nop
-	SYNC
+	SYNC_ACQ
 	j	ra
 	 move	v0, a1
 2:
@@ -102,8 +88,13 @@ END(llsc_atomic_cas_ulong)
 /*
  * unsigned int _atomic_cas_uint_llsc(volatile unsigned int *val,
  *    unsigned int old, unsigned int new);
+ *
+ *	For hysterical raisins in sys/arch/mips/include/lock.h, success
+ *	implies load-acquire.  The SYNC_ACQ here could be moved there
+ *	instead.
  */
 STATIC_LEAF(llsc_atomic_cas_uint)
+	LLSCSYNC
 1:
 	INT_LL	t0, (a0)
 	bne	t0, a1, 2f
@@ -111,7 +102,7 @@ STATIC_LEAF(llsc_atomic_cas_uint)
 	INT_SC	t1, (a0)
 	beqz	t1, 1b
 	 nop
-	SYNC
+	SYNC_ACQ
 	j	ra
 	 move	v0, a1
 2:
@@ -122,6 +113,9 @@ END(llsc_atomic_cas_uint)
 /*
  * int llsc_ucas_32(volatile uint32_t *ptr, uint32_t old,
  *	uint32_t new, uint32_t *ret)
+ *
+ *	Implies release/acquire barriers until someone tells me
+ *	otherwise about _ucas_32/64.
  */
 STATIC_LEAF(llsc_ucas_32)
 	.set at
@@ -132,14 +126,16 @@ STATIC_LEAF(llsc_ucas_32)
 	bltz	a0, _C_LABEL(llsc_ucaserr)
 	 nop
 	move	v0, zero
+	SYNC_REL
 
+	LLSCSYNC
 1:	ll	t0, 0(a0)
 	bne	t0, a1, 2f
 	 move	t1, a2
 	sc	t1, 0(a0)
 	beqz	t1, 1b
 	 nop
-	SYNC
+	SYNC_ACQ
 
 2:	PTR_S	zero, PCB_ONFAULT(v1)
 	j	ra
@@ -160,14 +156,16 @@ STATIC_LEAF(llsc_ucas_64)
 	bltz	a0, _C_LABEL(llsc_ucaserr)
 	 nop
 	move	v0, zero
+	SYNC_REL
 
+	LLSCSYNC
 1:	lld	t0, 0(a0)
 	bne	t0, a1, 2f
 	 move	t1, a2
 	scd	t1, 0(a0)
 	beqz	t1, 1b
 	 nop
-	SYNC
+	SYNC_ACQ
 
 2:	PTR_S	zero, PCB_ONFAULT(v1)
 	j	ra
@@ -187,6 +185,7 @@ END(llsc_ucaserr)
  * void	mutex_enter(kmutex_t *mtx);
  */
 STATIC_LEAF(llsc_mutex_enter)
+	LLSCSYNC
 	PTR_LL	t0, MTX_OWNER(a0)
 1:
 	bnez	t0, 2f
@@ -195,7 +194,7 @@ STATIC_LEAF(llsc_mutex_enter)
 	beqz	t2, 1b
 	 PTR_LL	t0, MTX_OWNER(a0)
 	j	ra
-	 BDSYNC
+	 BDSYNC_ACQ
 2:
 	j	_C_LABEL(mutex_vector_enter)
 	 nop
@@ -205,8 +204,9 @@ END(llsc_mutex_enter)
  * void	mutex_exit(kmutex_t *mtx);
  */
 STATIC_LEAF(llsc_mutex_exit)
+	SYNC_REL
+	LLSCSYNC
 	PTR_LL	t0, MTX_OWNER(a0)
-	SYNC
 1:
 	bne	t0, MIPS_CURLWP, 2f
 	 move	t2, zero
@@ -214,7 +214,7 @@ STATIC_LEAF(llsc_mutex_exit)
 	beqz	t2, 1b
 	 PTR_LL	t0, MTX_OWNER(a0)
 	j	ra
-	 BDSYNC
+	 BDSYNC_PLUNGER
 2:
 	j	_C_LABEL(mutex_vector_exit)
 	 nop
@@ -267,7 +267,8 @@ STATIC_NESTED(llsc_mutex_spin_enter, CALLFRAME_SIZ, ra)
 12:	bnez	v0, 12b			# loop forever if any are true
 	 nop
 #endif /* PARANOIA */
-#if defined(FULL)
+
+	LLSCSYNC
 	INT_LL	t3, MTX_LOCK(t0)
 3:
 	bnez	t3, 4f
@@ -276,27 +277,24 @@ STATIC_NESTED(llsc_mutex_spin_enter, CALLFRAME_SIZ, ra)
 	beqz	t1, 3b
 	 INT_LL	t3, MTX_LOCK(t0)
 	j	ra
-	 BDSYNC
+	 BDSYNC_ACQ
 4:
 	j	_C_LABEL(mutex_spin_retry)
 	 move	a0, t0
-#else
-	j	ra
-	 nop
-#endif /* FULL */
 END(llsc_mutex_spin_enter)
 
 /*
  * void	mutex_spin_exit(kmutex_t *mtx);
  */
 LEAF(llsc_mutex_spin_exit)
+	SYNC_REL
 	PTR_L	t2, L_CPU(MIPS_CURLWP)
 #if defined(DIAGNOSTIC)
 	INT_L	t0, MTX_LOCK(a0)
 	beqz	t0, 2f
 	 nop
-	INT_S	zero, MTX_LOCK(a0)
 #endif
+	INT_S	zero, MTX_LOCK(a0)
 
 	/*
 	 * We need to grab this before the mutex count is incremented
@@ -344,10 +342,10 @@ LEAF(llsc_mutex_spin_exit)
 	 nop
 #endif
 	j	 _C_LABEL(splx)
-	 nop
+	 BDSYNC_PLUNGER
 1:
 	j	ra
-	 nop
+	 BDSYNC_PLUNGER
 #if defined(DIAGNOSTIC)
 2:
 	j	_C_LABEL(mutex_vector_exit)
@@ -357,7 +355,7 @@ END(llsc_mutex_spin_exit)
 #endif	/* !LOCKDEBUG */
 
 	.rdata
-EXPORT(mips_llsc_locore_atomicvec)
+EXPORT_OBJECT(mips_llsc_locore_atomicvec)
 	PTR_WORD 	llsc_atomic_cas_uint
 	PTR_WORD 	llsc_atomic_cas_ulong
 	PTR_WORD	llsc_ucas_32

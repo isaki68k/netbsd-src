@@ -1,4 +1,4 @@
-/*	$NetBSD: ingenic_rng.c,v 1.4 2016/02/17 20:12:42 macallan Exp $ */
+/*	$NetBSD: ingenic_rng.c,v 1.7 2022/03/19 11:55:03 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 Michael McConville
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ingenic_rng.c,v 1.4 2016/02/17 20:12:42 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ingenic_rng.c,v 1.7 2022/03/19 11:55:03 riastradh Exp $");
 
 /*
  * adapted from Jared McNeill's amlogic_rng.c
@@ -40,7 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: ingenic_rng.c,v 1.4 2016/02/17 20:12:42 macallan Exp
 #include <sys/kernel.h>
 #include <sys/mutex.h>
 #include <sys/bus.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <mips/ingenic/ingenic_var.h>
@@ -60,7 +59,6 @@ struct ingenic_rng_softc {
 	bus_space_tag_t		sc_bst;
 	bus_space_handle_t	sc_bsh;
 
-	kmutex_t		sc_lock;
 	krndsource_t		sc_rndsource;
 };
 
@@ -95,16 +93,12 @@ ingenic_rng_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
-
 	aprint_naive(": Ingenic random number generator\n");
 	aprint_normal(": Ingenic random number generator\n");
 
 	rndsource_setcb(&sc->sc_rndsource, ingenic_rng_get, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
 	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-
-	ingenic_rng_get(RND_POOLBITS / NBBY, sc);
 }
 
 static void
@@ -113,7 +107,6 @@ ingenic_rng_get(size_t bytes_wanted, void *priv)
 	struct ingenic_rng_softc * const sc = priv;
 	uint32_t data;
 
-	mutex_spin_enter(&sc->sc_lock);
 	while (bytes_wanted) {
 		data = bus_space_read_4(sc->sc_bst, sc->sc_bsh, 0);
 		delay(1);
@@ -122,5 +115,4 @@ ingenic_rng_get(size_t bytes_wanted, void *priv)
 		bytes_wanted -= MIN(bytes_wanted, sizeof(data));
 	}
 	explicit_memset(&data, 0, sizeof(data));
-	mutex_spin_exit(&sc->sc_lock);
 }

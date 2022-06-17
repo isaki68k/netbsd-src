@@ -1,4 +1,4 @@
-#	$NetBSD: P5064,v 1.90 2019/04/13 08:22:58 isaki Exp $
+#	$NetBSD: P5064,v 1.96 2022/06/07 18:33:41 martin Exp $
 #
 # Algorithmics P-5064 kernel.
 #
@@ -7,7 +7,7 @@ include	"arch/algor/conf/std.algor"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"P5064-$Revision: 1.90 $"
+#ident 		"P5064-$Revision: 1.96 $"
 
 maxusers 32
 
@@ -86,7 +86,7 @@ options 	SCSIVERBOSE		# Verbose SCSI errors
 # Bitmask for enabling the PCI IDE channels in the southbridge.
 # Set bit 0 (0x01) for channel 0, bit 1 (0x02) for channel 1.
 #
-# Do this if your firmware (usually PMON) doens't enable the IDE
+# Do this if your firmware (usually PMON) doesn't enable the IDE
 # channels for you (thus causing the NetBSD `pciide' driver to
 # ignore them).
 options 	PCI_NETBSD_ENABLE_IDE=0x1
@@ -130,11 +130,10 @@ pci*	at	vtpbc?
 #epic*	at	pci? dev ? function ?		# SMC EPIC/100 Ethernet
 #eso*	at	pci? dev ? function ?		# ESS Solo-1 PCI AudioDrive
 #ex*	at	pci? dev ? function ?		# 3COM 3c90x[B] Ethernet
-#fpa*	at	pci? dev ? function ?		# DEC DEFPA FDDI
 #fxp*	at	pci? dev ? function ?		# Intel EEPRO 10+/100B
 #gsip*	at	pci? dev ? function ?		# NS DP83820 Gigabit Ethernet
 #isp*	at	pci? dev ? function ?		# Qlogic ISP 10x0 SCSI
-#le*	at	pci? dev ? function ?		# PCI LANCE Ethernet (untested)
+#pcn*	at	pci? dev ? function ?		# PCInet-PCI Ethernet
 pcib*	at	pci? dev ? function ?		# Intel PCI-ISA Bridges
 siop*	at	pci? dev ? function ?		# Symbios 53c8xx SCSI
 #mlx*	at	pci? dev ? function ?		# Mylex DAC960 / DEC SWXCR (untested)
@@ -355,12 +354,6 @@ fd*	at	fdc? drive ?
 #ukyopon* at uhub? port ?
 #ucom*	at ukyopon? portno ?
 
-# USB scanners
-#uscanner* at uhub? port ?
-
-# Y@P firmware loader
-#uyap* at uhub? port ?
-
 # USB Generic driver
 #ugen*	at uhub? port ?
 
@@ -387,7 +380,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
-pseudo-device	sequencer		# MIDI sequencer
+#pseudo-device	sequencer		# MIDI sequencer
 #options 	RND_COM			# use "com" randomness too
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	drvctl			# user control of drive subsystem

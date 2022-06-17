@@ -1,4 +1,4 @@
-/* $NetBSD: pmu_fdt.c,v 1.6 2019/06/29 12:53:05 jmcneill Exp $ */
+/* $NetBSD: pmu_fdt.c,v 1.10 2021/11/25 09:36:20 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmu_fdt.c,v 1.6 2019/06/29 12:53:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmu_fdt.c,v 1.10 2021/11/25 09:36:20 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -62,22 +62,22 @@ static void	pmu_fdt_attach(device_t, device_t, void *);
 static void	pmu_fdt_init(device_t);
 static int	pmu_fdt_intr_distribute(const int, int, void *);
 
-static const char * const compatible[] = {
-	"arm,armv8-pmuv3",
-	"arm,cortex-a73-pmu",
-	"arm,cortex-a72-pmu",
-	"arm,cortex-a57-pmu",
-	"arm,cortex-a53-pmu",
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "arm,armv8-pmuv3" },
+	{ .compat = "arm,cortex-a73-pmu" },
+	{ .compat = "arm,cortex-a72-pmu" },
+	{ .compat = "arm,cortex-a57-pmu" },
+	{ .compat = "arm,cortex-a53-pmu" },
 
-	"arm,cortex-a35-pmu",
-	"arm,cortex-a17-pmu",
-	"arm,cortex-a12-pmu",
-	"arm,cortex-a9-pmu",
-	"arm,cortex-a8-pmu",
-	"arm,cortex-a7-pmu",
-	"arm,cortex-a5-pmu",
+	{ .compat = "arm,cortex-a35-pmu" },
+	{ .compat = "arm,cortex-a17-pmu" },
+	{ .compat = "arm,cortex-a12-pmu" },
+	{ .compat = "arm,cortex-a9-pmu" },
+	{ .compat = "arm,cortex-a8-pmu" },
+	{ .compat = "arm,cortex-a7-pmu" },
+	{ .compat = "arm,cortex-a5-pmu" },
 
-	NULL
+	DEVICE_COMPAT_EOL
 };
 
 struct pmu_fdt_softc {
@@ -93,7 +93,7 @@ pmu_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -113,19 +113,12 @@ pmu_fdt_attach(device_t parent, device_t self, void *aux)
 }
 
 static void
-pmu_fdt_init_cpu(void *arg1, void *arg2)
-{
-	arm_pmu_init();
-}
-
-static void
 pmu_fdt_init(device_t self)
 {
 	struct pmu_fdt_softc * const sc = device_private(self);
 	const int phandle = sc->sc_phandle;
 	char intrstr[128];
 	int error, n;
-	uint64_t xc;
 	void **ih;
 
 	if (pmu_fdt_uses_ppi && pmu_fdt_count > 0) {
@@ -140,15 +133,19 @@ pmu_fdt_init(device_t self)
 	}
 
 	if (pmu_fdt_count == 0) {
-		xc = xc_broadcast(0, pmu_fdt_init_cpu, NULL, NULL);
-		xc_wait(xc);
+		error = arm_pmu_init();
+		if (error) {
+			aprint_error_dev(self,
+			    "couldn't initialise PMU event counter");
+		}
+		return;
 	}
 
 	ih = kmem_zalloc(sizeof(void *) * ncpu, KM_SLEEP);
 
 	for (n = 0; n < ncpu; n++) {
-		ih[n] = fdtbus_intr_establish(phandle, n, IPL_HIGH,
-		    FDT_INTR_MPSAFE, arm_pmu_intr, NULL);
+		ih[n] = fdtbus_intr_establish_xname(phandle, n, IPL_HIGH,
+		    FDT_INTR_MPSAFE, arm_pmu_intr, NULL, device_xname(self));
 		if (ih[n] == NULL)
 			break;
 		if (!fdtbus_intr_str(phandle, n, intrstr, sizeof(intrstr))) {

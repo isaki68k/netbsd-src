@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi_util.c,v 1.75 2019/08/21 10:48:37 mrg Exp $	*/
+/*	$NetBSD: usbdi_util.c,v 1.87 2022/04/17 13:16:52 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi_util.c,v 1.75 2019/08/21 10:48:37 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi_util.c,v 1.87 2022/04/17 13:16:52 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -102,7 +102,7 @@ usbd_get_config_desc(struct usbd_device *dev, int confidx,
 	if (err)
 		return err;
 	if (d->bDescriptorType != UDESC_CONFIG) {
-		DPRINTFN(1, "confidx=%jd, bad desc len=%d type=%d",
+		DPRINTFN(1, "confidx=%jd, bad desc len=%jd type=%jd",
 		    confidx, d->bLength, d->bDescriptorType, 0);
 		return USBD_INVAL;
 	}
@@ -130,19 +130,11 @@ usbd_get_bos_desc(struct usbd_device *dev, int confidx,
 	if (err)
 		return err;
 	if (d->bDescriptorType != UDESC_BOS) {
-		DPRINTFN(1, "confidx=%jd, bad desc len=%d type=%d",
+		DPRINTFN(1, "confidx=%jd, bad desc len=%jd type=%jd",
 		    confidx, d->bLength, d->bDescriptorType, 0);
 		return USBD_INVAL;
 	}
 	return USBD_NORMAL_COMPLETION;
-}
-
-usbd_status
-usbd_get_bos_desc_full(struct usbd_device *dev, int conf, void *d, int size)
-{
-	USBHIST_FUNC(); USBHIST_CALLARGS(usbdebug, "conf=%jd", conf, 0, 0, 0);
-
-	return usbd_get_desc(dev, UDESC_BOS, conf, size, d);
 }
 
 usbd_status
@@ -153,6 +145,83 @@ usbd_get_device_desc(struct usbd_device *dev, usb_device_descriptor_t *d)
 	return usbd_get_desc(dev, UDESC_DEVICE,
 			     0, USB_DEVICE_DESCRIPTOR_SIZE, d);
 }
+
+/*
+ * Get the first 8 bytes of the device descriptor.
+ * Do as Windows does: try to read 64 bytes -- there are devices which
+ * recognize the initial descriptor fetch (before the control endpoint's
+ * MaxPacketSize is known by the host) by exactly this length.
+ */
+usbd_status
+usbd_get_initial_ddesc(struct usbd_device *dev, usb_device_descriptor_t *desc)
+{
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "dev %#jx", (uintptr_t)dev, 0, 0, 0);
+	usb_device_request_t req;
+	char buf[64];
+	int res, actlen;
+
+	req.bmRequestType = UT_READ_DEVICE;
+	req.bRequest = UR_GET_DESCRIPTOR;
+	USETW2(req.wValue, UDESC_DEVICE, 0);
+	USETW(req.wIndex, 0);
+	USETW(req.wLength, 8);
+	res = usbd_do_request_flags(dev, &req, buf, USBD_SHORT_XFER_OK,
+		&actlen, USBD_DEFAULT_TIMEOUT);
+	if (res)
+		return res;
+	if (actlen < 8)
+		return USBD_SHORT_XFER;
+	memcpy(desc, buf, 8);
+	return USBD_NORMAL_COMPLETION;
+}
+
+usbd_status
+usbd_get_string_desc(struct usbd_device *dev, int sindex, int langid,
+    usb_string_descriptor_t *sdesc, int *sizep)
+{
+	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
+	usb_device_request_t req;
+	usbd_status err;
+	int actlen;
+
+	/*
+	 * Pass a full-sized buffer to usbd_do_request_len().  At least
+	 * one device has been seen returning additional data beyond the
+	 * provided buffers (2-bytes written shortly after the request
+	 * claims to have completed and returned the 2 byte header,
+	 * corrupting other memory.)
+	 */
+	req.bmRequestType = UT_READ_DEVICE;
+	req.bRequest = UR_GET_DESCRIPTOR;
+	USETW2(req.wValue, UDESC_STRING, sindex);
+	USETW(req.wIndex, langid);
+	USETW(req.wLength, 2);	/* only size byte first */
+	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
+	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
+	if (err)
+		return err;
+
+	if (actlen < 2)
+		return USBD_SHORT_XFER;
+
+	if (sdesc->bLength > sizeof(*sdesc))
+		return USBD_INVAL;
+	USETW(req.wLength, sdesc->bLength);	/* the whole string */
+	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
+	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
+	if (err)
+		return err;
+
+	if (actlen != sdesc->bLength) {
+		DPRINTF("expected %jd, got %jd", sdesc->bLength, actlen, 0, 0);
+	}
+
+	*sizep = actlen;
+	return USBD_NORMAL_COMPLETION;
+}
+
+/* -------------------------------------------------------------------------- */
 
 usbd_status
 usbd_get_device_status(struct usbd_device *dev, usb_status_t *st)
@@ -181,22 +250,6 @@ usbd_get_hub_status(struct usbd_device *dev, usb_hub_status_t *st)
 	USETW(req.wIndex, 0);
 	USETW(req.wLength, sizeof(usb_hub_status_t));
 	return usbd_do_request(dev, &req, st);
-}
-
-usbd_status
-usbd_set_address(struct usbd_device *dev, int addr)
-{
-	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "dev %#jx addr %jd",
-	    (uintptr_t)dev, addr, 0, 0);
-	usb_device_request_t req;
-
-	req.bmRequestType = UT_WRITE_DEVICE;
-	req.bRequest = UR_SET_ADDRESS;
-	USETW(req.wValue, addr);
-	USETW(req.wIndex, 0);
-	USETW(req.wLength, 0);
-	return usbd_do_request(dev, &req, 0);
 }
 
 usbd_status
@@ -232,6 +285,8 @@ usbd_get_port_status_ext(struct usbd_device *dev, int port,
 	USETW(req.wLength, sizeof(*pse));
 	return usbd_do_request(dev, &req, pse);
 }
+
+/* -------------------------------------------------------------------------- */
 
 usbd_status
 usbd_clear_hub_feature(struct usbd_device *dev, int sel)
@@ -330,6 +385,94 @@ usbd_set_port_u2_timeout(struct usbd_device *dev, int port, int timeout)
 }
 
 usbd_status
+usbd_clear_endpoint_feature(struct usbd_device *dev, int epaddr, int sel)
+{
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "dev %#jx epaddr %jd sel %jd",
+	    (uintptr_t)dev, epaddr, sel, 0);
+	usb_device_request_t req;
+
+	req.bmRequestType = UT_WRITE_ENDPOINT;
+	req.bRequest = UR_CLEAR_FEATURE;
+	USETW(req.wValue, sel);
+	USETW(req.wIndex, epaddr);
+	USETW(req.wLength, 0);
+	return usbd_do_request(dev, &req, 0);
+}
+
+/* -------------------------------------------------------------------------- */
+
+usbd_status
+usbd_get_config(struct usbd_device *dev, uint8_t *conf)
+{
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "dev %#jx", (uintptr_t)dev, 0, 0, 0);
+	usb_device_request_t req;
+
+	req.bmRequestType = UT_READ_DEVICE;
+	req.bRequest = UR_GET_CONFIG;
+	USETW(req.wValue, 0);
+	USETW(req.wIndex, 0);
+	USETW(req.wLength, 1);
+	return usbd_do_request(dev, &req, conf);
+}
+
+usbd_status
+usbd_set_config(struct usbd_device *dev, int conf)
+{
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "dev %#jx conf %jd",
+	    (uintptr_t)dev, conf, 0, 0);
+	usb_device_request_t req;
+
+	req.bmRequestType = UT_WRITE_DEVICE;
+	req.bRequest = UR_SET_CONFIG;
+	USETW(req.wValue, conf);
+	USETW(req.wIndex, 0);
+	USETW(req.wLength, 0);
+	return usbd_do_request(dev, &req, 0);
+}
+
+usbd_status
+usbd_set_address(struct usbd_device *dev, int addr)
+{
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "dev %#jx addr %jd",
+	    (uintptr_t)dev, addr, 0, 0);
+	usb_device_request_t req;
+
+	req.bmRequestType = UT_WRITE_DEVICE;
+	req.bRequest = UR_SET_ADDRESS;
+	USETW(req.wValue, addr);
+	USETW(req.wIndex, 0);
+	USETW(req.wLength, 0);
+	return usbd_do_request(dev, &req, 0);
+}
+
+usbd_status
+usbd_set_idle(struct usbd_interface *iface, int duration, int id)
+{
+	usb_interface_descriptor_t *ifd = usbd_get_interface_descriptor(iface);
+	struct usbd_device *dev;
+	usb_device_request_t req;
+
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "duration %jd id %jd", duration, id, 0, 0);
+
+	if (ifd == NULL)
+		return USBD_IOERROR;
+	usbd_interface2device_handle(iface, &dev);
+	req.bmRequestType = UT_WRITE_CLASS_INTERFACE;
+	req.bRequest = UR_SET_IDLE;
+	USETW2(req.wValue, duration, id);
+	USETW(req.wIndex, ifd->bInterfaceNumber);
+	USETW(req.wLength, 0);
+	return usbd_do_request(dev, &req, 0);
+}
+
+/* -------------------------------------------------------------------------- */
+
+usbd_status
 usbd_get_protocol(struct usbd_interface *iface, uint8_t *report)
 {
 	usb_interface_descriptor_t *id = usbd_get_interface_descriptor(iface);
@@ -375,6 +518,8 @@ usbd_set_protocol(struct usbd_interface *iface, int report)
 	return usbd_do_request(dev, &req, 0);
 }
 
+/* -------------------------------------------------------------------------- */
+
 usbd_status
 usbd_set_report(struct usbd_interface *iface, int type, int id, void *data,
 		int len)
@@ -419,27 +564,6 @@ usbd_get_report(struct usbd_interface *iface, int type, int id, void *data,
 }
 
 usbd_status
-usbd_set_idle(struct usbd_interface *iface, int duration, int id)
-{
-	usb_interface_descriptor_t *ifd = usbd_get_interface_descriptor(iface);
-	struct usbd_device *dev;
-	usb_device_request_t req;
-
-	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "duration %jd id %jd", duration, id, 0, 0);
-
-	if (ifd == NULL)
-		return USBD_IOERROR;
-	usbd_interface2device_handle(iface, &dev);
-	req.bmRequestType = UT_WRITE_CLASS_INTERFACE;
-	req.bRequest = UR_SET_IDLE;
-	USETW2(req.wValue, duration, id);
-	USETW(req.wIndex, ifd->bInterfaceNumber);
-	USETW(req.wLength, 0);
-	return usbd_do_request(dev, &req, 0);
-}
-
-usbd_status
 usbd_get_report_descriptor(struct usbd_device *dev, int ifcno,
 			   int size, void *d)
 {
@@ -455,6 +579,8 @@ usbd_get_report_descriptor(struct usbd_device *dev, int ifcno,
 	USETW(req.wLength, size);
 	return usbd_do_request(dev, &req, d);
 }
+
+/* -------------------------------------------------------------------------- */
 
 usb_hid_descriptor_t *
 usbd_get_hid_descriptor(struct usbd_interface *ifc)
@@ -473,10 +599,11 @@ usbd_get_hid_descriptor(struct usbd_interface *ifc)
 	p = (char *)idesc + idesc->bLength;
 	end = (char *)cdesc + UGETW(cdesc->wTotalLength);
 
-	for (; p < end; p += hd->bLength) {
+	for (; end - p >= sizeof(*hd); p += hd->bLength) {
 		hd = (usb_hid_descriptor_t *)p;
-		if (p + hd->bLength <= end &&
-		    hd->bLength >= USB_HID_DESCRIPTOR_SIZE(0) &&
+		if (hd->bLength < sizeof(*hd) || hd->bLength > end - p)
+			break;
+		if (hd->bLength >= USB_HID_DESCRIPTOR_SIZE(0) &&
 		    hd->bDescriptorType == UDESC_HID)
 			return hd;
 		if (hd->bDescriptorType == UDESC_INTERFACE)
@@ -515,21 +642,6 @@ usbd_read_report_desc(struct usbd_interface *ifc, void **descp, int *sizep)
 }
 
 usbd_status
-usbd_get_config(struct usbd_device *dev, uint8_t *conf)
-{
-	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "dev %#jx", (uintptr_t)dev, 0, 0, 0);
-	usb_device_request_t req;
-
-	req.bmRequestType = UT_READ_DEVICE;
-	req.bRequest = UR_GET_CONFIG;
-	USETW(req.wValue, 0);
-	USETW(req.wIndex, 0);
-	USETW(req.wLength, 1);
-	return usbd_do_request(dev, &req, conf);
-}
-
-usbd_status
 usbd_bulk_transfer(struct usbd_xfer *xfer, struct usbd_pipe *pipe,
     uint16_t flags, uint32_t timeout, void *buf, uint32_t *size)
 {
@@ -546,7 +658,7 @@ usbd_bulk_transfer(struct usbd_xfer *xfer, struct usbd_pipe *pipe,
 	if (err) {
 		usbd_clear_endpoint_stall(pipe);
 	}
-	USBHIST_LOG(usbdebug, "<- done xfer %#jx err %d", (uintptr_t)xfer,
+	USBHIST_LOG(usbdebug, "<- done xfer %#jx err %jd", (uintptr_t)xfer,
 	    err, 0, 0);
 
 	return err;
@@ -598,6 +710,89 @@ usb_detach_wakeupold(device_t dv)
 	wakeup(dv); /* XXXSMP ok */
 }
 
+/* -------------------------------------------------------------------------- */
+
+void
+usb_desc_iter_init(struct usbd_device *dev, usbd_desc_iter_t *iter)
+{
+	const usb_config_descriptor_t *cd = usbd_get_config_descriptor(dev);
+
+	iter->cur = (const uByte *)cd;
+	iter->end = (const uByte *)cd + UGETW(cd->wTotalLength);
+}
+
+const usb_descriptor_t *
+usb_desc_iter_peek(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	if (iter->end - iter->cur < sizeof(usb_descriptor_t)) {
+		if (iter->cur != iter->end)
+			printf("%s: bad descriptor\n", __func__);
+		return NULL;
+	}
+	desc = (const usb_descriptor_t *)iter->cur;
+	if (desc->bLength < USB_DESCRIPTOR_SIZE) {
+		printf("%s: descriptor length too small\n", __func__);
+		return NULL;
+	}
+	if (desc->bLength > iter->end - iter->cur) {
+		printf("%s: descriptor length too large\n", __func__);
+		return NULL;
+	}
+	return desc;
+}
+
+const usb_descriptor_t *
+usb_desc_iter_next(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc = usb_desc_iter_peek(iter);
+
+	if (desc == NULL)
+		return NULL;
+	KASSERT(desc->bLength <= iter->end - iter->cur);
+	iter->cur += desc->bLength;
+	return desc;
+}
+
+/*
+ * Return the next interface descriptor, skipping over any other
+ * descriptors.  Returns NULL at the end or on error.
+ */
+const usb_interface_descriptor_t *
+usb_desc_iter_next_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	while ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	    desc->bDescriptorType != UDESC_INTERFACE) {
+		usb_desc_iter_next(iter);
+	}
+
+	if ((desc = usb_desc_iter_next(iter)) == NULL ||
+	    desc->bLength < sizeof(usb_interface_descriptor_t))
+		return NULL;
+	KASSERT(desc->bDescriptorType == UDESC_INTERFACE);
+	return (const usb_interface_descriptor_t *)desc;
+}
+
+/*
+ * Returns the next non-interface descriptor, returning NULL when the
+ * next descriptor would be an interface descriptor.
+ */
+const usb_descriptor_t *
+usb_desc_iter_next_non_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	if ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	    desc->bDescriptorType != UDESC_INTERFACE) {
+		return usb_desc_iter_next(iter);
+	} else {
+		return NULL;
+	}
+}
+
 const usb_cdc_descriptor_t *
 usb_find_desc(struct usbd_device *dev, int type, int subtype)
 {
@@ -607,18 +802,24 @@ usb_find_desc(struct usbd_device *dev, int type, int subtype)
 	usb_desc_iter_init(dev, &iter);
 	for (;;) {
 		desc = (const usb_cdc_descriptor_t *)usb_desc_iter_next(&iter);
-		if (!desc || (desc->bDescriptorType == type &&
-			      (subtype == USBD_CDCSUBTYPE_ANY ||
-			       subtype == desc->bDescriptorSubtype)))
+		if (desc == NULL)
+			break;
+		if (desc->bDescriptorType != type)
+			continue;
+		if (subtype == USBD_CDCSUBTYPE_ANY ||
+		    subtype == desc->bDescriptorSubtype)
 			break;
 	}
 	return desc;
 }
 
-/* same as usb_find_desc(), but searches only in the specified interface. */
+/*
+ * Same as usb_find_desc(), but searches only in the specified
+ * interface.
+ */
 const usb_cdc_descriptor_t *
 usb_find_desc_if(struct usbd_device *dev, int type, int subtype,
-		 usb_interface_descriptor_t *id)
+    usb_interface_descriptor_t *id)
 {
 	usbd_desc_iter_t iter;
 	const usb_cdc_descriptor_t *desc;
@@ -632,7 +833,7 @@ usb_find_desc_if(struct usbd_device *dev, int type, int subtype,
 	usb_desc_iter_next(&iter);	/* and skip it */
 
 	while ((desc = (const usb_cdc_descriptor_t *)usb_desc_iter_next(&iter))
-	       != NULL) {
+	    != NULL) {
 		if (desc->bDescriptorType == UDESC_INTERFACE) {
 			/* we ran into the next interface --- not found */
 			return NULL;

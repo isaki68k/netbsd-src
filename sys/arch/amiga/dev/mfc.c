@@ -1,4 +1,4 @@
-/*	$NetBSD: mfc.c,v 1.57 2014/07/25 08:10:31 dholland Exp $ */
+/*	$NetBSD: mfc.c,v 1.60 2021/10/21 13:21:54 andvar Exp $ */
 
 /*
  * Copyright (c) 1982, 1990 The Regents of the University of California.
@@ -55,7 +55,7 @@
 #include "opt_kgdb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mfc.c,v 1.57 2014/07/25 08:10:31 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mfc.c,v 1.60 2021/10/21 13:21:54 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -416,14 +416,17 @@ mfcattach(device_t parent, device_t self, void *aux)
 
 	/* configure ports */
 	memcpy(&ma.zargs, zap, sizeof(struct zbus_args));
+
 	ma.subdev = "mfcs";
 	ma.unit = unit * 2;
-	config_found(self, &ma, mfcprint);
+	config_found(self, &ma, mfcprint, CFARGS_NONE);
+
 	ma.unit = unit * 2 + 1;
-	config_found(self, &ma, mfcprint);
+	config_found(self, &ma, mfcprint, CFARGS_NONE);
+
 	ma.subdev = "mfcp";
 	ma.unit = unit;
-	config_found(self, &ma, mfcprint);
+	config_found(self, &ma, mfcprint, CFARGS_NONE);
 }
 
 /*
@@ -1050,7 +1053,7 @@ mfcsxintr(int unit)
 	s1 = spltty();
 
 	/*
-	 * pass along any acumulated information
+	 * pass along any accumulated information
 	 * while input is not blocked
 	 */
 	while (sc->incnt && (tp->t_state & TS_TBLOCK) == 0) {

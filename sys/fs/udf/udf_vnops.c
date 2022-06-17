@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vnops.c,v 1.106 2017/05/26 14:34:20 riastradh Exp $ */
+/* $NetBSD: udf_vnops.c,v 1.126 2022/05/28 21:14:57 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.106 2017/05/26 14:34:20 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.126 2022/05/28 21:14:57 andvar Exp $");
 #endif /* not lint */
 
 
@@ -104,7 +104,7 @@ udf_inactive(void *v)
 
 	if ((refcnt == 0) && (vp->v_vflag & VV_SYSTEM)) {
 		DPRINTF(VOLUMES, ("UDF_INACTIVE deleting VV_SYSTEM\n"));
-		/* system nodes are not writen out on inactive, so flush */
+		/* system nodes are not written out on inactive, so flush */
 		udf_node->i_flags = 0;
 	}
 
@@ -248,7 +248,7 @@ udf_read(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -366,7 +366,7 @@ udf_write(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_WRITE | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 
@@ -379,7 +379,7 @@ udf_write(void *v)
 		 */
 		if ((vp->v_type != VDIR) &&
 		  (old_offset >> 16 != uio->uio_offset >> 16)) {
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(vp, (old_offset >> 16) << 16,
 			    (uio->uio_offset >> 16) << 16,
 			    PGO_CLEANIT | PGO_LAZY);
@@ -397,10 +397,6 @@ udf_write(void *v)
 	 * XXX TODO FFS has code here to reset setuid & setgid when we're not
 	 * the superuser as a precaution against tampering.
 	 */
-
-	/* if we wrote a thing, note write action on vnode */
-	if (resid > uio->uio_resid)
-		VN_KNOTE(vp, NOTE_WRITE | (extended ? NOTE_EXTEND : 0));
 
 	if (error) {
 		/* bring back file size to its former size */
@@ -423,7 +419,7 @@ udf_write(void *v)
 /* --------------------------------------------------------------------- */
 
 /*
- * `Special' bmap functionality that translates all incomming requests to
+ * `Special' bmap functionality that translates all incoming requests to
  * translate to vop_strategy() calls with the same blocknumbers effectively
  * not translating at all.
  */
@@ -441,7 +437,7 @@ udf_trivial_bmap(void *v)
 	struct vnode  *vp  = ap->a_vp;	/* our node	*/
 	struct vnode **vpp = ap->a_vpp;	/* return node	*/
 	daddr_t *bnp  = ap->a_bnp;	/* translated	*/
-	daddr_t  bn   = ap->a_bn;	/* origional	*/
+	daddr_t  bn   = ap->a_bn;	/* original	*/
 	int     *runp = ap->a_runp;
 	struct udf_node *udf_node = VTOI(vp);
 	uint32_t lb_size;
@@ -609,7 +605,7 @@ udf_readdir(void *v)
 			if (uio->uio_resid < _DIRENT_SIZE(dirent))
 				break;
 
-			/* remember the last entry we transfered */
+			/* remember the last entry we transferred */
 			transoffset = diroffset;
 
 			/* skip deleted entries */
@@ -626,7 +622,7 @@ udf_readdir(void *v)
 			uiomove(dirent, _DIRENT_SIZE(dirent), uio);
 		}
 
-		/* pass on last transfered offset */
+		/* pass on last transferred offset */
 		uio->uio_offset = transoffset;
 		free(fid, M_UDFTEMP);
 	}
@@ -750,7 +746,8 @@ udf_lookup(void *v)
 		if (error == 0) {
 			DPRINTF(LOOKUP, ("\tfound '..'\n"));
 			/* try to create/reuse the node */
-			error = udf_get_node(ump, &icb_loc, &res_node);
+			error = udf_get_node(ump, &icb_loc, &res_node,
+			    LK_EXCLUSIVE);
 
 			if (!error) {
 				DPRINTF(LOOKUP,
@@ -802,7 +799,7 @@ udf_lookup(void *v)
 	 */
 
 	/* try to create/reuse the node */
-	error = udf_get_node(ump, &icb_loc, &res_node);
+	error = udf_get_node(ump, &icb_loc, &res_node, LK_EXCLUSIVE);
 	if (error)
 		goto out;
 
@@ -818,14 +815,14 @@ udf_lookup(void *v)
 		/*
 		 * Check if the directory has its sticky bit set. If so, ask
 		 * for clearance since only the owner of a file or directory
-		 * can remove/rename from taht directory.
+		 * can remove/rename from that directory.
 		 */
 		mode = udf_getaccessmode(dir_node);
 		if ((mode & S_ISTXT) != 0) {
 			udf_getownership(dir_node, &d_uid, &d_gid);
 			error = kauth_authorize_vnode(cnp->cn_cred,
 			    KAUTH_VNODE_DELETE, res_node->vnode,
-			    dir_node->vnode, genfs_can_sticky(cnp->cn_cred,
+			    dir_node->vnode, genfs_can_sticky(dvp, cnp->cn_cred,
 			    d_uid, d_uid));
 			if (error) {
 				error = EPERM;
@@ -850,7 +847,7 @@ done:
 out:
 	if (error == 0 && *vpp != dvp)
 		VOP_UNLOCK(*vpp);
-	DPRINTFIF(LOOKUP, error, ("udf_lookup returing error %d\n", error));
+	DPRINTFIF(LOOKUP, error, ("udf_lookup returning error %d\n", error));
 
 	return error;
 }
@@ -1040,7 +1037,7 @@ udf_chown(struct vnode *vp, uid_t new_uid, gid_t new_gid,
 
 	/* check permissions */
 	error = kauth_authorize_vnode(cred, KAUTH_VNODE_CHANGE_OWNERSHIP,
-	    vp, NULL, genfs_can_chown(cred, uid, gid, new_uid, new_gid));
+	    vp, NULL, genfs_can_chown(vp, cred, uid, gid, new_uid, new_gid));
 	if (error)
 		return (error);
 
@@ -1077,7 +1074,7 @@ udf_chmod(struct vnode *vp, mode_t mode, kauth_cred_t cred)
 
 	/* check permissions */
 	error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_SECURITY, vp,
-	    NULL, genfs_can_chmod(vp->v_type, cred, uid, gid, mode));
+	    NULL, genfs_can_chmod(vp, cred, uid, gid, mode));
 	if (error)
 		return (error);
 
@@ -1138,7 +1135,6 @@ udf_chsize(struct vnode *vp, u_quad_t newsize, kauth_cred_t cred)
 		udf_node->i_flags |= IN_CHANGE | IN_MODIFY;
 		if (vp->v_mount->mnt_flag & MNT_RELATIME)
 			udf_node->i_flags |= IN_ACCESS;
-		VN_KNOTE(vp, NOTE_ATTRIB | (extended ? NOTE_EXTEND : 0));
 		udf_update(vp, NULL, NULL, NULL, 0);
 	}
 
@@ -1186,7 +1182,7 @@ udf_chtimes(struct vnode *vp,
 
 	/* check permissions */
 	error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
-	    NULL, genfs_can_chtimes(vp, setattrflags, uid, cred));
+	    NULL, genfs_can_chtimes(vp, cred, uid, setattrflags));
 	if (error)
 		return (error);
 
@@ -1272,7 +1268,6 @@ udf_setattr(void *v)
 		error = udf_chtimes(vp, &vap->va_atime, &vap->va_mtime,
 		    &vap->va_birthtime, vap->va_vaflags, cred);
 	}
-	VN_KNOTE(vp, NOTE_ATTRIB);
 
 	return error;
 }
@@ -1325,9 +1320,9 @@ udf_pathconf(void *v)
 #endif
 		*ap->a_retval = bits;
 		return 0;
+	default:
+		return genfs_pathconf(ap);
 	}
-
-	return EINVAL;
 }
 
 
@@ -1348,7 +1343,7 @@ udf_open(void *v)
 
 	/*
 	 * Files marked append-only must be opened for appending.
-	 * TODO: get chflags(2) flags from extened attribute.
+	 * TODO: get chflags(2) flags from extended attribute.
 	 */
 	flags = 0;
 	if ((flags & APPEND) && (ap->a_mode & (FWRITE | O_APPEND)) == FWRITE)
@@ -1378,15 +1373,15 @@ udf_close(void *v)
 	udf_node = udf_node;	/* shut up gcc */
 
 	if (!async && (vp->v_type != VDIR)) {
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(vp, 0, 0, PGO_CLEANIT);
 		if (error)
 			return error;
 	}
 
 	mutex_enter(vp->v_interlock);
-		if (vp->v_usecount > 1)
-			udf_itimes(udf_node, NULL, NULL, NULL);
+	if (vrefcnt(vp) > 1)
+		udf_itimes(udf_node, NULL, NULL, NULL);
 	mutex_exit(vp->v_interlock);
 
 	return 0;
@@ -1427,7 +1422,7 @@ udf_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
 	}
 
 	/* noone may write immutable files */
-	/* TODO: get chflags(2) flags from extened attribute. */
+	/* TODO: get chflags(2) flags from extended attribute. */
 	flags = 0;
 	if ((mode & VWRITE) && (flags & IMMUTABLE))
 		return EPERM;
@@ -1436,13 +1431,13 @@ udf_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
 }
 
 static int
-udf_check_permitted(struct vnode *vp, struct vattr *vap, mode_t mode,
+udf_check_permitted(struct vnode *vp, struct vattr *vap, accmode_t accmode,
     kauth_cred_t cred)
 {
 	/* ask the generic genfs_can_access to advice on security */
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, vap->va_mode), vp, NULL, genfs_can_access(vp->v_type,
-	    vap->va_mode, vap->va_uid, vap->va_gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, vap->va_mode), vp, NULL, genfs_can_access(vp, cred,
+	    vap->va_uid, vap->va_gid, vap->va_mode, NULL, accmode));
 }
 
 int
@@ -1450,12 +1445,12 @@ udf_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 		struct proc *a_p;
 	} */ *ap = v;
 	struct vnode    *vp   = ap->a_vp;
-	mode_t	         mode = ap->a_mode;
+	accmode_t	 accmode = ap->a_accmode;
 	kauth_cred_t     cred = ap->a_cred;
 	/* struct udf_node *udf_node = VTOI(vp); */
 	struct vattr vap;
@@ -1467,11 +1462,11 @@ udf_access(void *v)
 	if (error)
 		return error;
 
-	error = udf_check_possible(vp, &vap, mode);
+	error = udf_check_possible(vp, &vap, accmode);
 	if (error)
 		return error;
 
-	error = udf_check_permitted(vp, &vap, mode, cred);
+	error = udf_check_permitted(vp, &vap, accmode, cred);
 
 	return error;
 }
@@ -1547,40 +1542,6 @@ udf_mkdir(void *v)
 
 /* --------------------------------------------------------------------- */
 
-static int
-udf_do_link(struct vnode *dvp, struct vnode *vp, struct componentname *cnp)
-{
-	struct udf_node *udf_node, *dir_node;
-	struct vattr vap;
-	int error;
-
-	DPRINTF(CALL, ("udf_link called\n"));
-	KASSERT(dvp != vp);
-	KASSERT(vp->v_type != VDIR);
-	KASSERT(dvp->v_mount == vp->v_mount);
-
-	/* get attributes */
-	dir_node = VTOI(dvp);
-	udf_node = VTOI(vp);
-
-	error = VOP_GETATTR(vp, &vap, FSCRED);
-	if (error) {
-		VOP_UNLOCK(vp);
-		return error;
-	}
-
-	/* check link count overflow */
-	if (vap.va_nlink >= (1<<16)-1) {	/* uint16_t */
-		VOP_UNLOCK(vp);
-		return EMLINK;
-	}
-
-	error = udf_dir_attach(dir_node->ump, dir_node, udf_node, &vap, cnp);
-	if (error)
-		VOP_UNLOCK(vp);
-	return error;
-}
-
 int
 udf_link(void *v)
 {
@@ -1592,15 +1553,44 @@ udf_link(void *v)
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode *vp  = ap->a_vp;
 	struct componentname *cnp = ap->a_cnp;
-	int error;
+	struct udf_node *udf_node, *dir_node;
+	struct vattr vap;
+	int error, abrt = 1;
 
-	error = udf_do_link(dvp, vp, cnp);
+	DPRINTF(CALL, ("udf_link called\n"));
+	KASSERT(dvp != vp);
+	KASSERT(vp->v_type != VDIR);
+	KASSERT(dvp->v_mount == vp->v_mount);
+
+	/* get attributes */
+	dir_node = VTOI(dvp);
+	udf_node = VTOI(vp);
+
+	if ((error = vn_lock(vp, LK_EXCLUSIVE))) {
+		DPRINTF(LOCKING, ("exclusive lock failed for vnode %p\n", vp));
+		goto out;
+	}
+
+	error = VOP_GETATTR(vp, &vap, FSCRED);
 	if (error)
+		goto out1;
+
+	/* check link count overflow */
+	if (vap.va_nlink >= (1<<16)-1) {	/* uint16_t */
+		error = EMLINK;
+		goto out1;
+	}
+	error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_ADD_LINK, vp,
+	    dvp, 0);
+	if (error)
+		goto out1;
+	abrt = 0;
+	error = udf_dir_attach(dir_node->ump, dir_node, udf_node, &vap, cnp);
+out1:
+	VOP_UNLOCK(vp);
+out:
+	if (abrt)
 		VOP_ABORTOP(dvp, cnp);
-
-	VN_KNOTE(vp, NOTE_LINK);
-	VN_KNOTE(dvp, NOTE_WRITE);
-
 	return error;
 }
 
@@ -1696,7 +1686,7 @@ udf_do_symlink(struct udf_node *udf_node, char *target)
 	}
 
 	if (error) {
-		/* aparently too big */
+		/* apparently too big */
 		free(pathbuf, M_UDFTEMP);
 		return error;
 	}
@@ -1711,7 +1701,7 @@ udf_do_symlink(struct udf_node *udf_node, char *target)
 	/* write out structure on the new file */
 	error = vn_rdwr(UIO_WRITE, udf_node->vnode,
 		pathbuf, pathlen, 0,
-		UIO_SYSSPACE, IO_NODELOCKED | IO_ALTSEMANTICS,
+		UIO_SYSSPACE, IO_ALTSEMANTICS,
 		FSCRED, NULL, NULL);
 
 	/* return status of symlink contents writeout */
@@ -1938,10 +1928,11 @@ udf_readlink(void *v)
 int
 udf_remove(void *v)
 {
-	struct vop_remove_v2_args /* {
+	struct vop_remove_v3_args /* {
 		struct vnode *a_dvp;
 		struct vnode *a_vp;
 		struct componentname *a_cnp;
+		nlink_t ctx_vp_new_nlink;
 	} */ *ap = v;
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode *vp  = ap->a_vp;
@@ -1955,14 +1946,19 @@ udf_remove(void *v)
 	if (vp->v_type != VDIR) {
 		error = udf_dir_detach(ump, dir_node, udf_node, cnp);
 		DPRINTFIF(NODE, error, ("\tgot error removing file\n"));
+		if (error == 0) {
+			if (udf_node->fe) {
+				ap->ctx_vp_new_nlink =
+				    udf_rw16(udf_node->fe->link_cnt);
+			} else {
+				KASSERT(udf_node->efe != NULL);
+				ap->ctx_vp_new_nlink =
+				    udf_rw16(udf_node->efe->link_cnt);
+			}
+		}
 	} else {
 		DPRINTF(NODE, ("\tis a directory: perm. denied\n"));
 		error = EPERM;
-	}
-
-	if (error == 0) {
-		VN_KNOTE(vp, NOTE_DELETE);
-		VN_KNOTE(dvp, NOTE_WRITE);
 	}
 
 	if (dvp == vp)
@@ -1991,7 +1987,7 @@ udf_rmdir(void *v)
 	struct udf_mount *ump = dir_node->ump;
 	int error, isempty;
 
-	DPRINTF(NOTIMPL, ("udf_rmdir '%s' called\n", cnp->cn_nameptr));
+	DPRINTF(CALL, ("udf_rmdir '%s' called\n", cnp->cn_nameptr));
 
 	/* don't allow '.' to be deleted */
 	if (dir_node == udf_node) {
@@ -2025,12 +2021,11 @@ udf_rmdir(void *v)
 		 * Bug alert: we need to remove '..' from the detaching
 		 * udf_node so further lookups of this are not possible. This
 		 * prevents a process in a deleted directory from going to its
-		 * deleted parent. Since `udf_node' is garanteed to be empty
+		 * deleted parent. Since `udf_node' is guaranteed to be empty
 		 * here, trunc it so no fids are there.
 		 */
 		dirhash_purge(&udf_node->dir_hash);
 		udf_shrink_node(udf_node, 0);
-		VN_KNOTE(vp, NOTE_DELETE);
 	}
 	DPRINTFIF(NODE, error, ("\tgot error removing dir\n"));
 
@@ -2172,12 +2167,14 @@ int (**udf_vnodeop_p)(void *);
 
 const struct vnodeopv_entry_desc udf_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath }, /* parsepath */
 	{ &vop_lookup_desc, udf_lookup },	/* lookup */
 	{ &vop_create_desc, udf_create },	/* create */
 	{ &vop_mknod_desc, udf_mknod },		/* mknod */	/* TODO */
 	{ &vop_open_desc, udf_open },		/* open */
 	{ &vop_close_desc, udf_close },		/* close */
 	{ &vop_access_desc, udf_access },	/* access */
+	{ &vop_accessx_desc, genfs_accessx },	/* accessx */
 	{ &vop_getattr_desc, udf_getattr },	/* getattr */
 	{ &vop_setattr_desc, udf_setattr },	/* setattr */	/* TODO chflags */
 	{ &vop_read_desc, udf_read },		/* read */

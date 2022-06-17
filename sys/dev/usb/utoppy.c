@@ -1,4 +1,4 @@
-/*	$NetBSD: utoppy.c,v 1.32 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: utoppy.c,v 1.36 2022/03/03 06:05:38 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: utoppy.c,v 1.32 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: utoppy.c,v 1.36 2022/03/03 06:05:38 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -179,11 +179,11 @@ struct utoppy_header {
 #define	UTOPPY_IN_DATA(sc)	\
  ((void*)&(((uint8_t*)(sc)->sc_in_data)[(sc)->sc_in_offset+UTOPPY_HEADER_SIZE]))
 
-dev_type_open(utoppyopen);
-dev_type_close(utoppyclose);
-dev_type_read(utoppyread);
-dev_type_write(utoppywrite);
-dev_type_ioctl(utoppyioctl);
+static dev_type_open(utoppyopen);
+static dev_type_close(utoppyclose);
+static dev_type_read(utoppyread);
+static dev_type_write(utoppywrite);
+static dev_type_ioctl(utoppyioctl);
 
 const struct cdevsw utoppy_cdevsw = {
 	.d_open = utoppyopen,
@@ -202,15 +202,15 @@ const struct cdevsw utoppy_cdevsw = {
 
 #define	UTOPPYUNIT(n)	(minor(n))
 
-int	utoppy_match(device_t, cfdata_t, void *);
-void	utoppy_attach(device_t, device_t, void *);
-int	utoppy_detach(device_t, int);
-int	utoppy_activate(device_t, enum devact);
+static int	utoppy_match(device_t, cfdata_t, void *);
+static void	utoppy_attach(device_t, device_t, void *);
+static int	utoppy_detach(device_t, int);
+static int	utoppy_activate(device_t, enum devact);
 
 CFATTACH_DECL_NEW(utoppy, sizeof(struct utoppy_softc), utoppy_match,
     utoppy_attach, utoppy_detach, utoppy_activate);
 
-int
+static int
 utoppy_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -222,7 +222,7 @@ utoppy_match(device_t parent, cfdata_t match, void *aux)
 	return UMATCH_NONE;
 }
 
-void
+static void
 utoppy_attach(device_t parent, device_t self, void *aux)
 {
 	struct utoppy_softc *sc = device_private(self);
@@ -341,7 +341,7 @@ utoppy_attach(device_t parent, device_t self, void *aux)
 	return;
 }
 
-int
+static int
 utoppy_activate(device_t self, enum devact act)
 {
 	struct utoppy_softc *sc = device_private(self);
@@ -355,7 +355,7 @@ utoppy_activate(device_t self, enum devact act)
 	}
 }
 
-int
+static int
 utoppy_detach(device_t self, int flags)
 {
 	struct utoppy_softc *sc = device_private(self);
@@ -1188,7 +1188,7 @@ utoppy_readdir_next(struct utoppy_softc *sc)
 
 	default:
 		DPRINTF(UTOPPY_DBG_READDIR, ("%s: utoppy_readdir_next: "
-		    "bad response: 0x%x\n", device_xname(sc->sc_dev), resp));
+		    "bad response: %#x\n", device_xname(sc->sc_dev), resp));
 		sc->sc_state = UTOPPY_STATE_IDLE;
 		sc->sc_in_len = 0;
 		return EIO;
@@ -1311,7 +1311,7 @@ utoppy_readfile_next(struct utoppy_softc *sc)
 	return 0;
 }
 
-int
+static int
 utoppyopen(dev_t dev, int flag, int mode,
     struct lwp *l)
 {
@@ -1361,11 +1361,10 @@ utoppyopen(dev_t dev, int flag, int mode,
 	return error;
 }
 
-int
+static int
 utoppyclose(dev_t dev, int flag, int mode, struct lwp *l)
 {
 	struct utoppy_softc *sc;
-	usbd_status err;
 
 	sc = device_lookup_private(&utoppy_cd, UTOPPYUNIT(dev));
 
@@ -1384,14 +1383,12 @@ utoppyclose(dev_t dev, int flag, int mode, struct lwp *l)
 		(void) utoppy_cancel(sc);
 
 	if (sc->sc_out_pipe != NULL) {
-		if ((err = usbd_abort_pipe(sc->sc_out_pipe)) != 0)
-			printf("usbd_abort_pipe(OUT) returned %d\n", err);
+		usbd_abort_pipe(sc->sc_out_pipe);
 		sc->sc_out_pipe = NULL;
 	}
 
 	if (sc->sc_in_pipe != NULL) {
-		if ((err = usbd_abort_pipe(sc->sc_in_pipe)) != 0)
-			printf("usbd_abort_pipe(IN) returned %d\n", err);
+		usbd_abort_pipe(sc->sc_in_pipe);
 		sc->sc_in_pipe = NULL;
 	}
 
@@ -1413,7 +1410,7 @@ utoppyclose(dev_t dev, int flag, int mode, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 utoppyread(dev_t dev, struct uio *uio, int flags)
 {
 	struct utoppy_softc *sc;
@@ -1494,7 +1491,7 @@ utoppyread(dev_t dev, struct uio *uio, int flags)
 	return err;
 }
 
-int
+static int
 utoppywrite(dev_t dev, struct uio *uio, int flags)
 {
 	struct utoppy_softc *sc;
@@ -1557,7 +1554,7 @@ utoppywrite(dev_t dev, struct uio *uio, int flags)
 		if (resp != UTOPPY_RESP_SUCCESS) {
 			DPRINTF(UTOPPY_DBG_WRITE, ("%s: utoppywrite: "
 			    "utoppy_command(UTOPPY_RESP_FILE_DATA) returned "
-			    "bad response 0x%x\n", device_xname(sc->sc_dev),
+			    "bad response %#x\n", device_xname(sc->sc_dev),
 			    resp));
 			utoppy_cancel(sc);
 			err = EIO;
@@ -1599,7 +1596,7 @@ utoppywrite(dev_t dev, struct uio *uio, int flags)
 	return err;
 }
 
-int
+static int
 utoppyioctl(dev_t dev, u_long cmd, void *data, int flag,
     struct lwp *l)
 {
@@ -1805,7 +1802,7 @@ utoppyioctl(dev_t dev, u_long cmd, void *data, int flag,
 		if (resp != UTOPPY_RESP_SUCCESS) {
 			DPRINTF(UTOPPY_DBG_WRITE,("%s: utoppyioctl: "
 			    "utoppy_command(UTOPPY_CMD_FILE) returned "
-			    "bad response 0x%x\n", device_xname(sc->sc_dev),
+			    "bad response %#x\n", device_xname(sc->sc_dev),
 			    resp));
 			err = EIO;
 			break;
@@ -1829,7 +1826,7 @@ utoppyioctl(dev_t dev, u_long cmd, void *data, int flag,
 		if (resp != UTOPPY_RESP_SUCCESS) {
 			DPRINTF(UTOPPY_DBG_WRITE,("%s: utoppyioctl: "
 			    "utoppy_command(UTOPPY_RESP_FILE_HEADER) "
-			    "returned bad response 0x%x\n",
+			    "returned bad response %#x\n",
 			    device_xname(sc->sc_dev), resp));
 			err = EIO;
 			break;

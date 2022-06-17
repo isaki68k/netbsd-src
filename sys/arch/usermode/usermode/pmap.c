@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.c,v 1.114 2018/09/16 09:25:47 skrll Exp $ */
+/* $NetBSD: pmap.c,v 1.117 2022/03/20 18:56:29 andvar Exp $ */
 
 /*-
  * Copyright (c) 2011 Reinoud Zandijk <reinoud@NetBSD.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.114 2018/09/16 09:25:47 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.117 2022/03/20 18:56:29 andvar Exp $");
 
 #include "opt_memsize.h"
 #include "opt_kmempages.h"
@@ -328,7 +328,7 @@ pmap_bootstrap(void)
 
 	memset(pv_table, 0, pv_table_size);	/* test and clear */
 
-	thunk_printf_debug("pv_table initialiased correctly, mmap works\n");
+	thunk_printf_debug("pv_table initialised correctly, mmap works\n");
 
 	/* advance */
 	kmem_kvm_cur_start += pv_table_size;
@@ -356,7 +356,7 @@ pmap_bootstrap(void)
         pmap = pmap_kernel();
         memset(pmap, 0, sizeof(*pmap));
 	pmap->pm_count = 1;		/* reference */
-	pmap->pm_flags = PM_ACTIVE;	/* kernel pmap is allways active */
+	pmap->pm_flags = PM_ACTIVE;	/* kernel pmap is always active */
 	pmap->pm_l1 = (struct pmap_l2 **) kmem_kvm_cur_start;
 
 	pm_l1_fpos = fpos;
@@ -369,7 +369,7 @@ pmap_bootstrap(void)
 
 	memset(pmap->pm_l1, 0, pm_l1_size);	/* test and clear */
 
-	thunk_printf_debug("kernel pmap l1 table initialiased correctly\n");
+	thunk_printf_debug("kernel pmap l1 table initialised correctly\n");
 
 	/* advance for l1 tables */
 	kmem_kvm_cur_start += round_page(pm_l1_size);
@@ -895,7 +895,7 @@ pmap_do_enter(pmap_t pmap, vaddr_t va, paddr_t pa, vm_prot_t prot, uint flags, i
 	lpn = atop(va - VM_MIN_ADDRESS);	/* V->L */
 #ifdef DIAGNOSTIC
 	if ((va < VM_MIN_ADDRESS) || (va > VM_MAX_KERNEL_ADDRESS))
-		panic("pmap_do_enter: invalid va isued\n");
+		panic("pmap_do_enter: invalid va issued\n");
 #endif
 
 	/* raise interrupt level */
@@ -1030,7 +1030,7 @@ pmap_remove(pmap_t pmap, vaddr_t sva, vaddr_t eva)
 	splx(s);
 }
 
-void
+bool
 pmap_remove_all(pmap_t pmap)
 {
 	/* just a hint that all the entries are to be removed */
@@ -1038,7 +1038,7 @@ pmap_remove_all(pmap_t pmap)
 
 	/* we dont do anything with the kernel pmap */
 	if (pmap == pmap_kernel())
-		return;
+		return false;
 
 #if 0
 	/* remove all mappings in one-go; not needed */
@@ -1050,6 +1050,7 @@ pmap_remove_all(pmap_t pmap)
 	thunk_msync(VM_MIN_ADDRESS, VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS,
 		THUNK_MS_SYNC | THUNK_MS_INVALIDATE);
 #endif
+	return false;
 }
 
 void
@@ -1120,7 +1121,7 @@ pmap_extract(pmap_t pmap, vaddr_t va, paddr_t *ppa)
 	thunk_printf_debug("pmap_extract: extracting va %p\n", (void *) va);
 #ifdef DIAGNOSTIC
 	if ((va < VM_MIN_ADDRESS) || (va > VM_MAX_KERNEL_ADDRESS)) {
-		thunk_printf_debug("pmap_extract: invalid va isued\n");
+		thunk_printf_debug("pmap_extract: invalid va issued\n");
 		thunk_printf("%p not in [%p, %p]\n", (void *) va,
 		    (void *) VM_MIN_ADDRESS, (void *) VM_MAX_KERNEL_ADDRESS);
 		return false;

@@ -1,4 +1,4 @@
-/*	$NetBSD: tty_60.c,v 1.8 2019/03/01 11:06:56 pgoyette Exp $	*/
+/*	$NetBSD: tty_60.c,v 1.11 2021/07/21 06:35:44 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,18 +30,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty_60.c,v 1.8 2019/03/01 11:06:56 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty_60.c,v 1.11 2021/07/21 06:35:44 skrll Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
 #endif
 
+#include <sys/param.h>
 #include <sys/types.h>
 
 #include <sys/conf.h>
 #include <sys/errno.h>
 #include <sys/systm.h>
 #include <sys/compat_stub.h>
+#include <sys/kmem.h>
 
 #include <sys/tty.h>
 
@@ -70,7 +72,7 @@ compat_60_ptmget_ioctl(dev_t dev, u_long cmd, void *data, int flag,
 {
 	int ret;
 	u_long newcmd;
-	struct ptmget pg;
+	struct ptmget *pg;
 	const struct cdevsw *cd = cdevsw_lookup(dev);
 
 	if (cd == NULL || cd->d_ioctl == NULL)
@@ -82,10 +84,16 @@ compat_60_ptmget_ioctl(dev_t dev, u_long cmd, void *data, int flag,
 	default: return ENOTTY;
 	}
 
-	ret = (cd->d_ioctl)(dev, newcmd, &pg, flag, l);
+	pg = kmem_alloc(sizeof(*pg), KM_SLEEP);
+
+	ret = (cd->d_ioctl)(dev, newcmd, pg, flag, l);
 	if (ret != 0)
-		return ret;
-	ret = ptmget_to_ptmget60(&pg, data);
+		goto out;
+
+	ret = ptmget_to_ptmget60(pg, data);
+
+out:
+	kmem_free(pg, sizeof(*pg));
 	return ret;
 }
 
@@ -123,8 +131,8 @@ void
 kern_tty_60_init(void)
 {
 
-	MODULE_HOOK_SET(tty_ttioctl_60_hook, "tty_60", compat_60_ttioctl);
-	MODULE_HOOK_SET(tty_ptmioctl_60_hook, "tty_60", compat_60_ptmioctl);
+	MODULE_HOOK_SET(tty_ttioctl_60_hook, compat_60_ttioctl);
+	MODULE_HOOK_SET(tty_ptmioctl_60_hook, compat_60_ptmioctl);
 }
 
 void

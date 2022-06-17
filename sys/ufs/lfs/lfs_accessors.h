@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_accessors.h,v 1.48 2017/06/10 05:29:36 maya Exp $	*/
+/*	$NetBSD: lfs_accessors.h,v 1.51 2022/04/24 20:32:44 rillig Exp $	*/
 
 /*  from NetBSD: lfs.h,v 1.165 2015/07/24 06:59:32 dholland Exp  */
 /*  from NetBSD: dinode.h,v 1.25 2016/01/22 23:06:10 dholland Exp  */
@@ -218,6 +218,31 @@
 
 
 /*
+ * Suppress spurious warnings -- we use
+ *
+ *	type *foo = &obj->member;
+ *
+ * in macros to verify that obj->member has the right type.  When the
+ * object is a packed structure with misaligned members, this causes
+ * some compiles to squeal that taking the address might lead to
+ * undefined behaviour later on -- which is helpful in general, not
+ * relevant in this case, because we don't do anything with foo
+ * afterward; we only declare it to get a type check and then we
+ * discard it.
+ */
+#ifdef __GNUC__
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Waddress-of-packed-member"
+#elif __GNUC_PREREQ__(9,0)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+#endif
+#endif
+
+
+
+/*
  * directories
  */
 
@@ -274,17 +299,7 @@ static __inline uint64_t
 lfs_dir_getino(const STRUCT_LFS *fs, const LFS_DIRHEADER *dh)
 {
 	if (fs->lfs_is64) {
-		uint64_t ino;
-
-		/*
-		 * XXX we can probably write this in a way that's both
-		 * still legal and generates better code.
-		 */
-		memcpy(&ino, &dh->u_64.dh_inoA, sizeof(dh->u_64.dh_inoA));
-		memcpy((char *)&ino + sizeof(dh->u_64.dh_inoA),
-		       &dh->u_64.dh_inoB,
-		       sizeof(dh->u_64.dh_inoB));
-		return LFS_SWAP_uint64_t(fs, ino);
+		return LFS_SWAP_uint64_t(fs, dh->u_64.dh_ino);
 	} else {
 		return LFS_SWAP_uint32_t(fs, dh->u_32.dh_ino);
 	}
@@ -331,16 +346,7 @@ static __inline void
 lfs_dir_setino(STRUCT_LFS *fs, LFS_DIRHEADER *dh, uint64_t ino)
 {
 	if (fs->lfs_is64) {
-
-		ino = LFS_SWAP_uint64_t(fs, ino);
-		/*
-		 * XXX we can probably write this in a way that's both
-		 * still legal and generates better code.
-		 */
-		memcpy(&dh->u_64.dh_inoA, &ino, sizeof(dh->u_64.dh_inoA));
-		memcpy(&dh->u_64.dh_inoB,
-		       (char *)&ino + sizeof(dh->u_64.dh_inoA),
-		       sizeof(dh->u_64.dh_inoB));
+		dh->u_64.dh_ino = LFS_SWAP_uint64_t(fs, ino);
 	} else {
 		dh->u_32.dh_ino = LFS_SWAP_uint32_t(fs, ino);
 	}
@@ -480,24 +486,24 @@ lfs_copy_dinode(STRUCT_LFS *fs,
 		}						\
 	}							\
 
-LFS_DEF_DINO_ACCESSOR(uint16_t, uint16_t, mode);
-LFS_DEF_DINO_ACCESSOR(int16_t, int16_t, nlink);
-LFS_DEF_DINO_ACCESSOR(uint64_t, uint32_t, inumber);
-LFS_DEF_DINO_ACCESSOR(uint64_t, uint64_t, size);
-LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, atime);
-LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, atimensec);
-LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, mtime);
-LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, mtimensec);
-LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, ctime);
-LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, ctimensec);
-LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, flags);
-LFS_DEF_DINO_ACCESSOR(uint64_t, uint32_t, blocks);
-LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, gen);
-LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, uid);
-LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, gid);
+LFS_DEF_DINO_ACCESSOR(uint16_t, uint16_t, mode)
+LFS_DEF_DINO_ACCESSOR(int16_t, int16_t, nlink)
+LFS_DEF_DINO_ACCESSOR(uint64_t, uint32_t, inumber)
+LFS_DEF_DINO_ACCESSOR(uint64_t, uint64_t, size)
+LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, atime)
+LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, atimensec)
+LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, mtime)
+LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, mtimensec)
+LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, ctime)
+LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, ctimensec)
+LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, flags)
+LFS_DEF_DINO_ACCESSOR(uint64_t, uint32_t, blocks)
+LFS_DEF_DINO_ACCESSOR(int32_t, int32_t, gen)
+LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, uid)
+LFS_DEF_DINO_ACCESSOR(uint32_t, uint32_t, gid)
 
 /* XXX this should be done differently (it's a fake field) */
-LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, rdev);
+LFS_DEF_DINO_ACCESSOR(int64_t, int32_t, rdev)
 
 static __inline daddr_t
 lfs_dino_getdb(STRUCT_LFS *fs, union lfs_dinode *dip, unsigned ix)
@@ -741,10 +747,10 @@ lfs_iblock_set(STRUCT_LFS *fs, void *block, unsigned ix, daddr_t val)
 		}						\
 	}							\
 
-LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, nblocks);
-LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, version);
-LFS_DEF_FI_ACCESSOR(uint64_t, uint32_t, ino);
-LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, lastlength);
+LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, nblocks)
+LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, version)
+LFS_DEF_FI_ACCESSOR(uint64_t, uint32_t, ino)
+LFS_DEF_FI_ACCESSOR(uint32_t, uint32_t, lastlength)
 
 static __inline daddr_t
 lfs_fi_getblock(STRUCT_LFS *fs, FINFO *fip, unsigned idx)
@@ -876,11 +882,11 @@ lfs_ii_setblock(STRUCT_LFS *fs, IINFO *iip, uint64_t block)
 		}						\
 	}							\
 
-LFS_DEF_IF_ACCESSOR(uint32_t, uint32_t, version);
-LFS_DEF_IF_ACCESSOR(int64_t, int32_t, daddr);
-LFS_DEF_IF_ACCESSOR(uint64_t, uint32_t, nextfree);
-LFS_DEF_IF_ACCESSOR(uint64_t, uint32_t, atime_sec);
-LFS_DEF_IF_ACCESSOR(uint32_t, uint32_t, atime_nsec);
+LFS_DEF_IF_ACCESSOR(uint32_t, uint32_t, version)
+LFS_DEF_IF_ACCESSOR(int64_t, int32_t, daddr)
+LFS_DEF_IF_ACCESSOR(uint64_t, uint32_t, nextfree)
+LFS_DEF_IF_ACCESSOR(uint64_t, uint32_t, atime_sec)
+LFS_DEF_IF_ACCESSOR(uint32_t, uint32_t, atime_nsec)
 
 /*
  * Cleaner information structure.  This resides in the ifile and is used
@@ -915,13 +921,13 @@ LFS_DEF_IF_ACCESSOR(uint32_t, uint32_t, atime_nsec);
 		}						\
 	}							\
 
-LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, clean);
-LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, dirty);
-LFS_DEF_CI_ACCESSOR(int64_t, int32_t, bfree);
-LFS_DEF_CI_ACCESSOR(int64_t, int32_t, avail);
-LFS_DEF_CI_ACCESSOR(uint64_t, uint32_t, free_head);
-LFS_DEF_CI_ACCESSOR(uint64_t, uint32_t, free_tail);
-LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, flags);
+LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, clean)
+LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, dirty)
+LFS_DEF_CI_ACCESSOR(int64_t, int32_t, bfree)
+LFS_DEF_CI_ACCESSOR(int64_t, int32_t, avail)
+LFS_DEF_CI_ACCESSOR(uint64_t, uint32_t, free_head)
+LFS_DEF_CI_ACCESSOR(uint64_t, uint32_t, free_tail)
+LFS_DEF_CI_ACCESSOR(uint32_t, uint32_t, flags)
 
 static __inline void
 lfs_ci_shiftcleantodirty(STRUCT_LFS *fs, CLEANERINFO *cip, unsigned num)
@@ -1061,17 +1067,17 @@ segsum_finfobase(STRUCT_LFS *fs, SEGSUM *ssp)
 		}						\
 	}							\
 
-LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, sumsum);
-LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, datasum);
-LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, magic);
-LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, ident);
-LFS_DEF_SS_ACCESSOR(int64_t, int32_t, next);
-LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, nfinfo);
-LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, ninos);
-LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, flags);
-LFS_DEF_SS_ACCESSOR(uint64_t, uint32_t, reclino);
-LFS_DEF_SS_ACCESSOR(uint64_t, uint64_t, serial);
-LFS_DEF_SS_ACCESSOR(uint64_t, uint64_t, create);
+LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, sumsum)
+LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, datasum)
+LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, magic)
+LFS_DEF_SS_ACCESSOR(uint32_t, uint32_t, ident)
+LFS_DEF_SS_ACCESSOR(int64_t, int32_t, next)
+LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, nfinfo)
+LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, ninos)
+LFS_DEF_SS_ACCESSOR(uint16_t, uint16_t, flags)
+LFS_DEF_SS_ACCESSOR(uint64_t, uint32_t, reclino)
+LFS_DEF_SS_ACCESSOR(uint64_t, uint64_t, serial)
+LFS_DEF_SS_ACCESSOR(uint64_t, uint64_t, create)
 
 static __inline size_t
 lfs_ss_getsumstart(STRUCT_LFS *fs)
@@ -1096,7 +1102,7 @@ lfs_ss_getocreate(STRUCT_LFS *fs, SEGSUM *ssp)
 	KASSERT(fs->lfs_is64 == 0);
 	/* XXX need to resort this file before we can do this */
 	//KASSERT(lfs_sb_getversion(fs) == 1);
-	
+
 	return ssp->u_v1.ss_create;
 }
 
@@ -1106,7 +1112,7 @@ lfs_ss_setocreate(STRUCT_LFS *fs, SEGSUM *ssp, uint32_t val)
 	KASSERT(fs->lfs_is64 == 0);
 	/* XXX need to resort this file before we can do this */
 	//KASSERT(lfs_sb_getversion(fs) == 1);
-	
+
 	ssp->u_v1.ss_create = val;
 }
 
@@ -1174,63 +1180,63 @@ lfs_ss_setocreate(STRUCT_LFS *fs, SEGSUM *ssp, uint32_t val)
 		}						\
 	}
 
-LFS_DEF_SB_ACCESSOR(uint32_t, version);
-LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, size);
-LFS_DEF_SB_ACCESSOR(uint32_t, ssize);
-LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, dsize);
-LFS_DEF_SB_ACCESSOR(uint32_t, bsize);
-LFS_DEF_SB_ACCESSOR(uint32_t, fsize);
-LFS_DEF_SB_ACCESSOR(uint32_t, frag);
-LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, freehd);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, bfree);
-LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, nfiles);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, avail);
-LFS_DEF_SB_ACCESSOR(int32_t, uinodes);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, idaddr);
-LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, ifile, LFS_IFILE_INUM);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, lastseg);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, nextseg);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, curseg);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, offset);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, lastpseg);
-LFS_DEF_SB_ACCESSOR(uint32_t, inopf);
-LFS_DEF_SB_ACCESSOR(uint32_t, minfree);
-LFS_DEF_SB_ACCESSOR(uint64_t, maxfilesize);
-LFS_DEF_SB_ACCESSOR(uint32_t, fsbpseg);
-LFS_DEF_SB_ACCESSOR(uint32_t, inopb);
-LFS_DEF_SB_ACCESSOR(uint32_t, ifpb);
-LFS_DEF_SB_ACCESSOR(uint32_t, sepb);
-LFS_DEF_SB_ACCESSOR(uint32_t, nindir);
-LFS_DEF_SB_ACCESSOR(uint32_t, nseg);
-LFS_DEF_SB_ACCESSOR(uint32_t, nspf);
-LFS_DEF_SB_ACCESSOR(uint32_t, cleansz);
-LFS_DEF_SB_ACCESSOR(uint32_t, segtabsz);
-LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, segmask, 0);
-LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, segshift, 0);
-LFS_DEF_SB_ACCESSOR(uint64_t, bmask);
-LFS_DEF_SB_ACCESSOR(uint32_t, bshift);
-LFS_DEF_SB_ACCESSOR(uint64_t, ffmask);
-LFS_DEF_SB_ACCESSOR(uint32_t, ffshift);
-LFS_DEF_SB_ACCESSOR(uint64_t, fbmask);
-LFS_DEF_SB_ACCESSOR(uint32_t, fbshift);
-LFS_DEF_SB_ACCESSOR(uint32_t, blktodb);
-LFS_DEF_SB_ACCESSOR(uint32_t, fsbtodb);
-LFS_DEF_SB_ACCESSOR(uint32_t, sushift);
-LFS_DEF_SB_ACCESSOR(int32_t, maxsymlinklen);
-LFS_DEF_SB_ACCESSOR(uint32_t, cksum);
-LFS_DEF_SB_ACCESSOR(uint16_t, pflags);
-LFS_DEF_SB_ACCESSOR(uint32_t, nclean);
-LFS_DEF_SB_ACCESSOR(int32_t, dmeta);
-LFS_DEF_SB_ACCESSOR(uint32_t, minfreeseg);
-LFS_DEF_SB_ACCESSOR(uint32_t, sumsize);
-LFS_DEF_SB_ACCESSOR(uint64_t, serial);
-LFS_DEF_SB_ACCESSOR(uint32_t, ibsize);
-LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, s0addr);
-LFS_DEF_SB_ACCESSOR(uint64_t, tstamp);
-LFS_DEF_SB_ACCESSOR(uint32_t, inodefmt);
-LFS_DEF_SB_ACCESSOR(uint32_t, interleave);
-LFS_DEF_SB_ACCESSOR(uint32_t, ident);
-LFS_DEF_SB_ACCESSOR(uint32_t, resvseg);
+LFS_DEF_SB_ACCESSOR(uint32_t, version)
+LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, size)
+LFS_DEF_SB_ACCESSOR(uint32_t, ssize)
+LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, dsize)
+LFS_DEF_SB_ACCESSOR(uint32_t, bsize)
+LFS_DEF_SB_ACCESSOR(uint32_t, fsize)
+LFS_DEF_SB_ACCESSOR(uint32_t, frag)
+LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, freehd)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, bfree)
+LFS_DEF_SB_ACCESSOR_FULL(uint64_t, uint32_t, nfiles)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, avail)
+LFS_DEF_SB_ACCESSOR(int32_t, uinodes)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, idaddr)
+LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, ifile, LFS_IFILE_INUM)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, lastseg)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, nextseg)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, curseg)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, offset)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, lastpseg)
+LFS_DEF_SB_ACCESSOR(uint32_t, inopf)
+LFS_DEF_SB_ACCESSOR(uint32_t, minfree)
+LFS_DEF_SB_ACCESSOR(uint64_t, maxfilesize)
+LFS_DEF_SB_ACCESSOR(uint32_t, fsbpseg)
+LFS_DEF_SB_ACCESSOR(uint32_t, inopb)
+LFS_DEF_SB_ACCESSOR(uint32_t, ifpb)
+LFS_DEF_SB_ACCESSOR(uint32_t, sepb)
+LFS_DEF_SB_ACCESSOR(uint32_t, nindir)
+LFS_DEF_SB_ACCESSOR(uint32_t, nseg)
+LFS_DEF_SB_ACCESSOR(uint32_t, nspf)
+LFS_DEF_SB_ACCESSOR(uint32_t, cleansz)
+LFS_DEF_SB_ACCESSOR(uint32_t, segtabsz)
+LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, segmask, 0)
+LFS_DEF_SB_ACCESSOR_32ONLY(uint32_t, segshift, 0)
+LFS_DEF_SB_ACCESSOR(uint64_t, bmask)
+LFS_DEF_SB_ACCESSOR(uint32_t, bshift)
+LFS_DEF_SB_ACCESSOR(uint64_t, ffmask)
+LFS_DEF_SB_ACCESSOR(uint32_t, ffshift)
+LFS_DEF_SB_ACCESSOR(uint64_t, fbmask)
+LFS_DEF_SB_ACCESSOR(uint32_t, fbshift)
+LFS_DEF_SB_ACCESSOR(uint32_t, blktodb)
+LFS_DEF_SB_ACCESSOR(uint32_t, fsbtodb)
+LFS_DEF_SB_ACCESSOR(uint32_t, sushift)
+LFS_DEF_SB_ACCESSOR(int32_t, maxsymlinklen)
+LFS_DEF_SB_ACCESSOR(uint32_t, cksum)
+LFS_DEF_SB_ACCESSOR(uint16_t, pflags)
+LFS_DEF_SB_ACCESSOR(uint32_t, nclean)
+LFS_DEF_SB_ACCESSOR(int32_t, dmeta)
+LFS_DEF_SB_ACCESSOR(uint32_t, minfreeseg)
+LFS_DEF_SB_ACCESSOR(uint32_t, sumsize)
+LFS_DEF_SB_ACCESSOR(uint64_t, serial)
+LFS_DEF_SB_ACCESSOR(uint32_t, ibsize)
+LFS_DEF_SB_ACCESSOR_FULL(int64_t, int32_t, s0addr)
+LFS_DEF_SB_ACCESSOR(uint64_t, tstamp)
+LFS_DEF_SB_ACCESSOR(uint32_t, inodefmt)
+LFS_DEF_SB_ACCESSOR(uint32_t, interleave)
+LFS_DEF_SB_ACCESSOR(uint32_t, ident)
+LFS_DEF_SB_ACCESSOR(uint32_t, resvseg)
 
 /* special-case accessors */
 
@@ -1526,6 +1532,17 @@ lfs_blocks_sub(STRUCT_LFS *fs, union lfs_blocks *bp1, union lfs_blocks *bp2)
  */
 #define LFS_NRESERVE(F) (lfs_btofsb((F), (2 * ULFS_NIADDR + 3) << lfs_sb_getbshift(F)))
 
+
+/*
+ * Suppress spurious clang warnings
+ */
+#ifdef __GNUC__
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif __GNUC_PREREQ__(9,0)
+#pragma GCC diagnostic pop
+#endif
+#endif
 
 
 #endif /* _UFS_LFS_LFS_ACCESSORS_H_ */

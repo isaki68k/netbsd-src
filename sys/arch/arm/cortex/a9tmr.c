@@ -1,4 +1,4 @@
-/*	$NetBSD: a9tmr.c,v 1.20 2019/06/11 12:48:30 skrll Exp $	*/
+/*	$NetBSD: a9tmr.c,v 1.22 2022/03/03 06:26:28 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: a9tmr.c,v 1.20 2019/06/11 12:48:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: a9tmr.c,v 1.22 2022/03/03 06:26:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -139,7 +139,7 @@ a9tmr_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal(": %s Global 64-bit Timer (%s)\n", cpu_type, freqbuf);
 
-	self->dv_private = sc;
+	device_set_private(self, sc);
 	sc->sc_dev = self;
 	sc->sc_memt = mpcaa->mpcaa_memt;
 	sc->sc_memh = mpcaa->mpcaa_memh;
@@ -189,7 +189,7 @@ a9tmr_init_cpu_clock(struct cpu_info *ci)
 	a9tmr_global_write(sc, TMR_GBL_AUTOINC, sc->sc_autoinc);
 
 	/*
-	 * To update the compare register we have to disable comparisions first.
+	 * To update the compare register we have to disable comparisons first.
 	 */
 	uint32_t ctl = a9tmr_global_read(sc, TMR_GBL_CTL);
 	if (ctl & TMR_GBL_CTL_CMP_ENABLE) {

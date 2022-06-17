@@ -1,4 +1,4 @@
-/*	$NetBSD: uhidev.h,v 1.20 2019/03/23 02:19:31 mrg Exp $	*/
+/*	$NetBSD: uhidev.h,v 1.27 2022/03/28 12:44:37 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,62 +30,30 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef	_DEV_USB_UHIDEV_H_
+#define	_DEV_USB_UHIDEV_H_
 
-#include <sys/rndsource.h>
+#include <dev/usb/usbdi.h>
 
-struct uhidev_softc {
-	device_t sc_dev;		/* base device */
-	struct usbd_device *sc_udev;
-	struct usbd_interface *sc_iface;	/* interface */
-	struct usbd_pipe *sc_ipipe;	/* input interrupt pipe */
-	int sc_iep_addr;
-
-	u_char *sc_ibuf;
-	u_int sc_isize;
-
-	struct usbd_pipe *sc_opipe;	/* output interrupt pipe */
-	struct usbd_xfer *sc_oxfer;	/* write request */
-	int sc_oep_addr;
-
-	void *sc_repdesc;
-	int sc_repdesc_size;
-
-	u_int sc_nrepid;
-	device_t *sc_subdevs;
-
-	int sc_refcnt;
-	u_char sc_dying;
-
-	kmutex_t sc_lock;		/* protects writes to sc_state */
-
-	u_int sc_flags;
-#define UHIDEV_F_XB1	0x0001	/* Xbox 1 controller */
-};
-
-struct uhidev {
-	device_t sc_dev;		/* base device */
-	struct uhidev_softc *sc_parent;
-	uByte sc_report_id;
-	uint8_t sc_state;
-#define	UHIDEV_OPEN	0x01	/* device is open */
-	int sc_in_rep_size;
-	void (*sc_intr)(struct uhidev *, void *, u_int);
-	krndsource_t     rnd_source;
-};
+struct uhidev;
 
 struct uhidev_attach_arg {
 	struct usbif_attach_arg *uiaa;
-	struct uhidev_softc *parent;
+	struct uhidev *parent;
 	int reportid;
-	int reportsize;
 };
 
-void uhidev_get_report_desc(struct uhidev_softc *, void **, int *);
-int uhidev_open(struct uhidev *);
+void uhidev_get_report_desc(struct uhidev *, void **, int *);
+int uhidev_open(struct uhidev *, void (*)(void *, void *, unsigned), void *);
 void uhidev_stop(struct uhidev *);
 void uhidev_close(struct uhidev *);
 usbd_status uhidev_set_report(struct uhidev *, int, void *, int);
 usbd_status uhidev_get_report(struct uhidev *, int, void *, int);
-usbd_status uhidev_write(struct uhidev_softc *, void *, int);
+usbd_status uhidev_write(struct uhidev *, void *, int);
+usbd_status uhidev_write_async(struct uhidev *, void *, int, int, int,
+    usbd_callback, void *);
 
 #define	UHIDEV_OSIZE	64
+#define	UHIDEV_MAXREPID	255
+
+#endif	/* _DEV_USB_UHIDEV_H_ */

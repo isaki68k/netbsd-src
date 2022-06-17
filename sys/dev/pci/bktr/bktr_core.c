@@ -1,6 +1,6 @@
 /* $SourceForge: bktr_core.c,v 1.6 2003/03/11 23:11:22 thomasklausner Exp $ */
 
-/*	$NetBSD: bktr_core.c,v 1.56 2019/02/03 03:19:27 mrg Exp $	*/
+/*	$NetBSD: bktr_core.c,v 1.59 2021/12/19 22:03:41 andvar Exp $	*/
 /* $FreeBSD: src/sys/dev/bktr/bktr_core.c,v 1.114 2000/10/31 13:09:56 roger Exp$ */
 
 /*
@@ -11,7 +11,7 @@
  *
  * bktr_core : This deals with the Bt848/849/878/879 PCI Frame Grabber,
  *               Handles all the open, close, ioctl and read userland calls.
- *               Sets the Bt848 registers and generates RISC pograms.
+ *               Sets the Bt848 registers and generates RISC programs.
  *               Controls the i2c bus and GPIO interface.
  *               Contains the interface to the kernel.
  *               (eg probe/attach and open/close/ioctl)
@@ -98,7 +98,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bktr_core.c,v 1.56 2019/02/03 03:19:27 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bktr_core.c,v 1.59 2021/12/19 22:03:41 andvar Exp $");
 
 #include "opt_bktr.h"		/* Include any kernel config options */
 
@@ -265,7 +265,7 @@ typedef u_char bool_t;
  * user program from /dev/vbi.
  */
 
-#define MAX_VBI_LINES	      16   /* Maximum for all vidoe formats */
+#define MAX_VBI_LINES	      16   /* Maximum for all video formats */
 #define VBI_LINE_SIZE         2048 /* Store upto 2048 bytes per line */
 #define VBI_BUFFER_ITEMS      20   /* Number of frames we buffer */
 #define VBI_DATA_SIZE         (VBI_LINE_SIZE * MAX_VBI_LINES * 2)
@@ -958,12 +958,12 @@ bktr_softintr(void *cookie)
 
 	bktr = cookie;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (bktr->proc && !(bktr->signal & METEOR_SIG_MODE_MASK)) {
 		psignal(bktr->proc,
 		    bktr->signal&(~METEOR_SIG_MODE_MASK));
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 /*
@@ -977,9 +977,9 @@ video_open(bktr_ptr_t bktr)
 	if (bktr->flags & METEOR_OPEN)		/* device is busy */
 		return(EBUSY);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	bktr->proc = NULL;
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	bktr->flags |= METEOR_OPEN;
 
@@ -1336,7 +1336,7 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 	    }
 	    bktr->max_clip_node = i;
 
-	    /* make sure that the list contains a valid clip secquence */
+	    /* make sure that the list contains a valid clip sequence */
 	    /* the clip rectangles should be sorted by x then by y as the
                second order sort key */
 
@@ -1592,9 +1592,9 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 		break;
 
 	case METEORSSIGNAL:
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if(*(int *)arg == 0 || *(int *)arg >= NSIG) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return(EINVAL);
 			break;
 		}
@@ -1604,7 +1604,7 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 #else
 		bktr->proc = l->l_proc;
 #endif
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		break;
 
 	case METEORGSIGNAL:
@@ -1667,7 +1667,7 @@ video_ioctl(bktr_ptr_t bktr, int unit, ioctl_cmd_t cmd, void *arg,
 
 			start_capture(bktr, METEOR_CONTIN);
 
-			/* Clear the interrypt status register */
+			/* Clear the interrupt status register */
 			OUTL(bktr, BKTR_INT_STAT, INL(bktr, BKTR_INT_STAT));
 
 			OUTW(bktr, BKTR_GPIO_DMA_CTL, FIFO_ENABLED);
@@ -2355,7 +2355,7 @@ common_ioctl(bktr_ptr_t bktr, ioctl_cmd_t cmd, void *arg)
 		/*   Tuner is MUX0, RCA is MUX1, S-Video is MUX2 */
 		/* On the Hauppauge bt878 boards, */
 		/*   Tuner is MUX0, RCA is MUX3 */
-		/* Unfortunatly Meteor driver codes DEV_RCA as DEV_0, so we */
+		/* Unfortunately Meteor driver codes DEV_RCA as DEV_0, so we */
 		/* stick with this system in our Meteor Emulation */
 
 		switch(*(unsigned int *)arg & METEOR_DEV_MASK) {
@@ -2977,7 +2977,7 @@ rgb_prog(bktr_ptr_t bktr, char i_flag, int cols, int rows, int interlace)
 
 	buffer = target_buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM1);
 
 	/* sync, mode indicator packed data */
@@ -3132,7 +3132,7 @@ yuvpack_prog(bktr_ptr_t bktr, char i_flag,
 
 	buffer = target_buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	/* sync, mode indicator packed data */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM1);
 	*dma_prog++ = htole32(0);  /* NULL WORD */
@@ -3255,7 +3255,7 @@ yuv422_prog(bktr_ptr_t bktr, char i_flag,
 
 	t1 = buffer;
 
-	/* contruct sync : for video packet format */
+	/* construct sync : for video packet format */
 	*dma_prog++ = htole32(OP_SYNC | BKTR_RESYNC | BKTR_FM3); /*sync, mode indicator packed data*/
 	*dma_prog++ = htole32(0);  /* NULL WORD */
 

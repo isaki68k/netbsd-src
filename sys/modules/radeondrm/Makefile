@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.13 2019/09/29 23:45:00 mrg Exp $
+# $NetBSD: Makefile,v 1.15 2021/06/03 15:59:04 nia Exp $
 
 .include "../Makefile.inc"
 
@@ -18,6 +18,9 @@ SRCS+=	radeon_irq.c
 SRCS+=	radeon_mem.c
 SRCS+=	radeon_state.c
 
+# Code imported from Linux - expects signed overflow to be OK.
+COPTS+=	-fwrapv
+
 CPPFLAGS+=	-I${S}/external/bsd/drm/dist/bsd-core \
 		-I${S}/external/bsd/drm/dist/shared-core
 
@@ -26,5 +29,7 @@ WARNS=	3
 .if defined(HAVE_GCC) && ${HAVE_GCC} >= 7 && ${ACTIVE_CC} == "gcc"
 COPTS.radeon_cs.c+=	-Wno-error=implicit-fallthrough
 .endif
+
+CWARNFLAGS.clang+=	-Wno-error=bool-operation
 
 .include <bsd.kmodule.mk>

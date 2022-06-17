@@ -1,4 +1,4 @@
-/*	$NetBSD: rfcomm_session.c,v 1.25 2018/12/22 14:28:57 maxv Exp $	*/
+/*	$NetBSD: rfcomm_session.c,v 1.28 2021/12/05 04:35:38 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2006 Itronix Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rfcomm_session.c,v 1.25 2018/12/22 14:28:57 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rfcomm_session.c,v 1.28 2021/12/05 04:35:38 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -1232,11 +1232,13 @@ rfcomm_session_recv_mcc_rpn(struct rfcomm_session *rs, int cr, struct mbuf *m)
 	rpn.xoff_char = RFCOMM_RPN_XOFF_CHAR;
 
 	if (m->m_pkthdr.len == sizeof(rpn)) {
+		/* negotiation request */
 		m_copydata(m, 0, sizeof(rpn), &rpn);
-		rpn.param_mask = RFCOMM_RPN_PM_ALL;
-	} else if (m->m_pkthdr.len == 1) {
-		m_copydata(m, 0, 1, &rpn);
 		rpn.param_mask = le16toh(rpn.param_mask);
+	} else if (m->m_pkthdr.len == 1) {
+		/* current settings request */
+		m_copydata(m, 0, 1, &rpn.dlci);
+		rpn.param_mask = RFCOMM_RPN_PM_ALL;
 	} else {
 		DPRINTF("Bad RPN length (%d)\n", m->m_pkthdr.len);
 		return;
@@ -1478,7 +1480,7 @@ rfcomm_session_send_frame(struct rfcomm_session *rs, int type, int dlci)
 
 	/*
 	 * The CR (command/response) bit identifies the frame either as a
-	 * commmand or a response and is used along with the DLCI to form
+	 * command or a response and is used along with the DLCI to form
 	 * the address. Commands contain the non-initiator address, whereas
 	 * responses contain the initiator address, so the CR value is
 	 * also dependent on the session direction.

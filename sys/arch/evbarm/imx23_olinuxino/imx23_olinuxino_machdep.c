@@ -1,4 +1,4 @@
-/* $Id: imx23_olinuxino_machdep.c,v 1.9 2019/07/16 14:41:45 skrll Exp $ */
+/* $Id: imx23_olinuxino_machdep.c,v 1.13 2021/12/03 13:27:38 andvar Exp $ */
 
 /*
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@ initarm(void *arg)
 	if (set_cpufuncs())
 		panic("set_cpufuncs failed");
 
-	kern_vtopdiff = KERNEL_BASE + KERNEL_BASE_PHYS;
+	kern_vtopdiff = KERNEL_BASE - KERNEL_BASE_PHYS;
 
 	pmap_devmap_register(devmap);
 	consinit();
@@ -178,7 +178,7 @@ initarm(void *arg)
 	bootconfig.dramblocks = 1;
 	bootconfig.dram[0].address = DRAM_BASE;
 	bootconfig.dram[0].pages = ram_size / PAGE_SIZE;
-	bootconfig.dram[0].flags = BOOT_DRAM_CAN_DMA | BOOT_DRAM_PREFER;
+	bootconfig.dram[0].flags = BOOT_DRAM_CAN_DMA;
 
         arm32_bootmem_init(bootconfig.dram[0].address, ram_size,
             ((vsize_t)&KERNEL_BASE_phys));
@@ -217,7 +217,7 @@ cpu_reboot(int howto, char *bootstr)
 	static int cpu_reboot_called = 0;
 
 	boothowto |= howto;
-	
+
 	/*
 	 * If this is the first invocation of cpu_reboot() and the RB_NOSYNC
 	 * flag is not set in howto; sync and unmount the system disks by
@@ -320,7 +320,7 @@ power_vddio_from_dcdc(int target, int brownout)
 {
         uint32_t tmp_r;
 
-        /* BO_OFFSET must be withing 2700mV - 3475mV */
+        /* BO_OFFSET must be within 2700mV - 3475mV */
         if (brownout > 3475)
                 brownout = 3475;
         else if (brownout < 2700)
@@ -351,7 +351,7 @@ power_vddio_from_dcdc(int target, int brownout)
 
         /* Enable PWDN_BRNOUT. */
         REG_WR(PWR_CTRL_C, HW_POWER_CTRL_VDDIO_BO_IRQ);
-        
+
         tmp_r = REG_RD(PWR_VDDIOCTRL);
         tmp_r |= HW_POWER_VDDIOCTRL_PWDN_BRNOUT;
         REG_WR(PWR_VDDIOCTRL, tmp_r);
@@ -391,7 +391,7 @@ void set_io_frac(unsigned int frac)
 {
         uint8_t *io_frac;
         uint32_t tmp_r;
-        
+
         io_frac = (uint8_t *)(CLKCTRL_FRAC);
         io_frac++; /* emi */
         io_frac++; /* pix */

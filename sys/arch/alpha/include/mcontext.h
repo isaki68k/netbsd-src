@@ -1,4 +1,4 @@
-/*	$NetBSD: mcontext.h,v 1.9 2018/02/15 15:53:56 kamil Exp $	*/
+/*	$NetBSD: mcontext.h,v 1.11 2021/05/24 21:00:12 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -94,6 +94,8 @@ typedef struct {
 
 /* Machine-dependent uc_flags */
 #define _UC_TLSBASE	0x20	/* valid process-unique value in _REG_UNIQUE */
+#define _UC_SETSTACK	0x00010000
+#define _UC_CLRSTACK	0x00020000
 
 #define _UC_MACHINE_SP(uc)	((uc)->uc_mcontext.__gregs[_REG_SP])
 #define _UC_MACHINE_FP(uc)	((uc)->uc_mcontext.__gregs[_REG_S6])
@@ -102,6 +104,11 @@ typedef struct {
 
 #define	_UC_MACHINE_SET_PC(uc, pc)	_UC_MACHINE_PC(uc) = (pc)
 
+#if defined(_RTLD_SOURCE) || defined(_LIBC_SOURCE) || \
+    defined(__LIBPTHREAD_SOURCE__)
+#include <sys/tls.h>
+
+__BEGIN_DECLS
 static __inline void *
 __lwp_getprivate_fast(void)
 {
@@ -113,5 +120,8 @@ __lwp_getprivate_fast(void)
 
 	return __tmp;
 }
+__END_DECLS
+
+#endif
 
 #endif	/* !_ALPHA_MCONTEXT_H_ */

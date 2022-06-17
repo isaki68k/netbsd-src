@@ -1,4 +1,4 @@
-/* $NetBSD: kauth.h,v 1.82 2019/04/10 18:49:04 maxv Exp $ */
+/* $NetBSD: kauth.h,v 1.87 2022/03/27 16:16:39 christos Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Elad Efrat <elad@NetBSD.org>  
@@ -46,16 +46,22 @@ struct tty;
 struct vnode;
 struct cwdinfo;
 
+enum uio_seg;
+
 /* Types. */
 typedef struct kauth_scope     *kauth_scope_t;
 typedef struct kauth_listener  *kauth_listener_t;
-typedef uint32_t		kauth_action_t;
+typedef uint64_t		kauth_action_t;
 typedef int (*kauth_scope_callback_t)(kauth_cred_t, kauth_action_t,
 				      void *, void *, void *, void *, void *);
 typedef	struct kauth_key       *kauth_key_t;
 
 #ifdef __KAUTH_PRIVATE	/* For the debugger */
-/* 
+
+#include <sys/types.h>
+#include <sys/specificdata.h>
+
+/*
  * Credentials.
  *
  * A subset of this structure is used in kvm(3) (src/lib/libkvm/kvm_proc.c)
@@ -84,6 +90,7 @@ struct kauth_cred {
 	gid_t cr_groups[NGROUPS];	/* group memberships */
 	specificdata_reference cr_sd;	/* specific data */
 };
+
 #endif
 
 /*
@@ -304,6 +311,7 @@ enum kauth_network_req {
 	KAUTH_REQ_NETWORK_SMB_VC_ACCESS,
 	KAUTH_REQ_NETWORK_SMB_VC_CREATE,
 	KAUTH_REQ_NETWORK_INTERFACE_FIRMWARE,
+	KAUTH_REQ_NETWORK_BIND_ANYADDR
 };
 
 /*
@@ -375,36 +383,37 @@ enum {
 /*
  * Vnode scope - action bits.
  */
-#define	KAUTH_VNODE_READ_DATA		(1U << 0)
+#define	KAUTH_VNODE_READ_DATA		(1ULL << 0)
 #define	KAUTH_VNODE_LIST_DIRECTORY	KAUTH_VNODE_READ_DATA
-#define	KAUTH_VNODE_WRITE_DATA		(1U << 1)
+#define	KAUTH_VNODE_WRITE_DATA		(1ULL << 1)
 #define	KAUTH_VNODE_ADD_FILE		KAUTH_VNODE_WRITE_DATA
-#define	KAUTH_VNODE_EXECUTE		(1U << 2)
+#define	KAUTH_VNODE_EXECUTE		(1ULL << 2)
 #define	KAUTH_VNODE_SEARCH		KAUTH_VNODE_EXECUTE
-#define	KAUTH_VNODE_DELETE		(1U << 3)
-#define	KAUTH_VNODE_APPEND_DATA		(1U << 4)
+#define	KAUTH_VNODE_DELETE		(1ULL << 3)
+#define	KAUTH_VNODE_APPEND_DATA		(1ULL << 4)
 #define	KAUTH_VNODE_ADD_SUBDIRECTORY	KAUTH_VNODE_APPEND_DATA
-#define	KAUTH_VNODE_READ_TIMES		(1U << 5)
-#define	KAUTH_VNODE_WRITE_TIMES		(1U << 6)
-#define	KAUTH_VNODE_READ_FLAGS		(1U << 7)
-#define	KAUTH_VNODE_WRITE_FLAGS		(1U << 8)
-#define	KAUTH_VNODE_READ_SYSFLAGS	(1U << 9)
-#define	KAUTH_VNODE_WRITE_SYSFLAGS	(1U << 10)
-#define	KAUTH_VNODE_RENAME		(1U << 11)
-#define	KAUTH_VNODE_CHANGE_OWNERSHIP	(1U << 12)
-#define	KAUTH_VNODE_READ_SECURITY	(1U << 13)
-#define	KAUTH_VNODE_WRITE_SECURITY	(1U << 14)
-#define	KAUTH_VNODE_READ_ATTRIBUTES	(1U << 15)
-#define	KAUTH_VNODE_WRITE_ATTRIBUTES	(1U << 16)
-#define	KAUTH_VNODE_READ_EXTATTRIBUTES	(1U << 17)
-#define	KAUTH_VNODE_WRITE_EXTATTRIBUTES	(1U << 18)
-#define	KAUTH_VNODE_RETAIN_SUID		(1U << 19)
-#define	KAUTH_VNODE_RETAIN_SGID		(1U << 20)
-#define	KAUTH_VNODE_REVOKE		(1U << 21)
+#define	KAUTH_VNODE_READ_TIMES		(1ULL << 5)
+#define	KAUTH_VNODE_WRITE_TIMES		(1ULL << 6)
+#define	KAUTH_VNODE_READ_FLAGS		(1ULL << 7)
+#define	KAUTH_VNODE_WRITE_FLAGS		(1ULL << 8)
+#define	KAUTH_VNODE_READ_SYSFLAGS	(1ULL << 9)
+#define	KAUTH_VNODE_WRITE_SYSFLAGS	(1ULL << 10)
+#define	KAUTH_VNODE_RENAME		(1ULL << 11)
+#define	KAUTH_VNODE_CHANGE_OWNERSHIP	(1ULL << 12)
+#define	KAUTH_VNODE_READ_SECURITY	(1ULL << 13)
+#define	KAUTH_VNODE_WRITE_SECURITY	(1ULL << 14)
+#define	KAUTH_VNODE_READ_ATTRIBUTES	(1ULL << 15)
+#define	KAUTH_VNODE_WRITE_ATTRIBUTES	(1ULL << 16)
+#define	KAUTH_VNODE_READ_EXTATTRIBUTES	(1ULL << 17)
+#define	KAUTH_VNODE_WRITE_EXTATTRIBUTES	(1ULL << 18)
+#define	KAUTH_VNODE_RETAIN_SUID		(1ULL << 19)
+#define	KAUTH_VNODE_RETAIN_SGID		(1ULL << 20)
+#define	KAUTH_VNODE_REVOKE		(1ULL << 21)
 
-#define	KAUTH_VNODE_IS_EXEC		(1U << 29)
-#define	KAUTH_VNODE_HAS_SYSFLAGS	(1U << 30)
-#define	KAUTH_VNODE_ACCESS		(1U << 31)
+#define	KAUTH_VNODE_IS_EXEC		(1ULL << 29)
+#define	KAUTH_VNODE_HAS_SYSFLAGS	(1ULL << 30)
+#define	KAUTH_VNODE_ACCESS		(1ULL << 31)
+#define	KAUTH_VNODE_ADD_LINK		(1ULL << 32)
 
 /*
  * This is a special fs_decision indication that can be used by file-systems
@@ -486,6 +495,7 @@ gid_t kauth_cred_getgid(kauth_cred_t);
 gid_t kauth_cred_getegid(kauth_cred_t);
 gid_t kauth_cred_getsvgid(kauth_cred_t);
 int kauth_cred_ismember_gid(kauth_cred_t, gid_t, int *);
+int kauth_cred_groupmember(kauth_cred_t, gid_t);
 u_int kauth_cred_ngroups(kauth_cred_t);
 gid_t kauth_cred_group(kauth_cred_t, u_int);
 
@@ -518,11 +528,11 @@ int kauth_cred_uucmp(kauth_cred_t, const struct uucred *);
 void kauth_cred_toucred(kauth_cred_t, struct ki_ucred *);
 void kauth_cred_topcred(kauth_cred_t, struct ki_pcred *);
 
-kauth_action_t kauth_mode_to_action(mode_t);
+kauth_action_t kauth_accmode_to_action(accmode_t);
 kauth_action_t kauth_extattr_action(mode_t);
 
 #define KAUTH_ACCESS_ACTION(access_mode, vn_vtype, file_mode)	\
-	(kauth_mode_to_action(access_mode) |			\
+	(kauth_accmode_to_action(access_mode) |			\
 	(FS_OBJECT_CAN_EXEC(vn_vtype, file_mode) ? KAUTH_VNODE_IS_EXEC : 0))
 
 kauth_cred_t kauth_cred_get(void);

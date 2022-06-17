@@ -1,4 +1,4 @@
-/*	$NetBSD: event.c,v 1.14 2017/10/25 08:12:37 maya Exp $ */
+/*	$NetBSD: event.c,v 1.17 2021/09/26 16:36:18 thorpej Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: event.c,v 1.14 2017/10/25 08:12:37 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: event.c,v 1.17 2021/09/26 16:36:18 thorpej Exp $");
 
 /*
  * Internal `Firm_event' interface for the keyboard and mouse drivers.
@@ -167,7 +167,7 @@ filt_evrdetach(struct knote *kn)
 	int s;
 
 	s = splev();
-	SLIST_REMOVE(&ev->ev_sel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&ev->ev_sel, kn);
 	splx(s);
 }
 
@@ -191,7 +191,7 @@ filt_evread(struct knote *kn, long hint)
 }
 
 static const struct filterops ev_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_evrdetach,
 	.f_event = filt_evread,
@@ -200,23 +200,21 @@ static const struct filterops ev_filtops = {
 int
 ev_kqfilter(struct evvar *ev, struct knote *kn)
 {
-	struct klist *klist;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &ev->ev_sel.sel_klist;
 		kn->kn_fop = &ev_filtops;
 		break;
 
 	default:
-		return (1);
+		return (EINVAL);
 	}
 
 	kn->kn_hook = ev;
 
 	s = splev();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&ev->ev_sel, kn);
 	splx(s);
 
 	return (0);

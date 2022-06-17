@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_time.c,v 1.21 2019/10/04 14:17:07 kamil Exp $	*/
+/*	$NetBSD: subr_time.c,v 1.32 2022/03/13 17:52:45 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.21 2019/10/04 14:17:07 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.32 2022/03/13 17:52:45 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -265,20 +265,20 @@ clock_gettime1(clockid_t clock_id, struct timespec *ts)
 	if (clock_id & CLOCK_PROCESS_CPUTIME_ID) {
 		pid_t pid = clock_id & CPUCLOCK_ID_MASK;
 
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = pid == 0 ? curproc : proc_find(pid);
 		if (p == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return ESRCH;
 		}
 		ticks = p->p_uticks + p->p_sticks + p->p_iticks;
 		DPRINTF(("%s: u=%ju, s=%ju, i=%ju\n", __func__,
 		    (uintmax_t)p->p_uticks, (uintmax_t)p->p_sticks,
 		    (uintmax_t)p->p_iticks));
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 
 		// XXX: Perhaps create a special kauth type
-		error = kauth_authorize_process(curlwp->l_cred,
+		error = kauth_authorize_process(kauth_cred_get(),
 		    KAUTH_PROCESS_PTRACE, p,
 		    KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_ENTRY), NULL, NULL);
 		if (error)
@@ -332,18 +332,28 @@ ts2timo(clockid_t clock_id, int flags, struct timespec *ts,
 	if (ts->tv_nsec < 0 || ts->tv_nsec >= 1000000000L)
 		return EINVAL;
 
-	flags &= TIMER_ABSTIME;
-	if (start == NULL)
-		start = &tsd;
-
-	if (flags || start != &tsd)
-		if ((error = clock_gettime1(clock_id, start)) != 0)
+	if ((flags & TIMER_ABSTIME) != 0 || start != NULL) {
+		error = clock_gettime1(clock_id, &tsd);
+		if (error != 0)
 			return error;
+		if (start != NULL)
+			*start = tsd;
+	}
 
-	if (flags)
-		timespecsub(ts, start, ts);
+	if ((flags & TIMER_ABSTIME) != 0) {
+		/*
+		 * Add one to the bound to account for possible carry
+		 * from tv_nsec in timespecsub.
+		 */
+		if (tsd.tv_sec > 0 && ts->tv_sec < LLONG_MIN + tsd.tv_sec + 1)
+			return EINVAL;
+		if (tsd.tv_sec < 0 && ts->tv_sec > LLONG_MAX + tsd.tv_sec - 1)
+			return EINVAL;
+		timespecsub(ts, &tsd, ts);
+	}
 
-	if ((error = itimespecfix(ts)) != 0)
+	error = itimespecfix(ts);
+	if (error != 0)
 		return error;
 
 	if (ts->tv_sec == 0 && ts->tv_nsec == 0)

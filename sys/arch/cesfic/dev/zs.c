@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.19 2014/03/24 18:56:43 christos Exp $	*/
+/*	$NetBSD: zs.c,v 1.24 2021/09/11 20:28:03 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.19 2014/03/24 18:56:43 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.24 2021/09/11 20:28:03 andvar Exp $");
 
 #include "opt_ddb.h"
 
@@ -48,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.19 2014/03/24 18:56:43 christos Exp $");
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/tty.h>
 #include <sys/time.h>
@@ -123,8 +123,7 @@ zs_config(struct zsc_softc *zsc, char *base)
 		if (zsc_args.hwflags & ZS_HWFLAG_CONSOLE) {
 			cs = &zs_conschan_store;
 		} else {
-			cs = malloc(sizeof(struct zs_chanstate),
-				    M_DEVBUF, M_NOWAIT | M_ZERO);
+			cs = kmem_zalloc(sizeof(*cs), KM_SLEEP);
 			if(channel==0){
 				cs->cs_reg_csr  = base + 7;
 				cs->cs_reg_data = base + 15;
@@ -166,7 +165,7 @@ zs_config(struct zsc_softc *zsc, char *base)
 		 * The child attach will setup the hardware.
 		 */
 		if (!config_found(zsc->zsc_dev, (void *)&zsc_args,
-		    zsc_print)) {
+		    zsc_print, CFARGS_NONE)) {
 			/* No sub-driver.  Just reset it. */
 			uint8_t reset = (channel == 0) ?
 				ZSWR9_A_RESET : ZSWR9_B_RESET;
@@ -299,7 +298,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */

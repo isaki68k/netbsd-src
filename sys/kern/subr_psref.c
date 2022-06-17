@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_psref.c,v 1.13 2019/05/17 03:34:26 ozaki-r Exp $	*/
+/*	$NetBSD: subr_psref.c,v 1.18 2022/02/12 16:31:06 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -64,8 +64,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_psref.c,v 1.13 2019/05/17 03:34:26 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_psref.c,v 1.18 2022/02/12 16:31:06 macallan Exp $");
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/condvar.h>
 #include <sys/cpu.h>
@@ -169,8 +170,7 @@ psref_class_create(const char *name, int ipl)
 	return class;
 }
 
-#ifdef DIAGNOSTIC
-static void
+static void __diagused
 psref_cpu_drained_p(void *p, void *cookie, struct cpu_info *ci __unused)
 {
 	const struct psref_cpu *pcpu = p;
@@ -180,7 +180,7 @@ psref_cpu_drained_p(void *p, void *cookie, struct cpu_info *ci __unused)
 		*retp = false;
 }
 
-static bool
+static bool __diagused
 psref_class_drained_p(const struct psref_class *prc)
 {
 	bool ret = true;
@@ -189,7 +189,6 @@ psref_class_drained_p(const struct psref_class *prc)
 
 	return ret;
 }
-#endif	/* DIAGNOSTIC */
 
 /*
  * psref_class_destroy(class)
@@ -293,11 +292,11 @@ psref_acquire(struct psref *psref, const struct psref_target *target,
 	    "passive references are CPU-local,"
 	    " but preemption is enabled and the caller is not"
 	    " in a softint or CPU-bound LWP");
+	KASSERTMSG(!target->prt_draining, "psref target already destroyed: %p",
+	    target);
 	KASSERTMSG((target->prt_class == class),
 	    "mismatched psref target class: %p (ref) != %p (expected)",
 	    target->prt_class, class);
-	KASSERTMSG(!target->prt_draining, "psref target already destroyed: %p",
-	    target);
 
 	/* Block interrupts and acquire the current CPU's reference list.  */
 	s = splraiseipl(class->prc_iplcookie);
@@ -516,13 +515,13 @@ psref_target_destroy(struct psref_target *target, struct psref_class *class)
 
 	ASSERT_SLEEPABLE();
 
+	KASSERTMSG(!target->prt_draining, "psref target already destroyed: %p",
+	    target);
 	KASSERTMSG((target->prt_class == class),
 	    "mismatched psref target class: %p (ref) != %p (expected)",
 	    target->prt_class, class);
 
 	/* Request psref_release to notify us when done.  */
-	KASSERTMSG(!target->prt_draining, "psref target already destroyed: %p",
-	    target);
 	target->prt_draining = true;
 
 	/* Wait until there are no more references on any CPU.  */

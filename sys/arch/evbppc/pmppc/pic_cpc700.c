@@ -1,4 +1,4 @@
-/* $NetBSD: pic_cpc700.c,v 1.6 2011/07/01 19:03:09 dyoung Exp $ */
+/* $NetBSD: pic_cpc700.c,v 1.8 2020/11/21 15:42:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,10 +30,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_cpc700.c,v 1.6 2011/07/01 19:03:09 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_cpc700.c,v 1.8 2020/11/21 15:42:20 thorpej Exp $");
 
 #include <sys/param.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kernel.h>
 
 #include <machine/pio.h>
@@ -60,8 +60,7 @@ setup_cpc700(void)
 	struct cpc700_ops *cpc700;
 	struct pic_ops *pic;
 
-	cpc700 = malloc(sizeof(struct cpc700_ops), M_DEVBUF, M_NOWAIT);
-	KASSERT(cpc700 != NULL);
+	cpc700 = kmem_alloc(sizeof(struct cpc700_ops), KM_SLEEP);
 	pic = &cpc700->pic;
 
 	pic->pic_numintrs = 32;

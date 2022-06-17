@@ -1,4 +1,4 @@
-/*      $NetBSD: clockport.c,v 1.5 2012/10/30 01:17:24 rkujawa Exp $ */
+/*      $NetBSD: clockport.c,v 1.7 2021/08/07 16:18:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -43,7 +43,7 @@
 static int	clockport_match(device_t, cfdata_t , void *);
 static void	clockport_attach(device_t, device_t, void *);
 static int	clockport_print(void *, const char *);
-static int	clockport_submatch(device_t, cfdata_t, const int *, void *);
+static int	clockport_search(device_t, cfdata_t, const int *, void *);
 
 CFATTACH_DECL_NEW(clockport, sizeof(struct clockportbus_softc),
     clockport_match, clockport_attach, NULL, NULL);
@@ -65,11 +65,12 @@ clockport_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->cpb_aa = (struct clockportbus_attach_args *) aux;
 
-	config_search_ia(clockport_submatch, self, "clockport", 0);
+	config_search(self, NULL,
+	    CFARGS(.search = clockport_search));
 }
 
 static int
-clockport_submatch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
+clockport_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct clockportbus_softc *sc;
 	struct clockport_attach_args a; 
@@ -80,8 +81,8 @@ clockport_submatch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	a.cp_iot = sc->cpb_aa->cp_iot;
 	a.cp_intr_establish = sc->cpb_aa->cp_intr_establish;
 
-	if (config_match(parent, cf, &a)) {
-		config_attach(parent, cf, &a, clockport_print);
+	if (config_probe(parent, cf, &a)) {
+		config_attach(parent, cf, &a, clockport_print, CFARGS_NONE);
 		return 1;
 	}
 

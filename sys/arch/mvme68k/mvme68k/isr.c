@@ -1,4 +1,4 @@
-/*	$NetBSD: isr.c,v 1.33 2010/12/20 00:25:39 matt Exp $	*/
+/*	$NetBSD: isr.c,v 1.36 2021/04/02 12:11:41 rin Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -34,11 +34,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isr.c,v 1.33 2010/12/20 00:25:39 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isr.c,v 1.36 2021/04/02 12:11:41 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/vmmeter.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
@@ -63,7 +63,7 @@ struct	evcnt mvme68k_irq_evcnt[] = {
 };
 static int idepth;
 
-extern	int intrcnt[];		/* from locore.s. XXXSCW: will go away soon */
+extern	u_int intrcnt[];	/* from locore.s. XXXSCW: will go away soon */
 extern	void (*vectab[])(void);
 extern	void badtrap(void);
 extern	void intrhand_vectored(void);
@@ -105,11 +105,7 @@ isrlink_autovec(int (*func)(void *), void *arg, int ipl, int priority,
 		panic("%s: bad ipl %d", __func__, ipl);
 #endif
 
-	newisr = malloc(sizeof(struct isr_autovec), M_DEVBUF, M_NOWAIT);
-	if (newisr == NULL)
-		panic("%s: can't allocate space for isr", __func__);
-
-	/* Fill in the new entry. */
+	newisr = kmem_alloc(sizeof(*newisr), KM_SLEEP);
 	newisr->isr_func = func;
 	newisr->isr_arg = arg;
 	newisr->isr_ipl = ipl;

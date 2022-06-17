@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_mixer.c,v 1.7 2019/02/16 16:20:50 jmcneill Exp $ */
+/* $NetBSD: sunxi_mixer.c,v 1.18 2021/12/19 11:01:10 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,26 +27,28 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.7 2019/02/16 16:20:50 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.18 2021/12/19 11:01:10 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/conf.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
 
-#include <drm/drmP.h>
-#include <drm/drm_crtc.h>
-#include <drm/drm_crtc_helper.h>
-#include <drm/drm_plane_helper.h>
-
-#include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_port.h>
+#include <dev/fdt/fdtvar.h>
 
 #include <arm/sunxi/sunxi_drm.h>
+
+#include <drm/drm_crtc.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_plane_helper.h>
+#include <drm/drm_vblank.h>
 
 #define	MIXER_CURSOR_MAXWIDTH	256
 #define	MIXER_CURSOR_MAXHEIGHT	256
@@ -99,8 +101,13 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.7 2019/02/16 16:20:50 jmcneill Exp
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV422		0x06
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV420		0x0a
 #define	  OVL_V_ATTCTL_LAY_FBFMT_YUV411		0x0e
+#if BYTE_ORDER == BIG_ENDIAN
+#define	  OVL_V_ATTCTL_LAY_FBFMT_ARGB_8888	0x03
+#define	  OVL_V_ATTCTL_LAY_FBFMT_XRGB_8888	0x07
+#else
 #define	  OVL_V_ATTCTL_LAY_FBFMT_ARGB_8888	0x00
 #define	  OVL_V_ATTCTL_LAY_FBFMT_XRGB_8888	0x04
+#endif
 #define	 OVL_V_ATTCTL_LAY0_EN			__BIT(0)
 #define	OVL_V_MBSIZE(n)		(0x004 + (n) * 0x30)
 #define	OVL_V_COOR(n)		(0x008 + (n) * 0x30)
@@ -124,8 +131,13 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_mixer.c,v 1.7 2019/02/16 16:20:50 jmcneill Exp
 /* OVL_UI registers */
 #define	OVL_UI_ATTR_CTL(n)	(0x000 + (n) * 0x20)
 #define	 OVL_UI_ATTR_CTL_LAY_FBFMT		__BITS(12,8)
+#if BYTE_ORDER == BIG_ENDIAN
+#define	  OVL_UI_ATTR_CTL_LAY_FBFMT_ARGB_8888	0x03
+#define	  OVL_UI_ATTR_CTL_LAY_FBFMT_XRGB_8888	0x07
+#else
 #define	  OVL_UI_ATTR_CTL_LAY_FBFMT_ARGB_8888	0x00
 #define	  OVL_UI_ATTR_CTL_LAY_FBFMT_XRGB_8888	0x04
+#endif
 #define	 OVL_UI_ATTR_CTL_LAY_EN			__BIT(0)
 #define	OVL_UI_MBSIZE(n)	(0x004 + (n) * 0x20)
 #define	OVL_UI_COOR(n)		(0x008 + (n) * 0x20)
@@ -173,11 +185,30 @@ enum {
 	MIXER_PORT_OUTPUT = 1,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun8i-h3-de2-mixer-0",	3 },
-	{ "allwinner,sun50i-a64-de2-mixer-0",	3 },
-	{ "allwinner,sun50i-a64-de2-mixer-1",	1 },
-	{ NULL }
+struct sunxi_mixer_compat_data {
+	uint8_t ovl_ui_count;
+	uint8_t mixer_index;
+};
+
+struct sunxi_mixer_compat_data mixer0_data = {
+	.ovl_ui_count = 3,
+	.mixer_index = 0,
+};
+
+struct sunxi_mixer_compat_data mixer1_data = {
+	.ovl_ui_count = 1,
+	.mixer_index = 1,
+};
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun8i-h3-de2-mixer-0",
+	  .data = &mixer0_data },
+	{ .compat = "allwinner,sun50i-a64-de2-mixer-0",
+	  .data = &mixer0_data },
+	{ .compat = "allwinner,sun50i-a64-de2-mixer-1",
+	  .data = &mixer1_data },
+
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_mixer_softc;
@@ -252,8 +283,14 @@ sunxi_mixer_mode_do_set_base(struct drm_crtc *crtc, struct drm_framebuffer *fb,
 
 	uint64_t paddr = (uint64_t)sfb->obj->dmamap->dm_segs[0].ds_addr;
 
+	paddr += y * sfb->base.pitches[0];
+	paddr += x * sfb->base.format->cpp[0];
+
 	uint32_t haddr = (paddr >> 32) & OVL_UI_TOP_HADD_LAYER0;
 	uint32_t laddr = paddr & 0xffffffff;
+
+	/* Set UI overlay line size */
+	OVL_UI_WRITE(sc, 0, OVL_UI_PITCH(0), sfb->base.pitches[0]);
 
 	/* Framebuffer start address */
 	val = OVL_UI_READ(sc, 0, OVL_UI_TOP_HADD);
@@ -273,7 +310,8 @@ sunxi_mixer_destroy(struct drm_crtc *crtc)
 
 static int
 sunxi_mixer_page_flip(struct drm_crtc *crtc, struct drm_framebuffer *fb,
-    struct drm_pending_vblank_event *event, uint32_t flags)
+    struct drm_pending_vblank_event *event, uint32_t flags,
+    struct drm_modeset_acquire_ctx *ctx)
 {
 	struct sunxi_mixer_crtc *mixer_crtc = to_sunxi_mixer_crtc(crtc);
 	struct sunxi_mixer_softc * const sc = mixer_crtc->sc;
@@ -288,7 +326,7 @@ sunxi_mixer_page_flip(struct drm_crtc *crtc, struct drm_framebuffer *fb,
 
 	if (event) {
 		spin_lock_irqsave(&crtc->dev->event_lock, irqflags);
-		drm_send_vblank_event(crtc->dev, drm_crtc_index(crtc), event);
+		drm_crtc_send_vblank_event(crtc, event);
 		spin_unlock_irqrestore(&crtc->dev->event_lock, irqflags);
 	}
 
@@ -327,7 +365,7 @@ sunxi_mixer_cursor_set(struct drm_crtc *crtc, struct drm_file *file_priv,
 		goto done;
 	}
 
-	gem_obj = drm_gem_object_lookup(crtc->dev, file_priv, handle);
+	gem_obj = drm_gem_object_lookup(file_priv, handle);
 	if (gem_obj == NULL) {
 		DRM_ERROR("Cannot find cursor object %#x for crtc %d\n",
 		    handle, drm_crtc_index(crtc));
@@ -396,7 +434,7 @@ done:
 	}
 
 	if (gem_obj != NULL)
-		drm_gem_object_unreference_unlocked(gem_obj);
+		drm_gem_object_put_unlocked(gem_obj);
 
 	return error;
 }
@@ -458,7 +496,6 @@ sunxi_mixer_mode_set(struct drm_crtc *crtc, struct drm_display_mode *mode,
 
 	const uint32_t size = ((adjusted_mode->vdisplay - 1) << 16) |
 			      (adjusted_mode->hdisplay - 1);
-	const uint32_t offset = (y << 16) | x;
 
 	/* Set global size */
 	GLB_WRITE(sc, GLB_SIZE, size);
@@ -471,7 +508,7 @@ sunxi_mixer_mode_set(struct drm_crtc *crtc, struct drm_display_mode *mode,
 	/* Set blender 0 input size */
 	BLD_WRITE(sc, BLD_CH_ISIZE(0), size);
 	/* Set blender 0 offset */
-	BLD_WRITE(sc, BLD_CH_OFFSET(0), offset);
+	BLD_WRITE(sc, BLD_CH_OFFSET(0), 0);
 	/* Route channel 1 to pipe 0 */
 	val = BLD_READ(sc, BLD_CH_RTCTL);
 	val &= ~BLD_CH_RTCTL_P0;
@@ -481,7 +518,7 @@ sunxi_mixer_mode_set(struct drm_crtc *crtc, struct drm_display_mode *mode,
 	BLD_WRITE(sc, BLD_SIZE, size);
 
 	/* Enable UI overlay */
-	if (crtc->primary->fb->pixel_format == DRM_FORMAT_XRGB8888)
+	if (crtc->primary->fb->format->format == DRM_FORMAT_XRGB8888)
 		fbfmt = OVL_UI_ATTR_CTL_LAY_FBFMT_XRGB_8888;
 	else
 		fbfmt = OVL_UI_ATTR_CTL_LAY_FBFMT_ARGB_8888;
@@ -490,9 +527,7 @@ sunxi_mixer_mode_set(struct drm_crtc *crtc, struct drm_display_mode *mode,
 	/* Set UI overlay layer size */
 	OVL_UI_WRITE(sc, 0, OVL_UI_MBSIZE(0), size);
 	/* Set UI overlay offset */
-	OVL_UI_WRITE(sc, 0, OVL_UI_COOR(0), offset);
-	/* Set UI overlay line size */
-	OVL_UI_WRITE(sc, 0, OVL_UI_PITCH(0), adjusted_mode->hdisplay * 4);
+	OVL_UI_WRITE(sc, 0, OVL_UI_COOR(0), 0);
 	/* Set UI overlay window size */
 	OVL_UI_WRITE(sc, 0, OVL_UI_SIZE, size);
 
@@ -977,13 +1012,13 @@ static const uint32_t lan2coefftab32[512] = {
 
 static void
 sunxi_mixer_vsu_init(struct sunxi_mixer_softc *sc, u_int src_w, u_int src_h,
-    u_int crtc_w, u_int crtc_h, uint32_t pixel_format)
+    u_int crtc_w, u_int crtc_h, const struct drm_format_info *format)
 {
 	const u_int hstep = (src_w << 16) / crtc_w;
 	const u_int vstep = (src_h << 16) / crtc_h;
 
-	const int hsub = drm_format_horz_chroma_subsampling(pixel_format);
-	const int vsub = drm_format_vert_chroma_subsampling(pixel_format);
+	const int hsub = format->hsub;
+	const int vsub = format->vsub;
 
 	const u_int src_cw = src_w / hsub;
 	const u_int src_ch = src_h / vsub;
@@ -1046,14 +1081,15 @@ sunxi_mixer_csc_disable(struct sunxi_mixer_softc *sc)
 static int
 sunxi_mixer_overlay_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
     struct drm_framebuffer *fb, int crtc_x, int crtc_y, u_int crtc_w, u_int crtc_h,
-    uint32_t src_x, uint32_t src_y, uint32_t src_w, uint32_t src_h)
+    uint32_t src_x, uint32_t src_y, uint32_t src_w, uint32_t src_h,
+    struct drm_modeset_acquire_ctx *ctx)
 {
 	struct sunxi_mixer_plane *overlay = to_sunxi_mixer_plane(plane);
 	struct sunxi_mixer_softc * const sc = overlay->sc;
 	struct sunxi_drm_framebuffer *sfb = to_sunxi_drm_framebuffer(fb);
 	uint32_t val;
 
-	const u_int fbfmt = sunxi_mixer_overlay_format(fb->pixel_format);
+	const u_int fbfmt = sunxi_mixer_overlay_format(fb->format->format);
 	const uint64_t paddr = (uint64_t)sfb->obj->dmamap->dm_segs[0].ds_addr;
 
 	const uint32_t input_size = (((src_h >> 16) - 1) << 16) | ((src_w >> 16) - 1);
@@ -1069,13 +1105,13 @@ sunxi_mixer_overlay_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 	OVL_V_WRITE(sc, OVL_V_PITCH2(0), fb->pitches[1]);
 
 	const uint64_t paddr0 = paddr + fb->offsets[0] +
-	    (src_x >> 16) * drm_format_plane_cpp(fb->pixel_format, 0) +
+	    (src_x >> 16) * fb->format->cpp[0] +
 	    (src_y >> 16) * fb->pitches[0];
 	const uint64_t paddr1 = paddr + fb->offsets[2] +
-	    (src_x >> 16) * drm_format_plane_cpp(fb->pixel_format, 2) +
+	    (src_x >> 16) * fb->format->cpp[2] +
 	    (src_y >> 16) * fb->pitches[2];
 	const uint64_t paddr2 = paddr + fb->offsets[1] +
-	    (src_x >> 16) * drm_format_plane_cpp(fb->pixel_format, 1) +
+	    (src_x >> 16) * fb->format->cpp[1] +
 	    (src_y >> 16) * fb->pitches[1];
 
 	OVL_V_WRITE(sc, OVL_V_TOP_HADD0, (paddr0 >> 32) & OVL_V_TOP_HADD_LAYER0);
@@ -1090,16 +1126,16 @@ sunxi_mixer_overlay_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 
 	val = OVL_V_ATTCTL_LAY0_EN;
 	val |= __SHIFTIN(fbfmt, OVL_V_ATTCTL_LAY_FBFMT);
-	if (sunxi_mixer_overlay_rgb(fb->pixel_format) == true)
+	if (sunxi_mixer_overlay_rgb(fb->format->format) == true)
 		val |= OVL_V_ATTCTL_VIDEO_UI_SEL;
 	OVL_V_WRITE(sc, OVL_V_ATTCTL(0), val);
 
 	/* Enable video scaler */
-	sunxi_mixer_vsu_init(sc, src_w >> 16, src_h >> 16, crtc_w, crtc_h, fb->pixel_format);
+	sunxi_mixer_vsu_init(sc, src_w >> 16, src_h >> 16, crtc_w, crtc_h, fb->format);
 
 	/* Enable colour space conversion for non-RGB formats */
-	if (sunxi_mixer_overlay_rgb(fb->pixel_format) == false)
-		sunxi_mixer_csc_init(sc, fb->pixel_format);
+	if (sunxi_mixer_overlay_rgb(fb->format->format) == false)
+		sunxi_mixer_csc_init(sc, fb->format->format);
 	else
 		sunxi_mixer_csc_disable(sc);
 
@@ -1125,7 +1161,8 @@ sunxi_mixer_overlay_update_plane(struct drm_plane *plane, struct drm_crtc *crtc,
 }
 
 static int
-sunxi_mixer_overlay_disable_plane(struct drm_plane *plane)
+sunxi_mixer_overlay_disable_plane(struct drm_plane *plane,
+    struct drm_modeset_acquire_ctx *ctx)
 {
 	struct sunxi_mixer_plane *overlay = to_sunxi_mixer_plane(plane);
 	struct sunxi_mixer_softc * const sc = overlay->sc;
@@ -1199,7 +1236,7 @@ sunxi_mixer_ep_activate(device_t dev, struct fdt_endpoint *ep, bool activate)
 	drm_universal_plane_init(ddev, &sc->sc_overlay.base,
 	    1 << drm_crtc_index(&sc->sc_crtc.base), &sunxi_mixer_overlay_funcs,
 	    sunxi_mixer_overlay_formats, __arraycount(sunxi_mixer_overlay_formats),
-	    DRM_PLANE_TYPE_OVERLAY);
+	    NULL, DRM_PLANE_TYPE_OVERLAY, NULL);
 
 	return fdt_endpoint_activate(ep, activate);
 }
@@ -1217,7 +1254,7 @@ sunxi_mixer_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -1227,6 +1264,8 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	struct fdt_endpoint *out_ep;
 	const int phandle = faa->faa_phandle;
+	const struct sunxi_mixer_compat_data * const cd =
+	    of_compatible_lookup(phandle, compat_data)->data;
 	struct clk *clk_bus, *clk_mod;
 	struct fdtbus_reset *rst;
 	bus_addr_t addr;
@@ -1264,7 +1303,7 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_phandle = faa->faa_phandle;
-	sc->sc_ovl_ui_count = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_ovl_ui_count = cd->ovl_ui_count;
 
 	aprint_naive("\n");
 	aprint_normal(": Display Engine Mixer\n");
@@ -1273,7 +1312,14 @@ sunxi_mixer_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ports.dp_ep_get_data = sunxi_mixer_ep_get_data;
 	fdt_ports_register(&sc->sc_ports, self, phandle, EP_DRM_CRTC);
 
-	out_ep = fdt_endpoint_get_from_index(&sc->sc_ports, MIXER_PORT_OUTPUT, 0);
+	out_ep = fdt_endpoint_get_from_index(&sc->sc_ports,
+	    MIXER_PORT_OUTPUT, cd->mixer_index);
+	if (out_ep == NULL) {
+		/* Couldn't find new-style DE2 endpoint, try old style. */
+		out_ep = fdt_endpoint_get_from_index(&sc->sc_ports,
+		    MIXER_PORT_OUTPUT, 0);
+	}
+
 	if (out_ep != NULL)
 		sunxi_drm_register_endpoint(phandle, out_ep);
 }

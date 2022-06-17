@@ -1,4 +1,4 @@
-/* $NetBSD: wsemul_vt100.c,v 1.45 2018/09/03 16:29:34 riastradh Exp $ */
+/*	$NetBSD: wsemul_vt100.c,v 1.49 2022/01/02 23:46:21 uwe Exp $	*/
 
 /*
  * Copyright (c) 1998
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100.c,v 1.45 2018/09/03 16:29:34 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100.c,v 1.49 2022/01/02 23:46:21 uwe Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_wsmsgattrs.h"
@@ -45,13 +45,14 @@ __KERNEL_RCSID(0, "$NetBSD: wsemul_vt100.c,v 1.45 2018/09/03 16:29:34 riastradh 
 #include <dev/wscons/wsemul_vt100var.h>
 #include <dev/wscons/ascii.h>
 
-void	*wsemul_vt100_cnattach(const struct wsscreen_descr *, void *,
-			       int, int, long);
-void	*wsemul_vt100_attach(int console, const struct wsscreen_descr *,
-			     void *, int, int, void *, long);
-void	wsemul_vt100_output(void *cookie, const u_char *data, u_int count, int);
-void	wsemul_vt100_detach(void *cookie, u_int *crowp, u_int *ccolp);
-void	wsemul_vt100_resetop(void *, enum wsemul_resetops);
+static void *wsemul_vt100_cnattach(const struct wsscreen_descr *, void *,
+				   int, int, long);
+static void *wsemul_vt100_attach(int console, const struct wsscreen_descr *,
+				 void *, int, int, void *, long);
+static void wsemul_vt100_output(void *cookie, const u_char *data, u_int count,
+				int kernel);
+static void wsemul_vt100_detach(void *cookie, u_int *crowp, u_int *ccolp);
+static void wsemul_vt100_resetop(void *, enum wsemul_resetops);
 #ifdef WSDISPLAY_CUSTOM_OUTPUT
 static void wsemul_vt100_getmsgattrs(void *, struct wsdisplay_msgattrs *);
 static void wsemul_vt100_setmsgattrs(void *, const struct wsscreen_descr *,
@@ -77,7 +78,7 @@ const struct wsemul_ops wsemul_vt100_ops = {
 	.resize = wsemul_vt100_resize
 };
 
-struct wsemul_vt100_emuldata wsemul_vt100_console_emuldata;
+static struct wsemul_vt100_emuldata wsemul_vt100_console_emuldata;
 
 static void wsemul_vt100_init(struct wsemul_vt100_emuldata *,
 			      const struct wsscreen_descr *,
@@ -118,7 +119,7 @@ wsemul_vt100_output_dcs_dollar;
 #define	VT100_EMUL_STATE_DCS		11	/* got DCS (ESC P) */
 #define	VT100_EMUL_STATE_DCS_DOLLAR	12	/* got DCS<p>$ */
 
-vt100_handler *vt100_output[] = {
+static vt100_handler *vt100_output[] = {
 	wsemul_vt100_output_esc,
 	wsemul_vt100_output_csi,
 	wsemul_vt100_output_scs94,
@@ -212,7 +213,7 @@ wsemul_vt100_init(struct wsemul_vt100_emuldata *edp,
 	edp->kernattr = vd->defattr;
 }
 
-void *
+static void *
 wsemul_vt100_cnattach(const struct wsscreen_descr *type, void *cookie,
 	int ccol, int crow, long defattr)
 {
@@ -237,7 +238,7 @@ wsemul_vt100_cnattach(const struct wsscreen_descr *type, void *cookie,
 	return edp;
 }
 
-void *
+static void *
 wsemul_vt100_attach(int console, const struct wsscreen_descr *type,
 	void *cookie, int ccol, int crow, void *cbcookie, long defattr)
 {
@@ -257,20 +258,20 @@ wsemul_vt100_attach(int console, const struct wsscreen_descr *type,
 	vd = &edp->bd;
 	vd->cbcookie = cbcookie;
 
-	vd->tabs = malloc(1024, M_DEVBUF, M_NOWAIT);
-	vd->dblwid = malloc(1024, M_DEVBUF, M_NOWAIT|M_ZERO);
+	vd->tabs = malloc(1024, M_DEVBUF, M_WAITOK);
+	vd->dblwid = malloc(1024, M_DEVBUF, M_WAITOK|M_ZERO);
 	vd->dw = 0;
-	vd->dcsarg = malloc(DCS_MAXLEN, M_DEVBUF, M_NOWAIT);
-	edp->isolatin1tab = malloc(128 * sizeof(int), M_DEVBUF, M_NOWAIT);
-	edp->decgraphtab = malloc(128 * sizeof(int), M_DEVBUF, M_NOWAIT);
-	edp->dectechtab = malloc(128 * sizeof(int), M_DEVBUF, M_NOWAIT);
-	edp->nrctab = malloc(128 * sizeof(int), M_DEVBUF, M_NOWAIT);
+	vd->dcsarg = malloc(DCS_MAXLEN, M_DEVBUF, M_WAITOK);
+	edp->isolatin1tab = malloc(128 * sizeof(int), M_DEVBUF, M_WAITOK);
+	edp->decgraphtab = malloc(128 * sizeof(int), M_DEVBUF, M_WAITOK);
+	edp->dectechtab = malloc(128 * sizeof(int), M_DEVBUF, M_WAITOK);
+	edp->nrctab = malloc(128 * sizeof(int), M_DEVBUF, M_WAITOK);
 	vt100_initchartables(edp);
 	wsemul_vt100_reset(edp);
 	return edp;
 }
 
-void
+static void
 wsemul_vt100_detach(void *cookie, u_int *crowp, u_int *ccolp)
 {
 	struct wsemul_vt100_emuldata *edp = cookie;
@@ -306,7 +307,7 @@ wsemul_vt100_resize(void * cookie, const struct wsscreen_descr *type)
 	wsemul_vt100_resetop(cookie, WSEMUL_CLEARSCREEN);
 }
 
-void
+static void
 wsemul_vt100_resetop(void *cookie, enum wsemul_resetops op)
 {
 	struct wsemul_vt100_emuldata *edp = cookie;
@@ -480,7 +481,13 @@ wsemul_vt100_output_c0c1(struct wsemul_vt100_emuldata *edp, u_char c,
 		/* ignore */
 		break;
 	case ASCII_BEL:
-		wsdisplay_emulbell(vd->cbcookie);
+		if (edp->state == VT100_EMUL_STATE_STRING) {
+			/* acts as an equivalent to the ``ESC \'' string end */
+			wsemul_vt100_handle_dcs(vd);
+			edp->state = VT100_EMUL_STATE_NORMAL;
+		} else {
+			wsdisplay_emulbell(vd->cbcookie);
+		}
 		break;
 	case ASCII_BS:
 		if (vd->ccol > 0) {
@@ -540,7 +547,7 @@ wsemul_vt100_output_c0c1(struct wsemul_vt100_emuldata *edp, u_char c,
 		break;
 	case ST: /* string end 8-bit */
 		/* XXX only in VT100_EMUL_STATE_STRING */
-		wsemul_vt100_handle_dcs(edp);
+		wsemul_vt100_handle_dcs(vd);
 		edp->state = VT100_EMUL_STATE_NORMAL;
 		break;
 #endif
@@ -1254,7 +1261,7 @@ wsemul_vt100_output_csi(struct wsemul_vt100_emuldata *edp, u_char c)
 	return VT100_EMUL_STATE_CSI;
 }
 
-void
+static void
 wsemul_vt100_output(void *cookie, const u_char *data, u_int count, int kernel)
 {
 	struct wsemul_vt100_emuldata *edp = cookie;

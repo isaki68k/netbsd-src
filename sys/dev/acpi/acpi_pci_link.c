@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_pci_link.c,v 1.22 2014/09/14 19:54:05 mrg Exp $	*/
+/*	$NetBSD: acpi_pci_link.c,v 1.29 2021/12/20 12:01:01 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002 Mitsuru IWASAKI <iwasaki@jp.freebsd.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_link.c,v 1.22 2014/09/14 19:54:05 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_link.c,v 1.29 2021/12/20 12:01:01 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -116,8 +116,8 @@ struct link {
 	int	l_references;
 	int	l_dev_count;
 	pcitag_t *l_devices;
-	int	l_routed:1;
-	int	l_isa_irq:1;
+	u_int	l_routed:1;
+	u_int	l_isa_irq:1;
 	ACPI_RESOURCE l_prs_template;
 };
 
@@ -142,8 +142,8 @@ static ACPI_STATUS link_add_prs(ACPI_RESOURCE *, void *);
 static int link_valid_irq(struct link *, int);
 static void acpi_pci_link_dump(struct acpi_pci_link_softc *);
 static int acpi_pci_link_attach(struct acpi_pci_link_softc *);
-static uint8_t acpi_pci_link_search_irq(struct acpi_pci_link_softc *, int, int,
-					int);
+static uint8_t acpi_pci_link_search_irq(struct acpi_pci_link_softc *,
+					pci_chipset_tag_t, int, int, int);
 static struct link *acpi_pci_link_lookup(struct acpi_pci_link_softc *, int);
 static ACPI_STATUS acpi_pci_link_srs(struct acpi_pci_link_softc *,
 				     ACPI_BUFFER *);
@@ -182,7 +182,7 @@ acpi_count_irq_resources(ACPI_RESOURCE *res, void *context)
 		if (req->in_dpf != DPF_IGNORE)
 			req->count++;
 	}
-	return (AE_OK);
+	return AE_OK;
 }
 
 static ACPI_STATUS
@@ -246,7 +246,7 @@ link_add_crs(ACPI_RESOURCE *res, void *context)
 	default:
 		req->res_index++;
 	}
-	return (AE_OK);
+	return AE_OK;
 }
 
 /*
@@ -255,6 +255,7 @@ link_add_crs(ACPI_RESOURCE *res, void *context)
 static ACPI_STATUS
 link_add_prs(ACPI_RESOURCE *res, void *context)
 {
+	ACPI_RESOURCE *tmp;
 	struct link_res_request *req;
 	struct link *link;
 	uint8_t *irqs = NULL;
@@ -301,32 +302,28 @@ link_add_prs(ACPI_RESOURCE *res, void *context)
 		req->res_index++;
 
 		/*
-		 * Stash a copy of the resource for later use when
-		 * doing _SRS.
-		 *
-		 * Note that in theory res->Length may exceed the size
-		 * of ACPI_RESOURCE, due to variable length lists in
-		 * subtypes.  However, all uses of l_prs_template only
-		 * rely on lists lengths of zero or one, for which
-		 * sizeof(ACPI_RESOURCE) is sufficient space anyway.
-		 * We cannot read longer than Length bytes, in case we
-		 * read off the end of mapped memory.  So we read
-		 * whichever length is shortest, Length or
-		 * sizeof(ACPI_RESOURCE).
+		 * Stash a copy of the resource for later use when doing
+		 * _SRS.
 		 */
-		KASSERT(res->Length >= ACPI_RS_SIZE_MIN);
-
-		memset(&link->l_prs_template, 0, sizeof(link->l_prs_template));
-		memcpy(&link->l_prs_template, res,
-		       MIN(res->Length, sizeof(link->l_prs_template)));
-
+		tmp = &link->l_prs_template;
 		if (is_ext_irq) {
+			memcpy(tmp, res, ACPI_RS_SIZE(tmp->Data.ExtendedIrq));
+
+			/*
+			 * XXX acpi_AppendBufferResource() cannot handle
+			 * optional data.
+			 */
+			memset(&tmp->Data.ExtendedIrq.ResourceSource, 0,
+			    sizeof(tmp->Data.ExtendedIrq.ResourceSource));
+			tmp->Length = ACPI_RS_SIZE(tmp->Data.ExtendedIrq);
+
 			link->l_num_irqs =
 			    res->Data.ExtendedIrq.InterruptCount;
 			link->l_trig = res->Data.ExtendedIrq.Triggering;
 			link->l_pol = res->Data.ExtendedIrq.Polarity;
 			ext_irqs = res->Data.ExtendedIrq.Interrupts;
 		} else {
+			memcpy(tmp, res, ACPI_RS_SIZE(tmp->Data.Irq));
 			link->l_num_irqs = res->Data.Irq.InterruptCount;
 			link->l_trig = res->Data.Irq.Triggering;
 			link->l_pol = res->Data.Irq.Polarity;
@@ -364,7 +361,7 @@ link_add_prs(ACPI_RESOURCE *res, void *context)
 			       req->res_index);
 		req->res_index++;
 	}
-	return (AE_OK);
+	return AE_OK;
 }
 
 static int
@@ -374,12 +371,12 @@ link_valid_irq(struct link *link, int irq)
 
 	/* Invalid interrupts are never valid. */
 	if (!PCI_INTERRUPT_VALID(irq))
-		return (FALSE);
+		return FALSE;
 
 	/* Any interrupt in the list of possible interrupts is valid. */
 	for (i = 0; i < link->l_num_irqs; i++)
 		if (link->l_irqs[i] == irq)
-			 return (TRUE);
+			 return TRUE;
 
 	/*
 	 * For links routed via an ISA interrupt, if the SCI is routed via
@@ -387,10 +384,10 @@ link_valid_irq(struct link *link, int irq)
 	 */
 	if (link->l_isa_irq && AcpiGbl_FADT.SciInterrupt == irq &&
 	    irq < NUM_ISA_INTERRUPTS)
-		return (TRUE);
+		return TRUE;
 
 	/* If the interrupt wasn't found in the list it is not valid. */
-	return (FALSE);
+	return FALSE;
 }
 
 void
@@ -453,13 +450,13 @@ acpi_pci_link_attach(struct acpi_pci_link_softc *sc)
 			aprint_error("%s: Unable to parse _CRS or _PRS: %s\n",
 			    sc->pl_name, AcpiFormatException(status));
 			ACPI_SERIAL_END(pci_link);
-			return (ENXIO);
+			return ENXIO;
 		}
 	}
 	sc->pl_num_links = creq.count;
 	if (creq.count == 0) {
 		ACPI_SERIAL_END(pci_link);
-		return (0);
+		return 0;
 	}
 	sc->pl_links = malloc(sizeof(struct link) * sc->pl_num_links,
 	    M_ACPI, M_WAITOK | M_ZERO);
@@ -548,7 +545,7 @@ acpi_pci_link_attach(struct acpi_pci_link_softc *sc)
 		acpi_pci_link_dump(sc);
 	}
 	ACPI_SERIAL_END(pci_link);
-	return (0);
+	return 0;
 fail:
 	ACPI_SERIAL_END(pci_link);
 	for (i = 0; i < sc->pl_num_links; i++) {
@@ -558,20 +555,20 @@ fail:
 			free(sc->pl_links[i].l_devices, M_ACPI);
 	}
 	free(sc->pl_links, M_ACPI);
-	return (ENXIO);
+	return ENXIO;
 }
 
 static void
 acpi_pci_link_add_functions(struct acpi_pci_link_softc *sc, struct link *link,
-    int bus, int device, int pin)
+    pci_chipset_tag_t pc, int bus, int device, int pin)
 {
 	uint32_t value;
 	uint8_t func, maxfunc, ipin;
 	pcitag_t tag;
 
-	tag = pci_make_tag(acpi_softc->sc_pc, bus, device, 0);
+	tag = pci_make_tag(pc, bus, device, 0);
 	/* See if we have a valid device at function 0. */
-	value = pci_conf_read(acpi_softc->sc_pc, tag,  PCI_BHLC_REG);
+	value = pci_conf_read(pc, tag,  PCI_BHLC_REG);
 	if (PCI_HDRTYPE_TYPE(value) > PCI_HDRTYPE_PCB)
 		return;
 	if (PCI_HDRTYPE_MULTIFN(value))
@@ -581,11 +578,11 @@ acpi_pci_link_add_functions(struct acpi_pci_link_softc *sc, struct link *link,
 
 	/* Scan all possible functions at this device. */
 	for (func = 0; func <= maxfunc; func++) {
-		tag = pci_make_tag(acpi_softc->sc_pc, bus, device, func);
-		value = pci_conf_read(acpi_softc->sc_pc, tag, PCI_ID_REG);
+		tag = pci_make_tag(pc, bus, device, func);
+		value = pci_conf_read(pc, tag, PCI_ID_REG);
 		if (PCI_VENDOR(value) == 0xffff)
 			continue;
-		value = pci_conf_read(acpi_softc->sc_pc, tag,
+		value = pci_conf_read(pc, tag,
 		    PCI_INTERRUPT_REG);
 		ipin = PCI_INTERRUPT_PIN(value);
 		/*
@@ -605,18 +602,18 @@ acpi_pci_link_add_functions(struct acpi_pci_link_softc *sc, struct link *link,
 }
 
 static uint8_t
-acpi_pci_link_search_irq(struct acpi_pci_link_softc *sc, int bus, int device,
-			 int pin)
+acpi_pci_link_search_irq(struct acpi_pci_link_softc *sc, pci_chipset_tag_t pc,
+    int bus, int device, int pin)
 {
 	uint32_t value;
 	uint8_t func, maxfunc, ipin, iline;
 	pcitag_t tag;
 
-	tag = pci_make_tag(acpi_softc->sc_pc, bus, device, 0);
+	tag = pci_make_tag(pc, bus, device, 0);
 	/* See if we have a valid device at function 0. */
-	value = pci_conf_read(acpi_softc->sc_pc, tag,  PCI_BHLC_REG);
+	value = pci_conf_read(pc, tag,  PCI_BHLC_REG);
 	if (PCI_HDRTYPE_TYPE(value) > PCI_HDRTYPE_PCB)
-		return (PCI_INVALID_IRQ);
+		return PCI_INVALID_IRQ;
 	if (PCI_HDRTYPE_MULTIFN(value))
 		maxfunc = 7;
 	else
@@ -624,11 +621,11 @@ acpi_pci_link_search_irq(struct acpi_pci_link_softc *sc, int bus, int device,
 
 	/* Scan all possible functions at this device. */
 	for (func = 0; func <= maxfunc; func++) {
-		tag = pci_make_tag(acpi_softc->sc_pc, bus, device, func);
-		value = pci_conf_read(acpi_softc->sc_pc, tag, PCI_ID_REG);
+		tag = pci_make_tag(pc, bus, device, func);
+		value = pci_conf_read(pc, tag, PCI_ID_REG);
 		if (PCI_VENDOR(value) == 0xffff)
 			continue;
-		value = pci_conf_read(acpi_softc->sc_pc, tag,
+		value = pci_conf_read(pc, tag,
 		    PCI_INTERRUPT_REG);
 		ipin = PCI_INTERRUPT_PIN(value);
 		iline = PCI_INTERRUPT_LINE(value);
@@ -645,9 +642,9 @@ acpi_pci_link_search_irq(struct acpi_pci_link_softc *sc, int bus, int device,
 	            " at func %d: %d\n",
 			    sc->pl_name, bus, device, pin + 'A', func, iline);
 		if (PCI_INTERRUPT_VALID(iline))
-			return (iline);
+			return iline;
 	}
-	return (PCI_INVALID_IRQ);
+	return PCI_INVALID_IRQ;
 }
 
 /*
@@ -661,12 +658,13 @@ acpi_pci_link_lookup(struct acpi_pci_link_softc *sc, int source_index)
 
 	for (i = 0; i < sc->pl_num_links; i++)
 		if (sc->pl_links[i].l_res_index == source_index)
-			return (&sc->pl_links[i]);
-	return (NULL);
+			return &sc->pl_links[i];
+	return NULL;
 }
 
 void
-acpi_pci_link_add_reference(void *v, int index, int bus, int slot, int pin)
+acpi_pci_link_add_reference(void *v, pci_chipset_tag_t pc, int index,
+    int bus, int slot, int pin)
 {
 	struct acpi_pci_link_softc *sc = v;
 	struct link *link;
@@ -681,7 +679,7 @@ acpi_pci_link_add_reference(void *v, int index, int bus, int slot, int pin)
 		return;
 	}
 	link->l_references++;
-	acpi_pci_link_add_functions(sc, link, bus, slot, pin);
+	acpi_pci_link_add_functions(sc, link, pc, bus, slot, pin);
 	if (link->l_routed)
 		pci_link_interrupt_weights[link->l_irq]++;
 
@@ -706,7 +704,7 @@ acpi_pci_link_add_reference(void *v, int index, int bus, int slot, int pin)
 	}
 
 	/* Try to find a BIOS IRQ setting from any matching devices. */
-	bios_irq = acpi_pci_link_search_irq(sc, bus, slot, pin);
+	bios_irq = acpi_pci_link_search_irq(sc, pc, bus, slot, pin);
 	if (!PCI_INTERRUPT_VALID(bios_irq)) {
 		ACPI_SERIAL_END(pci_link);
 		return;
@@ -737,33 +735,31 @@ acpi_pci_link_add_reference(void *v, int index, int bus, int slot, int pin)
 static ACPI_STATUS
 acpi_pci_link_srs_from_crs(struct acpi_pci_link_softc *sc, ACPI_BUFFER *srsbuf)
 {
-	ACPI_RESOURCE *resource, *end, newres, *resptr;
-	ACPI_BUFFER crsbuf;
+	ACPI_RESOURCE *end, *res;
 	ACPI_STATUS status;
 	struct link *link;
 	int i, in_dpf;
 
 	/* Fetch the _CRS. */
-	crsbuf.Pointer = NULL;
-	crsbuf.Length = ACPI_ALLOCATE_LOCAL_BUFFER;
-	status = AcpiGetCurrentResources(sc->pl_handle, &crsbuf);
-	if (ACPI_SUCCESS(status) && crsbuf.Pointer == NULL)
+	srsbuf->Pointer = NULL;
+	srsbuf->Length = ACPI_ALLOCATE_BUFFER;
+	status = AcpiGetCurrentResources(sc->pl_handle, srsbuf);
+	if (ACPI_SUCCESS(status) && srsbuf->Pointer == NULL)
 		status = AE_NO_MEMORY;
 	if (ACPI_FAILURE(status)) {
 		aprint_verbose("%s: Unable to fetch current resources: %s\n",
 		    sc->pl_name, AcpiFormatException(status));
-		return (status);
+		return status;
 	}
 
 	/* Fill in IRQ resources via link structures. */
-	srsbuf->Pointer = NULL;
 	link = sc->pl_links;
 	i = 0;
 	in_dpf = DPF_OUTSIDE;
-	resource = (ACPI_RESOURCE *)crsbuf.Pointer;
-	end = (ACPI_RESOURCE *)((char *)crsbuf.Pointer + crsbuf.Length);
+	res = (ACPI_RESOURCE *)srsbuf->Pointer;
+	end = (ACPI_RESOURCE *)((char *)srsbuf->Pointer + srsbuf->Length);
 	for (;;) {
-		switch (resource->Type) {
+		switch (res->Type) {
 		case ACPI_RESOURCE_TYPE_START_DEPENDENT:
 			switch (in_dpf) {
 			case DPF_OUTSIDE:
@@ -777,65 +773,45 @@ acpi_pci_link_srs_from_crs(struct acpi_pci_link_softc *sc, ACPI_BUFFER *srsbuf)
 				    __func__);
 				break;
 			}
-			resptr = NULL;
 			break;
 		case ACPI_RESOURCE_TYPE_END_DEPENDENT:
 			/* We are finished with DPF parsing. */
 			KASSERT(in_dpf != DPF_OUTSIDE);
 			in_dpf = DPF_OUTSIDE;
-			resptr = NULL;
 			break;
 		case ACPI_RESOURCE_TYPE_IRQ:
-			newres = link->l_prs_template;
-			resptr = &newres;
-			resptr->Data.Irq.InterruptCount = 1;
+			res->Data.Irq.InterruptCount = 1;
 			if (PCI_INTERRUPT_VALID(link->l_irq)) {
 				KASSERT(link->l_irq < NUM_ISA_INTERRUPTS);
-				resptr->Data.Irq.Interrupts[0] = link->l_irq;
-				resptr->Data.Irq.Triggering = link->l_trig;
-				resptr->Data.Irq.Polarity = link->l_pol;
+				res->Data.Irq.Interrupts[0] = link->l_irq;
+				res->Data.Irq.Triggering = link->l_trig;
+				res->Data.Irq.Polarity = link->l_pol;
 			} else
-				resptr->Data.Irq.Interrupts[0] = 0;
+				res->Data.Irq.Interrupts[0] = 0;
 			link++;
 			i++;
 			break;
 		case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
-			newres = link->l_prs_template;
-			resptr = &newres;
-			resptr->Data.ExtendedIrq.InterruptCount = 1;
+			res->Data.ExtendedIrq.InterruptCount = 1;
 			if (PCI_INTERRUPT_VALID(link->l_irq)) {
-				resptr->Data.ExtendedIrq.Interrupts[0] =
+				res->Data.ExtendedIrq.Interrupts[0] =
 				    link->l_irq;
-				resptr->Data.ExtendedIrq.Triggering =
+				res->Data.ExtendedIrq.Triggering =
 				    link->l_trig;
-				resptr->Data.ExtendedIrq.Polarity = link->l_pol;
+				res->Data.ExtendedIrq.Polarity = link->l_pol;
 			} else
-				resptr->Data.ExtendedIrq.Interrupts[0] = 0;
+				res->Data.ExtendedIrq.Interrupts[0] = 0;
 			link++;
 			i++;
 			break;
-		default:
-			resptr = resource;
 		}
-		if (resptr != NULL) {
-			status = acpi_AppendBufferResource(srsbuf, resptr);
-			if (ACPI_FAILURE(status)) {
-				printf("%s: Unable to build resources: %s\n",
-				    sc->pl_name, AcpiFormatException(status));
-				if (srsbuf->Pointer != NULL)
-					ACPI_FREE(srsbuf->Pointer);
-				ACPI_FREE(crsbuf.Pointer);
-				return (status);
-			}
-		}
-		if (resource->Type == ACPI_RESOURCE_TYPE_END_TAG)
+		if (res->Type == ACPI_RESOURCE_TYPE_END_TAG)
 			break;
-		resource = ACPI_NEXT_RESOURCE(resource);
-		if (resource >= end)
+		res = ACPI_NEXT_RESOURCE(res);
+		if (res >= end)
 			break;
 	}
-	ACPI_FREE(crsbuf.Pointer);
-	return (AE_OK);
+	return AE_OK;
 }
 
 static ACPI_STATUS
@@ -854,10 +830,11 @@ acpi_pci_link_srs_from_links(struct acpi_pci_link_softc *sc,
 
 		/* Add a new IRQ resource from each link. */
 		link = &sc->pl_links[i];
-		newres = link->l_prs_template;
-		if (newres.Type == ACPI_RESOURCE_TYPE_IRQ) {
+		if (link->l_prs_template.Type == ACPI_RESOURCE_TYPE_IRQ) {
 
 			/* Build an IRQ resource. */
+			bcopy(&link->l_prs_template, &newres,
+			    ACPI_RS_SIZE(newres.Data.Irq));
 			newres.Data.Irq.InterruptCount = 1;
 			if (PCI_INTERRUPT_VALID(link->l_irq)) {
 				KASSERT(link->l_irq < NUM_ISA_INTERRUPTS);
@@ -869,6 +846,8 @@ acpi_pci_link_srs_from_links(struct acpi_pci_link_softc *sc,
 		} else {
 
 			/* Build an ExtIRQ resuorce. */
+			bcopy(&link->l_prs_template, &newres,
+			    ACPI_RS_SIZE(newres.Data.ExtendedIrq));
 			newres.Data.ExtendedIrq.InterruptCount = 1;
 			if (PCI_INTERRUPT_VALID(link->l_irq)) {
 				newres.Data.ExtendedIrq.Interrupts[0] =
@@ -889,10 +868,10 @@ acpi_pci_link_srs_from_links(struct acpi_pci_link_softc *sc,
 			    sc->pl_name, AcpiFormatException(status));
 			if (srsbuf->Pointer != NULL)
 				ACPI_FREE(srsbuf->Pointer);
-			return (status);
+			return status;
 		}
 	}
-	return (AE_OK);
+	return AE_OK;
 }
 
 static ACPI_STATUS
@@ -927,7 +906,7 @@ acpi_pci_link_route_irqs(struct acpi_pci_link_softc *sc, int *irq, int *pol,
 	if (ACPI_FAILURE(status)) {
 		printf("%s: _SRS failed: %s\n",
 		    sc->pl_name, AcpiFormatException(status));
-		return (status);
+		return status;
 	}
 	/*
 	 * Perform acpi_config_intr() on each IRQ resource if it was just
@@ -974,7 +953,7 @@ acpi_pci_link_route_irqs(struct acpi_pci_link_softc *sc, int *irq, int *pol,
 			break;
 	}
 	ACPI_FREE(srsbuf.Pointer);
-	return (AE_OK);
+	return AE_OK;
 }
 
 /*
@@ -994,14 +973,14 @@ acpi_pci_link_choose_irq(struct acpi_pci_link_softc *sc, struct link *link)
 	 * says it routed over what _CRS says the link thinks is routed.
 	 */
 	if (PCI_INTERRUPT_VALID(link->l_bios_irq))
-		return (link->l_bios_irq);
+		return link->l_bios_irq;
 
 	/*
 	 * If we don't have a BIOS IRQ but do have a valid IRQ from _CRS,
 	 * then use that.
 	 */
 	if (PCI_INTERRUPT_VALID(link->l_initial_irq))
-		return (link->l_initial_irq);
+		return link->l_initial_irq;
 
 	/*
 	 * Ok, we have no useful hints, so we have to pick from the
@@ -1040,11 +1019,12 @@ acpi_pci_link_choose_irq(struct acpi_pci_link_softc *sc, struct link *link)
 		    sc->pl_name, best_irq, best_weight);
 	} else
 		printf("%s: Unable to choose an IRQ\n", sc->pl_name);
-	return (best_irq);
+	return best_irq;
 }
 
 int
-acpi_pci_link_route_interrupt(void *v, int index, int *irq, int *pol, int *trig)
+acpi_pci_link_route_interrupt(void *v, pci_chipset_tag_t pc, int index,
+    int *irq, int *pol, int *trig)
 {
 	struct acpi_pci_link_softc *sc = v;
 	struct link *link;
@@ -1066,10 +1046,9 @@ acpi_pci_link_route_interrupt(void *v, int index, int *irq, int *pol, int *trig)
 		*irq = link->l_irq;
 		*pol = link->l_pol;
 		*trig = link->l_trig;
-		return (link->l_irq);
+		return link->l_irq;
 	}
 
-	/* Choose an IRQ if we need one. */
 	if (PCI_INTERRUPT_VALID(link->l_irq)) {
 		*irq = link->l_irq;
 		*pol = link->l_pol;
@@ -1077,15 +1056,15 @@ acpi_pci_link_route_interrupt(void *v, int index, int *irq, int *pol, int *trig)
 		goto done;
 	}
 
+	/* The link device doesn't have an interrupt, so try to choose one. */
 	link->l_irq = acpi_pci_link_choose_irq(sc, link);
+	if (!PCI_INTERRUPT_VALID(link->l_irq))
+		goto done;
 
 	/*
 	 * Try to route the interrupt we picked.  If it fails, then
 	 * assume the interrupt is not routed.
 	 */
-	if (!PCI_INTERRUPT_VALID(link->l_irq))
-		goto done;
-
 	acpi_pci_link_route_irqs(sc, irq, pol, trig);
 	if (!link->l_routed) {
 		link->l_irq = PCI_INVALID_IRQ;
@@ -1095,18 +1074,18 @@ acpi_pci_link_route_interrupt(void *v, int index, int *irq, int *pol, int *trig)
 	link->l_pol = *pol;
 	link->l_trig = *trig;
 	for (i = 0; i < link->l_dev_count; ++i) {
-		reg = pci_conf_read(acpi_softc->sc_pc, link->l_devices[i],
+		reg = pci_conf_read(pc, link->l_devices[i],
 		    PCI_INTERRUPT_REG);
 		reg &= ~(PCI_INTERRUPT_LINE_MASK << PCI_INTERRUPT_LINE_SHIFT);
 		reg |= link->l_irq << PCI_INTERRUPT_LINE_SHIFT;
-		pci_conf_write(acpi_softc->sc_pc, link->l_devices[i],
+		pci_conf_write(pc, link->l_devices[i],
 		    PCI_INTERRUPT_REG, reg);
 	}
 
 done:
 	ACPI_SERIAL_END(pci_link);
 
-	return (link->l_irq);
+	return link->l_irq;
 }
 
 /*
@@ -1150,10 +1129,7 @@ acpi_pci_link_devbyhandle(ACPI_HANDLE handle)
 			return sc;
 	}
 
-	sc = malloc(sizeof (*sc), M_ACPI, M_NOWAIT | M_ZERO);
-	if (sc == NULL)
-		return NULL;
-
+	sc = malloc(sizeof (*sc), M_ACPI, M_WAITOK | M_ZERO);
 	sc->pl_handle = handle;
 
 	acpi_pci_link_init(sc);
@@ -1221,7 +1197,7 @@ acpi_AppendBufferResource(ACPI_BUFFER *buf, ACPI_RESOURCE *res)
 	}
 
 	if (res == NULL)
-		return (AE_OK);
+		return AE_OK;
 
 	/*
 	 * Scan the current buffer looking for the terminator.
@@ -1233,7 +1209,7 @@ acpi_AppendBufferResource(ACPI_BUFFER *buf, ACPI_RESOURCE *res)
 		/* Range check, don't go outside the buffer */
 		if (rp >= (ACPI_RESOURCE *)((u_int8_t *)buf->Pointer +
 		    buf->Length))
-			return (AE_BAD_PARAMETER);
+			return AE_BAD_PARAMETER;
 		if (rp->Type ==  ACPI_RESOURCE_TYPE_END_TAG || rp->Length == 0)
 			break;
 		rp = ACPI_NEXT_RESOURCE(rp);
@@ -1243,18 +1219,18 @@ acpi_AppendBufferResource(ACPI_BUFFER *buf, ACPI_RESOURCE *res)
 	 * Check the size of the buffer and expand if required.
 	 *
 	 * Required size is:
-	 *	size of existing resources before terminator + 
+	 *	size of existing resources before terminator +
 	 *	size of new resource and header +
 	 * 	size of terminator.
 	 *
 	 * Note that this loop should really only run once, unless
 	 * for some reason we are stuffing a *really* huge resource.
 	 */
-	while ((((u_int8_t *)rp - (u_int8_t *)buf->Pointer) + 
+	while ((((u_int8_t *)rp - (u_int8_t *)buf->Pointer) +
 	    res->Length + ACPI_RS_SIZE_NO_DATA +
 	    ACPI_RS_SIZE_MIN) >= buf->Length) {
 		if ((newp = ACPI_ALLOCATE(buf->Length * 2)) == NULL)
-			return (AE_NO_MEMORY);
+			return AE_NO_MEMORY;
 		memcpy(newp, buf->Pointer, buf->Length);
 		rp = (ACPI_RESOURCE *)((u_int8_t *)newp +
 		   ((u_int8_t *)rp - (u_int8_t *)buf->Pointer));
@@ -1271,5 +1247,5 @@ acpi_AppendBufferResource(ACPI_BUFFER *buf, ACPI_RESOURCE *res)
 	rp->Type =  ACPI_RESOURCE_TYPE_END_TAG;
 	rp->Length = 0;
 
-	return (AE_OK);
+	return AE_OK;
 }

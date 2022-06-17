@@ -1,5 +1,5 @@
-/*	$Id: at91cf.c,v 1.4 2011/07/26 22:52:47 dyoung Exp $	*/
-/*	$NetBSD: at91cf.c,v 1.4 2011/07/26 22:52:47 dyoung Exp $	*/
+/*	$Id: at91cf.c,v 1.7 2021/08/07 16:18:43 thorpej Exp $	*/
+/*	$NetBSD: at91cf.c,v 1.7 2021/08/07 16:18:43 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy. All rights reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91cf.c,v 1.4 2011/07/26 22:52:47 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91cf.c,v 1.7 2021/08/07 16:18:43 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -174,12 +174,7 @@ at91cf_attach_common(device_t parent, device_t self, void *aux,
 	printf("\n");
 
 	/* socket 0 */
-	ph = malloc(sizeof(struct at91cf_handle), M_DEVBUF, M_NOWAIT|M_ZERO);
-	if (ph == NULL) {
-		printf("%s: Cannot allocate memory\n", device_xname(self));
-		// @@@@ unmap? @@@@
-		return; /* ENOMEM */
-	}
+	ph = malloc(sizeof(struct at91cf_handle), M_DEVBUF, M_WAITOK|M_ZERO);
 	sc->sc_ph = ph;
 	ph->ph_sc = sc;
 	ph->ph_space[IO].base = sa->sa_addr + IO_BASE;
@@ -228,8 +223,7 @@ at91cf_config_socket(struct at91cf_handle *ph)
 	paa.paa_busname = "pcmcia";
 	paa.pct = (pcmcia_chipset_tag_t)&at91cf_functions;
 	paa.pch = (pcmcia_chipset_handle_t)ph;
-	ph->ph_card = config_found_ia(sc->sc_dev, "pcmciabus", &paa,
-				      at91cf_print);
+	ph->ph_card = config_found(sc->sc_dev, &paa, at91cf_print, CFARGS_NONE);
 
 	(*cscf->intr_establish)(sc, CD_IRQ, IPL_BIO, at91cf_intr_carddetect, ph);
 	wait = (*cscf->power_ctl)(sc, POWER_OFF);

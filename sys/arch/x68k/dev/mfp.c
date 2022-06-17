@@ -1,4 +1,4 @@
-/*	$NetBSD: mfp.c,v 1.26 2014/03/26 08:17:59 christos Exp $	*/
+/*	$NetBSD: mfp.c,v 1.29 2021/08/07 16:19:07 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998 NetBSD Foundation, Inc.
@@ -12,12 +12,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *        This product includes software developed by the NetBSD
- *        Foundation, Inc. and its contributors.
- * 4. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -42,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mfp.c,v 1.26 2014/03/26 08:17:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mfp.c,v 1.29 2021/08/07 16:19:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -113,14 +107,16 @@ mfp_attach(device_t parent, device_t self, void *aux)
 		panic("IO map for MFP corruption??");
 #endif
 	bus_space_map(ia->ia_bst, ia->ia_addr, 0x2000, 0, &sc->sc_bht);
-	config_search_ia(mfp_search, self, "mfp", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = mfp_search));
 }
 
 static int
 mfp_search(device_t parent, cfdata_t cf, const int *loc, void *aux)
 {
-	if (config_match(parent, cf, __UNCONST(cf->cf_name)) > 0)
-		config_attach(parent, cf, __UNCONST(cf->cf_name), NULL);
+	if (config_probe(parent, cf, __UNCONST(cf->cf_name)))
+		config_attach(parent, cf, __UNCONST(cf->cf_name), NULL,
+		    CFARGS_NONE);
 	return 0;
 }
 

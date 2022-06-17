@@ -97,7 +97,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: omapl1x_tipb.c,v 1.1 2013/10/02 16:48:26 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omapl1x_tipb.c,v 1.4 2022/02/12 17:09:43 riastradh Exp $");
 
 #include "locators.h"
 
@@ -121,7 +121,6 @@ __KERNEL_RCSID(0, "$NetBSD: omapl1x_tipb.c,v 1.1 2013/10/02 16:48:26 matt Exp $"
 #include <arm/omap/omap_var.h>
 
 struct tipb_softc {
-	struct device sc_dev;
 	bus_dma_tag_t sc_dmac;
 };
 
@@ -184,20 +183,22 @@ tipb_attach(struct device *parent, struct device *self, void *aux)
 	 * attach them in the order they appear in the array.
 	 */
 	const char *const *earlyp;
-	for (earlyp = earlies; *earlyp != NULL; earlyp++)
+	for (earlyp = earlies; *earlyp != NULL; earlyp++) {
 		/*
 		 * The bus search function is passed an aux argument that
 		 * "describes the device that has been found".  The type of it
 		 * is void *.  However, I want to pass a constant string, so
 		 * use __UNCONST to convince the compiler that this is ok.
 		 */
-		config_search_ia(tipb_search, self, "tipb",
-				 __UNCONST(*earlyp));
+		config_search(self, __UNCONST(*earlyp),
+		    CFARGS(.search = tipb_search));
+	}
 
 	/*
 	 * Attach all other devices
 	 */
-	config_search_ia(tipb_search, self, "tipb", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = tipb_search));
 }
 
 static int
@@ -232,8 +233,8 @@ tipb_search(struct device *parent, struct cfdata *cf,
 	aa.tipb_intr = cf->cf_loc[TIPBCF_INTR];
 	aa.tipb_mult = cf->cf_loc[TIPBCF_MULT];
 
-	if (config_match(parent, cf, &aa))
-		config_attach(parent, cf, &aa, tipb_print);
+	if (config_probe(parent, cf, &aa))
+		config_attach(parent, cf, &aa, tipb_print, CFARGS_NONE);
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: mfb.c,v 1.60 2018/01/24 05:35:58 riastradh Exp $ */
+/* $NetBSD: mfb.c,v 1.64 2021/12/06 16:00:07 abs Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mfb.c,v 1.60 2018/01/24 05:35:58 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mfb.c,v 1.64 2021/12/06 16:00:07 abs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -237,13 +237,7 @@ mfbattach(device_t parent, device_t self, void *aux)
 	}
 	else {
 		ri = malloc(sizeof(struct rasops_info),
-			M_DEVBUF, M_NOWAIT);
-		if (ri == NULL) {
-			printf(": can't alloc memory\n");
-			return;
-		}
-		memset(ri, 0, sizeof(struct rasops_info));
-
+			M_DEVBUF, M_WAITOK | M_ZERO);
 		ri->ri_hw = (void *)ta->ta_addr;
 		mfb_common_init(ri);
 		sc->sc_ri = ri;
@@ -268,7 +262,7 @@ mfbattach(device_t parent, device_t self, void *aux)
 	waa.accessops = &mfb_accessops;
 	waa.accesscookie = sc;
 
-	config_found(self, &waa, wsemuldisplaydevprint);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static void
@@ -332,6 +326,11 @@ mfbioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSDISPLAYIO_GTYPE:
 		*(u_int *)data = WSDISPLAY_TYPE_MFB;
 		return (0);
+
+	case WSDISPLAYIO_GET_FBINFO: {
+		struct wsdisplayio_fbinfo *fbi = data;
+		return wsdisplayio_get_fbinfo(sc->sc_ri, fbi);
+	}
 
 	case WSDISPLAYIO_GINFO:
 #define	wsd_fbip ((struct wsdisplay_fbinfo *)data)

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_crashme.c,v 1.2 2019/01/13 00:11:29 tnn Exp $	*/
+/*	$NetBSD: kern_crashme.c,v 1.5 2021/11/27 14:11:14 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2018, 2019 Matthew R. Green
@@ -29,12 +29,16 @@
  */
 
 /*
- * kern_crashme.c:  special debugging routines only enabled in DEBUG
- * enabled kernels, designed for debugging kernel crashes.
+ * kern_crashme.c:  special debugging routines, designed for debugging
+ * kernel crashes.
  *
  * supports crashme sysctl nodes, to test various ways the system can
  * panic or crash.  you can add and remove nodes.
  */
+
+#ifdef _KERNEL_OPT
+#include "opt_ddb.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/sysctl.h>
@@ -44,6 +48,10 @@
 #include <sys/mutex.h>
 #include <sys/crashme.h>
 
+#ifdef DDB
+#include <ddb/ddb.h>
+#endif
+
 #define DPRINTF(fmt, ...) \
 	printf("%s:%d: " fmt "\n", __func__, __LINE__, ## __VA_ARGS__)
 
@@ -51,6 +59,10 @@ static int crashme_sysctl_forwarder(SYSCTLFN_PROTO);
 
 static int crashme_panic(int);
 static int crashme_null_deref(int);
+static int crashme_null_jump(int);
+#ifdef DDB
+static int crashme_ddb(int);
+#endif
 
 #define CMNODE(name, lname, func)	\
     {					\
@@ -62,6 +74,10 @@ static int crashme_null_deref(int);
 static crashme_node nodes[] = {
     CMNODE("panic", "plain old panic", crashme_panic),
     CMNODE("null_deref", "null dereference", crashme_null_deref),
+    CMNODE("null_jump", "jump to null", crashme_null_jump),
+#ifdef DDB
+    CMNODE("ddb", "enter ddb directly", crashme_ddb),
+#endif
 };
 static crashme_node *first_node;
 static kmutex_t crashme_lock;
@@ -234,3 +250,23 @@ crashme_null_deref(int flags)
 	*(volatile char *)0 = 0;
 	return -1;
 }
+
+static int
+crashme_null_jump(int flags)
+{
+	void (*volatile f)(int) = NULL;
+
+	(*f)(flags);
+	/* make sure to have a nontrivial return address here */
+	return -1;
+}
+
+#ifdef DDB
+static int
+crashme_ddb(int flags)
+{
+
+	Debugger();
+	return 0;
+}
+#endif

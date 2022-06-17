@@ -1,4 +1,4 @@
-/*	$NetBSD: if_xe.c,v 1.25 2019/04/25 08:31:33 msaitoh Exp $	*/
+/*	$NetBSD: if_xe.c,v 1.27 2020/11/21 17:49:20 thorpej Exp $	*/
 /*
  * Copyright (c) 1998 Darrin B. Jewell
  * All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xe.c,v 1.25 2019/04/25 08:31:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xe.c,v 1.27 2020/11/21 17:49:20 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_xe.c,v 1.25 2019/04/25 08:31:33 msaitoh Exp $");
 #include <sys/syslog.h>
 #include <sys/socket.h>
 #include <sys/device.h>
+#include <sys/kmem.h>
 
 #include <net/if.h>
 #include <net/if_ether.h>
@@ -205,11 +206,7 @@ findchannel_defer(device_t self)
 	 * the  2000 covers at least a 1500 mtu + headers
 	 * + DMA_BEGINALIGNMENT+ DMA_ENDALIGNMENT
 	 */
-	xsc->sc_txbuf = malloc(2000, M_DEVBUF, M_NOWAIT);
-	if (!xsc->sc_txbuf)
-		panic("%s: can't malloc tx DMA buffer",
-		    device_xname(sc->sc_dev));
-	
+	xsc->sc_txbuf = kmem_alloc(2000, KM_SLEEP);
 	xsc->sc_tx_mb_head = NULL;
 	xsc->sc_tx_loaded = 0;
 	

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_motorola.c,v 1.71 2018/09/03 16:29:25 riastradh Exp $        */
+/*	$NetBSD: pmap_motorola.c,v 1.76 2022/04/16 18:15:21 andvar Exp $        */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -119,7 +119,7 @@
 #include "opt_m68k_arch.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap_motorola.c,v 1.71 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_motorola.c,v 1.76 2022/04/16 18:15:21 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -276,7 +276,7 @@ TAILQ_HEAD(pv_page_list, pv_page) pv_page_freelist;
 int		pv_nfree;
 
 #ifdef CACHE_HAVE_VAC
-u_int		pmap_aliasmask;	/* seperation at which VA aliasing ok */
+u_int		pmap_aliasmask;	/* separation at which VA aliasing ok */
 #endif
 #if defined(M68040) || defined(M68060)
 u_int		protostfree;	/* prototype (default) free ST map */
@@ -696,7 +696,7 @@ pmap_destroy(pmap_t pmap)
 /*
  * pmap_release:
  *
- *	Relese the resources held by a pmap.
+ *	Release the resources held by a pmap.
  *
  *	Note: THIS FUNCTION SHOULD BE MOVED INTO pmap_destroy().
  */
@@ -1667,7 +1667,11 @@ pmap_collect1(pmap_t pmap, paddr_t startpa, paddr_t endpa)
 		 * ST and Sysptmap entries.
 		 */
 
-		(void) pmap_extract(pmap, pv->pv_va, &kpa);
+		if (!pmap_extract(pmap, pv->pv_va, &kpa)) {
+			printf("collect: freeing KPT page at %lx (ste %x@%p)\n",
+			    pv->pv_va, *pv->pv_ptste, pv->pv_ptste);
+			panic("pmap_collect: mapping not found");
+		}
 		pmap_remove_mapping(pmap, pv->pv_va, NULL,
 		    PRM_TFLUSH|PRM_CFLUSH, NULL);
 
@@ -2105,9 +2109,9 @@ pmap_remove_mapping(pmap_t pmap, vaddr_t va, pt_entry_t *pte, int flags,
 #endif
 			pmap_remove_mapping(pmap_kernel(), ptpva,
 			    NULL, PRM_TFLUSH|PRM_CFLUSH, NULL);
-			mutex_enter(uvm_kernel_object->vmobjlock);
+			rw_enter(uvm_kernel_object->vmobjlock, RW_WRITER);
 			uvm_pagefree(PHYS_TO_VM_PAGE(ptppa));
-			mutex_exit(uvm_kernel_object->vmobjlock);
+			rw_exit(uvm_kernel_object->vmobjlock);
 			PMAP_DPRINTF(PDB_REMOVE|PDB_PTPAGE,
 			    ("remove: PT page 0x%lx (0x%lx) freed\n",
 			    ptpva, ptppa));
@@ -2364,7 +2368,7 @@ pmap_changebit(paddr_t pa, int set, int mask)
 	pvh->pvh_attrs &= mask;
 
 	/*
-	 * Loop over all current mappings setting/clearing as appropos
+	 * Loop over all current mappings setting/clearing as appropriate
 	 * If setting RO do we need to clear the VAC?
 	 */
 
@@ -2576,15 +2580,15 @@ pmap_enter_ptpage(pmap_t pmap, vaddr_t va, bool can_fail)
 		pmap->pm_sref++;
 		PMAP_DPRINTF(PDB_ENTER|PDB_PTPAGE,
 		    ("enter: about to alloc UPT pg at %lx\n", va));
-		mutex_enter(uvm_kernel_object->vmobjlock);
+		rw_enter(uvm_kernel_object->vmobjlock, RW_WRITER);
 		while ((pg = uvm_pagealloc(uvm_kernel_object,
 					   va - vm_map_min(kernel_map),
 					   NULL, UVM_PGA_ZERO)) == NULL) {
-			mutex_exit(uvm_kernel_object->vmobjlock);
+			rw_exit(uvm_kernel_object->vmobjlock);
 			uvm_wait("ptpage");
-			mutex_enter(uvm_kernel_object->vmobjlock);
+			rw_enter(uvm_kernel_object->vmobjlock, RW_WRITER);
 		}
-		mutex_exit(uvm_kernel_object->vmobjlock);
+		rw_exit(uvm_kernel_object->vmobjlock);
 		pg->flags &= ~(PG_BUSY|PG_FAKE);
 		UVM_PAGE_OWN(pg, NULL);
 		ptpa = VM_PAGE_TO_PHYS(pg);
@@ -2695,13 +2699,13 @@ pmap_ptpage_addref(vaddr_t ptpva)
 {
 	struct vm_page *pg;
 
-	mutex_enter(uvm_kernel_object->vmobjlock);
+	rw_enter(uvm_kernel_object->vmobjlock, RW_WRITER);
 	pg = uvm_pagelookup(uvm_kernel_object, ptpva - vm_map_min(kernel_map));
 	pg->wire_count++;
 	PMAP_DPRINTF(PDB_ENTER|PDB_PTPAGE|PDB_SEGTAB,
 	    ("ptpage addref: pg %p now %d\n",
 	     pg, pg->wire_count));
-	mutex_exit(uvm_kernel_object->vmobjlock);
+	rw_exit(uvm_kernel_object->vmobjlock);
 }
 
 /*
@@ -2715,13 +2719,13 @@ pmap_ptpage_delref(vaddr_t ptpva)
 	struct vm_page *pg;
 	int rv;
 
-	mutex_enter(uvm_kernel_object->vmobjlock);
+	rw_enter(uvm_kernel_object->vmobjlock, RW_WRITER);
 	pg = uvm_pagelookup(uvm_kernel_object, ptpva - vm_map_min(kernel_map));
 	rv = --pg->wire_count;
 	PMAP_DPRINTF(PDB_ENTER|PDB_PTPAGE|PDB_SEGTAB,
 	    ("ptpage delref: pg %p now %d\n",
 	     pg, pg->wire_count));
-	mutex_exit(uvm_kernel_object->vmobjlock);
+	rw_exit(uvm_kernel_object->vmobjlock);
 	return rv;
 }
 

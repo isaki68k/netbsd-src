@@ -1,4 +1,4 @@
-/* $NetBSD: spi.c,v 1.12 2019/08/13 16:37:15 tnn Exp $ */
+/* $NetBSD: spi.c,v 1.26 2022/05/17 05:05:20 andvar Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.12 2019/08/13 16:37:15 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.26 2022/05/17 05:05:20 andvar Exp $");
 
 #include "locators.h"
 
@@ -62,6 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.12 2019/08/13 16:37:15 tnn Exp $");
 #include "locators.h"
 
 struct spi_softc {
+	device_t		sc_dev;
 	struct spi_controller	sc_controller;
 	int			sc_mode;
 	int			sc_speed;
@@ -70,6 +71,7 @@ struct spi_softc {
 	struct spi_handle	*sc_slaves;
 	kmutex_t		sc_lock;
 	kcondvar_t		sc_cv;
+	kmutex_t		sc_dev_lock;
 	int			sc_flags;
 #define SPIC_BUSY		1
 };
@@ -90,7 +92,7 @@ const struct cdevsw spi_cdevsw = {
 	.d_mmap = nommap,
 	.d_kqfilter = nokqfilter,
 	.d_discard = nodiscard,
-	.d_flag = D_OTHER
+	.d_flag = D_OTHER | D_MPSAFE
 };
 
 /*
@@ -158,9 +160,9 @@ spi_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	if (ISSET(sa.sa_handle->sh_flags, SPIH_ATTACHED))
 		return -1;
 
-	if (config_match(parent, cf, &sa) > 0) {
+	if (config_probe(parent, cf, &sa)) {
 		SET(sa.sa_handle->sh_flags, SPIH_ATTACHED);
-		config_attach(parent, cf, &sa, spi_print);
+		config_attach(parent, cf, &sa, spi_print, CFARGS_NONE);
 	}
 
 	return 0;
@@ -239,17 +241,18 @@ spi_direct_attach_child_devices(device_t parent, struct spi_softc *sc,
 
 		memset(&sa, 0, sizeof sa);
 		sa.sa_handle = &sc->sc_slaves[i];
+		sa.sa_prop = child;
+		sa.sa_cookie = cookie;
 		if (ISSET(sa.sa_handle->sh_flags, SPIH_ATTACHED))
 			continue;
 		SET(sa.sa_handle->sh_flags, SPIH_ATTACHED);
 
 		buf = NULL;
 		spi_fill_compat(&sa,
-				prop_data_data_nocopy(cdata),
+				prop_data_value(cdata),
 				prop_data_size(cdata), &buf);
-		(void) config_found_sm_loc(parent, "spi",
-					   loc, &sa, spi_print,
-					   NULL);
+		config_found(parent, &sa, spi_print,
+		    CFARGS(.locators = loc));
 
 		if (sa.sa_compat)
 			free(sa.sa_compat, M_TEMP);
@@ -264,9 +267,17 @@ spi_compatible_match(const struct spi_attach_args *sa, const cfdata_t cf,
 {
 	if (sa->sa_ncompat > 0)
 		return device_compatible_match(sa->sa_compat, sa->sa_ncompat,
-					       compats, NULL);
+					       compats);
 
 	return 1;
+}
+
+const struct device_compatible_entry *
+spi_compatible_lookup(const struct spi_attach_args *sa,
+    const struct device_compatible_entry *compats)
+{
+	return device_compatible_lookup(sa->sa_compat, sa->sa_ncompat,
+					compats);
 }
 
 /*
@@ -285,9 +296,11 @@ spi_attach(device_t parent, device_t self, void *aux)
 	aprint_naive(": SPI bus\n");
 	aprint_normal(": SPI bus\n");
 
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_BIO);
+	mutex_init(&sc->sc_dev_lock, MUTEX_DEFAULT, IPL_NONE);
+	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 	cv_init(&sc->sc_cv, "spictl");
 
+	sc->sc_dev = self;
 	sc->sc_controller = *sba->sba_controller;
 	sc->sc_nslaves = sba->sba_controller->sct_nslaves;
 	/* allocate slave structures */
@@ -312,7 +325,8 @@ spi_attach(device_t parent, device_t self, void *aux)
 		spi_direct_attach_child_devices(self, sc, sba->sba_child_devices);
 	}
 	/* Then do any other devices the user may have manually wired */
-	config_search_ia(spi_search, self, "spi", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = spi_search));
 }
 
 static int
@@ -346,6 +360,8 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 	if (sc == NULL)
 		return ENXIO;
 
+	mutex_enter(&sc->sc_dev_lock);
+
 	switch (cmd) {
 	case SPI_IOCTL_CONFIGURE:
 		sic = (spi_ioctl_configure_t *)data;
@@ -354,7 +370,8 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 			break;
 		}
 		sh = &sc->sc_slaves[sic->sic_addr];
-		error = spi_configure(sh, sic->sic_mode, sic->sic_speed);
+		error = spi_configure(sc->sc_dev, sh, sic->sic_mode,
+		    sic->sic_speed);
 		break;
 	case SPI_IOCTL_TRANSFER:
 		sit = (spi_ioctl_transfer_t *)data;
@@ -363,7 +380,7 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 			break;
 		}
 		if ((sit->sit_send && sit->sit_sendlen == 0)
-		    || (sit->sit_recv && sit->sit_recv == 0)) {
+		    || (sit->sit_recv && sit->sit_recvlen == 0)) {
 			error = EINVAL;
 			break;
 		}
@@ -404,6 +421,8 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 		break;
 	}
 
+	mutex_exit(&sc->sc_dev_lock);
+
 	return error;
 }
 
@@ -420,11 +439,14 @@ CFATTACH_DECL_NEW(spi, sizeof(struct spi_softc),
  * returned.
  */
 int
-spi_configure(struct spi_handle *sh, int mode, int speed)
+spi_configure(device_t dev __unused, struct spi_handle *sh, int mode, int speed)
 {
 
 	sh->sh_mode = mode;
 	sh->sh_speed = speed;
+
+	/* No need to report errors; no failures. */
+
 	return 0;
 }
 
@@ -461,7 +483,7 @@ void
 spi_transfer_init(struct spi_transfer *st)
 {
 
-	mutex_init(&st->st_lock, MUTEX_DEFAULT, IPL_BIO);
+	mutex_init(&st->st_lock, MUTEX_DEFAULT, IPL_VM);
 	cv_init(&st->st_cv, "spixfr");
 
 	st->st_flags = 0;
@@ -522,7 +544,7 @@ spi_transfer(struct spi_handle *sh, struct spi_transfer *st)
 	spi_acquire(sh);
 
 	st->st_spiprivate = (void *)sh;
-	
+
 	/*
 	 * Reconfigure controller
 	 *
@@ -593,7 +615,7 @@ spi_done(struct spi_transfer *st, int err)
  *
  * spi_send_recv - sends data to the bus, and then receives.  Note that this is
  * done synchronously, i.e. send a command and get the response.  This is
- * not full duplex.  If you wnat full duplex, you can't use these convenience
+ * not full duplex.  If you want full duplex, you can't use these convenience
  * wrappers.
  */
 int
@@ -658,4 +680,3 @@ spi_send_recv(struct spi_handle *sh, int scnt, const uint8_t *snd,
 
 	return 0;
 }
-

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_gpio.c,v 1.16 2019/10/12 09:46:18 mlelstv Exp $	*/
+/*	$NetBSD: bcm2835_gpio.c,v 1.24 2022/01/17 19:38:14 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2013, 2014, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.16 2019/10/12 09:46:18 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.24 2022/01/17 19:38:14 thorpej Exp $");
 
 /*
  * Driver for BCM2835 GPIO
@@ -150,7 +150,7 @@ static struct fdtbus_gpio_controller_func bcmgpio_funcs = {
 };
 
 static void *	bcmgpio_fdt_intr_establish(device_t, u_int *, int, int,
-		    int (*func)(void *), void *);
+		    int (*func)(void *), void *, const char *);
 static void	bcmgpio_fdt_intr_disestablish(device_t, void *);
 static bool	bcmgpio_fdt_intrstr(device_t, u_int *, char *, size_t);
 
@@ -196,7 +196,7 @@ bcm283x_pinctrl_set_config(device_t dev, const void *data, size_t len)
 	const u_int *func = fdtbus_get_prop(phandle, "brcm,function", &func_len);
 
 	if (!pull && !func) {
-		aprint_error_dev(dev, "one of brcm,pull or brcm,funcion must "
+		aprint_error_dev(dev, "one of brcm,pull or brcm,function must "
 		    "be specified");
 		return -1;
 	}
@@ -238,18 +238,19 @@ bcm283x_pinctrl_set_config(device_t dev, const void *data, size_t len)
 	return 0;
 }
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-gpio" },
+	{ .compat = "brcm,bcm2838-gpio" },
+	{ .compat = "brcm,bcm2711-gpio" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 bcmgpio_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"brcm,bcm2835-gpio",
-		"brcm,bcm2838-gpio",
-		"brcm,bcm2711-gpio",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -336,12 +337,14 @@ bcmgpio_attach(device_t parent, device_t self, void *aux)
 			continue;
 		}
 
+		char xname[16];
+		snprintf(xname, sizeof(xname), "%s #%u", device_xname(self),
+		    bank);
 		sc->sc_banks[bank].sc_bankno = bank;
 		sc->sc_banks[bank].sc_bcm = sc;
-		sc->sc_banks[bank].sc_ih =
-		    fdtbus_intr_establish(phandle, bank, IPL_VM,
-		    			  FDT_INTR_MPSAFE,
-					  bcmgpio_intr, &sc->sc_banks[bank]);
+		sc->sc_banks[bank].sc_ih = fdtbus_intr_establish_xname(phandle,
+		    bank, IPL_VM, FDT_INTR_MPSAFE, bcmgpio_intr,
+		    &sc->sc_banks[bank], xname);
 		if (sc->sc_banks[bank].sc_ih) {
 			aprint_normal_dev(self,
 			    "pins %d..%d interrupting on %s\n",
@@ -380,7 +383,8 @@ bcmgpio_attach(device_t parent, device_t self, void *aux)
 	gba.gba_gc = &sc->sc_gpio_gc;
 	gba.gba_pins = &sc->sc_gpio_pins[0];
 	gba.gba_npins = sc->sc_maxpins;
-	(void) config_found_ia(self, "gpiobus", &gba, gpiobus_print);
+	config_found(self, &gba, gpiobus_print,
+	    CFARGS(.devhandle = device_handle(self)));
 }
 
 /* GPIO interrupt support functions */
@@ -567,7 +571,7 @@ bcmgpio_intr_disable(struct bcmgpio_softc *sc, struct bcmgpio_eint *eint)
 
 static void *
 bcmgpio_fdt_intr_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct bcmgpio_softc * const sc = device_private(dev);
 	int eint_flags = (flags & FDT_INTR_MPSAFE) ? BCMGPIO_INTR_MPSAFE : 0;
@@ -870,7 +874,7 @@ bcm2835gpio_gpio_pin_ctl(void *arg, int pin, int flags)
 	mutex_enter(&sc->sc_lock);
 	if (flags & (GPIO_PIN_OUTPUT|GPIO_PIN_INPUT)) {
 		if ((flags & GPIO_PIN_INPUT) != 0) {
-			/* for safety INPUT will overide output */
+			/* for safety INPUT will override output */
 			bcm283x_pin_setfunc(sc, pin, BCM2835_GPIO_IN);
 		} else {
 			bcm283x_pin_setfunc(sc, pin, BCM2835_GPIO_OUT);

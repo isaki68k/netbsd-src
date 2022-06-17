@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.88 2012/08/10 14:33:35 tsutsui Exp $	*/
+/*	$NetBSD: zs.c,v 1.91 2021/09/11 20:28:05 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.88 2012/08/10 14:33:35 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.91 2021/09/11 20:28:05 andvar Exp $");
 
 #include "opt_kgdb.h"
 
@@ -319,7 +319,8 @@ zs_attach(device_t parent, device_t self, void *aux)
 		 * Look for a child driver for this channel.
 		 * The child attach will setup the hardware.
 		 */
-		if (!config_found(self, (void *)&zsc_args, zs_print)) {
+		if (!config_found(self, (void *)&zsc_args, zs_print,
+		    CFARGS_NONE)) {
 			/* No sub-driver.  Just reset it. */
 			uint8_t reset = (channel == 0) ?
 				ZSWR9_A_RESET : ZSWR9_B_RESET;
@@ -446,7 +447,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag	/* bits per second */)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */

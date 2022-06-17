@@ -1,4 +1,4 @@
-/* $NetBSD: ipi_openpic.c,v 1.8 2016/05/26 17:38:05 macallan Exp $ */
+/* $NetBSD: ipi_openpic.c,v 1.10 2021/03/05 07:16:33 rin Exp $ */
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,9 +29,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipi_openpic.c,v 1.8 2016/05/26 17:38:05 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipi_openpic.c,v 1.10 2021/03/05 07:16:33 rin Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
+#endif
+
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/atomic.h>
@@ -103,7 +106,8 @@ openpic_send_ipi(cpuid_t target, uint32_t mesg)
 static void
 openpic_establish_ipi(int type, int level, void *ih_args)
 {
-	intr_establish(ipiops.ppc_ipi_vector, type, level, ipi_intr, ih_args);
+	intr_establish_xname(ipiops.ppc_ipi_vector, type, level, ipi_intr,
+	    ih_args, "openpic ipi");
 }
 
 #endif /*MULTIPROCESSOR*/

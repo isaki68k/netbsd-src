@@ -1,4 +1,4 @@
-/* $NetBSD: podulebus.c,v 1.29 2014/10/25 10:58:12 skrll Exp $ */
+/* $NetBSD: podulebus.c,v 1.34 2022/05/30 09:56:02 andvar Exp $ */
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -43,12 +43,12 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: podulebus.c,v 1.29 2014/10/25 10:58:12 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: podulebus.c,v 1.34 2022/05/30 09:56:02 andvar Exp $");
 
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/conf.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <uvm/uvm_extern.h>
 #include <machine/io.h>
@@ -399,7 +399,7 @@ podulescan(device_t dev)
  * Attach podulebus.
  * This probes all the podules and sets up the podules array with
  * information found in the podule headers.
- * After identifing all the podules, all the children of the podulebus
+ * After identifying all the podules, all the children of the podulebus
  * are probed and attached.
  */
   
@@ -484,7 +484,7 @@ podulebusattach(device_t parent, device_t self, void *aux)
 			/* Any old description is now wrong */
 			podules[loop].description[0] = 0;
 			if (value != 0xffff) {
-				printf("podule%d: ID overriden man=%04x prod=%04x\n",
+				printf("podule%d: ID overridden man=%04x prod=%04x\n",
 				    loop, podules[loop].manufacturer,
 				    podules[loop].product);
 				podules[loop].slottype = SLOT_POD;
@@ -492,8 +492,8 @@ podulebusattach(device_t parent, device_t self, void *aux)
 				pa.pa_ih = pa.pa_podule_number;
 				pa.pa_podule = &podules[loop];
 				pa.pa_iot = &podulebus_bs_tag;
-				config_found_sm_loc(self, "podulebus", NULL, &pa,
-				    podulebusprint, podulebussubmatch);
+				config_found(self, &pa, podulebusprint,
+				    CFARGS(.submatch = podulebussubmatch));
 				continue;
 			}
 			if (value == 0xffff) {
@@ -507,8 +507,8 @@ podulebusattach(device_t parent, device_t self, void *aux)
 			pa.pa_ih = pa.pa_podule_number;
 			pa.pa_podule = &podules[loop];
 			pa.pa_iot = &podulebus_bs_tag;
-			config_found_sm_loc(self, "podulebus", NULL, &pa,
-			    podulebusprint, podulebussubmatch);
+			config_found(self, &pa, podulebusprint,
+			    CFARGS(.submatch = podulebussubmatch));
 		}
 	}
 }
@@ -561,7 +561,7 @@ podulebus_shift_tag(bus_space_tag_t tag, u_int shift, bus_space_tag_t *tagp)
 	 */
 
 	/* XXX never freed, but podules are never detached anyway. */
-        *tagp = malloc(sizeof(struct bus_space), M_DEVBUF, M_WAITOK);
+        *tagp = kmem_alloc(sizeof(struct bus_space), KM_SLEEP);
 	**tagp = *tag;
 	(*tagp)->bs_cookie = (void *)shift;
 }

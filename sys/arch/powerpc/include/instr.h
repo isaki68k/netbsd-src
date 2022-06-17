@@ -1,4 +1,4 @@
-/*	$NetBSD: instr.h,v 1.8 2017/02/27 06:54:00 chs Exp $ */
+/*	$NetBSD: instr.h,v 1.11 2022/05/30 13:58:51 rin Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -135,11 +135,10 @@ union instr {
 		u_int	i_opcd:6;
 		u_int	i_rs:5;
 		u_int	i_ra:5;
-		u_int	i_rb:5;
 		int	i_sh1_5:5;
 		int	i_mb:6;
 		u_int	i_xo:3;
-		int	i_sh0:2;
+		int	i_sh0:1;
 		u_int	i_rc:1;
 	} i_md;
 
@@ -151,7 +150,6 @@ union instr {
 		u_int	i_rs:5;
 		u_int	i_ra:5;
 		u_int	i_rb:5;
-		int	i_sh:5;
 		int	i_mb:6;
 		u_int	i_xo:4;
 		u_int	i_rc:1;
@@ -320,6 +318,24 @@ union instr {
 #define OPC31_OR	0x1bc
 
 /*
+ * Opcode 31 sub-types (load/store multiple bytes)
+ */
+#define	OPC31_LWZX	0x017
+#define	OPC31_LWZUX	0x037
+#define	OPC31_STWX	0x097
+#define	OPC31_STWUX	0x0b7
+#define	OPC31_LHZX	0x117
+#define	OPC31_LHZUX	0x137
+#define	OPC31_LHAX	0x157
+#define	OPC31_LHAUX	0x177
+#define	OPC31_STHX	0x197
+#define	OPC31_STHUX	0x1b7
+#define	OPC31_LWBRX	0x216
+#define	OPC31_STWBRX	0x296
+#define	OPC31_LHBRX	0x316
+#define	OPC31_STHBRX	0x396
+
+/*
  * Opcode 59 sub-types:
  */
 
@@ -404,12 +420,6 @@ union instr {
 				 (((spr) & 0x3e0) << 6))
 #define	OPC_MFSPR_REG(o)	(((o) >> 21) & 0x1f)
 #define	OPC_MFSPR_P(o, spr)	(((o) & OPC_MFSPR_MASK) == OPC_MFSPR(spr))
-
-#define	OPC_MFMSR_CODE		0x7c0000a6
-#define	OPC_MFMSR_MASK		0xfc1fffff
-#define	OPC_MFMSR		OPC_MFMSR_CODE
-#define	OPC_MFMSR_REG(o)	(((o) >> 21) & 0x1f)
-#define	OPC_MFMSR_P(o)		(((o) & OPC_MFMSR_MASK) == OPC_MFMSR_CODE)
 
 /*
  * booke doesn't have lwsync even though gcc emits it so we have to emulate it.

@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.h,v 1.1 2013/04/28 12:11:26 kiyohara Exp $	*/
+/*	$NetBSD: intr.h,v 1.4 2021/09/24 08:07:40 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003 Wasabi Systems, Inc.
@@ -66,22 +66,14 @@
 
 #include <sys/queue.h>
 
-#if defined(_LKM)
-
-int	_splraise(int);
-int	_spllower(int);
-void	splx(int);
-
-#else	/* _LKM */
-
 #define PIC_MAXSOURCES		16
 #define PIC_MAXMAXSOURCES	16
 
+#define	_splraise	pic_splraise
+#define	_spllower	pic_spllower
+#define	splx		pic_splx
+
 #include <arm/pic/picvar.h>
-
-#endif /* _LKM */
-
-#define	splsoft()	_splraise(IPL_SOFT)
 
 typedef uint8_t ipl_t;
 typedef struct {

@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.60 2019/02/08 08:47:35 mrg Exp $	*/
+/*	$NetBSD: fd.c,v 1.64 2021/08/07 16:18:40 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.60 2019/02/08 08:47:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.64 2021/08/07 16:18:40 thorpej Exp $");
 
 #include "opt_ddb.h"
 
@@ -97,7 +97,7 @@ __KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.60 2019/02/08 08:47:35 mrg Exp $");
 #include <sys/disk.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/uio.h>
 #include <sys/syslog.h>
 #include <sys/queue.h>
@@ -431,7 +431,7 @@ fdcattach(device_t parent, device_t self, void *aux)
 			    type, fa.fa_drive);
 		else
 			fa.fa_deftype = NULL;		/* unknown */
-		(void)config_found(self, (void *)&fa, fdprint);
+		(void)config_found(self, (void *)&fa, fdprint, CFARGS_NONE);
 	}
 }
 
@@ -1397,12 +1397,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 			return EINVAL;
 		}
 
-		fd_formb = malloc(sizeof(struct ne7_fd_formb), 
-		    M_TEMP, M_NOWAIT);
-		if(fd_formb == 0)
-			return ENOMEM;
-		    
-
+		fd_formb = kmem_alloc(sizeof(*fd_formb), KM_SLEEP);
 		fd_formb->head = form_cmd->head;
 		fd_formb->cyl = form_cmd->cylinder;
 		fd_formb->transfer_rate = fd->sc_type->rate;
@@ -1426,7 +1421,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		}
 
 		error = fdformat(dev, fd_formb, l);
-		free(fd_formb, M_TEMP);
+		kmem_free(fd_formb, sizeof(*fd_formb));
 		return error;
 
 	case FDIOCGETOPTS:		/* get drive options */

@@ -1,4 +1,4 @@
-/* $NetBSD: conf.c,v 1.4 2018/11/15 23:52:33 jmcneill Exp $ */
+/* $NetBSD: conf.c,v 1.6 2022/04/24 06:49:38 mlelstv Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -33,6 +33,7 @@
 #include <lib/libsa/stand.h>
 #include <lib/libsa/ufs.h>
 #include <lib/libsa/dosfs.h>
+#include <lib/libsa/cd9660.h>
 #include <lib/libsa/tftp.h>
 #include <lib/libsa/nfs.h>
 #include <lib/libsa/net.h>
@@ -40,7 +41,7 @@
 
 struct devsw devsw[] = {
 	{ "efifile", efi_file_strategy, efi_file_open, efi_file_close, noioctl },
-	{ "efiblock", efi_block_strategy, efi_block_open, efi_block_close, noioctl },
+	{ "efiblock", efi_block_strategy, efi_block_open, efi_block_close, efi_block_ioctl },
 	{ "net", net_strategy, net_open, net_close, noioctl },
 };
 int ndevs = __arraycount(devsw);
@@ -55,6 +56,7 @@ struct fs_ops file_system[] = {
 	FS_OPS(ffsv1),
 	FS_OPS(ffsv2),
 	FS_OPS(dosfs),
+	FS_OPS(cd9660),
 };
 int nfsys = __arraycount(file_system);
 

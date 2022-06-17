@@ -1,4 +1,4 @@
-/*	$NetBSD: ralink_intr.c,v 1.5 2016/10/05 15:54:58 ryo Exp $	*/
+/*	$NetBSD: ralink_intr.c,v 1.7 2021/01/04 18:14:38 thorpej Exp $	*/
 /*-
  * Copyright (c) 2011 CradlePoint Technology, Inc.
  * All rights reserved.
@@ -29,14 +29,14 @@
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ralink_intr.c,v 1.5 2016/10/05 15:54:58 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ralink_intr.c,v 1.7 2021/01/04 18:14:38 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/intr.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <mips/locore.h>
@@ -267,11 +267,7 @@ ra_intr_establish(int intr, int (*func)(void *), void *arg, int priority)
 {
 	struct evbmips_intrhand *ih;
 
-	if ((ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT)) == NULL) {
-		KASSERTMSG(0, "%s: cannot malloc intrhand", __func__);
-		return NULL;
-	}
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = func;
 	ih->ih_arg = arg;
 	ih->ih_irq = intr;
@@ -314,7 +310,7 @@ ra_intr_disestablish(void *arg)
 
 	splx(s);
 
-	free(ih, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 /*

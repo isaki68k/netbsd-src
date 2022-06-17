@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_quota1.c,v 1.22 2016/06/20 00:52:04 dholland Exp $	*/
+/*	$NetBSD: ufs_quota1.c,v 1.25 2022/04/26 15:37:25 hannken Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1990, 1993, 1995
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_quota1.c,v 1.22 2016/06/20 00:52:04 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_quota1.c,v 1.25 2022/04/26 15:37:25 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -309,7 +309,9 @@ quota1_handle_cmd_quotaon(struct lwp *l, struct ufsmount *ump, int type,
 	struct dquot *dq;
 	int error;
 	struct pathbuf *pb;
-	struct nameidata nd;
+
+	if (type < 0 || type >= MAXQUOTAS)
+		return EINVAL;
 
 	if (ump->um_flags & UFS_QUOTA2) {
 		uprintf("%s: quotas v2 already enabled\n",
@@ -329,12 +331,11 @@ quota1_handle_cmd_quotaon(struct lwp *l, struct ufsmount *ump, int type,
 	if (pb == NULL) {
 		return ENOMEM;
 	}
-	NDINIT(&nd, LOOKUP, FOLLOW, pb);
-	if ((error = vn_open(&nd, FREAD|FWRITE, 0)) != 0) {
+	error = vn_open(NULL, pb, 0, FREAD|FWRITE, 0, &vp, NULL, NULL);
+	if (error != 0) {
 		pathbuf_destroy(pb);
 		return error;
 	}
-	vp = nd.ni_vp;
 	pathbuf_destroy(pb);
 
 	VOP_UNLOCK(vp);
@@ -421,6 +422,9 @@ quota1_handle_cmd_quotaoff(struct lwp *l, struct ufsmount *ump, int type)
 	kauth_cred_t cred;
 	int i, error;
 
+	if (type < 0 || type >= MAXQUOTAS)
+		return EINVAL;
+
 	mutex_enter(&dqlock);
 	while ((ump->umq1_qflags[type] & (QTF_CLOSING | QTF_OPENING)) != 0)
 		cv_wait(&dqcv, &dqlock);
@@ -429,7 +433,6 @@ quota1_handle_cmd_quotaoff(struct lwp *l, struct ufsmount *ump, int type)
 		return (0);
 	}
 	ump->umq1_qflags[type] |= QTF_CLOSING;
-	ump->um_flags &= ~UFS_QUOTA;
 	mutex_exit(&dqlock);
 	/*
 	 * Search vnodes associated with this mount point,
@@ -466,6 +469,8 @@ quota1_handle_cmd_quotaoff(struct lwp *l, struct ufsmount *ump, int type)
 		if (ump->um_quotas[i] != NULLVP)
 			break;
 	ump->umq1_qflags[type] &= ~QTF_CLOSING;
+	if (i == MAXQUOTAS)
+		ump->um_flags &= ~UFS_QUOTA;
 	cv_broadcast(&dqcv);
 	mutex_exit(&dqlock);
 	kauth_cred_free(cred);

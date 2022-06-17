@@ -1,4 +1,4 @@
-/*	$NetBSD: irframe_tty.c,v 1.63 2019/01/24 09:33:03 knakahara Exp $	*/
+/*	$NetBSD: irframe_tty.c,v 1.66 2022/05/24 20:50:19 andvar Exp $	*/
 
 /*
  * TODO
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: irframe_tty.c,v 1.63 2019/01/24 09:33:03 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: irframe_tty.c,v 1.66 2022/05/24 20:50:19 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -787,7 +787,7 @@ filt_irframetrdetach(struct knote *kn)
 	int s;
 
 	s = splir();
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	splx(s);
 }
 
@@ -809,7 +809,7 @@ filt_irframetwdetach(struct knote *kn)
 	int s;
 
 	s = splir();
-	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_wsel, kn);
 	splx(s);
 }
 
@@ -830,14 +830,14 @@ filt_irframetwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops irframetread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_irframetrdetach,
 	.f_event = filt_irframetread,
 };
 
 static const struct filterops irframetwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_irframetwdetach,
 	.f_event = filt_irframetwrite,
@@ -848,16 +848,16 @@ irframet_kqfilter(void *h, struct knote *kn)
 {
 	struct tty *tp = h;
 	struct irframet_softc *sc = (struct irframet_softc *)tp->t_sc;
-	struct klist *klist;
+	struct selinfo *sip;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
+		sip = &sc->sc_rsel;
 		kn->kn_fop = &irframetread_filtops;
 		break;
 	case EVFILT_WRITE:
-		klist = &sc->sc_wsel.sel_klist;
+		sip = &sc->sc_wsel;
 		kn->kn_fop = &irframetwrite_filtops;
 		break;
 	default:
@@ -867,7 +867,7 @@ irframet_kqfilter(void *h, struct knote *kn)
 	kn->kn_hook = tp;
 
 	s = splir();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(sip, kn);
 	splx(s);
 
 	return (0);
@@ -1138,7 +1138,7 @@ irts_litelink(struct tty *tp, u_int speed)
 /* Control register 1 */
 #define GIRBIL_TXEN      0x01 /* Enable transmitter */
 #define GIRBIL_RXEN      0x02 /* Enable receiver */
-#define GIRBIL_ECAN      0x04 /* Cancel self emmited data */
+#define GIRBIL_ECAN      0x04 /* Cancel self emitted data */
 #define GIRBIL_ECHO      0x08 /* Echo control characters */
 
 /* LED Current Register */

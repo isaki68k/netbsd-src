@@ -1,4 +1,4 @@
-/*	$NetBSD: hyperv.c,v 1.4 2019/06/03 09:51:04 nonaka Exp $	*/
+/*	$NetBSD: hyperv.c,v 1.15 2022/05/20 13:55:16 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2009-2012,2016-2017 Microsoft Corp.
@@ -29,11 +29,11 @@
  */
 
 /**
- * Implements low-level interactions with Hyper-V/Azuree
+ * Implements low-level interactions with Hyper-V/Azure
  */
 #include <sys/cdefs.h>
 #ifdef __KERNEL_RCSID
-__KERNEL_RCSID(0, "$NetBSD: hyperv.c,v 1.4 2019/06/03 09:51:04 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hyperv.c,v 1.15 2022/05/20 13:55:16 nonaka Exp $");
 #endif
 #ifdef __FBSDID
 __FBSDID("$FreeBSD: head/sys/dev/hyperv/vmbus/hyperv.c 331757 2018-03-30 02:25:12Z emaste $");
@@ -67,10 +67,11 @@ __FBSDID("$FreeBSD: head/sys/dev/hyperv/vmbus/hyperv.c 331757 2018-03-30 02:25:1
 #include <machine/cputypes.h>
 #include <machine/cpuvar.h>
 #include <machine/cpu_counter.h>
+#include <x86/apicvar.h>
 #include <x86/efi.h>
 
 #include <dev/wsfb/genfbvar.h>
-#include <arch/x86/include/genfb_machdep.h>
+#include <x86/genfb_machdep.h>
 
 #include <x86/x86/hypervreg.h>
 #include <x86/x86/hypervvar.h>
@@ -94,11 +95,16 @@ struct hyperv_hypercall_ctx {
 	paddr_t		hc_paddr;
 };
 
+struct hyperv_percpu_data {
+	int	pd_idtvec;
+};
+
 static struct hyperv_hypercall_ctx hyperv_hypercall_ctx;
 
-static u_int	hyperv_get_timecount(struct timecounter *);
+static char hyperv_hypercall_page[PAGE_SIZE]
+    __section(".text") __aligned(PAGE_SIZE) = { 0xcc };
 
-static u_int hyperv_ver_major;
+static u_int	hyperv_get_timecount(struct timecounter *);
 
 static u_int hyperv_features;		/* CPUID_HV_MSR_ */
 static u_int hyperv_recommends;
@@ -111,7 +117,7 @@ static char hyperv_features_str[256];
 static char hyperv_pm_features_str[256];
 static char hyperv_features3_str[256];
 
-static int hyperv_idtvec;
+uint32_t hyperv_vcpuid[MAXCPUS];
 
 static struct timecounter hyperv_timecounter = {
 	.tc_get_timecount = hyperv_get_timecount,
@@ -172,8 +178,10 @@ struct hyperv_ref_tsc {
 
 static struct hyperv_ref_tsc hyperv_ref_tsc;
 
+static u_int	hyperv_tsc_timecount(struct timecounter *);
+
 static struct timecounter hyperv_tsc_timecounter = {
-	.tc_get_timecount = NULL,	/* based on CPU vendor. */
+	.tc_get_timecount = hyperv_tsc_timecount,
 	.tc_counter_mask = 0xffffffff,
 	.tc_frequency = HYPERV_TIMER_FREQ,
 	.tc_name = "Hyper-V-TSC",
@@ -188,51 +196,45 @@ atomic_load_acq_int(volatile u_int *p)
 	return r;
 }
 
-#define HYPERV_TSC_TIMECOUNT(fence)					\
-static uint64_t								\
-hyperv_tc64_tsc_##fence(void)						\
-{									\
-	struct hyperv_reftsc *tsc_ref = hyperv_ref_tsc.tsc_ref;		\
-	uint32_t seq;							\
-									\
-	while ((seq = atomic_load_acq_int(&tsc_ref->tsc_seq)) != 0) {	\
-		uint64_t disc, ret, tsc;				\
-		uint64_t scale = tsc_ref->tsc_scale;			\
-		int64_t ofs = tsc_ref->tsc_ofs;				\
-									\
-		x86_##fence();						\
-		tsc = cpu_counter();					\
-									\
-		/* ret = ((tsc * scale) >> 64) + ofs */			\
-		__asm__ __volatile__ ("mulq %3" :			\
-		    "=d" (ret), "=a" (disc) :				\
-		    "a" (tsc), "r" (scale));				\
-		ret += ofs;						\
-									\
-		__insn_barrier();					\
-		if (tsc_ref->tsc_seq == seq)				\
-			return ret;					\
-									\
-		/* Sequence changed; re-sync. */			\
-	}								\
-	/* Fallback to the generic timecounter, i.e. rdmsr. */		\
-	return rdmsr(MSR_HV_TIME_REF_COUNT);				\
-}									\
-									\
-static u_int								\
-hyperv_tsc_timecount_##fence(struct timecounter *tc __unused)		\
-{									\
-									\
-	return hyperv_tc64_tsc_##fence();				\
+static uint64_t
+hyperv_tc64_tsc(void)
+{
+	struct hyperv_reftsc *tsc_ref = hyperv_ref_tsc.tsc_ref;
+	uint32_t seq;
+
+	while ((seq = atomic_load_acq_int(&tsc_ref->tsc_seq)) != 0) {
+		uint64_t disc, ret, tsc;
+		uint64_t scale = tsc_ref->tsc_scale;
+		int64_t ofs = tsc_ref->tsc_ofs;
+
+		tsc = cpu_counter();
+
+		/* ret = ((tsc * scale) >> 64) + ofs */
+		__asm__ __volatile__ ("mulq %3" :
+		    "=d" (ret), "=a" (disc) :
+		    "a" (tsc), "r" (scale));
+		ret += ofs;
+
+		__insn_barrier();
+		if (tsc_ref->tsc_seq == seq)
+			return ret;
+
+		/* Sequence changed; re-sync. */
+	}
+	/* Fallback to the generic timecounter, i.e. rdmsr. */
+	return rdmsr(MSR_HV_TIME_REF_COUNT);
 }
 
-HYPERV_TSC_TIMECOUNT(lfence);
-HYPERV_TSC_TIMECOUNT(mfence);
+static u_int
+hyperv_tsc_timecount(struct timecounter *tc __unused)
+{
+
+	return hyperv_tc64_tsc();
+}
 
 static bool
 hyperv_tsc_tcinit(void)
 {
-	hyperv_tc64_t tc64 = NULL;
 	uint64_t orig_msr, msr;
 
 	if ((hyperv_features &
@@ -240,24 +242,6 @@ hyperv_tsc_tcinit(void)
 	    (CPUID_HV_MSR_TIME_REFCNT | CPUID_HV_MSR_REFERENCE_TSC) ||
 	    (cpu_feature[0] & CPUID_SSE2) == 0)	/* SSE2 for mfence/lfence */
 		return false;
-
-	switch (cpu_vendor) {
-	case CPUVENDOR_AMD:
-		hyperv_tsc_timecounter.tc_get_timecount =
-		    hyperv_tsc_timecount_mfence;
-		tc64 = hyperv_tc64_tsc_mfence;
-		break;
-
-	case CPUVENDOR_INTEL:
-		hyperv_tsc_timecounter.tc_get_timecount =
-		    hyperv_tsc_timecount_lfence;
-		tc64 = hyperv_tc64_tsc_lfence;
-		break;
-
-	default:
-		/* Unsupport CPU vendors. */
-		return false;
-	}
 
 	hyperv_ref_tsc.tsc_ref = (void *)uvm_km_alloc(kernel_map,
 	    PAGE_SIZE, PAGE_SIZE, UVM_KMF_WIRED | UVM_KMF_ZERO);
@@ -281,14 +265,14 @@ hyperv_tsc_tcinit(void)
 	wrmsr(MSR_HV_REFERENCE_TSC, msr);
 
 	/* Install 64 bits timecounter method for other modules to use. */
-	hyperv_tc64 = tc64;
+	hyperv_tc64 = hyperv_tc64_tsc;
 
 	/* Register "enlightened" timecounter. */
 	tc_init(&hyperv_tsc_timecounter);
 
 	return true;
 }
-#endif
+#endif /* __amd64__ */
 
 static void
 delay_tc(unsigned int n)
@@ -495,12 +479,45 @@ hyperv_early_init(void)
 {
 	u_int features, pm_features, features3;
 	u_int maxleaf;
+	int i;
 
 	if (!hyperv_probe(&maxleaf, &features, &pm_features, &features3))
 		return;
 
 	if (features & CPUID_HV_MSR_TIME_REFCNT)
 		x86_delay = delay_func = delay_msr;
+
+	if (features & CPUID_HV_MSR_VP_INDEX) {
+		/* Save virtual processor id. */
+		hyperv_vcpuid[0] = rdmsr(MSR_HV_VP_INDEX);
+	} else {
+		/* Set virtual processor id to 0 for compatibility. */
+		hyperv_vcpuid[0] = 0;
+	}
+	for (i = 1; i < MAXCPUS; i++)
+		hyperv_vcpuid[i] = hyperv_vcpuid[0];
+}
+
+void
+hyperv_init_cpu(struct cpu_info *ci)
+{
+	u_int features, pm_features, features3;
+	u_int maxleaf;
+
+	if (!hyperv_probe(&maxleaf, &features, &pm_features, &features3))
+		return;
+
+	if (features & CPUID_HV_MSR_VP_INDEX)
+		hyperv_vcpuid[ci->ci_index] = rdmsr(MSR_HV_VP_INDEX);
+}
+
+uint32_t
+hyperv_get_vcpuid(cpuid_t cpu)
+{
+
+	if (cpu < MAXCPUS)
+		return hyperv_vcpuid[cpu];
+	return 0;
 }
 
 static bool
@@ -536,11 +553,8 @@ hyperv_init(void)
 
 #if NLAPIC > 0
 	if ((hyperv_features & CPUID_HV_MSR_TIME_FREQ) &&
-	    (hyperv_features3 & CPUID3_HV_TIME_FREQ)) {
-		extern uint32_t lapic_per_second;
-
+	    (hyperv_features3 & CPUID3_HV_TIME_FREQ))
 		lapic_per_second = rdmsr(MSR_HV_APIC_FREQUENCY);
-	}
 #endif
 
 	return hyperv_init_hypercall();
@@ -670,11 +684,7 @@ static void
 hyperv_hypercall_memfree(void)
 {
 
-	if (hyperv_hypercall_ctx.hc_addr != NULL) {
-		uvm_km_free(kernel_map, (vaddr_t)hyperv_hypercall_ctx.hc_addr,
-		    PAGE_SIZE, UVM_KMF_WIRED);
-		hyperv_hypercall_ctx.hc_addr = NULL;
-	}
+	hyperv_hypercall_ctx.hc_addr = NULL;
 }
 
 static bool
@@ -682,30 +692,9 @@ hyperv_init_hypercall(void)
 {
 	uint64_t hc, hc_orig;
 
-	hyperv_hypercall_ctx.hc_addr = (void *)uvm_km_alloc(kernel_map,
-	    PAGE_SIZE, PAGE_SIZE,
-	    UVM_KMF_WIRED | UVM_KMF_EXEC | (cold ? UVM_KMF_NOWAIT : 0));
-	if (hyperv_hypercall_ctx.hc_addr == NULL) {
-		aprint_error("Hyper-V: Hypercall page allocation failed\n");
-		return false;
-	}
-
-	memset(hyperv_hypercall_ctx.hc_addr, 0xcc, PAGE_SIZE);
-	wbinvd();
-	x86_flush();
-
-	/* The hypercall page must be both readable and executable */
-	uvm_km_protect(kernel_map, (vaddr_t)hyperv_hypercall_ctx.hc_addr,
-	    PAGE_SIZE, VM_PROT_READ | VM_PROT_EXECUTE);
-
-	if (!pmap_extract(pmap_kernel(), (vaddr_t)hyperv_hypercall_ctx.hc_addr,
-	    &hyperv_hypercall_ctx.hc_paddr)) {
-		aprint_error("Hyper-V: Hypercall page setup failed\n");
-		hyperv_hypercall_memfree();
-		/* Can't perform any Hyper-V specific actions */
-		vm_guest = VM_GUEST_VM;
-		return false;
-	}
+	hyperv_hypercall_ctx.hc_addr = hyperv_hypercall_page;
+	hyperv_hypercall_ctx.hc_paddr = vtophys((vaddr_t)hyperv_hypercall_page);
+	KASSERT(hyperv_hypercall_ctx.hc_paddr != 0);
 
 	/* Get the 'reserved' bits, which requires preservation. */
 	hc_orig = rdmsr(MSR_HV_HYPERCALL);
@@ -764,47 +753,83 @@ hyperv_send_eom(void)
 }
 
 void
-vmbus_init_interrupts_md(struct vmbus_softc *sc)
+vmbus_init_interrupts_md(struct vmbus_softc *sc, cpuid_t cpu)
 {
 	extern void Xintr_hyperv_hypercall(void);
+	struct vmbus_percpu_data *pd;
+	struct hyperv_percpu_data *hv_pd;
+	struct cpu_info *ci;
+	struct idt_vec *iv;
+	int hyperv_idtvec;
+	cpuid_t cpu0;
 
-	/*
-	 * All Hyper-V ISR required resources are setup, now let's find a
-	 * free IDT vector for Hyper-V ISR and set it up.
-	 */
-	mutex_enter(&cpu_lock);
-	hyperv_idtvec = idt_vec_alloc(APIC_LEVEL(NIPL), IDT_INTR_HIGH);
-	mutex_exit(&cpu_lock);
-	KASSERT(hyperv_idtvec > 0);
-	idt_vec_set(hyperv_idtvec, Xintr_hyperv_hypercall);
+	cpu0 = cpu_index(&cpu_info_primary);
+
+	if (cpu == cpu0 || idt_vec_is_pcpu()) {
+		/*
+		 * All Hyper-V ISR required resources are setup, now let's find a
+		 * free IDT vector for Hyper-V ISR and set it up.
+		 */
+		ci = cpu_lookup(cpu);
+		iv = &ci->ci_idtvec;
+		mutex_enter(&cpu_lock);
+		hyperv_idtvec = idt_vec_alloc(iv,
+		    APIC_LEVEL(NIPL), IDT_INTR_HIGH);
+		mutex_exit(&cpu_lock);
+		KASSERT(hyperv_idtvec > 0);
+		idt_vec_set(iv, hyperv_idtvec, Xintr_hyperv_hypercall);
+	} else {
+		pd = &sc->sc_percpu[cpu0];
+		hv_pd = pd->md_cookie;
+		KASSERT(hv_pd != NULL && hv_pd->pd_idtvec > 0);
+		hyperv_idtvec = hv_pd->pd_idtvec;
+	}
+
+	hv_pd = kmem_zalloc(sizeof(*hv_pd), KM_SLEEP);
+	hv_pd->pd_idtvec = hyperv_idtvec;
+	pd = &sc->sc_percpu[cpu];
+	pd->md_cookie = (void *)hv_pd;
 }
 
 void
-vmbus_deinit_interrupts_md(struct vmbus_softc *sc)
+vmbus_deinit_interrupts_md(struct vmbus_softc *sc, cpuid_t cpu)
 {
+	struct vmbus_percpu_data *pd;
+	struct hyperv_percpu_data *hv_pd;
+	struct cpu_info *ci;
+	struct idt_vec *iv;
 
-	if (hyperv_idtvec > 0) {
-		idt_vec_free(hyperv_idtvec);
-		hyperv_idtvec = 0;
+	pd = &sc->sc_percpu[cpu];
+	hv_pd = pd->md_cookie;
+	KASSERT(hv_pd != NULL);
+
+	if (cpu == cpu_index(&cpu_info_primary) ||
+	    idt_vec_is_pcpu()) {
+		ci = cpu_lookup(cpu);
+		iv = &ci->ci_idtvec;
+
+		if (hv_pd->pd_idtvec > 0) {
+			idt_vec_free(iv, hv_pd->pd_idtvec);
+		}
 	}
+
+	pd->md_cookie = NULL;
+	kmem_free(hv_pd, sizeof(*hv_pd));
 }
 
 void
 vmbus_init_synic_md(struct vmbus_softc *sc, cpuid_t cpu)
 {
+	extern void Xintr_hyperv_hypercall(void);
 	struct vmbus_percpu_data *pd;
+	struct hyperv_percpu_data *hv_pd;
 	uint64_t val, orig;
 	uint32_t sint;
+	int hyperv_idtvec;
 
 	pd = &sc->sc_percpu[cpu];
-
-	if (hyperv_features & CPUID_HV_MSR_VP_INDEX) {
-		/* Save virtual processor id. */
-		pd->vcpuid = rdmsr(MSR_HV_VP_INDEX);
-	} else {
-		/* Set virtual processor id to 0 for compatibility. */
-		pd->vcpuid = 0;
-	}
+	hv_pd = pd->md_cookie;
+	hyperv_idtvec = hv_pd->pd_idtvec;
 
 	/*
 	 * Setup the SynIC message.
@@ -999,14 +1024,6 @@ static struct genfb_mode_callback mode_cb;
 static bool
 x86_genfb_setmode(struct genfb_softc *sc, int newmode)
 {
-#if NGENFB > 0
-	switch (newmode) {
-	case WSDISPLAYIO_MODE_EMUL:
-		x86_genfb_mtrr_init(sc->sc_fboffset,
-		    sc->sc_height * sc->sc_stride);
-		break;
-	}
-#endif
 	return true;
 }
 
@@ -1102,6 +1119,9 @@ device_hyperv_register(device_t dev, void *aux)
 		if (memcmp(aa->aa_type, &hyperv_guid_video,
 		    sizeof(*aa->aa_type)) == 0) {
 			prop_dictionary_t dict = device_properties(dev);
+
+			/* Initialize genfb for serial console */
+			x86_genfb_init();
 
 			/*
 			 * framebuffer drivers other than genfb can work

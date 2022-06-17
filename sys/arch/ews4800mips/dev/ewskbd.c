@@ -1,4 +1,4 @@
-/*	$NetBSD: ewskbd.c,v 1.10 2012/10/13 06:08:30 tsutsui Exp $	*/
+/*	$NetBSD: ewskbd.c,v 1.14 2021/09/18 15:14:40 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 2005 Izumi Tsutsui.  All rights reserved.
@@ -59,10 +59,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ewskbd.c,v 1.10 2012/10/13 06:08:30 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ewskbd.c,v 1.14 2021/09/18 15:14:40 tsutsui Exp $");
 
 #include <sys/param.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/device.h>
@@ -220,8 +220,8 @@ ewskbd_zsc_attach(device_t parent, device_t self, void *aux)
 	} else {
 		wskaa.console = 0;
 
-		sc->sc_dc = malloc(sizeof(struct ewskbd_devconfig), M_DEVBUF,
-		    M_WAITOK | M_ZERO);
+		sc->sc_dc = kmem_zalloc(sizeof(struct ewskbd_devconfig),
+		    KM_SLEEP);
 		if (sc->sc_dc == NULL) {
 			printf(": can't allocate memory\n");
 			return;
@@ -250,7 +250,8 @@ ewskbd_zsc_attach(device_t parent, device_t self, void *aux)
 	wskaa.keymap = &ews4800kbd_wskbd_keymapdata;
 	wskaa.accessops = &ewskbd_wskbd_accessops;
 	wskaa.accesscookie = cs;
-	sc->sc_dc->wskbddev = config_found(self, &wskaa, wskbddevprint);
+	sc->sc_dc->wskbddev = config_found(self, &wskaa, wskbddevprint,
+	    CFARGS_NONE);
 }
 
 static int
@@ -493,12 +494,7 @@ ewskbd_wskbd_ioctl(void *cookie, u_long cmd, void *data, int flag,
 		break;
 
 #ifdef notyet
-	case WSKBDIO_BELL:
 	case WSKBDIO_COMPLEXBELL:
-	case WSKBDIO_SETBELL:
-	case WSKBDIO_GETBELL:
-	case WSKBDIO_SETDEFAULTBELL:
-	case WSKBDIO_GETDEFAULTBELL:
 	case WSKBDIO_SETKEYREPEAT:
 	case WSKBDIO_GETKEYREPEAT:
 	case WSKBDIO_SETDEFAULTKEYREPEAT:

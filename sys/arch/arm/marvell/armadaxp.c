@@ -1,4 +1,4 @@
-/*	$NetBSD: armadaxp.c,v 1.21 2017/02/26 09:33:27 skrll Exp $	*/
+/*	$NetBSD: armadaxp.c,v 1.25 2022/05/31 11:22:33 andvar Exp $	*/
 /*******************************************************************************
 Copyright (C) Marvell International Ltd. and its affiliates
 
@@ -37,7 +37,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: armadaxp.c,v 1.21 2017/02/26 09:33:27 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: armadaxp.c,v 1.25 2022/05/31 11:22:33 andvar Exp $");
 
 #define _INTR_PRIVATE
 
@@ -86,7 +86,7 @@ bus_space_handle_t mpic_cpu_handle;
 static bus_space_handle_t mpic_handle, l2_handle;
 int l2cache_state = 0;
 int iocc_state = 0;
-#define read_miscreg(r)		(*(volatile uint32_t *)(misc_base + (r)))
+#define	read_miscreg(r)		le32toh(*(volatile uint32_t *)(misc_base + (r)))
 vaddr_t misc_base;
 vaddr_t armadaxp_l2_barrier_reg;
 
@@ -950,7 +950,7 @@ armadaxp_sdcache_wb_all(void)
 {
 	L2_WRITE(ARMADAXP_L2_WB_WAY, L2_ALL_WAYS);
 	L2_WRITE(ARMADAXP_L2_SYNC, 0);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 }
 
 void
@@ -958,7 +958,7 @@ armadaxp_sdcache_wbinv_all(void)
 {
 	L2_WRITE(ARMADAXP_L2_WBINV_WAY, L2_ALL_WAYS);
 	L2_WRITE(ARMADAXP_L2_SYNC, 0);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 }
 
 static paddr_t
@@ -984,7 +984,7 @@ armadaxp_sdcache_wbalign_base(vaddr_t va, paddr_t pa, psize_t sz)
 	memcpy((void *)save_start, save_buf, unalign);
 	L2_WRITE(ARMADAXP_L2_WB_PHYS, line_start);
 	L2_WRITE(ARMADAXP_L2_SYNC, 0);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 
 	return line_start;
 }
@@ -1012,7 +1012,7 @@ armadaxp_sdcache_wbalign_end(vaddr_t va, paddr_t pa, psize_t sz)
 	/* write back saved data */
 	memcpy((void *)save_start, save_buf, save_len);
 	L2_WRITE(ARMADAXP_L2_WB_PHYS, line_start);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 
 	return line_start;
 }
@@ -1050,13 +1050,13 @@ armadaxp_sdcache_wb_range(vaddr_t va, paddr_t pa, psize_t sz)
 		L2_WRITE(ARMADAXP_L2_WB_RANGE, pa_end);
 	}
 	L2_WRITE(ARMADAXP_L2_SYNC, 0);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 }
 
 void
 armadaxp_sdcache_wbinv_range(vaddr_t va, paddr_t pa, psize_t sz)
 {
-	paddr_t pa_base = pa & ~ARMADAXP_L2_ALIGN;;
+	paddr_t pa_base = pa & ~ARMADAXP_L2_ALIGN;
 	paddr_t pa_end  = (pa + sz - 1) & ~ARMADAXP_L2_ALIGN;
 
 	if (pa_base == pa_end)
@@ -1066,7 +1066,7 @@ armadaxp_sdcache_wbinv_range(vaddr_t va, paddr_t pa, psize_t sz)
 		L2_WRITE(ARMADAXP_L2_WBINV_RANGE, pa_end);
 	}
 	L2_WRITE(ARMADAXP_L2_SYNC, 0);
-	__asm__ __volatile__("dsb");
+	dsb(sy);
 }
 
 #ifdef AURORA_IO_CACHE_COHERENCY
@@ -1149,7 +1149,7 @@ armadaxp_init_mbus(void)
 		reg |= MVSOC_MLMB_WCR_TARGET(def->target);
 		reg |= MVSOC_MLMB_WCR_ATTR(def->attr);
 #ifdef AURORA_IO_CACHE_COHERENCY
-		reg |= MVSOC_MLMB_WCR_SYNC; /* enbale I/O coherency barrior */
+		reg |= MVSOC_MLMB_WCR_SYNC; /* enable I/O coherency barrier */
 #endif
 		reg |= MVSOC_MLMB_WCR_WINEN;
 		write_mlmbreg(MVSOC_MLMB_WCR(def->window), reg);

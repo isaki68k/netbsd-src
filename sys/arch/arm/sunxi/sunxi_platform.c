@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_platform.c,v 1.37 2019/06/17 05:27:01 mrg Exp $ */
+/* $NetBSD: sunxi_platform.c,v 1.45 2021/07/31 11:34:40 tnn Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.37 2019/06/17 05:27:01 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.45 2021/07/31 11:34:40 tnn Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -108,11 +108,9 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.37 2019/06/17 05:27:01 mrg Exp 
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 extern struct bus_space arm_generic_bs_tag;
-extern struct bus_space arm_generic_a4x_bs_tag;
 
 #define	sunxi_dma_tag		arm_generic_dma_tag
 #define	sunxi_bs_tag		arm_generic_bs_tag
-#define	sunxi_a4x_bs_tag	arm_generic_a4x_bs_tag
 
 static bus_space_handle_t reset_bsh;
 
@@ -177,13 +175,12 @@ static void
 sunxi_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &sunxi_bs_tag;
-	faa->faa_a4x_bst = &sunxi_a4x_bs_tag;
 	faa->faa_dmat = &sunxi_dma_tag;
 }
 
 void sunxi_platform_early_putchar(char);
 
-void
+void __noasan
 sunxi_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -207,33 +204,60 @@ sunxi_platform_device_register(device_t self, void *aux)
 
 	if (device_is_a(self, "rgephy")) {
 		/* Pine64+ and NanoPi NEO Plus2 gigabit ethernet workaround */
-		const char * compat[] = {
-			"pine64,pine64-plus",
-			"friendlyarm,nanopi-neo-plus2",
-			NULL
+		static const struct device_compatible_entry compat_data[] = {
+			{ .compat = "pine64,pine64-plus" },
+			{ .compat = "friendlyarm,nanopi-neo-plus2" },
+			DEVICE_COMPAT_EOL
 		};
-		if (of_match_compatible(OF_finddevice("/"), compat)) {
+		if (of_compatible_match(OF_finddevice("/"), compat_data)) {
 			prop_dictionary_set_bool(prop, "no-rx-delay", true);
 		}
 	}
 
 	if (device_is_a(self, "armgtmr")) {
 		/* Allwinner A64 has an unstable architectural timer */
-		const char * compat[] = {
-			"allwinner,sun50i-a64",
+		static const struct device_compatible_entry compat_data[] = {
+			{ .compat = "allwinner,sun50i-a64" },
 			/* Cubietruck Plus triggers this problem as well. */
-			"allwinner,sun8i-a83t",
-			NULL
+			{ .compat = "allwinner,sun8i-a83t" },
+			DEVICE_COMPAT_EOL
 		};
-		if (of_match_compatible(OF_finddevice("/"), compat)) {
+		if (of_compatible_match(OF_finddevice("/"), compat_data)) {
 			prop_dictionary_set_bool(prop, "sun50i-a64-unstable-timer", true);
 		}
 	}
 
-	if (device_is_a(self, "sunxidrm")) {
+	if (device_is_a(self, "sunxidrm") || device_is_a(self, "dwhdmi")) {
 		if (get_bootconf_option(boot_args, "nomodeset", BOOTOPT_TYPE_BOOLEAN, &val))
 			if (val)
 				prop_dictionary_set_bool(prop, "disabled", true);
+	}
+
+	if (device_is_a(self, "sun50ia64ccu0")) {
+		if (get_bootconf_option(boot_args, "nomodeset", BOOTOPT_TYPE_BOOLEAN, &val))
+			if (val)
+				prop_dictionary_set_bool(prop, "nomodeset", true);
+	}
+
+	if (device_is_a(self, "com")) {
+		static const struct device_compatible_entry compat_data[] = {
+			{ .compat = "allwinner,sun4i-a10",	.value = 64 },
+			{ .compat = "allwinner,sun5i-a13",	.value = 64 },
+			{ .compat = "allwinner,sun6i-a31",	.value = 64 },
+			{ .compat = "allwinner,sun7i-a20",	.value = 64 },
+			{ .compat = "allwinner,sun8i-h2-plus",	.value = 64 },
+			{ .compat = "allwinner,sun8i-h3",	.value = 64 },
+			{ .compat = "allwinner,sun8i-a83t",	.value = 64 },
+			{ .compat = "allwinner,sun9i-a80",	.value = 64 },
+			{ .compat = "allwinner,sun50i-a64",	.value = 64 },
+			{ .compat = "allwinner,sun50i-h5",	.value = 64 },
+			{ .compat = "allwinner,sun50i-h6",	.value = 256 },
+			DEVICE_COMPAT_EOL
+		};
+		const struct device_compatible_entry *dce =
+		    of_compatible_lookup(OF_finddevice("/"), compat_data);
+		if (dce != NULL)
+			prop_dictionary_set_uint(prop, "fifolen", dce->value);
 	}
 }
 

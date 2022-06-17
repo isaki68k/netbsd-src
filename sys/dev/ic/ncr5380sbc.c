@@ -1,4 +1,4 @@
-/*	$NetBSD: ncr5380sbc.c,v 1.67 2017/01/11 07:16:48 skrll Exp $	*/
+/*	$NetBSD: ncr5380sbc.c,v 1.69 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 David Jones, Gordon W. Ross
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ncr5380sbc.c,v 1.67 2017/01/11 07:16:48 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ncr5380sbc.c,v 1.69 2021/08/07 16:19:12 thorpej Exp $");
 
 #include "opt_ddb.h"
 
@@ -2588,7 +2588,7 @@ ncr5380_attach(struct ncr5380_softc *sc)
 	/*
 	 * Ask the adapter what subunits are present
 	 */
-	(void)config_found(sc->sc_dev, chan, scsiprint);
+	(void)config_found(sc->sc_dev, chan, scsiprint, CFARGS_NONE);
 	scsipi_adapter_delref(adapt);
 }
 

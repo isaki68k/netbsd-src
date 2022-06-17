@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_reconstruct.c,v 1.123 2019/10/10 03:43:59 christos Exp $	*/
+/*	$NetBSD: rf_reconstruct.c,v 1.127 2021/07/27 03:01:48 oster Exp $	*/
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
  * All rights reserved.
@@ -33,7 +33,7 @@
  ************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_reconstruct.c,v 1.123 2019/10/10 03:43:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_reconstruct.c,v 1.127 2021/07/27 03:01:48 oster Exp $");
 
 #include <sys/param.h>
 #include <sys/time.h>
@@ -145,18 +145,23 @@ struct RF_ReconDoneProc_s {
  *
  **************************************************************************/
 static void
-rf_ShutdownReconstruction(void *ignored)
+rf_ShutdownReconstruction(void *arg)
 {
-	pool_destroy(&rf_pools.reconbuffer);
+	RF_Raid_t *raidPtr;
+
+	raidPtr = (RF_Raid_t *) arg;
+	
+	pool_destroy(&raidPtr->pools.reconbuffer);
 }
 
 int
-rf_ConfigureReconstruction(RF_ShutdownList_t **listp)
+rf_ConfigureReconstruction(RF_ShutdownList_t **listp, RF_Raid_t *raidPtr,
+			   RF_Config_t *cfgPtr)
 {
 
-	rf_pool_init(&rf_pools.reconbuffer, sizeof(RF_ReconBuffer_t),
-		     "rf_reconbuffer_pl", RF_MIN_FREE_RECONBUFFER, RF_MAX_FREE_RECONBUFFER);
-	rf_ShutdownCreate(listp, rf_ShutdownReconstruction, NULL);
+	rf_pool_init(raidPtr, raidPtr->poolNames.reconbuffer, &raidPtr->pools.reconbuffer, sizeof(RF_ReconBuffer_t),
+		     "reconbuf", RF_MIN_FREE_RECONBUFFER, RF_MAX_FREE_RECONBUFFER);
+	rf_ShutdownCreate(listp, rf_ShutdownReconstruction, raidPtr);
 
 	return (0);
 }
@@ -443,12 +448,12 @@ rf_ReconstructInPlace(RF_Raid_t *raidPtr, RF_RowCol_t col)
 	if (pb == NULL) {
 		retcode = ENOMEM;
 	} else {
-		retcode = dk_lookup(pb, curlwp, &vp);
+		retcode = vn_bdev_openpath(pb, &vp, curlwp);
 		pathbuf_destroy(pb);
 	}
 
 	if (retcode) {
-		printf("raid%d: rebuilding: dk_lookup on device: %s failed: %d!\n",raidPtr->raidid,
+		printf("raid%d: rebuilding: open device: %s failed: %d!\n",raidPtr->raidid,
 		       raidPtr->Disks[col].devname, retcode);
 
 		/* the component isn't responding properly...
@@ -616,7 +621,7 @@ rf_ContinueReconstructFailedDisk(RF_RaidReconDesc_t *reconDesc)
 	mapPtr = raidPtr->reconControl->reconMap;
 
 	incPSID = RF_RECONMAP_SIZE;
-	lastPSID = raidPtr->Layout.numStripe / raidPtr->Layout.SUsPerPU;
+	lastPSID = raidPtr->Layout.numStripe / raidPtr->Layout.SUsPerPU - 1;
 	RUsPerPU = raidPtr->Layout.SUsPerPU / raidPtr->Layout.SUsPerRU;
 	recon_error = 0;
 	write_error = 0;
@@ -631,7 +636,7 @@ rf_ContinueReconstructFailedDisk(RF_RaidReconDesc_t *reconDesc)
 		raidPtr->reconControl->lastPSID = lastPSID;
 
 	if (pending_writes > lastPSID)
-		pending_writes = lastPSID;
+		pending_writes = lastPSID + 1;
 
 	/* start the actual reconstruction */
 
@@ -796,7 +801,6 @@ rf_ContinueReconstructFailedDisk(RF_RaidReconDesc_t *reconDesc)
 			pending_writes = lastPSID - prev;
 			raidPtr->reconControl->lastPSID = lastPSID;
 		}
-		
 		/* back down curPSID to get ready for the next round... */
 		for (i = 0; i < raidPtr->numCol; i++) {
 			if (i != col) {
@@ -1139,7 +1143,7 @@ ProcessReconEvent(RF_Raid_t *raidPtr, RF_ReconEvent_t *event)
 	default:
 		RF_PANIC();
 	}
-	rf_FreeReconEventDesc(event);
+	rf_FreeReconEventDesc(raidPtr, event);
 	return (retcode);
 }
 /*****************************************************************************
@@ -1309,7 +1313,7 @@ TryToRead(RF_Raid_t *raidPtr, RF_RowCol_t col)
 #else
 				     NULL,
 #endif
-				     (void *) raidPtr, 0, NULL, PR_WAITOK);
+				     (void *) raidPtr, 0, NULL);
 
 	ctrl->rbuf->arg = (void *) req;
 	rf_DiskIOEnqueue(&raidPtr->Queues[col], req, RF_IO_RECON_PRIORITY);
@@ -1497,7 +1501,7 @@ IssueNextWriteRequest(RF_Raid_t *raidPtr)
 #else
 				     NULL,
 #endif
-	    (void *) raidPtr, 0, NULL, PR_WAITOK);
+	    (void *) raidPtr, 0, NULL);
 
 	rbuf->arg = (void *) req;
 	rf_lock_mutex2(raidPtr->reconControl->rb_mutex);
@@ -1612,7 +1616,7 @@ CheckForNewMinHeadSep(RF_Raid_t *raidPtr, RF_HeadSepLimit_t hsCtr)
 			reconCtrlPtr->headSepCBList = p->next;
 			p->next = NULL;
 			rf_CauseReconEvent(raidPtr, p->col, NULL, RF_REVENT_HEADSEPCLEAR);
-			rf_FreeCallbackValueDesc(p);
+			rf_FreeCallbackValueDesc(raidPtr, p);
 		}
 
 	}
@@ -1663,7 +1667,7 @@ CheckHeadSeparation(RF_Raid_t *raidPtr, RF_PerDiskReconCtrl_t *ctrl,
 			 raidPtr->raidid, col, ctrl->headSepCounter,
 			 reconCtrlPtr->minHeadSepCounter,
 			 raidPtr->headSepLimit);
-		cb = rf_AllocCallbackValueDesc();
+		cb = rf_AllocCallbackValueDesc(raidPtr);
 		/* the minHeadSepCounter value we have to get to before we'll
 		 * wake up.  build in 20% hysteresis. */
 		cb->v = (ctrl->headSepCounter - raidPtr->headSepLimit + raidPtr->headSepLimit / 5);
@@ -1719,9 +1723,9 @@ CheckForcedOrBlockedReconstruction(RF_Raid_t *raidPtr,
 	else
 		if (pssPtr->flags & RF_PSS_RECON_BLOCKED) {
 			Dprintf3("RECON: col %d blocked at psid %ld ru %d\n", col, psid, which_ru);
-			cb = rf_AllocCallbackValueDesc();	/* append ourselves to
-							 * the blockage-wait
-							 * list */
+			cb = rf_AllocCallbackValueDesc(raidPtr);	/* append ourselves to
+									 * the blockage-wait
+									 * list */
 			cb->col = col;
 			cb->next = pssPtr->blockWaitList;
 			pssPtr->blockWaitList = cb;
@@ -1823,7 +1827,7 @@ rf_ForceOrBlockRecon(RF_Raid_t *raidPtr, RF_AccessStripeMap_t *asmap,
 					    psid, which_ru,
 					    ForceReconReadDoneProc,
 					    (void *) new_rbuf,
-					    NULL, (void *) raidPtr, 0, NULL, PR_WAITOK);
+					    NULL, (void *) raidPtr, 0, NULL);
 
 					new_rbuf->arg = req;
 					rf_DiskIOEnqueue(&raidPtr->Queues[diskno], req, RF_IO_NORMAL_PRIORITY);	/* enqueue the I/O */
@@ -1839,7 +1843,7 @@ rf_ForceOrBlockRecon(RF_Raid_t *raidPtr, RF_AccessStripeMap_t *asmap,
 	}
 	/* install a callback descriptor to be invoked when recon completes on
 	 * this parity stripe. */
-	cb = rf_AllocCallbackFuncDesc();
+	cb = rf_AllocCallbackFuncDesc(raidPtr);
 	cb->callbackFunc = cbFunc;
 	cb->callbackArg = cbArg;
 	cb->next = pssPtr->procWaitList;
@@ -1918,7 +1922,7 @@ rf_UnblockRecon(RF_Raid_t *raidPtr, RF_AccessStripeMap_t *asmap)
 			pssPtr->blockWaitList = cb->next;
 			cb->next = NULL;
 			rf_CauseReconEvent(raidPtr, cb->col, NULL, RF_REVENT_BLOCKCLEAR);
-			rf_FreeCallbackValueDesc(cb);
+			rf_FreeCallbackValueDesc(raidPtr, cb);
 		}
 		if (!(pssPtr->flags & RF_PSS_UNDER_RECON)) {
 			/* if no recon was requested while recon was blocked */
@@ -1949,7 +1953,7 @@ rf_WakeupHeadSepCBWaiters(RF_Raid_t *raidPtr)
 		raidPtr->reconControl->headSepCBList = p->next;
 		p->next = NULL;
 		rf_CauseReconEvent(raidPtr, p->col, NULL, RF_REVENT_HEADSEPCLEAR);
-		rf_FreeCallbackValueDesc(p);
+		rf_FreeCallbackValueDesc(raidPtr, p);
 	}
 	rf_lock_mutex2(raidPtr->reconControl->rb_mutex);
 	raidPtr->reconControl->rb_lock = 0;

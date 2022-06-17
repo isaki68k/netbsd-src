@@ -1,4 +1,4 @@
-/* $NetBSD: rk_pwm.c,v 1.2 2019/10/18 06:51:02 skrll Exp $ */
+/* $NetBSD: rk_pwm.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk_pwm.c,v 1.2 2019/10/18 06:51:02 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk_pwm.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -63,9 +63,9 @@ enum rk_pwm_type {
 	PWM_RK3288 = 1,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "rockchip,rk3288-pwm",	PWM_RK3288 },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3288-pwm",	.value = PWM_RK3288 },
+	DEVICE_COMPAT_EOL
 };
 
 struct rk_pwm_softc {
@@ -132,6 +132,10 @@ static int
 rk_pwm_get_config(pwm_tag_t pwm, struct pwm_config *conf)
 {
 	struct rk_pwm_softc * const sc = device_private(pwm->pwm_dev);
+
+#if 0
+	/* XXX may be useful someday */
+
 	uint32_t ctrl, period, duty;
 	u_int div;
 
@@ -153,6 +157,9 @@ rk_pwm_get_config(pwm_tag_t pwm, struct pwm_config *conf)
 	conf->polarity = (ctrl & CTRL_DUTY_POL) ? PWM_ACTIVE_HIGH : PWM_ACTIVE_LOW;
         conf->period = (u_int)(((uint64_t)period * 1000000000) / rate);
         conf->duty_cycle = (u_int)(((uint64_t)duty * 1000000000) / rate);
+#else
+	*conf = sc->sc_conf;
+#endif
 
 	return 0;
 }
@@ -191,7 +198,7 @@ rk_pwm_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

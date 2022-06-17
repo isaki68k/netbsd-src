@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.66 2018/12/19 13:57:51 maxv Exp $	*/
+/*	$NetBSD: locore.s,v 1.69 2022/03/16 20:31:02 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -470,9 +470,6 @@ GLOBAL(_isr_vectored)
 	INTERRUPT_RESTOREREG
 	jra	_ASM_LABEL(rei)
 
-#undef	INTERRUPT_SAVEREG
-#undef	INTERRUPT_RESTOREREG
-
 /* interrupt counters (needed by vmstat) */
 GLOBAL(intrnames)
 	.asciz	"spur"	| 0
@@ -488,7 +485,7 @@ GLOBAL(eintrnames)
 	.data
 	.even
 GLOBAL(intrcnt)
-	.long	0,0,0,0,0,0,0,0,0,0
+	.long	0,0,0,0,0,0,0,0
 GLOBAL(eintrcnt)
 	.text
 
@@ -512,7 +509,7 @@ GLOBAL(eintrcnt)
 
 ASGLOBAL(rei)
 #ifdef	DIAGNOSTIC
-	tstl	_C_LABEL(panicstr)	| have we paniced?
+	tstl	_C_LABEL(panicstr)	| have we panicked?
 	jne	Ldorte			| yes, do not make matters worse
 #endif
 	tstl	_C_LABEL(astpending)	| AST pending?

@@ -1,4 +1,4 @@
-/*	$NetBSD: meson8b-clkc.h,v 1.1.1.5 2019/05/25 11:29:13 jmcneill Exp $	*/
+/*	$NetBSD: meson8b-clkc.h,v 1.1.1.7 2021/11/07 16:49:59 jmcneill Exp $	*/
 
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
@@ -8,8 +8,6 @@
 #ifndef __MESON8B_CLKC_H
 #define __MESON8B_CLKC_H
 
-#define CLKID_UNUSED		0
-#define CLKID_XTAL		1
 #define CLKID_PLL_FIXED		2
 #define CLKID_PLL_VID		3
 #define CLKID_PLL_SYS		4
@@ -105,10 +103,18 @@
 #define CLKID_MPLL1		94
 #define CLKID_MPLL2		95
 #define CLKID_NAND_CLK		112
-#define CLKID_ABP		124
 #define CLKID_APB		124
 #define CLKID_PERIPH		126
 #define CLKID_AXI		128
 #define CLKID_L2_DRAM		130
+#define CLKID_HDMI_SYS		174
+#define CLKID_VPU		190
+#define CLKID_VDEC_1		196
+#define CLKID_VDEC_HCODEC	199
+#define CLKID_VDEC_2		202
+#define CLKID_VDEC_HEVC		206
+#define CLKID_CTS_AMCLK		209
+#define CLKID_CTS_MCLK_I958	212
+#define CLKID_CTS_I958		213
 
 #endif /* __MESON8B_CLKC_H */

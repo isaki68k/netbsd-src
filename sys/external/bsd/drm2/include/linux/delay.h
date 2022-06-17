@@ -1,4 +1,4 @@
-/*	$NetBSD: delay.h,v 1.5 2018/08/06 00:30:24 riastradh Exp $	*/
+/*	$NetBSD: delay.h,v 1.8 2021/12/19 09:43:49 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #include <sys/kernel.h>
 #include <sys/proc.h>
 
-#include <machine/param.h>
+#include <linux/kernel.h>
 
 #define	MAX_UDELAY_MS	5
 
@@ -67,7 +67,7 @@ static inline void
 msleep(unsigned int msec)
 {
 	if (cold ||
-	    ((hz < 1000) && (msec < (1000/hz))))
+	    ((hz < 1000) && (msec < (1000/(unsigned)hz))))
 		mdelay(msec);
 	else
 		(void)kpause("lnxmslep", false, mstohz(msec), NULL);

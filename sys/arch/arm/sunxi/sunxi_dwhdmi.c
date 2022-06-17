@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_dwhdmi.c,v 1.3 2019/02/02 17:35:16 jmcneill Exp $ */
+/* $NetBSD: sunxi_dwhdmi.c,v 1.11 2021/12/19 11:01:10 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,34 +27,34 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_dwhdmi.c,v 1.3 2019/02/02 17:35:16 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_dwhdmi.c,v 1.11 2021/12/19 11:01:10 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/conf.h>
+#include <sys/systm.h>
 
-#include <drm/drmP.h>
-
-#include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_port.h>
+#include <dev/fdt/fdtvar.h>
 
 #include <dev/ic/dw_hdmi.h>
 
 #include <arm/sunxi/sunxi_hdmiphy.h>
+
+#include <drm/drm_drv.h>
 
 enum {
 	DWHDMI_PORT_INPUT = 0,
 	DWHDMI_PORT_OUTPUT = 1,
 };
 
-static const char * const compatible[] = {
-	"allwinner,sun8i-h3-dw-hdmi",
-	"allwinner,sun50i-a64-dw-hdmi",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun8i-h3-dw-hdmi" },
+	{ .compat = "allwinner,sun50i-a64-dw-hdmi" },
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_dwhdmi_softc {
@@ -62,6 +62,7 @@ struct sunxi_dwhdmi_softc {
 	int			sc_phandle;
 	struct fdtbus_phy	*sc_phy;
 	struct fdtbus_regulator	*sc_regulator;
+	struct clk		*sc_clk;
 
 	struct fdt_device_ports	sc_ports;
 	struct drm_display_mode	sc_curmode;
@@ -101,13 +102,6 @@ sunxi_dwhdmi_ep_activate(device_t dev, struct fdt_endpoint *ep, bool activate)
 	if (encoder == NULL)
 		return EINVAL;
 
-	sc->sc_phy = fdtbus_phy_get(sc->sc_phandle, "hdmi-phy");
-	if (sc->sc_phy == NULL) {
-		device_printf(dev, "couldn't find hdmi-phy\n");
-		return ENXIO;
-	}
-
-	sc->sc_regulator = fdtbus_regulator_acquire(sc->sc_phandle, "hvcc-supply");
 	if (sc->sc_regulator != NULL) {
 		error = fdtbus_regulator_enable(sc->sc_regulator);
 		if (error != 0) {
@@ -189,20 +183,45 @@ sunxi_dwhdmi_disable(struct dwhdmi_softc *dsc)
 }
 
 static void
-sunxi_dwhdmi_mode_set(struct dwhdmi_softc *dsc, struct drm_display_mode *mode,
-    struct drm_display_mode *adjusted_mode)
+sunxi_dwhdmi_mode_set(struct dwhdmi_softc *dsc,
+    const struct drm_display_mode *mode,
+    const struct drm_display_mode *adjusted_mode)
 {
 	struct sunxi_dwhdmi_softc * const sc = to_sunxi_dwhdmi_softc(dsc);
+	int error;
+
+	if (sc->sc_clk != NULL) {
+		error = clk_set_rate(sc->sc_clk, adjusted_mode->clock * 1000);
+		if (error != 0)
+			device_printf(sc->sc_base.sc_dev,
+			    "couldn't set pixel clock to %u Hz: %d\n",
+			    adjusted_mode->clock * 1000, error);
+	}
 
 	sc->sc_curmode = *adjusted_mode;
 }
+
+static audio_dai_tag_t
+sunxi_dwhdmi_dai_get_tag(device_t dev, const void *data, size_t len)
+{
+	struct sunxi_dwhdmi_softc * const sc = device_private(dev);
+
+	if (len != 4)
+		return NULL;
+
+	return &sc->sc_base.sc_dai;
+}
+
+static struct fdtbus_dai_controller_func sunxi_dwhdmi_dai_funcs = {
+	.get_tag = sunxi_dwhdmi_dai_get_tag
+};
 
 static int
 sunxi_dwhdmi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -210,20 +229,22 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 {
 	struct sunxi_dwhdmi_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
+	prop_dictionary_t prop = device_properties(self);
 	const int phandle = faa->faa_phandle;
-	struct clk *clk_iahb, *clk_isfr;
+	struct clk *clk_iahb, *clk_isfr, *clk_tmds;
 	struct fdtbus_reset *rst;
+	bool is_disabled;
 	bus_addr_t addr;
 	bus_size_t size;
 
-	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
-		aprint_error(": couldn't get registers\n");
+	if (prop_dictionary_get_bool(prop, "disabled", &is_disabled) && is_disabled) {
+		aprint_naive("\n");
+		aprint_normal(": HDMI TX (disabled)\n");
 		return;
 	}
 
-	rst = fdtbus_reset_get(phandle, "ctrl");
-	if (rst == NULL || fdtbus_reset_deassert(rst) != 0) {
-		aprint_error(": couldn't de-assert reset\n");
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
+		aprint_error(": couldn't get registers\n");
 		return;
 	}
 
@@ -239,6 +260,12 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	clk_tmds = fdtbus_clock_get(phandle, "tmds");
+	if (clk_tmds == NULL || clk_enable(clk_tmds) != 0) {
+		aprint_error(": couldn't enable tmds clock\n");
+		return;
+	}
+
 	sc->sc_base.sc_dev = self;
 	sc->sc_base.sc_reg_width = 1;
 	sc->sc_base.sc_bst = faa->faa_bst;
@@ -250,10 +277,31 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_base.sc_enable = sunxi_dwhdmi_enable;
 	sc->sc_base.sc_disable = sunxi_dwhdmi_disable;
 	sc->sc_base.sc_mode_set = sunxi_dwhdmi_mode_set;
+	sc->sc_base.sc_scl_hcnt = 0xd8;
+	sc->sc_base.sc_scl_lcnt = 0xfe;
 	sc->sc_phandle = faa->faa_phandle;
+	sc->sc_clk = clk_tmds;
 
 	aprint_naive("\n");
 	aprint_normal(": HDMI TX\n");
+
+	sc->sc_regulator = fdtbus_regulator_acquire(sc->sc_phandle, "hvcc-supply");
+
+	sc->sc_phy = fdtbus_phy_get(sc->sc_phandle, "hdmi-phy");
+	if (sc->sc_phy == NULL)
+		sc->sc_phy = fdtbus_phy_get(sc->sc_phandle, "phy");
+	if (sc->sc_phy == NULL) {
+		device_printf(self, "couldn't find PHY\n");
+		return;
+	}
+
+	rst = fdtbus_reset_get(phandle, "ctrl");
+	if (rst == NULL || fdtbus_reset_deassert(rst) != 0) {
+		aprint_error_dev(self, "couldn't de-assert reset\n");
+		return;
+	}
+
+	sunxi_hdmiphy_init(sc->sc_phy);
 
 	if (dwhdmi_attach(&sc->sc_base) != 0) {
 		aprint_error_dev(self, "failed to attach driver\n");
@@ -263,6 +311,8 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ports.dp_ep_activate = sunxi_dwhdmi_ep_activate;
 	sc->sc_ports.dp_ep_get_data = sunxi_dwhdmi_ep_get_data;
 	fdt_ports_register(&sc->sc_ports, self, phandle, EP_DRM_BRIDGE);
+
+	fdtbus_register_dai_controller(self, phandle, &sunxi_dwhdmi_dai_funcs);
 }
 
 CFATTACH_DECL_NEW(sunxi_dwhdmi, sizeof(struct sunxi_dwhdmi_softc),

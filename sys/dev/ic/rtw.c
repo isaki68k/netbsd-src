@@ -1,4 +1,4 @@
-/* $NetBSD: rtw.c,v 1.133 2019/05/28 07:41:48 msaitoh Exp $ */
+/* $NetBSD: rtw.c,v 1.137 2021/11/10 16:17:34 msaitoh Exp $ */
 /*-
  * Copyright (c) 2004, 2005, 2006, 2007 David Young.  All rights
  * reserved.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtw.c,v 1.133 2019/05/28 07:41:48 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtw.c,v 1.137 2021/11/10 16:17:34 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -958,14 +958,7 @@ rtw_srom_read(struct rtw_regs *regs, uint32_t flags, struct rtw_srom *sr,
 
 	RTW_WRITE8(regs, RTW_9346CR, ecr);
 
-	sr->sr_content = malloc(sr->sr_size, M_DEVBUF, M_NOWAIT);
-
-	if (sr->sr_content == NULL) {
-		aprint_error_dev(dev, "unable to allocate SROM buffer\n");
-		return ENOMEM;
-	}
-
-	(void)memset(sr->sr_content, 0, sr->sr_size);
+	sr->sr_content = malloc(sr->sr_size, M_DEVBUF, M_WAITOK | M_ZERO);
 
 	/* RTL8180 has a single 8-bit register for controlling the
 	 * 93cx6 SROM.  There is no "ready" bit. The RTL8180
@@ -1179,7 +1172,7 @@ rtw_txdesc_blk_init_all(struct rtw_txdesc_blk *tdb)
 	 * descriptor in a single beacon interval, since that will
 	 * enable multiple-BSS support.  Since the NIC does not
 	 * clear the OWN bit, there is no natural place for it to
-	 * stop processing BEACON desciptors.  Maybe it will *not*
+	 * stop processing BEACON descriptors.  Maybe it will *not*
 	 * stop processing them!  I do not want to chance the NIC
 	 * looping around and around a saturated beacon ring, so
 	 * I will leave one descriptor unOWNed at all times.
@@ -1530,7 +1523,7 @@ rtw_intr_rx(struct rtw_softc *sc, uint16_t isr)
 			aprint_error_dev(sc->sc_dev,
 			    "DMA error/FIFO overflow %08" PRIx32 ", "
 			    "rx descriptor %d\n", hstat, next);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
@@ -1544,7 +1537,7 @@ rtw_intr_rx(struct rtw_softc *sc, uint16_t isr)
 			    "rx frame too long, %d > %d, %08" PRIx32
 			    ", desc %d\n",
 			    len, rs->rs_mbuf->m_len, hstat, next);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
@@ -1553,7 +1546,7 @@ rtw_intr_rx(struct rtw_softc *sc, uint16_t isr)
 			aprint_error_dev(sc->sc_dev,
 			    "unknown rate #%" __PRIuBITS "\n",
 			    __SHIFTOUT(hstat, RTW_RXSTAT_RATE_MASK));
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 		rate = ratetbl[hwrate];
@@ -1729,12 +1722,13 @@ rtw_collect_txpkt(struct rtw_softc *sc, struct rtw_txdesc_blk *tdb,
 	rts_retry = __SHIFTOUT(hstat, RTW_TXSTAT_RTSRETRY_MASK);
 	data_retry = __SHIFTOUT(hstat, RTW_TXSTAT_DRC_MASK);
 
-	ifp->if_collisions += rts_retry + data_retry;
+	if (rts_retry + data_retry)
+		if_statadd(ifp, if_collisions, rts_retry + data_retry);
 
 	if ((hstat & RTW_TXSTAT_TOK) != 0)
 		condstring = "ok";
 	else {
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		condstring = "error";
 	}
 
@@ -3191,7 +3185,7 @@ rtw_dequeue(struct ifnet *ifp, struct rtw_txsoft_blk **tsbp,
 		return 0;
 	}
 	DPRINTF(sc, RTW_DEBUG_XMIT, ("%s: dequeue data frame\n", __func__));
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 	bpf_mtap(ifp, m0, BPF_D_OUT);
 	eh = mtod(m0, struct ether_header *);
 	*nip = ieee80211_find_txnode(&sc->sc_ic, eh->ether_dhost);
@@ -3202,7 +3196,7 @@ rtw_dequeue(struct ifnet *ifp, struct rtw_txsoft_blk **tsbp,
 	}
 	if ((m0 = ieee80211_encap(&sc->sc_ic, m0, *nip)) == NULL) {
 		DPRINTF(sc, RTW_DEBUG_XMIT, ("%s: encap error\n", __func__));
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return -1;
 	}
 	DPRINTF(sc, RTW_DEBUG_XMIT, ("%s: leave\n", __func__));
@@ -3587,7 +3581,7 @@ rtw_watchdog(struct ifnet *ifp)
 				continue;
 			printf("%s: transmit timeout, priority %d\n",
 			    ifp->if_xname, pri);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			if (pri != RTW_TXPRIBCN)
 				tx_timeouts++;
 		} else
@@ -3894,9 +3888,7 @@ rtw_txsoft_blk_setup(struct rtw_txsoft_blk *tsb, u_int qlen)
 	SIMPLEQ_INIT(&tsb->tsb_freeq);
 	tsb->tsb_ndesc = qlen;
 	tsb->tsb_desc = malloc(qlen * sizeof(*tsb->tsb_desc), M_DEVBUF,
-	    M_NOWAIT);
-	if (tsb->tsb_desc == NULL)
-		return ENOMEM;
+	    M_WAITOK);
 	return 0;
 }
 
@@ -4232,11 +4224,7 @@ rtw_attach(struct rtw_softc *sc)
 	/*
 	 * Call MI attach routines.
 	 */
-	rc = if_initialize(ifp);
-	if (rc != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n", rc);
-		goto err;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);

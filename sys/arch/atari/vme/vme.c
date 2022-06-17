@@ -1,4 +1,4 @@
-/*	$NetBSD: vme.c,v 1.17 2011/06/05 06:33:43 tsutsui Exp $	*/
+/*	$NetBSD: vme.c,v 1.19 2021/08/07 16:18:47 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vme.c,v 1.17 2011/06/05 06:33:43 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vme.c,v 1.19 2021/08/07 16:18:47 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -73,7 +73,8 @@ vmeattach(device_t parent, device_t self, void *aux)
 	sc->sc_memt = vba->vba_memt;
 	sc->sc_vc   = vba->vba_vc;
 
-	config_search_ia(vmesearch, self, "vme", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = vmesearch));
 }
 
 int
@@ -109,7 +110,7 @@ vmesearch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	va.va_msize  = cf->cf_msize;
 	va.va_irq    = cf->cf_irq;
 
-	if (config_match(parent, cf, &va) > 0)
-		config_attach(parent, cf, &va, vmeprint);
+	if (config_probe(parent, cf, &va))
+		config_attach(parent, cf, &va, vmeprint, CFARGS_NONE);
 	return (0);
 }

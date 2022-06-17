@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.186 2022/03/13 17:50:55 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.186 2022/03/13 17:50:55 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -57,7 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.180 2019/06/29 03:22:52 tsutsui Exp $"
 #include <sys/conf.h>
 #include <sys/file.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/mbuf.h>
 #include <sys/msgbuf.h>
 #include <sys/vnode.h>
@@ -211,7 +211,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 	/*
@@ -440,7 +440,10 @@ dumpsys(void)
 
 #if defined(DDB) || defined(PANICWAIT)
 	printf("Do you want to dump memory? [y]");
-	cnputc(i = cngetc());
+	cnpollc(1);
+	i = cngetc();
+	cnpollc(0);
+	cnputc(i);
 	switch (i) {
 	case 'n':
 	case 'N':
@@ -630,7 +633,7 @@ add_sicallback(void (*function)(void *, void *), void *rock1, void *rock2)
 	splx(s);
 
 	if (si == NULL) {
-		si = malloc(sizeof(*si), M_TEMP, M_NOWAIT);
+		si = kmem_intr_alloc(sizeof(*si), KM_NOSLEEP);
 #ifdef DIAGNOSTIC
 		if (si)
 			++ncbd;		/* count # dynamically allocated */
@@ -653,7 +656,7 @@ add_sicallback(void (*function)(void *, void *), void *rock1, void *rock2)
 	 * happen immediately, or after returning to a safe enough level.
 	 *
 	 * XXX:
-	 * According to <machine/scu.h> and lev1intr() hander in locore.s,
+	 * According to <machine/scu.h> and lev1intr() handler in locore.s,
 	 * at least _ATARIHW_ machines (ATARITT and HADES?) seem to have
 	 * some hardware support which can initiate real hardware interrupt
 	 * at ipl 1 for software interrupt. But as per <machine/mtpr.h>,

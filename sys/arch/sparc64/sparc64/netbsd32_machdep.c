@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.113 2019/03/01 11:06:55 pgoyette Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.117 2021/11/06 20:42:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -27,14 +27,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.113 2019/03/01 11:06:55 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.117 2021/11/06 20:42:56 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #include "opt_compat_sunos.h"
 #include "opt_modular.h"
 #include "opt_execfmt.h"
-#include "opt_coredump.h"
 #include "firm_events.h"
 #endif
 
@@ -89,8 +88,6 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.113 2019/03/01 11:06:55 pgoye
 /* Provide a the name of the architecture we're emulating */
 const char	machine32[] = "sparc";	
 const char	machine_arch32[] = "sparc";	
-
-int netbsd32_sendsig_siginfo(const ksiginfo_t *, const sigset_t *);
 
 #if NFIRM_EVENTS > 0
 static int ev_out32(struct firm_event *, int, struct uio *);
@@ -159,7 +156,7 @@ struct sparc32_sigframe_siginfo {
 	ucontext32_t sf_uc;
 };
 
-int
+void
 netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 {
 	struct lwp *l = curlwp;
@@ -237,7 +234,7 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	default:
 		/* Unsupported trampoline version; kill the process. */
 		sigexit(l, SIGILL);
-	case 2:
+	case __SIGTRAMP_SIGINFO_VERSION:
 		/*
 		 * Arrange to continue execution at the user's handler.
 		 * It needs a new stack pointer, a return address and
@@ -257,18 +254,6 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Remember that we're now on the signal stack. */
 	if (onstack)
 		l->l_sigstk.ss_flags |= SS_ONSTACK;
-
-	return 0;
-}
-
-struct netbsd32_sendsig_hook_t netbsd32_sendsig_hook;
-        
-void
-netbsd32_sendsig(const ksiginfo_t *ksi, const sigset_t *mask)
-{
-
-	MODULE_HOOK_CALL_VOID(netbsd32_sendsig_hook, (ksi, mask),
-	    netbsd32_sendsig_siginfo(ksi, mask));
 }
 
 #undef DEBUG
@@ -354,7 +339,6 @@ netbsd32_process_write_fpregs(struct lwp *l, const struct fpreg32 *regs,
 /*
  * 32-bit version of cpu_coredump.
  */
-#ifdef COREDUMP
 int
 cpu_coredump32(struct lwp *l, struct coredump_iostate *iocookie,
     struct core32 *chdr)
@@ -402,15 +386,16 @@ cpu_coredump32(struct lwp *l, struct coredump_iostate *iocookie,
 	cseg.c_addr = 0;
 	cseg.c_size = chdr->c_cpusize;
 
-	error = coredump_write(iocookie, UIO_SYSSPACE, &cseg,
-	    chdr->c_seghdrsize);
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &cseg,
+	    chdr->c_seghdrsize), ENOSYS, error);
 	if (error)
 		return error;
 
-	return coredump_write(iocookie, UIO_SYSSPACE, &md_core,
-	    sizeof(md_core));
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &md_core,
+	    sizeof(md_core)), ENOSYS, error);
+
+	return error;
 }
-#endif
 
 void netbsd32_cpu_getmcontext(struct lwp *, mcontext_t  *, unsigned int *);
 
@@ -1028,7 +1013,7 @@ void
 netbsd32_machdep_md_init(void) 
 {
 
-	MODULE_HOOK_SET(netbsd32_machine32_hook, "mach32", netbsd32_machine32);
+	MODULE_HOOK_SET(netbsd32_machine32_hook, netbsd32_machine32);
 }
 
 void

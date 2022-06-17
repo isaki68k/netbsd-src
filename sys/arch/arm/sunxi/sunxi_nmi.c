@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_nmi.c,v 1.2 2019/05/27 21:11:51 jmcneill Exp $ */
+/* $NetBSD: sunxi_nmi.c,v 1.12 2021/11/07 17:13:38 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -29,14 +29,17 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_nmi.c,v 1.2 2019/05/27 21:11:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_nmi.c,v 1.12 2021/11/07 17:13:38 jmcneill Exp $");
 
 #include <sys/param.h>
-#include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/intr.h>
+#include <sys/kernel.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
+#include <sys/mutex.h>
+#include <sys/lwp.h>
 
 #include <dev/fdt/fdtvar.h>
 
@@ -85,11 +88,15 @@ static const struct sunxi_nmi_config sun9i_a80_nmi_config = {
 	.enable_reg = 0x08,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "allwinner,sun7i-a20-sc-nmi",	(uintptr_t)&sun7i_a20_sc_nmi_config },
-	{ "allwinner,sun6i-a31-r-intc",	(uintptr_t)&sun6i_a31_r_intc_config },
-	{ "allwinner,sun9i-a80-nmi",	(uintptr_t)&sun9i_a80_nmi_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun7i-a20-sc-nmi",
+	  .data = &sun7i_a20_sc_nmi_config },
+	{ .compat = "allwinner,sun6i-a31-r-intc",
+	  .data = &sun6i_a31_r_intc_config },
+	{ .compat = "allwinner,sun9i-a80-nmi",
+	  .data = &sun9i_a80_nmi_config },
+
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_nmi_softc {
@@ -98,10 +105,15 @@ struct sunxi_nmi_softc {
 	bus_space_handle_t sc_bsh;
 	int sc_phandle;
 
+	u_int sc_intr_nmi;
+	u_int sc_intr_cells;
+
+	kmutex_t sc_intr_lock;
+
 	const struct sunxi_nmi_config *sc_config;
 
-	int (*sc_func)(void *);
-	void *sc_arg;
+	struct intrsource sc_is;
+	void	*sc_ih;
 };
 
 #define NMI_READ(sc, reg) \
@@ -147,11 +159,17 @@ static int
 sunxi_nmi_intr(void *priv)
 {
 	struct sunxi_nmi_softc * const sc = priv;
+	int (*func)(void *);
 	int rv = 0;
 
-	if (sc->sc_func)
-		rv = sc->sc_func(sc->sc_arg);
+	func = atomic_load_acquire(&sc->sc_is.is_func);
+	if (func)
+		rv = func(sc->sc_is.is_arg);
 
+	/*
+	 * We don't serialize access to this register because we're the
+	 * only thing fiddling wth it.
+	 */
 	sunxi_nmi_irq_ack(sc);
 
 	return rv;
@@ -159,75 +177,171 @@ sunxi_nmi_intr(void *priv)
 
 static void *
 sunxi_nmi_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct sunxi_nmi_softc * const sc = device_private(dev);
-	u_int irq_type;
+	u_int irq_type, irq, pol;
+	int ist;
 
-	/* 1st cell is the interrupt number */
-	const u_int irq = be32toh(specifier[0]);
-	/* 2nd cell is polarity */
-	const u_int pol = be32toh(specifier[1]);
-
-	if (sc->sc_func != NULL) {
+	if (sc->sc_intr_cells == 2) {
+		/* 1st cell is the interrupt number */
+		irq = be32toh(specifier[0]);
+		/* 2nd cell is polarity */
+		pol = be32toh(specifier[1]);
+	} else {
+		/* 1st cell is the GIC interrupt type and must be GIC_SPI */
+		if (be32toh(specifier[0]) != 0) {
 #ifdef DIAGNOSTIC
-		device_printf(dev, "%s in use\n", sc->sc_config->name);
+			device_printf(dev, "GIC intr type %u is invalid\n",
+			    be32toh(specifier[0]));
 #endif
-		return NULL;
+			return NULL;
+		}
+		/* 2nd cell is the interrupt number */
+		irq = be32toh(specifier[1]);
+		/* 3rd cell is polarity */
+		pol = be32toh(specifier[2]);
 	}
 
-	if (irq != 0) {
+	if (sc->sc_intr_cells == 3 && irq != sc->sc_intr_nmi) {
+		/*
+		 * Driver is requesting a wakeup irq, which we don't
+		 * support today. Just pass it through to the parent
+		 * interrupt controller.
+		 */
+		const int ihandle = fdtbus_intr_parent(sc->sc_phandle);
+		if (ihandle == -1) {
+#ifdef DIAGNOSTIC
+			device_printf(dev, "couldn't find interrupt parent\n");
+#endif
+			return NULL;
+		}
+		return fdtbus_intr_establish_raw(ihandle, specifier, ipl,
+		    flags, func, arg, xname);
+	}
+
+	if (sc->sc_intr_cells == 2 && irq != 0) {
 #ifdef DIAGNOSTIC
 		device_printf(dev, "IRQ %u is invalid\n", irq);
 #endif
 		return NULL;
 	}
 
-	switch (pol & 0x7) {
+	switch (pol & 0xf) {
 	case 1:	/* IRQ_TYPE_EDGE_RISING */
 		irq_type = NMI_CTRL_IRQ_HIGH_EDGE;
+		ist = IST_EDGE;
 		break;
 	case 2:	/* IRQ_TYPE_EDGE_FALLING */
 		irq_type = NMI_CTRL_IRQ_LOW_EDGE;
+		ist = IST_EDGE;
 		break;
-	case 3:	/* IRQ_TYPE_LEVEL_HIGH */
+	case 4:	/* IRQ_TYPE_LEVEL_HIGH */
 		irq_type = NMI_CTRL_IRQ_HIGH_LEVEL;
+		ist = IST_LEVEL;
 		break;
-	case 4:	/* IRQ_TYPE_LEVEL_LOW */
+	case 8:	/* IRQ_TYPE_LEVEL_LOW */
 		irq_type = NMI_CTRL_IRQ_LOW_LEVEL;
+		ist = IST_LEVEL;
 		break;
 	default:
 		irq_type = NMI_CTRL_IRQ_LOW_LEVEL;
+		ist = IST_LEVEL;
 		break;
 	}
 
-	sc->sc_func = func;
-	sc->sc_arg = arg;
+	mutex_enter(&sc->sc_intr_lock);
 
+	if (atomic_load_relaxed(&sc->sc_is.is_func) != NULL) {
+		mutex_exit(&sc->sc_intr_lock);
+#ifdef DIAGNOSTIC
+		device_printf(dev, "%s in use\n", sc->sc_config->name);
+#endif
+		return NULL;
+	}
+
+	sc->sc_is.is_arg = arg;
+	atomic_store_release(&sc->sc_is.is_func, func);
+
+	sc->sc_is.is_type = ist;
+	sc->sc_is.is_ipl = ipl;
+	sc->sc_is.is_mpsafe = (flags & FDT_INTR_MPSAFE) ? true : false;
+
+	mutex_exit(&sc->sc_intr_lock);
+
+	sc->sc_ih = fdtbus_intr_establish_xname(sc->sc_phandle, 0, ipl, flags,
+	    sunxi_nmi_intr, sc, device_xname(dev));
+
+	mutex_enter(&sc->sc_intr_lock);
 	sunxi_nmi_irq_set_type(sc, irq_type);
 	sunxi_nmi_irq_enable(sc, true);
+	mutex_exit(&sc->sc_intr_lock);
 
-	return fdtbus_intr_establish(sc->sc_phandle, 0, ipl, flags,
-	    sunxi_nmi_intr, sc);
+	return &sc->sc_is;
+}
+
+static void
+sunxi_nmi_fdt_mask(device_t dev, void *ih __unused)
+{
+	struct sunxi_nmi_softc * const sc = device_private(dev);
+
+	mutex_enter(&sc->sc_intr_lock);
+	if (sc->sc_is.is_mask_count++ == 0) {
+		sunxi_nmi_irq_enable(sc, false);
+	}
+	mutex_exit(&sc->sc_intr_lock);
+}
+
+static void
+sunxi_nmi_fdt_unmask(device_t dev, void *ih __unused)
+{
+	struct sunxi_nmi_softc * const sc = device_private(dev);
+
+	mutex_enter(&sc->sc_intr_lock);
+	if (sc->sc_is.is_mask_count-- == 1) {
+		sunxi_nmi_irq_enable(sc, true);
+	}
+	mutex_exit(&sc->sc_intr_lock);
 }
 
 static void
 sunxi_nmi_fdt_disestablish(device_t dev, void *ih)
 {
 	struct sunxi_nmi_softc * const sc = device_private(dev);
+	struct intrsource * const is = ih;
 
+	KASSERT(is == &sc->sc_is);
+
+	mutex_enter(&sc->sc_intr_lock);
 	sunxi_nmi_irq_enable(sc, false);
+	is->is_mask_count = 0;
+	mutex_exit(&sc->sc_intr_lock);
 
-	fdtbus_intr_disestablish(sc->sc_phandle, ih);
+	fdtbus_intr_disestablish(sc->sc_phandle, sc->sc_ih);
+	sc->sc_ih = NULL;
 
-	sc->sc_func = NULL;
-	sc->sc_arg = NULL;
+	mutex_enter(&sc->sc_intr_lock);
+	is->is_arg = NULL;
+	is->is_func = NULL;
+	mutex_exit(&sc->sc_intr_lock);
 }
 
 static bool
 sunxi_nmi_fdt_intrstr(device_t dev, u_int *specifier, char *buf, size_t buflen)
 {
 	struct sunxi_nmi_softc * const sc = device_private(dev);
+
+	if (sc->sc_intr_cells == 3) {
+		const u_int irq = be32toh(specifier[1]);
+		if (irq != sc->sc_intr_nmi) {
+			const int ihandle = fdtbus_intr_parent(sc->sc_phandle);
+			if (ihandle == -1) {
+				return false;
+			}
+			return fdtbus_intr_str_raw(ihandle, specifier, buf,
+			    buflen);
+		}
+	}
 
 	snprintf(buf, buflen, "%s", sc->sc_config->name);
 
@@ -238,6 +352,8 @@ static const struct fdtbus_interrupt_controller_func sunxi_nmi_fdt_funcs = {
 	.establish = sunxi_nmi_fdt_establish,
 	.disestablish = sunxi_nmi_fdt_disestablish,
 	.intrstr = sunxi_nmi_fdt_intrstr,
+	.mask = sunxi_nmi_fdt_mask,
+	.unmask = sunxi_nmi_fdt_unmask,
 };
 
 static int
@@ -245,7 +361,7 @@ sunxi_nmi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -254,9 +370,10 @@ sunxi_nmi_attach(device_t parent, device_t self, void *aux)
 	struct sunxi_nmi_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
+	const u_int *interrupts;
 	bus_addr_t addr;
 	bus_size_t size;
-	int error;
+	int error, len;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
@@ -265,15 +382,37 @@ sunxi_nmi_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;
-	sc->sc_config = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_config = of_compatible_lookup(phandle, compat_data)->data;
 	sc->sc_bst = faa->faa_bst;
 	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh) != 0) {
 		aprint_error(": couldn't map registers\n");
 		return;
 	}
 
+	of_getprop_uint32(phandle, "#interrupt-cells", &sc->sc_intr_cells);
+	interrupts = fdtbus_get_prop(phandle, "interrupts", &len);
+	if (interrupts == NULL || len != 12 ||
+	    be32toh(interrupts[0]) != 0 /* GIC_SPI */ ||
+	    be32toh(interrupts[2]) != 4 /* IRQ_TYPE_LEVEL_HIGH */) {
+		aprint_error(": couldn't find GIC SPI for NMI\n");
+		return;
+	}
+	sc->sc_intr_nmi = be32toh(interrupts[1]);
+
 	aprint_naive("\n");
-	aprint_normal(": %s\n", sc->sc_config->name);
+	aprint_normal(": %s, NMI IRQ %u\n", sc->sc_config->name, sc->sc_intr_nmi);
+
+	mutex_init(&sc->sc_intr_lock, MUTEX_SPIN, IPL_HIGH);
+
+	/*
+	 * Normally it's assumed that an intrsource can be passed to
+	 * interrupt_distribute().  We're providing our own that's
+	 * independent of our parent PIC, but because we will leave
+	 * the intrsource::is_pic field NULL, the right thing
+	 * (i.e. nothing) will happen in interrupt_distribute().
+	 */
+	snprintf(sc->sc_is.is_source, sizeof(sc->sc_is.is_source),
+		 "%s", sc->sc_config->name);
 
 	sunxi_nmi_irq_enable(sc, false);
 	sunxi_nmi_irq_ack(sc);

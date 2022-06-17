@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_vnode.c,v 1.17 2019/09/18 18:46:00 christos Exp $	*/
+/*	$NetBSD: chfs_vnode.c,v 1.20 2021/12/07 22:13:56 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -106,7 +106,7 @@ chfs_readvnode(struct mount *mp, ino_t ino, struct vnode **vpp)
 			return err;
 		}
 		if (retlen != len) {
-			chfs_err("Error reading vnode: read: %zu insted of: %zu\n",
+			chfs_err("Error reading vnode: read: %zu instead of: %zu\n",
 			    len, retlen);
 			kmem_free(buf, len);
 			return EIO;
@@ -155,7 +155,7 @@ chfs_readdirent(struct mount *mp, struct chfs_node_ref *chnr, struct chfs_inode 
 		return err;
 	}
 	if (retlen != len) {
-		chfs_err("Error reading vnode: read: %zu insted of: %zu\n",
+		chfs_err("Error reading vnode: read: %zu instead of: %zu\n",
 		    retlen, len);
 		return EIO;
 	}
@@ -175,7 +175,7 @@ chfs_readdirent(struct mount *mp, struct chfs_node_ref *chnr, struct chfs_inode 
 	}
 
 	if (retlen != chfdn.nsize) {
-		chfs_err("Error reading vnode: read: %zu insted of: %zu\n",
+		chfs_err("Error reading vnode: read: %zu instead of: %zu\n",
 		    len, retlen);
 		return EIO;
 	}
@@ -210,7 +210,7 @@ chfs_makeinode(int mode, struct vnode *dvp, struct vnode **vpp,
 	/* number of vnode will be the new maximum */
 	vno = ++(chmp->chm_max_vno);
 
-	error = VFS_VGET(dvp->v_mount, vno, &vp);
+	error = VFS_VGET(dvp->v_mount, vno, LK_EXCLUSIVE, &vp);
 	if (error)
 		return (error);
 
@@ -251,9 +251,9 @@ chfs_makeinode(int mode, struct vnode *dvp, struct vnode **vpp,
 
 	/* authorize setting SGID if needed */
 	if (ip->mode & ISGID) {
-		error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_WRITE_SECURITY,
-		    vp, NULL, genfs_can_chmod(vp->v_type, cnp->cn_cred, ip->uid,
-		    ip->gid, mode));
+		error = kauth_authorize_vnode(cnp->cn_cred,
+		    KAUTH_VNODE_WRITE_SECURITY, vp, NULL, genfs_can_chmod(vp,
+		    cnp->cn_cred, ip->uid, ip->gid, mode));
 		if (error)
 			ip->mode &= ~ISGID;
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: gten.c,v 1.20 2011/07/01 16:56:52 dyoung Exp $	*/
+/*	$NetBSD: gten.c,v 1.24 2021/08/07 16:19:03 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gten.c,v 1.20 2011/07/01 16:56:52 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gten.c,v 1.24 2021/08/07 16:19:03 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: gten.c,v 1.20 2011/07/01 16:56:52 dyoung Exp $");
 #include <sys/device.h>
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <uvm/uvm_extern.h>
@@ -139,12 +139,8 @@ gten_attach(device_t parent, device_t self, void *aux)
 		gt->gt_ri = &gten_console_ri;
 		gt->gt_nscreens = 1;
 	} else {
-		gt->gt_ri = malloc(sizeof(*gt->gt_ri),
-			M_DEVBUF, M_NOWAIT|M_ZERO);
-		if (gt->gt_ri == NULL) {
-			aprint_error(": can't alloc memory\n");
-			return;
-		}
+		gt->gt_ri = kmem_zalloc(sizeof(*gt->gt_ri),
+			KM_SLEEP);
 #if 0
 		error = pci_mapreg_map(pa, 0x14, 
 			PCI_MAPREG_TYPE_MEM|PCI_MAPREG_MEM_TYPE_32BIT,
@@ -212,7 +208,7 @@ gten_attach(device_t parent, device_t self, void *aux)
 	a.accessops = &gten_accessops;
 	a.accesscookie = gt;
 
-	config_found(self, &a, wsemuldisplaydevprint);
+	config_found(self, &a, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static void

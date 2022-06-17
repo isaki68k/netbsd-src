@@ -1,7 +1,7 @@
-/*	$NetBSD: cpu.h,v 1.57 2018/08/22 01:05:23 msaitoh Exp $	*/
+/*	$NetBSD: cpu.h,v 1.61 2022/02/23 21:54:40 andvar Exp $	*/
 
 /*-
- * Copyright (c) 2002 The NetBSD Foundation, Inc. All rights reserved.
+ * Copyright (c) 2002, 2019 The NetBSD Foundation, Inc. All rights reserved.
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -60,6 +60,7 @@ struct cpu_info {
 	int	ci_mtx_oldspl;
 	int	ci_want_resched;
 	int	ci_idepth;
+	struct lwp *ci_onproc;		/* current user LWP / kthread */
 };
 
 extern struct cpu_info cpu_info_store;
@@ -99,11 +100,9 @@ struct clockframe {
  * Preempt the current process if in interrupt from user mode,
  * or after the current trap/syscall if in system mode.
  */
-#define	cpu_need_resched(ci, flags)					\
+#define	cpu_need_resched(ci,l,flags)					\
 do {									\
-	__USE(flags); 							\
-	ci->ci_want_resched = 1;					\
-	if (curlwp != ci->ci_data.cpu_idlelwp)				\
+	if ((flags & RESCHED_IDLE) == 0)				\
 		aston(curlwp);						\
 } while (/*CONSTCOND*/0)
 
@@ -152,8 +151,14 @@ do {									\
 #define	SH3_P2SEG_TO_PHYS(x)	((uint32_t)(x) & SH3_PHYS_MASK)
 #define	SH3_PHYS_TO_P1SEG(x)	((uint32_t)(x) | SH3_P1SEG_BASE)
 #define	SH3_PHYS_TO_P2SEG(x)	((uint32_t)(x) | SH3_P2SEG_BASE)
-#define	SH3_P1SEG_TO_P2SEG(x)	((uint32_t)(x) | 0x20000000)
-#define	SH3_P2SEG_TO_P1SEG(x)	((uint32_t)(x) & ~0x20000000)
+#define	SH3_P1SEG_TO_P2SEG(x)	((uint32_t)(x) + 0x20000000u)
+#define	SH3_P2SEG_TO_P1SEG(x)	((uint32_t)(x) - 0x20000000u)
+
+#ifdef __GNUC__
+#define SH3_P2SEG_FUNC(f) ((__typeof__(f) *)SH3_P1SEG_TO_P2SEG(f))
+#else
+#define SH3_P2SEG_FUNC(f) ((void *)SH3_P1SEG_TO_P2SEG(f))
+#endif
 
 #ifndef __lint__
 
@@ -181,7 +186,7 @@ do {									\
 /*
  * Switch from P2 (uncached) back to P1 (cached).  We need to be
  * running on P2 to access cache control, memory-mapped cache and TLB
- * arrays, etc. and after touching them at least 8 instructinos are
+ * arrays, etc. and after touching them at least 8 instructions are
  * necessary before jumping to P1, so provide that padding here.
  */
 #define RUN_P1						\

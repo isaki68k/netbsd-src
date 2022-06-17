@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_output.c,v 1.211 2019/02/25 10:49:16 maxv Exp $	*/
+/*	$NetBSD: tcp_output.c,v 1.214 2021/12/30 23:03:44 andvar Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -135,7 +135,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_output.c,v 1.211 2019/02/25 10:49:16 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_output.c,v 1.214 2021/12/30 23:03:44 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -252,6 +252,7 @@ tcp_segsize(struct tcpcb *tp, int *txsegsizep, int *rxsegsizep,
 		break;
 #endif
 	default:
+		hdrlen = 1; /* prevent zero sized segments */
 		goto out;
 	}
 
@@ -306,7 +307,7 @@ tcp_segsize(struct tcpcb *tp, int *txsegsizep, int *rxsegsizep,
 			 * for IPv6, path MTU discovery is always turned on,
 			 * or the node must use packet size <= 1280.
 			 */
-			size = tp->t_mtudisc ? IN6_LINKMTU(ifp) : IPV6_MMTU;
+			size = tp->t_mtudisc ? ifp->if_mtu : IPV6_MMTU;
 			size -= hdrlen;
 		}
 	}
@@ -384,6 +385,13 @@ tcp_segsize(struct tcpcb *tp, int *txsegsizep, int *rxsegsizep,
 	 */
 	if (so) {
 		*txsegsizep = uimin(so->so_snd.sb_hiwat >> 1, *txsegsizep);
+	}
+
+	/*
+	 * A segment must at least store header + options
+	 */
+	if (*txsegsizep < hdrlen + optlen) {
+		return EMSGSIZE;
 	}
 
 	if (*txsegsizep != tp->t_segsz) {
@@ -899,9 +907,9 @@ again:
 	 * and does at most one step per received ACK.  This fast
 	 * scaling has the drawback of growing the send buffer beyond
 	 * what is strictly necessary to make full use of a given
-	 * delay*bandwith product.  However testing has shown this not
+	 * delay*bandwidth product.  However testing has shown this not
 	 * to be much of an problem.  At worst we are trading wasting
-	 * of available bandwith (the non-use of it) for wasting some
+	 * of available bandwidth (the non-use of it) for wasting some
 	 * socket buffer memory.
 	 *
 	 * TODO: Shrink send buffer during idle periods together

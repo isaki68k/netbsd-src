@@ -1,4 +1,4 @@
-/*	$NetBSD: kbms_sbdio.c,v 1.11 2014/03/26 17:56:18 christos Exp $	*/
+/*	$NetBSD: kbms_sbdio.c,v 1.15 2021/12/10 20:36:02 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2005 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kbms_sbdio.c,v 1.11 2014/03/26 17:56:18 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kbms_sbdio.c,v 1.15 2021/12/10 20:36:02 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -167,7 +167,7 @@ kbms_sbdio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_wskbd = config_found(self, &ka, wskbddevprint);
+	sc->sc_wskbd = config_found(self, &ka, wskbddevprint, CFARGS_NONE);
 
 	ma.accessops = &mouse_accessops;
 	ma.accesscookie = self;
@@ -179,7 +179,7 @@ kbms_sbdio_attach(device_t parent, device_t self, void *aux)
 		sc->sc_mouse_sig = 0x88;
 
 	mouse_init(sc);
-	sc->sc_wsmouse = config_found(self, &ma, wsmousedevprint);
+	sc->sc_wsmouse = config_found(self, &ma, wsmousedevprint, CFARGS_NONE);
 
 	intr_establish(sa->sa_irq, kbms_sbdio_intr, self);
 }
@@ -203,7 +203,7 @@ kbms_sbdio_intr(void *arg)
 		*reg->mouse_csr = 1;
 		if (((v = *reg->mouse_csr) &
 		    (ZSRR1_FE | ZSRR1_DO | ZSRR1_PE)) != 0) {
-			/* Error occured. re-initialize */
+			/* Error occurred. re-initialize */
 			printf("initialize mouse. error=%02x\n", v);
 			mouse_init(sc);
 		} else {
@@ -408,7 +408,6 @@ kbd_ioctl(void *arg, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSKBDIO_GETLEDS:
 		*(int *)data = sc->sc_leds;
 		return 0;
-	case WSKBDIO_BELL:
 	case WSKBDIO_COMPLEXBELL:
 		return 0;
 	}

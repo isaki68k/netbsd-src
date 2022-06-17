@@ -1,4 +1,4 @@
-/*	$NetBSD: bus.h,v 1.3 2019/09/23 16:17:56 skrll Exp $	*/
+/*	$NetBSD: bus.h,v 1.5 2021/11/15 07:26:23 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -16,13 +16,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the NetBSD
- *	Foundation, Inc. and its contributors.
- * 4. Neither the name of The NetBSD Foundation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -435,7 +428,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint8_t *__p = (uint8_t *)((h) + (o));		\
-		uint8_t *__src = (ptr);					\
+		const uint8_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p = *__src++;				\
 	}								\
@@ -450,7 +443,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint16_t *__p = (uint16_t *)((h) + (o));	\
-		uint16_t *__src = (ptr);				\
+		const uint16_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p = *__src++;				\
 	}								\
@@ -465,7 +458,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint32_t *__p = (uint32_t *)((h) + (o));	\
-		uint32_t *__src = (ptr);				\
+		const uint32_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p = *__src++;				\
 	}								\
@@ -480,7 +473,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint64_t *__p = (uint64_t *)((h) + (o));	\
-		uint64_t *__src = (ptr);				\
+		const uint64_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p = *__src++;				\
 	}								\
@@ -506,7 +499,7 @@ do {									\
 	if ((t) == IA64_BUS_SPACE_IO) {					\
 		int __i;						\
 		volatile bus_addr_t __port = (h) + (o);			\
-		uint8_t *__src = (ptr);					\
+		const uint8_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++) {			\
 			outb(__port, *__src);				\
 			__port++;					\
@@ -515,7 +508,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint8_t *__p = (uint8_t *)((h) + (o));		\
-		uint8_t *__src = (ptr);					\
+		const uint8_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p++ = *__src++;				\
 	}								\
@@ -528,7 +521,7 @@ do {									\
 	if ((t) == IA64_BUS_SPACE_IO) {					\
 		int __i;						\
 		volatile bus_addr_t __port = (h) + (o);			\
-		uint16_t *__src = (ptr);				\
+		const uint16_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++) {			\
 			outw(__port, *__src);				\
 			__port += 2;					\
@@ -537,7 +530,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint16_t *__p = (uint16_t *)((h) + (o));	\
-		uint16_t *__src = (ptr);				\
+		const uint16_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p++ = *__src++;				\
 	}								\
@@ -550,7 +543,7 @@ do {									\
 	if ((t) == IA64_BUS_SPACE_IO) {					\
 		int __i;						\
 		volatile bus_addr_t __port = (h) + (o);			\
-		uint32_t *__src = (ptr);				\
+		const uint32_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++) {			\
 			outl(__port, *__src);				\
 			__port += 4;					\
@@ -559,7 +552,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint32_t *__p = (uint32_t *)(h) + (o);		\
-		uint32_t *__src = (ptr);				\
+		const uint32_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p++ = *__src++;				\
 	}								\
@@ -574,7 +567,7 @@ do {									\
 	} else {							\
 		int __i;						\
 		volatile uint64_t *__p = (uint64_t *)((h) + (o));	\
-		uint64_t *__src = (ptr);				\
+		const uint64_t *__src = (ptr);				\
 		for (__i = 0; __i < (cnt); __i++)			\
 			*__p++ = *__src++;				\
 	}								\

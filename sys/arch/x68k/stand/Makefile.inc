@@ -1,3 +1,3 @@
-#	$NetBSD: Makefile.inc,v 1.2 2013/08/12 16:34:05 joerg Exp $
+#	$NetBSD: Makefile.inc,v 1.4 2021/04/15 01:54:39 mrg Exp $
 
-DBG=-Os -fno-unwind-tables
+DBG=-Os -fno-unwind-tables -Wno-attributes -fcommon

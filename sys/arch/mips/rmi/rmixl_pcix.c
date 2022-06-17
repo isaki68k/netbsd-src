@@ -1,4 +1,4 @@
-/*	$NetBSD: rmixl_pcix.c,v 1.13 2015/10/02 05:22:51 msaitoh Exp $	*/
+/*	$NetBSD: rmixl_pcix.c,v 1.19 2022/01/22 15:10:31 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rmixl_pcix.c,v 1.13 2015/10/02 05:22:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rmixl_pcix.c,v 1.19 2022/01/22 15:10:31 skrll Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -261,15 +261,15 @@ static int	rmixl_pcix_error_intr(void *);
 
 
 CFATTACH_DECL_NEW(rmixl_pcix, sizeof(rmixl_pcix_softc_t),
-    rmixl_pcix_match, rmixl_pcix_attach, NULL, NULL); 
+    rmixl_pcix_match, rmixl_pcix_attach, NULL, NULL);
 
 
 static int rmixl_pcix_found;
 
 
-static int  
+static int
 rmixl_pcix_match(device_t parent, cfdata_t cf, void *aux)
-{        
+{
 	uint32_t r;
 
 	/*
@@ -294,9 +294,9 @@ rmixl_pcix_match(device_t parent, cfdata_t cf, void *aux)
 		return 0;	/* strapped for Device Mode */
 
 	return 1;
-}    
+}
 
-static void 
+static void
 rmixl_pcix_attach(device_t parent, device_t self, void *aux)
 {
 	rmixl_pcix_softc_t *sc = device_private(self);
@@ -323,12 +323,12 @@ rmixl_pcix_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * check XLR Control Register
 	 */
-	DPRINTF(("%s: XLR_CONTROL=%#x\n", __func__, 
+	DPRINTF(("%s: XLR_CONTROL=%#x\n", __func__,
 		RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_XLR_CONTROL)));
 
 	/*
 	 * HBAR[0]   if a 32 bit BAR, or
-	 * HBAR[0,1] if a 64 bit BAR pair 
+	 * HBAR[0,1] if a 64 bit BAR pair
 	 * must cover all RAM
 	 */
 	extern u_quad_t mem_cluster_maxaddr;
@@ -366,7 +366,7 @@ rmixl_pcix_attach(device_t parent, device_t self, void *aux)
 		 */
 		if (hbar_size < ((uint64_t)1 << 32)) {
 			error = bus_dmatag_subregion(sc->sc_32bit_dmat,
-				0, (bus_addr_t)hbar_size, &sc->sc_32bit_dmat,
+				0, (bus_addr_t)hbar_size - 1, &sc->sc_32bit_dmat,
 				BUS_DMA_NOWAIT);
 			if (error)
 				panic("%s: failed to subregion 32-bit dma tag:"
@@ -374,7 +374,7 @@ rmixl_pcix_attach(device_t parent, device_t self, void *aux)
 			sc->sc_64bit_dmat = NULL;
 		} else {
 			error = bus_dmatag_subregion(sc->sc_64bit_dmat,
-				0, (bus_addr_t)hbar_size, &sc->sc_64bit_dmat,
+				0, (bus_addr_t)hbar_size - 1, &sc->sc_64bit_dmat,
 				BUS_DMA_NOWAIT);
 			if (error)
 				panic("%s: failed to subregion 64-bit dma tag:"
@@ -474,7 +474,7 @@ rmixl_pcix_attach(device_t parent, device_t self, void *aux)
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY |
 		PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
 
-	(void) config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARGS_NONE);
 }
 
 /*
@@ -496,8 +496,8 @@ rmixl_pcix_intcfg(rmixl_pcix_softc_t *sc)
 	 * read-to-clear any pre-existing interrupts
 	 * XXX MSI bits in STATUS are also documented as write 1 to clear in PRM
 	 */
-	(void)RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS); 
-	(void)RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS); 
+	(void)RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS);
+	(void)RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS);
 
 	/* initialize the (non-error interrupt) dispatch handles */
 	sc->sc_intr = NULL;
@@ -506,9 +506,7 @@ rmixl_pcix_intcfg(rmixl_pcix_softc_t *sc)
 	 * allocate per-cpu, per-pin interrupt event counters
 	 */
 	size = ncpu * PCI_INTERRUPT_PIN_MAX * sizeof(rmixl_pcix_evcnt_t);
-	ev = malloc(size, M_DEVBUF, M_NOWAIT);
-	if (ev == NULL)
-		panic("%s: cannot malloc evcnts\n", __func__);
+	ev = malloc(size, M_DEVBUF, M_WAITOK);
 	sc->sc_evcnts = ev;
 	for (int pin=PCI_INTERRUPT_PIN_A; pin <= PCI_INTERRUPT_PIN_MAX; pin++) {
 		for (int cpu=0; cpu < ncpu; cpu++) {
@@ -541,7 +539,7 @@ rmixl_pcix_init(rmixl_pcix_softc_t *sc)
 {
 	pci_chipset_tag_t pc = &sc->sc_pci_chipset;
 #if NPCI > 0 && defined(PCI_NETBSD_CONFIGURE)
-	struct extent *ioext, *memext;
+	struct pciconf_resources *pcires;
 #endif
 
 	pc->pc_conf_v = (void *)sc;
@@ -566,23 +564,19 @@ rmixl_pcix_init(rmixl_pcix_softc_t *sc)
 	 */
 	struct rmixl_config *rcp = &rmixl_configuration;
 
-	aprint_normal_dev(sc->sc_dev, "%s: configuring PCI bus\n");
+	aprint_normal_dev(sc->sc_dev, "configuring PCI bus\n");
 
-	ioext  = extent_create("pciio",
-		rcp->rc_pci_io_pbase,
-		rcp->rc_pci_io_pbase + rcp->rc_pci_io_size - 1,
-		M_DEVBUF, NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
 
-	memext = extent_create("pcimem",
-		rcp->rc_pci_mem_pbase,
-		rcp->rc_pci_mem_pbase + rcp->rc_pci_mem_size - 1,
-		M_DEVBUF, NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    rcp->rc_pci_io_pbase, rcp->rc_pci_io_size);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    rcp->rc_pci_mem_pbase, rcp->rc_pci_mem_size);
 
-	pci_configure_bus(pc, ioext, memext, NULL, 0,
+	pci_configure_bus(pc, pcires, 0,
 	    mips_cache_info.mci_dcache_align);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pciconf_resource_fini(pcires);
 #endif
 }
 
@@ -912,12 +906,12 @@ rmixl_pcix_intr_establish(void *v, pci_intr_handle_t pih, int ipl,
 
 	mutex_enter(&sc->sc_mutex);
 
-	pip = rmixl_pcix_pip_add_1(sc, irq, ipl); 
+	pip = rmixl_pcix_pip_add_1(sc, irq, ipl);
 	if (pip == NULL)
 		return NULL;
 
 	/*
-	 * initializae our new interrupt, the last element in dispatch_data[] 
+	 * initializae our new interrupt, the last element in dispatch_data[]
 	 */
 	dip = &pip->dispatch_data[pip->dispatch_count - 1];
 	dip->bitno = bitno;
@@ -940,9 +934,9 @@ rmixl_pcix_intr_establish(void *v, pci_intr_handle_t pih, int ipl,
 		uint32_t bit = 1 << (bitno + 2);
 		uint32_t r;
 
-		r = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL); 
+		r = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL);
 		r &= ~bit;	/* clear mask */
-		RMIXL_PCIXREG_WRITE(RMIXL_PCIX_ECFG_INTR_CONTROL, r); 
+		RMIXL_PCIXREG_WRITE(RMIXL_PCIX_ECFG_INTR_CONTROL, r);
 
 		pip->sc = sc;
 		pip->ipl = ipl;
@@ -982,14 +976,7 @@ rmixl_pcix_pip_add_1(rmixl_pcix_softc_t *sc, int irq, int ipl)
 	 * allocate and initialize softc intr struct
 	 * with one or more dispatch handles
 	 */
-	pip_new = malloc(size, M_DEVBUF, M_NOWAIT|M_ZERO);
-	if (pip_new == NULL) {
-#ifdef DIAGNOSTIC
-		printf("%s: cannot malloc\n", __func__);
-#endif
-		return NULL;
-	}
-
+	pip_new = malloc(size, M_DEVBUF, M_WAITOK|M_ZERO);
 	if (pip_old == NULL) {
 		/* initialize the interrupt struct */
 		pip_new->sc = sc;
@@ -1006,13 +993,13 @@ rmixl_pcix_pip_add_1(rmixl_pcix_softc_t *sc, int irq, int ipl)
 		 */
 		KASSERT(sc == pip_old->sc);
 		if (sc != pip_old->sc) {
-			printf("%s: sc %p mismatch\n", __func__, sc); 
+			printf("%s: sc %p mismatch\n", __func__, sc);
 			free(pip_new, M_DEVBUF);
 			return NULL;
 		}
 		KASSERT (ipl == pip_old->ipl);
 		if (ipl != pip_old->ipl) {
-			printf("%s: ipl %d mismatch\n", __func__, ipl); 
+			printf("%s: ipl %d mismatch\n", __func__, ipl);
 			free(pip_new, M_DEVBUF);
 			return NULL;
 		}
@@ -1049,11 +1036,11 @@ rmixl_pcix_pip_free_callout(rmixl_pcix_intr_t *pip)
 {
 	callout_init(&pip->callout, 0);
 	callout_reset(&pip->callout, 2 * hz, rmixl_pcix_pip_free, pip);
-}       
-        
+}
+
 static void
 rmixl_pcix_pip_free(void *arg)
-{       
+{
 	rmixl_pcix_intr_t *pip = arg;
 
 	callout_destroy(&pip->callout);
@@ -1066,7 +1053,7 @@ rmixl_pcix_intr(void *arg)
 	rmixl_pcix_intr_t *pip = arg;
 	int rv = 0;
 
-	uint32_t status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS); 
+	uint32_t status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS);
 	DPRINTF(("%s: %#x\n", __func__, status));
 
 	if (status != 0) {
@@ -1090,7 +1077,7 @@ rmixl_pcix_error_intr(void *arg)
 	rmixl_pcix_softc_t *sc = arg;
 	uint32_t error_status;
 
-	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS); 
+	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS);
 
 #ifdef DIAGNOSTIC
 	printf("%s: error status %#x\n", __func__, error_status);
@@ -1163,18 +1150,18 @@ rmixl_pcix_intr_chk(void)
 {
 	uint32_t control, status, error_status;
 
-	control = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL); 
-	status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS); 
-	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS); 
+	control = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL);
+	status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS);
+	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS);
 
 	printf("%s: %#x, %#x, %#x\n", __func__, control, status, error_status);
 
 	control |= PCIX_INTR_CONTROL_DIA;
-	RMIXL_PCIXREG_WRITE(RMIXL_PCIX_ECFG_INTR_CONTROL, control); 
+	RMIXL_PCIXREG_WRITE(RMIXL_PCIX_ECFG_INTR_CONTROL, control);
 
-	control = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL); 
-	status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS); 
-	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS); 
+	control = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_CONTROL);
+	status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_STATUS);
+	error_status = RMIXL_PCIXREG_READ(RMIXL_PCIX_ECFG_INTR_ERR_STATUS);
 
 	printf("%s: %#x, %#x, %#x\n", __func__, control, status, error_status);
 

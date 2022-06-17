@@ -1,4 +1,4 @@
-/*	$NetBSD: external.c,v 1.2 2013/06/25 13:56:59 kiyohara Exp $	*/
+/*	$NetBSD: external.c,v 1.4 2021/08/07 16:18:48 thorpej Exp $	*/
 /*
  * Copyright (c) 2012, 2013 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: external.c,v 1.2 2013/06/25 13:56:59 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: external.c,v 1.4 2021/08/07 16:18:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -64,7 +64,8 @@ external_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	config_search_ia(external_search, self, "external", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = external_search));
 }
 
 /* ARGSUSED */
@@ -78,8 +79,8 @@ external_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	aa.addr = cf->cf_loc[EXTERNALCF_ADDR];
 	aa.addr2 = cf->cf_loc[EXTERNALCF_ADDR2];
 	aa.irq = cf->cf_loc[EXTERNALCF_IRQ];
-	if (config_match(parent, cf, &aa))
-		config_attach(parent, cf, &aa, external_print);
+	if (config_probe(parent, cf, &aa))
+		config_attach(parent, cf, &aa, external_print, CFARGS_NONE);
 
 	return 0;
 }

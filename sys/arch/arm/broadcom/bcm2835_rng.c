@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_rng.c,v 1.13 2017/12/10 21:38:26 skrll Exp $ */
+/*	$NetBSD: bcm2835_rng.c,v 1.17 2022/03/19 11:55:03 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -30,14 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_rng.c,v 1.13 2017/12/10 21:38:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_rng.c,v 1.17 2022/03/19 11:55:03 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/bus.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <arm/broadcom/bcm2835reg.h>
@@ -59,7 +58,6 @@ struct bcm2835rng_softc {
 	bus_space_tag_t		sc_iot;
 	bus_space_handle_t	sc_ioh;
 
-	kmutex_t		sc_lock;
 	krndsource_t		sc_rndsource;
 };
 
@@ -70,14 +68,18 @@ static void bcmrng_get(size_t, void *);
 CFATTACH_DECL_NEW(bcmrng_fdt, sizeof(struct bcm2835rng_softc),
     bcmrng_match, bcmrng_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-rng" },
+	DEVICE_COMPAT_EOL
+};
+
 /* ARGSUSED */
 static int
 bcmrng_match(device_t parent, cfdata_t match, void *aux)
 {
-	const char * const compatible[] = { "brcm,bcm2835-rng", NULL };
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -118,13 +120,9 @@ bcmrng_attach(device_t parent, device_t self, void *aux)
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, RNG_CTRL, ctrl);
 
 	/* set up an rndsource */
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 	rndsource_setcb(&sc->sc_rndsource, &bcmrng_get, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
 	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-
-	/* get some initial entropy ASAP */
-	bcmrng_get(RND_POOLBITS / NBBY, sc);
 }
 
 static void
@@ -134,7 +132,6 @@ bcmrng_get(size_t bytes_wanted, void *arg)
 	uint32_t status, cnt;
 	uint32_t buf[RNG_DATA_MAX]; /* 1k on the stack */
 
-	mutex_spin_enter(&sc->sc_lock);
 	while (bytes_wanted) {
 		status = bus_space_read_4(sc->sc_iot, sc->sc_ioh, RNG_STATUS);
 		cnt = __SHIFTOUT(status, RNG_STATUS_CNT);
@@ -148,5 +145,4 @@ bcmrng_get(size_t bytes_wanted, void *arg)
 		bytes_wanted -= MIN(bytes_wanted, (cnt * 4));
 	}
 	explicit_memset(buf, 0, sizeof(buf));
-	mutex_spin_exit(&sc->sc_lock);
 }

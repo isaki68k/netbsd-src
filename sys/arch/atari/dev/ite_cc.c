@@ -1,4 +1,4 @@
-/*	$NetBSD: ite_cc.c,v 1.40 2019/06/29 16:41:19 tsutsui Exp $	*/
+/*	$NetBSD: ite_cc.c,v 1.44 2022/03/28 12:38:58 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996 Leo Weppelman
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ite_cc.c,v 1.40 2019/06/29 16:41:19 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ite_cc.c,v 1.44 2022/03/28 12:38:58 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: ite_cc.c,v 1.40 2019/06/29 16:41:19 tsutsui Exp $");
 #include <sys/termios.h>
 #include <sys/malloc.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <dev/cons.h>
 #include <machine/cpu.h>
 #include <atari/atari/device.h>
@@ -230,7 +231,8 @@ grfccattach(device_t parent, device_t self, void *aux)
 		grf_viewsync(&congrf);
 
 		/* Attach console ite */
-		atari_config_found(cfdata_grf, &itedev, &congrf, grfccprint);
+		atari_config_found(cfdata_grf, &itedev, &congrf, grfccprint,
+		    CFARGS_NONE);
 		return;
 	}
 
@@ -267,7 +269,7 @@ grfccattach(device_t parent, device_t self, void *aux)
 	/*
 	 * try and attach an ite
 	 */
-	config_found(self, sc /* XXX */, grfccprint);
+	config_found(self, sc /* XXX */, grfccprint, CFARGS_NONE);
 
 	/*
 	 * If attaching the first unit, go ahead and 'find' the rest of us
@@ -276,7 +278,8 @@ grfccattach(device_t parent, device_t self, void *aux)
 		first_attach = 0;
 		grf_auxp.from_bus_match = 0;
 		for (grf_auxp.unit=1; grf_auxp.unit < NGRFCC; grf_auxp.unit++) {
-			config_found(parent, &grf_auxp, grf_bus_auxp->busprint);
+			config_found(parent, &grf_auxp, grf_bus_auxp->busprint,
+			    CFARGS_NONE);
 		}
 	}
 }

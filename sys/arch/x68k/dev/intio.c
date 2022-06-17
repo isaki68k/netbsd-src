@@ -1,4 +1,4 @@
-/*	$NetBSD: intio.c,v 1.45 2016/05/31 03:12:49 dholland Exp $	*/
+/*	$NetBSD: intio.c,v 1.52 2022/05/26 14:33:29 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intio.c,v 1.45 2016/05/31 03:12:49 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intio.c,v 1.52 2022/05/26 14:33:29 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -47,6 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: intio.c,v 1.45 2016/05/31 03:12:49 dholland Exp $");
 
 #include <arch/x68k/dev/intiovar.h>
 
+#include "ioconf.h"
 
 /*
  * bus_space(9) interface
@@ -123,8 +124,6 @@ static void intio_alloc_system_ports(struct intio_softc*);
 CFATTACH_DECL_NEW(intio, sizeof(struct intio_softc),
     intio_match, intio_attach, NULL, NULL);
 
-extern struct cfdriver intio_cd;
-
 static int intio_attached;
 
 static struct intio_interrupt_vector {
@@ -162,7 +161,7 @@ intio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_map = extent_create("intiomap",
 				  INTIOBASE,
 				  INTIOBASE + 0x400000,
-				  NULL, 0, EX_NOWAIT);
+				  NULL, 0, EX_WAITOK);
 	intio_alloc_system_ports(sc);
 
 	sc->sc_bst = &intio_bus;
@@ -175,7 +174,8 @@ intio_attach(device_t parent, device_t self, void *aux)
 	ia.ia_bst = sc->sc_bst;
 	ia.ia_dmat = sc->sc_dmat;
 
-	config_search_ia(intio_search, self, "intio", &ia);
+	config_search(self, &ia,
+	    CFARGS(.search = intio_search));
 }
 
 static int
@@ -192,8 +192,8 @@ intio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	ia->ia_dma = cf->cf_dma;
 	ia->ia_dmaintr = cf->cf_dmaintr;
 
-	if (config_match(parent, cf, ia) > 0)
-		config_attach(parent, cf, ia, intio_print);
+	if (config_probe(parent, cf, ia))
+		config_attach(parent, cf, ia, intio_print, CFARGS_NONE);
 
 	return (0);
 }
@@ -327,9 +327,7 @@ intio_intr_establish_ext(int vector, const char *name1, const char *name2,
 	if (iiv[vector].iiv_handler)
 		return EBUSY;
 
-	evcnt = malloc(sizeof(*evcnt), M_DEVBUF, M_NOWAIT);
-	if (evcnt == NULL)
-		return ENOMEM;
+	evcnt = malloc(sizeof(*evcnt), M_DEVBUF, M_WAITOK);
 	evcnt_attach_dynamic(evcnt, EVCNT_TYPE_INTR, NULL, name1, name2);
 
 	iiv[vector].iiv_handler = handler;
@@ -421,7 +419,7 @@ _intio_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * in memory below the 16M boundary.  On DMA reads,
 	 * DMA happens to the bounce buffers, and is copied into
 	 * the caller's buffer.  On writes, data is copied into
-	 * but bounce buffer, and the DMA happens from those
+	 * the bounce buffer, and the DMA happens from those
 	 * pages.  To software using the DMA mapping interface,
 	 * this looks simply like a data cache.
 	 *
@@ -446,7 +444,7 @@ _intio_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	/*
 	 * Allocate our cookie.
 	 */
-	cookie = malloc(cookiesize, M_DMAMAP, 
+	cookie = malloc(cookiesize, M_DMAMAP,
 	    ((flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK) | M_ZERO);
 	if (cookie == NULL) {
 		error = ENOMEM;

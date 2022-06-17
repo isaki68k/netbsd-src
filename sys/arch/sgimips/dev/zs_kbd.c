@@ -1,4 +1,4 @@
-/*	$NetBSD: zs_kbd.c,v 1.10 2012/10/29 12:51:38 chs Exp $	*/
+/*	$NetBSD: zs_kbd.c,v 1.14 2021/09/18 15:14:41 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 2004 Steve Rumble
@@ -33,10 +33,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs_kbd.c,v 1.10 2012/10/29 12:51:38 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs_kbd.c,v 1.14 2021/09/18 15:14:41 tsutsui Exp $");
 
 #include <sys/param.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/device.h>
@@ -213,10 +213,8 @@ zskbd_attach(device_t parent, device_t self, void *aux)
 	} else {
 		wskaa.console = 0;
 
-		sc->sc_dc = malloc(sizeof(struct zskbd_devconfig), M_DEVBUF,
-		    M_WAITOK);
-		if (sc->sc_dc == NULL)
-			panic("zskbd out of memory");
+		sc->sc_dc = kmem_alloc(sizeof(struct zskbd_devconfig),
+		    KM_SLEEP);
 
 		sc->sc_dc->enabled = 0;
 	}
@@ -249,7 +247,8 @@ zskbd_attach(device_t parent, device_t self, void *aux)
 	wskaa.keymap =		&sgikbd_wskbd_keymapdata;
 	wskaa.accessops =	&zskbd_wskbd_accessops;
 	wskaa.accesscookie =	cs;
-	sc->sc_dc->wskbddev =	config_found(self, &wskaa, wskbddevprint);
+	sc->sc_dc->wskbddev =	config_found(self, &wskaa, wskbddevprint,
+					     CFARGS_NONE);
 }
 
 static void
@@ -537,12 +536,7 @@ zskbd_wskbd_ioctl(void *cookie, u_long cmd,
 		break;
 
 #ifdef notyet
-	case WSKBDIO_BELL:
 	case WSKBDIO_COMPLEXBELL:
-	case WSKBDIO_SETBELL:
-	case WSKBDIO_GETBELL:
-	case WSKBDIO_SETDEFAULTBELL:
-	case WSKBDIO_GETDEFAULTBELL:
 	case WSKBDIO_SETKEYREPEAT:
 	case WSKBDIO_GETKEYREPEAT:
 	case WSKBDIO_SETDEFAULTKEYREPEAT:

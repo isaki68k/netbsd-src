@@ -1,9 +1,11 @@
-/* $NetBSD: ofw_cons.h,v 1.2 2007/10/17 19:56:41 garbled Exp $ */
+/* $NetBSD: ofw_cons.h,v 1.4 2022/02/13 12:24:24 martin Exp $ */
 
 #ifndef _POWERPC_OFW_CONS_H_
 #define _POWERPC_OFW_CONS_H_
 
-void ofwoea_consinit(void);
-int ofkbd_cngetc(dev_t dev);
+extern bool ofwoea_use_serial_console;
+void	ofwoea_cnprobe(void);
+void	ofwoea_consinit(void);
+int	ofkbd_cngetc(dev_t dev);
 
 #endif /* _POWERPC_OFW_CONS_H_ */

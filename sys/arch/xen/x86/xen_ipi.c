@@ -1,7 +1,7 @@
-/* $NetBSD: xen_ipi.c,v 1.33 2019/10/12 06:31:04 maxv Exp $ */
+/* $NetBSD: xen_ipi.c,v 1.40 2022/01/05 20:21:29 christos Exp $ */
 
 /*-
- * Copyright (c) 2011 The NetBSD Foundation, Inc.
+ * Copyright (c) 2011, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -33,10 +33,9 @@
 
 /* 
  * Based on: x86/ipi.c
- * __KERNEL_RCSID(0, "$NetBSD: xen_ipi.c,v 1.33 2019/10/12 06:31:04 maxv Exp $");
  */
 
-__KERNEL_RCSID(0, "$NetBSD: xen_ipi.c,v 1.33 2019/10/12 06:31:04 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_ipi.c,v 1.40 2022/01/05 20:21:29 christos Exp $");
 
 #include "opt_ddb.h"
 
@@ -71,8 +70,10 @@ static void xen_ipi_synch_fpu(struct cpu_info *, struct intrframe *);
 static void xen_ipi_xcall(struct cpu_info *, struct intrframe *);
 static void xen_ipi_hvcb(struct cpu_info *, struct intrframe *);
 static void xen_ipi_generic(struct cpu_info *, struct intrframe *);
+static void xen_ipi_ast(struct cpu_info *, struct intrframe *);
+static void xen_ipi_kpreempt(struct cpu_info *ci, struct intrframe *);
 
-static void (*ipifunc[XEN_NIPIS])(struct cpu_info *, struct intrframe *) =
+static void (*xen_ipifunc[XEN_NIPIS])(struct cpu_info *, struct intrframe *) =
 {	/* In order of priority (see: xen/include/intrdefs.h */
 	xen_ipi_halt,
 	xen_ipi_synch_fpu,
@@ -84,6 +85,8 @@ static void (*ipifunc[XEN_NIPIS])(struct cpu_info *, struct intrframe *) =
 	xen_ipi_xcall,
 	xen_ipi_hvcb,
 	xen_ipi_generic,
+	xen_ipi_ast,
+	xen_ipi_kpreempt
 };
 
 static int
@@ -96,6 +99,8 @@ xen_ipi_handler(void *arg)
 
 	ci = curcpu();
 	regs = arg;
+
+	KASSERT(ci == arg);
 	
 	pending = atomic_swap_32(&ci->ci_ipis, 0);
 
@@ -104,10 +109,10 @@ xen_ipi_handler(void *arg)
 		bit--;
 		pending &= ~(1 << bit);
 		ci->ci_ipi_events[bit].ev_count++;
-		if (ipifunc[bit] != NULL) {
-			(*ipifunc[bit])(ci, regs);
+		if (xen_ipifunc[bit] != NULL) {
+			(*xen_ipifunc[bit])(ci, regs);
 		} else {
-			panic("ipifunc[%d] unsupported!\n", bit);
+			panic("xen_ipifunc[%d] unsupported!\n", bit);
 			/* NOTREACHED */
 		}
 	}
@@ -126,7 +131,7 @@ xen_ipi_init(void)
 
 	ci = curcpu();
 
-	vcpu = ci->ci_cpuid;
+	vcpu = ci->ci_vcpuid;
 	KASSERT(vcpu < XEN_LEGACY_MAX_VCPUS);
 
 	evtchn = bind_vcpu_to_evtch(vcpu);
@@ -137,8 +142,8 @@ xen_ipi_init(void)
 	snprintf(intr_xname, sizeof(intr_xname), "%s ipi",
 	    device_xname(ci->ci_dev));
 
-	if (xen_intr_establish_xname(-1, &xen_pic, evtchn, IST_LEVEL, IPL_HIGH,
-		xen_ipi_handler, ci, true, intr_xname) == NULL) {
+	if (event_set_handler(evtchn, xen_ipi_handler, ci, IPL_HIGH, NULL,
+	    intr_xname, true, ci) == NULL) {
 		panic("%s: unable to register ipi handler\n", __func__);
 		/* NOTREACHED */
 	}
@@ -146,13 +151,12 @@ xen_ipi_init(void)
 	hypervisor_unmask_event(evtchn);
 }
 
-#ifdef DIAGNOSTIC
 static inline bool /* helper */
 valid_ipimask(uint32_t ipimask)
 {
 	uint32_t masks = XEN_IPI_GENERIC | XEN_IPI_HVCB | XEN_IPI_XCALL |
 		 XEN_IPI_DDB | XEN_IPI_SYNCH_FPU |
-		 XEN_IPI_HALT | XEN_IPI_KICK;
+		 XEN_IPI_HALT | XEN_IPI_AST | XEN_IPI_KPREEMPT;
 
 	if (ipimask & ~masks) {
 		return false;
@@ -161,7 +165,6 @@ valid_ipimask(uint32_t ipimask)
 	}
 
 }
-#endif
 
 int
 xen_send_ipi(struct cpu_info *ci, uint32_t ipimask)
@@ -225,7 +228,7 @@ xen_ipi_halt(struct cpu_info *ci, struct intrframe *intrf)
 {
 	KASSERT(ci == curcpu());
 	KASSERT(ci != NULL);
-	if (HYPERVISOR_vcpu_op(VCPUOP_down, ci->ci_cpuid, NULL)) {
+	if (HYPERVISOR_vcpu_op(VCPUOP_down, ci->ci_vcpuid, NULL)) {
 		panic("%s shutdown failed.\n", device_xname(ci->ci_dev));
 	}
 
@@ -283,6 +286,41 @@ xen_ipi_xcall(struct cpu_info *ci, struct intrframe *intrf)
 	xc_ipi_handler();
 }
 
+static void
+xen_ipi_ast(struct cpu_info *ci, struct intrframe *intrf)
+{
+	KASSERT(ci != NULL);
+	KASSERT(intrf != NULL);
+
+	aston(ci->ci_onproc);
+}
+
+static void
+xen_ipi_generic(struct cpu_info *ci, struct intrframe *intrf)
+{
+	KASSERT(ci != NULL);
+	KASSERT(intrf != NULL);
+	ipi_cpu_handler();
+}
+
+static void
+xen_ipi_hvcb(struct cpu_info *ci, struct intrframe *intrf)
+{
+	KASSERT(ci != NULL);
+	KASSERT(intrf != NULL);
+	KASSERT(ci == curcpu());
+	KASSERT(!ci->ci_vcpu->evtchn_upcall_mask);
+
+	hypervisor_force_callback();
+}
+
+static void
+xen_ipi_kpreempt(struct cpu_info *ci, struct intrframe * intrf)
+{
+	softint_trigger(1 << SIR_PREEMPT);
+}
+
+#ifdef XENPV
 void
 xc_send_ipi(struct cpu_info *ci)
 {
@@ -298,15 +336,6 @@ xc_send_ipi(struct cpu_info *ci)
 	}
 }
 
-static void
-xen_ipi_generic(struct cpu_info *ci, struct intrframe *intrf)
-{
-	KASSERT(ci != NULL);
-	KASSERT(intrf != NULL);
-
-	ipi_cpu_handler();
-}
-
 void
 cpu_ipi(struct cpu_info *ci)
 {
@@ -320,14 +349,4 @@ cpu_ipi(struct cpu_info *ci)
 		xen_broadcast_ipi(XEN_IPI_GENERIC);
 	}
 }
-
-static void
-xen_ipi_hvcb(struct cpu_info *ci, struct intrframe *intrf)
-{
-	KASSERT(ci != NULL);
-	KASSERT(intrf != NULL);
-	KASSERT(ci == curcpu());
-	KASSERT(!ci->ci_vcpu->evtchn_upcall_mask);
-
-	hypervisor_force_callback();
-}
+#endif /* XENPV */

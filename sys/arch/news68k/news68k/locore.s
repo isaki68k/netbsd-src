@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.66 2018/12/19 13:57:49 maxv Exp $	*/
+/*	$NetBSD: locore.s,v 1.68 2022/05/30 09:56:03 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -808,15 +808,12 @@ ENTRY_NOPROFILE(intrhand_vectored)
 	subql	#1,_C_LABEL(idepth)
 	rte
 
-#undef INTERRUPT_SAVEREG
-#undef INTERRUPT_RESTOREREG
-
 /*
  * Emulation of VAX REI instruction.
  *
  * This code deals with checking for and servicing
  * ASTs (profiling, scheduling).
- * After identifing that we need an AST we drop the IPL
+ * After identifying that we need an AST we drop the IPL
  * to allow device interrupts.
  *
  * This code is complicated by the fact that sendsig may have been called

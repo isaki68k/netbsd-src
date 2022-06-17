@@ -1,4 +1,4 @@
-/*	$NetBSD: signal.h,v 1.72 2017/04/21 15:10:35 christos Exp $	*/
+/*	$NetBSD: signal.h,v 1.75 2021/11/02 20:12:26 christos Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1991, 1993
@@ -138,7 +138,81 @@ struct	sigaction {
 #define sa_sigaction _sa_u._sa_sigaction
 #endif
 
+/*
+ * Signal return trampoline versioning:
+ *
+ * In historical BSD, the kernel provided the signal trampoline, copying
+ * it out to the process's stack.  In NetBSD 2.0, the signal trampoline
+ * was moved into libc, and versioned in order to support the historical
+ * BSD "sigcontext" style of handler in addition to the modern "siginfo"
+ * style of handler.  The trampoline and its ABI version are registered
+ * with the kernel along with the handlers.
+ *
+ * The versioning follows this general pattern:
+ *
+ * 0	Historical BSD style, trampoline provided by the kernel.  This is
+ * 	now used only by COMPAT_* modules.
+ *
+ * 1	Legacy BSD "sigcontext" trampoline.  This style is deprecated and
+ *	no longer documented.  However, on platforms that have a legacy
+ *	"sigcontext" structure, it is still possible to register a handler
+ *	that uses this trampoline.
+ *
+ * 2	Modern "siginfo" trampoline.  This style is used if a handler
+ *	explicitly requests "siginfo", or if the deprecation of "sigcontext"
+ *	style handlers pre-dates support for the platform.
+ *
+ * Some architectures have, in the past, needed to version the "sigcontext"
+ * trampoline; an override mechanism is provided for this purpose.  No more
+ * changes to the old "sigcontext" trampoline ABI will ever be performed,
+ * and support for it should not be included when adding support for new
+ * architectures.  Those architectures that support the "sigcontext"
+ * trampoline must define __HAVE_STRUCT_SIGCONTEXT in <machine/signal.h>.
+ * If a 64-bit architecture needs to support "sigcontext" trampolines only
+ * for 32-bit compatibility, then __HAVE_STRUCT_SIGCONTEXT can be conditional
+ * on _KERNEL.
+ *
+ * If an architecture defines a sigcontext structure in <machine/signal.h>,
+ * it should be visible only for _KERNEL and _LIBC.
+ *
+ * In the unlikely event that an an architecture needs to version
+ * the "siginfo" trampoline, it can achieve this by overriding the
+ * various __SIGTRAMP_SIGINFO_VERSION-related constants.
+ */
+
 #include <machine/signal.h>	/* sigcontext; codes for SIGILL, SIGFPE */
+
+#define	__SIGTRAMP_SIGCODE_VERSION	  0
+
+#define	__SIGTRAMP_SIGCONTEXT_VERSION_MIN 1
+
+#ifndef __SIGTRAMP_SIGCONTEXT_VERSION_MAX
+#define	__SIGTRAMP_SIGCONTEXT_VERSION_MAX 1
+#endif
+
+#ifndef __SIGTRAMP_SIGCONTEXT_VERSION
+#define	__SIGTRAMP_SIGCONTEXT_VERSION     1
+#endif
+
+#if __SIGTRAMP_SIGCONTEXT_VERSION_MAX < __SIGTRAMP_SIGCONTEXT_VERSION_MIN
+#error invalid __SIGTRAMP_SIGCONTEXT_VERSION_MAX
+#endif
+
+#ifndef __SIGTRAMP_SIGINFO_VERSION_MIN
+#define	__SIGTRAMP_SIGINFO_VERSION_MIN    2
+#endif
+
+#ifndef __SIGTRAMP_SIGINFO_VERSION_MAX
+#define	__SIGTRAMP_SIGINFO_VERSION_MAX    2
+#endif
+
+#ifndef __SIGTRAMP_SIGINFO_VERSION
+#define	__SIGTRAMP_SIGINFO_VERSION        2
+#endif
+
+#if __SIGTRAMP_SIGINFO_VERSION_MAX < __SIGTRAMP_SIGINFO_VERSION_MIN
+#error invalid __SIGTRAMP_SIGINFO_VERSION_MAX
+#endif
 
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
     (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
@@ -177,7 +251,8 @@ typedef	void (*sig_t)(int);	/* type of signal function */
 #endif
 
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
-    (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
+    (_XOPEN_SOURCE - 0) >= 500 || (_POSIX_C_SOURCE - 0) >= 200809L || \
+    defined(_NETBSD_SOURCE)
 /*
  * Flags used with stack_t/struct sigaltstack.
  */
@@ -188,10 +263,13 @@ typedef	void (*sig_t)(int);	/* type of signal function */
 #endif
 #define	MINSIGSTKSZ	8192			/* minimum allowable stack */
 #define	SIGSTKSZ	(MINSIGSTKSZ + 32768)	/* recommended stack size */
-#endif /* _XOPEN_SOURCE_EXTENDED || _XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */
+#endif /* _XOPEN_SOURCE_EXTENDED || _XOPEN_SOURCE >= 500
+	* || _POSIX_C_SOURCE >= 200809L || _NETBSD_SOURCE
+	*/
 
 #if (defined(_XOPEN_SOURCE) && defined(_XOPEN_SOURCE_EXTENDED)) || \
-    (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)
+    (_XOPEN_SOURCE - 0) >= 500 || (_POSIX_C_SOURCE - 0) >= 200809L || \
+    defined(_NETBSD_SOURCE)
 /*
  * Structure used in sigstack call.
  */
@@ -199,7 +277,9 @@ struct	sigstack {
 	void	*ss_sp;			/* signal stack pointer */
 	int	ss_onstack;		/* current status */
 };
-#endif /* _XOPEN_SOURCE_EXTENDED || _XOPEN_SOURCE >= 500 || _NETBSD_SOURCE */
+#endif /* _XOPEN_SOURCE_EXTENDED || _XOPEN_SOURCE >= 500
+	* || _POSIX_C_SOURCE >= 200809L || _NETBSD_SOURCE
+	*/
 
 #if defined(_NETBSD_SOURCE) && !defined(_KERNEL)
 /*

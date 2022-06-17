@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee8023ad_lacp_sm_tx.c,v 1.3 2005/12/11 12:24:54 christos Exp $	*/
+/*	$NetBSD: ieee8023ad_lacp_sm_tx.c,v 1.5 2021/11/30 01:17:02 yamaguchi Exp $	*/
 
 /*-
  * Copyright (c)2005 YAMAMOTO Takashi,
@@ -27,18 +27,18 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ieee8023ad_lacp_sm_tx.c,v 1.3 2005/12/11 12:24:54 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee8023ad_lacp_sm_tx.c,v 1.5 2021/11/30 01:17:02 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/callout.h>
 #include <sys/mbuf.h>
 #include <sys/systm.h>
-#include <sys/kernel.h>	/* hardclock_ticks */
+#include <sys/kernel.h>	/* getticks() */
 
 #include <net/if.h>
 #include <net/if_ether.h>
+#include <net/ether_slowprotocols.h>
 
-#include <net/agr/ieee8023_slowprotocols.h>
 #include <net/agr/ieee8023_tlv.h>
 #include <net/agr/ieee8023ad_lacp.h>
 #include <net/agr/ieee8023ad_lacp_impl.h>
@@ -67,7 +67,7 @@ lacp_sm_tx(struct lacp_port *lp)
 	}
 
 	/* rate limit */
-	now = hardclock_ticks;
+	now = getticks();
 	if ((unsigned int)(now - lp->lp_last_lacpdu_sent) <=
 	    LACP_FAST_PERIODIC_TIME * hz / 3) {
 		return;

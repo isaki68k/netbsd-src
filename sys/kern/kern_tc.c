@@ -1,4 +1,4 @@
-/* $NetBSD: kern_tc.c,v 1.52 2019/10/06 15:11:17 uwe Exp $ */
+/* $NetBSD: kern_tc.c,v 1.62 2021/06/02 21:34:58 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -40,14 +40,18 @@
 
 #include <sys/cdefs.h>
 /* __FBSDID("$FreeBSD: src/sys/kern/kern_tc.c,v 1.166 2005/09/19 22:16:31 andre Exp $"); */
-__KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.52 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.62 2021/06/02 21:34:58 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ntp.h"
 #endif
 
 #include <sys/param.h>
+#include <sys/atomic.h>
+#include <sys/evcnt.h>
+#include <sys/kauth.h>
 #include <sys/kernel.h>
+#include <sys/mutex.h>
 #include <sys/reboot.h>	/* XXX just to get AB_VERBOSE */
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
@@ -55,10 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_tc.c,v 1.52 2019/10/06 15:11:17 uwe Exp $");
 #include <sys/timepps.h>
 #include <sys/timetc.h>
 #include <sys/timex.h>
-#include <sys/evcnt.h>
-#include <sys/kauth.h>
-#include <sys/mutex.h>
-#include <sys/atomic.h>
 #include <sys/xcall.h>
 
 /*
@@ -80,7 +80,7 @@ dummy_get_timecount(struct timecounter *tc)
 {
 	static u_int now;
 
-	return (++now);
+	return ++now;
 }
 
 static struct timecounter dummy_timecounter = {
@@ -97,9 +97,9 @@ struct timehands {
 	struct timecounter	*th_counter;     /* active timecounter */
 	int64_t			th_adjustment;   /* frequency adjustment */
 						 /* (NTP/adjtime) */
-	u_int64_t		th_scale;        /* scale factor (counter */
+	uint64_t		th_scale;        /* scale factor (counter */
 						 /* tick->time) */
-	u_int64_t 		th_offset_count; /* offset at last time */
+	uint64_t 		th_offset_count; /* offset at last time */
 						 /* update (tc_windup()) */
 	struct bintime		th_offset;       /* bin (up)time at windup */
 	struct timeval		th_microtime;    /* cached microtime */
@@ -143,11 +143,6 @@ static u_int timecounter_mods;
 static volatile int timecounter_removals = 1;
 static u_int timecounter_bad;
 
-#ifdef __FreeBSD__
-SYSCTL_INT(_kern_timecounter, OID_AUTO, stepwarnings, CTLFLAG_RW,
-    &timestepwarnings, 0, "");
-#endif /* __FreeBSD__ */
-
 /*
  * sysctl helper routine for kern.timercounter.hardware
  */
@@ -177,7 +172,7 @@ sysctl_kern_timecounter_hardware(SYSCTLFN_ARGS)
 	if (l != NULL && (error = kauth_authorize_system(l->l_cred, 
 	    KAUTH_SYSTEM_TIME, KAUTH_REQ_SYSTEM_TIME_TIMECOUNTERS, newname,
 	    NULL, NULL)) != 0)
-		return (error);
+		return error;
 
 	if (!cold)
 		mutex_spin_enter(&timecounter_lock);
@@ -208,9 +203,9 @@ sysctl_kern_timecounter_choice(SYSCTLFN_ARGS)
 	int error, mods;
 
 	if (newp != NULL)
-		return (EPERM);
+		return EPERM;
 	if (namelen != 0)
-		return (EINVAL);
+		return EINVAL;
 
 	mutex_spin_enter(&timecounter_lock);
  retry:
@@ -244,7 +239,7 @@ sysctl_kern_timecounter_choice(SYSCTLFN_ARGS)
 	mutex_spin_exit(&timecounter_lock);
 
 	*oldlenp = needed;
-	return (error);
+	return error;
 }
 
 SYSCTL_SETUP(sysctl_timecounter_setup, "sysctl timecounter setup")
@@ -310,8 +305,8 @@ tc_delta(struct timehands *th)
 	struct timecounter *tc;
 
 	tc = th->th_counter;
-	return ((tc->tc_get_timecount(tc) - 
-		 th->th_offset_count) & tc->tc_counter_mask);
+	return (tc->tc_get_timecount(tc) -
+		 th->th_offset_count) & tc->tc_counter_mask;
 }
 
 /*
@@ -519,6 +514,35 @@ getmicrotime(struct timeval *tvp)
 	} while (gen == 0 || gen != th->th_generation);
 }
 
+void
+getnanoboottime(struct timespec *tsp)
+{
+	struct bintime bt;
+
+	getbinboottime(&bt);
+	bintime2timespec(&bt, tsp);
+}
+
+void
+getmicroboottime(struct timeval *tvp)
+{
+	struct bintime bt;
+
+	getbinboottime(&bt);
+	bintime2timeval(&bt, tvp);
+}
+
+void
+getbinboottime(struct bintime *bt)
+{
+
+	/*
+	 * XXX Need lockless read synchronization around timebasebin
+	 * (and not just here).
+	 */
+	*bt = timebasebin;
+}
+
 /*
  * Initialize a new timecounter and possibly use it.
  */
@@ -526,6 +550,9 @@ void
 tc_init(struct timecounter *tc)
 {
 	u_int u;
+
+	KASSERTMSG(tc->tc_next == NULL, "timecounter %s already initialised",
+	    tc->tc_name);
 
 	u = tc->tc_frequency / tc->tc_counter_mask;
 	/* XXX: We need some margin here, 10% is a guess */
@@ -653,7 +680,7 @@ tc_detach(struct timecounter *target)
 	for (;;) {
 		xc_barrier(0);
 
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		LIST_FOREACH(l, &alllwp, l_list) {
 			if (l->l_tcgen == 0 || l->l_tcgen > removals) {
 				/*
@@ -664,25 +691,28 @@ tc_detach(struct timecounter *target)
 			}
 			break;
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 
 		/*
 		 * If the timecounter is still in use, wait at least 10ms
 		 * before retrying.
 		 */
 		if (l == NULL) {
-			return 0;
+			break;
 		}
 		(void)kpause("tcdetach", false, mstohz(10), NULL);
 	}
+
+	tc->tc_next = NULL;
+	return 0;
 }
 
 /* Report the frequency of the current timecounter. */
-u_int64_t
+uint64_t
 tc_getfrequency(void)
 {
 
-	return (timehands->th_counter->tc_frequency);
+	return timehands->th_counter->tc_frequency;
 }
 
 /*
@@ -724,7 +754,7 @@ tc_windup(void)
 {
 	struct bintime bt;
 	struct timehands *th, *tho;
-	u_int64_t scale;
+	uint64_t scale;
 	u_int delta, ncount, ogen;
 	int i, s_update;
 	time_t t;
@@ -829,7 +859,7 @@ tc_windup(void)
 	 *
 	 */
 	if (s_update) {
-		scale = (u_int64_t)1 << 63;
+		scale = (uint64_t)1 << 63;
 		scale += (th->th_adjustment / 1024) * 2199;
 		scale /= th->th_counter->tc_frequency;
 		th->th_scale = scale * 2;
@@ -883,41 +913,41 @@ pps_ioctl(u_long cmd, void *data, struct pps_state *pps)
 
 	switch (cmd) {
 	case PPS_IOC_CREATE:
-		return (0);
+		return 0;
 	case PPS_IOC_DESTROY:
-		return (0);
+		return 0;
 	case PPS_IOC_SETPARAMS:
 		app = (pps_params_t *)data;
 		if (app->mode & ~pps->ppscap)
-			return (EINVAL);
+			return EINVAL;
 		pps->ppsparam = *app;
-		return (0);
+		return 0;
 	case PPS_IOC_GETPARAMS:
 		app = (pps_params_t *)data;
 		*app = pps->ppsparam;
 		app->api_version = PPS_API_VERS_1;
-		return (0);
+		return 0;
 	case PPS_IOC_GETCAP:
 		*(int*)data = pps->ppscap;
-		return (0);
+		return 0;
 	case PPS_IOC_FETCH:
 		pipi = (pps_info_t *)data;
 		pps->ppsinfo.current_mode = pps->ppsparam.mode;
 		*pipi = pps->ppsinfo;
-		return (0);
+		return 0;
 	case PPS_IOC_KCBIND:
 #ifdef PPS_SYNC
 		epi = (int *)data;
 		/* XXX Only root should be able to do this */
 		if (*epi & ~pps->ppscap)
-			return (EINVAL);
+			return EINVAL;
 		pps->kcmode = *epi;
-		return (0);
+		return 0;
 #else
-		return (EOPNOTSUPP);
+		return EOPNOTSUPP;
 #endif
 	default:
-		return (EPASSTHROUGH);
+		return EPASSTHROUGH;
 	}
 }
 
@@ -948,7 +978,7 @@ pps_capture(struct pps_state *pps)
 	th = timehands;
 	pps->capgen = th->th_generation;
 	pps->capth = th;
-	pps->capcount = (u_int64_t)tc_delta(th) + th->th_offset_count;
+	pps->capcount = (uint64_t)tc_delta(th) + th->th_offset_count;
 	if (pps->capgen != th->th_generation)
 		pps->capgen = 0;
 }
@@ -1010,7 +1040,7 @@ pps_ref_event(struct pps_state *pps,
 	struct bintime bt_ref;	/* reference time */
 	struct timespec ts, *tsp, *osp;
 	struct timehands *th;
-	u_int64_t tcount, acount, dcount, *pcount;
+	uint64_t tcount, acount, dcount, *pcount;
 	int foff, gen;
 #ifdef PPS_SYNC
 	int fhard;
@@ -1026,7 +1056,7 @@ pps_ref_event(struct pps_state *pps,
 		/* pick up current time stamp */
 		th = timehands;
 		gen = th->th_generation;
-		tcount = (u_int64_t)tc_delta(th) + th->th_offset_count;
+		tcount = (uint64_t)tc_delta(th) + th->th_offset_count;
 		if (gen != th->th_generation)
 			gen = 0;
 
@@ -1307,7 +1337,7 @@ tc_ticktock(void)
 		return;
 	count = 0;
 	mutex_spin_enter(&timecounter_lock);
-	if (timecounter_bad != 0) {
+	if (__predict_false(timecounter_bad != 0)) {
 		/* An existing timecounter has gone bad, pick a new one. */
 		(void)atomic_swap_uint(&timecounter_bad, 0);
 		if (timecounter->tc_quality < 0) {
@@ -1329,7 +1359,7 @@ inittimecounter(void)
 	 * Set the initial timeout to
 	 * max(1, <approx. number of hardclock ticks in a millisecond>).
 	 * People should probably not use the sysctl to set the timeout
-	 * to smaller than its inital value, since that value is the
+	 * to smaller than its initial value, since that value is the
 	 * smallest reasonable one.  If they want better timestamps they
 	 * should use the non-"get"* functions.
 	 */

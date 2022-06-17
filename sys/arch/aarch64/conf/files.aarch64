@@ -1,15 +1,14 @@
-#	$NetBSD: files.aarch64,v 1.13 2019/01/27 02:08:36 pgoyette Exp $
+#	$NetBSD: files.aarch64,v 1.37 2022/01/31 09:16:09 ryo Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL1_STACK_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_HAVE_L2CTLR
+defflag opt_cpuoptions.h	AARCH64_DEVICE_MEM_STRONGLY_ORDERED
+defflag opt_cpuoptions.h	ARMV81_HAFDBS
 
 defflag	opt_cputypes.h		CPU_ARMV8
 defflag	opt_cputypes.h		CPU_CORTEX: CPU_ARMV8
-defflag	opt_cputypes.h		CPU_CORTEXA35: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA53: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA57: CPU_CORTEX
 defflag	opt_cputypes.h		CPU_THUNDERX: CPU_ARMV8
 
 # Interrupt implementation header definition
@@ -35,14 +34,15 @@ defparam opt_console.h		CONSPEED
 defparam opt_console.h		CONMODE
 defparam opt_console.h		CONADDR
 
-# Power State Coordination Interface (PSCI)
 # FP support
 file	arch/aarch64/aarch64/fpu.c
 
-file	arch/arm/arm/arm_generic_dma.c
-file	arch/arm/arm32/bus_dma.c
+# SMC Calling Convention
+define	smccc
+file	arch/arm/arm/smccc.c			smccc
 
-device	psci
+# Power State Coordination Interface (PSCI)
+device	psci: smccc
 file	arch/arm/arm/psci.c			psci
 file	arch/arm/arm/psci_arm.S			psci
 
@@ -50,17 +50,14 @@ file	arch/arm/arm/psci_arm.S			psci
 defflag	opt_efi.h		EFI_RUNTIME
 file	arch/arm/arm/efi_runtime.c		efi_runtime
 
-# PMAP_DEBUG (heavily abused option)
-defflag				PMAP_DEBUG
-
 # PMAP options
 defflag opt_pmap.h		PMAPHIST : KERNHIST
 defflag opt_pmap.h		PMAPCOUNTERS PMAP_STEAL_MEMORY
 				PMAP_NEED_ALLOC_POOLPAGE
+defflag opt_pmapboot.h		PMAPBOOT_DEBUG
 
 # MI support
 file	dev/cons.c
-#file	kern/kern_cctr.c
 
 # DDB
 file	arch/aarch64/aarch64/db_disasm.c		ddb
@@ -85,10 +82,15 @@ file	arch/aarch64/aarch64/bus_space_asm_generic.S	# bus_space_generic
 file	arch/aarch64/aarch64/bus_space_notimpl.S
 
 # Standard files
+file	arch/arm/arm/arm_cpu_topology.c
+file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bootconfig.c
+file	arch/arm/arm/bus_stubs.c
+file	arch/arm/arm/cpu_subr.c
+file	arch/arm/arm32/bus_dma.c
 file	arch/aarch64/aarch64/aarch64_machdep.c
 file	arch/aarch64/aarch64/aarch64_reboot.c
-file	arch/aarch64/aarch64/core_machdep.c
+file	arch/aarch64/aarch64/core_machdep.c		coredump
 file	arch/aarch64/aarch64/copyinout.S
 file	arch/aarch64/aarch64/cpu_in_cksum.S		(inet | inet6) & cpu_in_cksum
 file	arch/aarch64/aarch64/cpu_machdep.c
@@ -99,6 +101,7 @@ file	arch/aarch64/aarch64/exec_machdep.c
 file	arch/aarch64/aarch64/fusu.S
 file	arch/aarch64/aarch64/idle_machdep.S
 file	arch/aarch64/aarch64/kobj_machdep.c		modular
+file	arch/aarch64/aarch64/lock_stubs.S
 file	arch/aarch64/aarch64/process_machdep.c
 file	arch/aarch64/aarch64/procfs_machdep.c		procfs
 file	arch/aarch64/aarch64/sig_machdep.c
@@ -110,18 +113,18 @@ file	arch/aarch64/aarch64/vectors.S
 file	arch/aarch64/aarch64/vm_machdep.c
 
 # pmap
+file	arch/aarch64/aarch64/aarch64_tlb.c
 file	arch/aarch64/aarch64/pmap.c
 file	arch/aarch64/aarch64/pmapboot.c
 file	arch/aarch64/aarch64/pmap_page.S
-#file	uvm/pmap/pmap_pvt.c
+file	uvm/pmap/pmap_tlb.c
+file	uvm/pmap/pmap_pvt.c
+
+# GIC
+file	arch/arm/cortex/gic_splfuncs_armv8.S		gic_splfuncs
 
 # EFI runtime (machdep)
 file	arch/aarch64/aarch64/efi_machdep.c		efi_runtime
-
-# cyclecounter
-#file	arch/aarch64/aarch64/cctr_machdep.c
-#file	kern/kern_cctr.c
-
 
 # NetBSD 32-bit binary compatibility
 include "compat/netbsd32/files.netbsd32"
@@ -129,12 +132,24 @@ file	arch/aarch64/aarch64/netbsd32_machdep.c		compat_netbsd32
 file	arch/aarch64/aarch64/netbsd32_syscall.c		compat_netbsd32
 
 # Linux binary compatibility (COMPAT_LINUX)
-#include "compat/ossaudio/files.ossaudio"
-#include "compat/linux/files.linux"
-#include "compat/linux/arch/aarch64/files.linux_aarch64"
-#file	arch/aarch64/aarch64/linux_sigcode.S	compat_linux
-#file	arch/aarch64/aarch64/linux_syscall.c	compat_linux
-#file	arch/aarch64/aarch64/linux_trap.c	compat_linux
+include "compat/ossaudio/files.ossaudio"
+include "compat/linux/files.linux"
+include "compat/linux/arch/aarch64/files.linux_aarch64"
+file	arch/aarch64/aarch64/linux_syscall.c		compat_linux
+
+# Linux 32 bit compatibility (COMPAT_LINUX32)
+include "compat/linux32/files.linux32"
+include "compat/linux32/arch/aarch64/files.linux32_aarch64"
+file	arch/aarch64/aarch64/linux32_syscall.c		compat_linux32
 
 # profiling support
 file	dev/tprof/tprof_armv8.c			tprof	needs-flag
+
+# ARMv8.0-AES
+include "crypto/aes/arch/arm/files.aesarmv8"
+
+# vpaes with ARM NEON
+include "crypto/aes/arch/arm/files.aesneon"
+
+# ChaCha with ARM NEON
+include "crypto/chacha/arch/arm/files.chacha_arm"

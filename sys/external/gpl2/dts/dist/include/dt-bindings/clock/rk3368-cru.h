@@ -1,17 +1,8 @@
-/*	$NetBSD: rk3368-cru.h,v 1.1.1.3 2017/11/30 19:40:51 jmcneill Exp $	*/
+/*	$NetBSD: rk3368-cru.h,v 1.1.1.5 2021/11/07 16:49:58 jmcneill Exp $	*/
 
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright (c) 2015 Heiko Stuebner <heiko@sntech.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef _DT_BINDINGS_CLK_ROCKCHIP_RK3368_H
@@ -89,6 +80,7 @@
 #define SCLK_TIMER13		136
 #define SCLK_TIMER14		137
 #define SCLK_TIMER15		138
+#define SCLK_VIP_OUT		139
 
 #define DCLK_VOP		190
 #define MCLK_CRYPTO		191
@@ -159,6 +151,8 @@
 #define PCLK_VIP		367
 #define PCLK_WDT		368
 #define PCLK_EFUSE256		369
+#define PCLK_DPHYRX		370
+#define PCLK_DPHYTX0		371
 
 /* hclk gates */
 #define HCLK_SFC		448

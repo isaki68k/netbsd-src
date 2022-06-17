@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.3 2019/04/16 20:33:36 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.6 2021/10/28 11:11:11 christos Exp $	*/
 /*	$OpenBSD: locore.S,v 1.158 2008/07/28 19:08:46 miod Exp $	*/
 
 /*
@@ -836,9 +836,6 @@ switch_diag:
 kstack_ok:
 #endif
 
-	/* If old LWP exited, don't bother saving anything. */
-	comb,=,n %r0, %arg0, switch_exited
-
 	/*
 	 * save old LWP context
 	 *
@@ -876,7 +873,6 @@ kstack_ok:
 	 * arg0: old LWP (oldl)
 	 * arg1: new LWP (newl)
 	 */
-switch_exited:
 	ldw	L_MD(%arg1), %t1
 	ldw	L_PCB(%arg1), %t3
 	ldw	PCB_KSP(%t3), %sp		/* restore stack of newl */
@@ -1004,7 +1000,7 @@ ENTRY_NOPROFILE(lwp_trampoline,HPPA_FRAME_SIZE)
 	ldw	L_MD(%t2), %t3
 EXIT(lwp_trampoline)
 
-/* Include the signal code. */
+/* Include the signal code, used in compat code */
 #include <hppa/hppa/sigcode.S>
 
 	.end

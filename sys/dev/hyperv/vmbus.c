@@ -1,4 +1,4 @@
-/*	$NetBSD: vmbus.c,v 1.4 2019/07/09 10:07:11 nakayama Exp $	*/
+/*	$NetBSD: vmbus.c,v 1.18 2022/05/20 13:55:17 nonaka Exp $	*/
 /*	$OpenBSD: hyperv.c,v 1.43 2017/06/27 13:56:15 mikeb Exp $	*/
 
 /*-
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vmbus.c,v 1.4 2019/07/09 10:07:11 nakayama Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vmbus.c,v 1.18 2022/05/20 13:55:17 nonaka Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -46,6 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: vmbus.c,v 1.4 2019/07/09 10:07:11 nakayama Exp $");
 #include <sys/cpu.h>
 #include <sys/intr.h>
 #include <sys/kmem.h>
+#include <sys/kthread.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
 #include <sys/xcall.h>
@@ -62,21 +63,19 @@ __KERNEL_RCSID(0, "$NetBSD: vmbus.c,v 1.4 2019/07/09 10:07:11 nakayama Exp $");
 #define HCF_NOREPLY	0x0004
 
 static void	vmbus_attach_deferred(device_t);
+static int	vmbus_attach_print(void *, const char *);
 static int	vmbus_alloc_dma(struct vmbus_softc *);
 static void	vmbus_free_dma(struct vmbus_softc *);
 static int	vmbus_init_interrupts(struct vmbus_softc *);
 static void	vmbus_deinit_interrupts(struct vmbus_softc *);
-static void	vmbus_init_synic(void *, void *);
-static void	vmbus_deinit_synic(void *, void *);
+static void	vmbus_init_interrupts_pcpu(void *, void *);
+static void	vmbus_deinit_interrupts_pcpu(void *, void *);
 
 static int	vmbus_connect(struct vmbus_softc *);
 static int	vmbus_cmd(struct vmbus_softc *, void *, size_t, void *, size_t,
 		    int);
 static int	vmbus_start(struct vmbus_softc *, struct vmbus_msg *, paddr_t);
 static int	vmbus_reply(struct vmbus_softc *, struct vmbus_msg *);
-static void	vmbus_wait(struct vmbus_softc *,
-		    int (*done)(struct vmbus_softc *, struct vmbus_msg *),
-		    struct vmbus_msg *, void *, const char *);
 static uint16_t vmbus_intr_signal(struct vmbus_softc *, paddr_t);
 static void	vmbus_event_proc(void *, struct cpu_info *);
 static void	vmbus_event_proc_compat(void *, struct cpu_info *);
@@ -92,16 +91,23 @@ static void	vmbus_channel_delivered(struct vmbus_softc *,
 		    struct vmbus_chanmsg_hdr *);
 static int	vmbus_channel_scan(struct vmbus_softc *);
 static void	vmbus_channel_cpu_default(struct vmbus_channel *);
-static void	vmbus_process_offer(struct vmbus_softc *, struct vmbus_offer *);
+static void	vmbus_process_offer(struct vmbus_softc *,
+		    struct vmbus_chanmsg_choffer *);
+static void	vmbus_process_rescind(struct vmbus_softc *,
+		    struct vmbus_chanmsg_chrescind *);
 static struct vmbus_channel *
 		vmbus_channel_lookup(struct vmbus_softc *, uint32_t);
 static int	vmbus_channel_ring_create(struct vmbus_channel *, uint32_t);
 static void	vmbus_channel_ring_destroy(struct vmbus_channel *);
-static void	vmbus_channel_pause(struct vmbus_channel *);
-static uint32_t	vmbus_channel_unpause(struct vmbus_channel *);
-static uint32_t	vmbus_channel_ready(struct vmbus_channel *);
-static int	vmbus_attach_icdevs(struct vmbus_softc *);
-static int	vmbus_attach_devices(struct vmbus_softc *);
+static void	vmbus_channel_detach(struct vmbus_channel *);
+static void	vmbus_chevq_enqueue(struct vmbus_softc *, int, void *);
+static void	vmbus_process_chevq(void *);
+static void	vmbus_chevq_thread(void *);
+static void	vmbus_devq_enqueue(struct vmbus_softc *, int,
+		    struct vmbus_channel *);
+static void	vmbus_process_devq(void *);
+static void	vmbus_devq_thread(void *);
+static void	vmbus_subchannel_devq_thread(void *);
 
 static struct vmbus_softc *vmbus_sc;
 
@@ -265,6 +271,9 @@ vmbus_attach(struct vmbus_softc *sc)
 	    "hvmsg", NULL, IPL_NET, NULL, NULL, NULL);
 	hyperv_set_message_proc(vmbus_message_proc, sc);
 
+	sc->sc_chanmap = kmem_zalloc(sizeof(struct vmbus_channel *) *
+	    VMBUS_CHAN_MAX, KM_SLEEP);
+
 	if (vmbus_alloc_dma(sc))
 		goto cleanup;
 
@@ -290,12 +299,6 @@ vmbus_attach(struct vmbus_softc *sc)
 	if (vmbus_channel_scan(sc))
 		goto cleanup;
 
-	/* Attach heartbeat, KVP and other "internal" services */
-	vmbus_attach_icdevs(sc);
-
-	/* Attach devices with external drivers */
-	vmbus_attach_devices(sc);
-
 	config_interrupts(sc->sc_dev, vmbus_attach_deferred);
 
 	return 0;
@@ -303,6 +306,8 @@ vmbus_attach(struct vmbus_softc *sc)
 cleanup:
 	vmbus_deinit_interrupts(sc);
 	vmbus_free_dma(sc);
+	kmem_free(__UNVOLATILE(sc->sc_chanmap),
+	    sizeof(struct vmbus_channel *) * VMBUS_CHAN_MAX);
 	return -1;
 }
 
@@ -310,8 +315,11 @@ static void
 vmbus_attach_deferred(device_t self)
 {
 	struct vmbus_softc *sc = device_private(self);
+	uint64_t xc;
 
-	xc_wait(xc_broadcast(0, vmbus_init_synic, sc, NULL));
+	xc = xc_broadcast(0, vmbus_init_interrupts_pcpu,
+	    sc, NULL);
+	xc_wait(xc);
 }
 
 int
@@ -320,6 +328,8 @@ vmbus_detach(struct vmbus_softc *sc, int flags)
 
 	vmbus_deinit_interrupts(sc);
 	vmbus_free_dma(sc);
+	kmem_free(__UNVOLATILE(sc->sc_chanmap),
+	    sizeof(struct vmbus_channel *) * VMBUS_CHAN_MAX);
 
 	return 0;
 }
@@ -400,6 +410,7 @@ vmbus_free_dma(struct vmbus_softc *sc)
 static int
 vmbus_init_interrupts(struct vmbus_softc *sc)
 {
+	uint64_t xc;
 
 	TAILQ_INIT(&sc->sc_reqs);
 	mutex_init(&sc->sc_req_lock, MUTEX_DEFAULT, IPL_NET);
@@ -416,14 +427,15 @@ vmbus_init_interrupts(struct vmbus_softc *sc)
 	if (sc->sc_msg_sih == NULL)
 		return -1;
 
-	vmbus_init_interrupts_md(sc);
-
 	kcpuset_create(&sc->sc_intr_cpuset, true);
 	if (cold) {
 		/* Initialize other CPUs later. */
-		vmbus_init_synic(sc, NULL);
-	} else
-		xc_wait(xc_broadcast(0, vmbus_init_synic, sc, NULL));
+		vmbus_init_interrupts_pcpu(sc, NULL);
+	} else {
+		xc = xc_broadcast(0, vmbus_init_interrupts_pcpu,
+		    sc, NULL);
+		xc_wait(xc);
+	}
 	atomic_or_32(&sc->sc_flags, VMBUS_SCFLAG_SYNIC);
 
 	return 0;
@@ -432,14 +444,16 @@ vmbus_init_interrupts(struct vmbus_softc *sc)
 static void
 vmbus_deinit_interrupts(struct vmbus_softc *sc)
 {
+	uint64_t xc;
 
-	if (ISSET(sc->sc_flags, VMBUS_SCFLAG_SYNIC)) {
-		if (cold)
-			vmbus_deinit_synic(sc, NULL);
-		else
-			xc_wait(xc_broadcast(0, vmbus_deinit_synic, sc, NULL));
-		atomic_and_32(&sc->sc_flags, (uint32_t)~VMBUS_SCFLAG_SYNIC);
+	if (cold) {
+		vmbus_deinit_interrupts_pcpu(sc, NULL);
+	} else {
+		xc = xc_broadcast(0, vmbus_deinit_interrupts_pcpu,
+		    sc, NULL);
+		xc_wait(xc);
 	}
+	atomic_and_32(&sc->sc_flags, (uint32_t)~VMBUS_SCFLAG_SYNIC);
 
 	/* XXX event_tq */
 
@@ -447,12 +461,10 @@ vmbus_deinit_interrupts(struct vmbus_softc *sc)
 		softint_disestablish(sc->sc_msg_sih);
 		sc->sc_msg_sih = NULL;
 	}
-
-	vmbus_deinit_interrupts_md(sc);
 }
 
 static void
-vmbus_init_synic(void *arg1, void *arg2)
+vmbus_init_interrupts_pcpu(void *arg1, void *arg2 __unused)
 {
 	struct vmbus_softc *sc = arg1;
 	cpuid_t cpu;
@@ -463,6 +475,7 @@ vmbus_init_synic(void *arg1, void *arg2)
 	cpu = cpu_index(curcpu());
 	if (!kcpuset_isset(sc->sc_intr_cpuset, cpu)) {
 		kcpuset_atomic_set(sc->sc_intr_cpuset, cpu);
+		vmbus_init_interrupts_md(sc, cpu);
 		vmbus_init_synic_md(sc, cpu);
 	}
 
@@ -470,7 +483,7 @@ vmbus_init_synic(void *arg1, void *arg2)
 }
 
 static void
-vmbus_deinit_synic(void *arg1, void *arg2)
+vmbus_deinit_interrupts_pcpu(void *arg1, void *arg2 __unused)
 {
 	struct vmbus_softc *sc = arg1;
 	cpuid_t cpu;
@@ -480,7 +493,9 @@ vmbus_deinit_synic(void *arg1, void *arg2)
 
 	cpu = cpu_index(curcpu());
 	if (kcpuset_isset(sc->sc_intr_cpuset, cpu)) {
-		vmbus_deinit_synic_md(sc, cpu);
+		if (ISSET(sc->sc_flags, VMBUS_SCFLAG_SYNIC))
+			vmbus_deinit_synic_md(sc, cpu);
+		vmbus_deinit_interrupts_md(sc, cpu);
 		kcpuset_atomic_clear(sc->sc_intr_cpuset, cpu);
 	}
 
@@ -511,7 +526,7 @@ vmbus_connect(struct vmbus_softc *sc)
 	for (i = 0; i < __arraycount(versions); i++) {
 		cmd.chm_ver = versions[i];
 		rv = vmbus_cmd(sc, &cmd, sizeof(cmd), &rsp, sizeof(rsp),
-		    cold ? HCF_NOSLEEP : HCF_SLEEPOK);
+		    HCF_NOSLEEP);
 		if (rv) {
 			DPRINTF("%s: CONNECT failed\n",
 			    device_xname(sc->sc_dev));
@@ -537,7 +552,6 @@ static int
 vmbus_cmd(struct vmbus_softc *sc, void *cmd, size_t cmdlen, void *rsp,
     size_t rsplen, int flags)
 {
-	const int prflags = cold ? PR_NOWAIT : PR_WAITOK;
 	struct vmbus_msg *msg;
 	paddr_t pa;
 	int rv;
@@ -548,7 +562,7 @@ vmbus_cmd(struct vmbus_softc *sc, void *cmd, size_t cmdlen, void *rsp,
 		return EMSGSIZE;
 	}
 
-	msg = pool_cache_get_paddr(sc->sc_msgpool, prflags, &pa);
+	msg = pool_cache_get_paddr(sc->sc_msgpool, PR_WAITOK, &pa);
 	if (msg == NULL) {
 		device_printf(sc->sc_dev, "couldn't get msgpool\n");
 		return ENOMEM;
@@ -576,11 +590,9 @@ vmbus_cmd(struct vmbus_softc *sc, void *cmd, size_t cmdlen, void *rsp,
 static int
 vmbus_start(struct vmbus_softc *sc, struct vmbus_msg *msg, paddr_t msg_pa)
 {
-	static const int delays[] = {
-		100, 100, 100, 500, 500, 5000, 5000, 5000
-	};
 	const char *wchan = "hvstart";
 	uint16_t status;
+	int wait_ms = 1;	/* milliseconds */
 	int i, s;
 
 	msg->msg_req.hc_connid = VMBUS_CONNID_MESSAGE;
@@ -592,32 +604,45 @@ vmbus_start(struct vmbus_softc *sc, struct vmbus_msg *msg, paddr_t msg_pa)
 		mutex_exit(&sc->sc_req_lock);
 	}
 
-	for (i = 0; i < __arraycount(delays); i++) {
+	/*
+	 * In order to cope with transient failures, e.g. insufficient
+	 * resources on host side, we retry the post message Hypercall
+	 * several times.  20 retries seem sufficient.
+	 */
+#define HC_RETRY_MAX	20
+#define HC_WAIT_MAX	(2 * 1000)	/* 2s */
+
+	for (i = 0; i < HC_RETRY_MAX; i++) {
 		status = hyperv_hypercall_post_message(
 		    msg_pa + offsetof(struct vmbus_msg, msg_req));
 		if (status == HYPERCALL_STATUS_SUCCESS)
-			break;
+			return 0;
 
 		if (msg->msg_flags & MSGF_NOSLEEP) {
-			delay(delays[i]);
+			DELAY(wait_ms * 1000);
 			s = splnet();
 			hyperv_intr();
 			splx(s);
 		} else
-			tsleep(wchan, PRIBIO, wchan, 1);
-	}
-	if (status != HYPERCALL_STATUS_SUCCESS) {
-		device_printf(sc->sc_dev,
-		    "posting vmbus message failed with %d\n", status);
-		if (!(msg->msg_flags & MSGF_NOQUEUE)) {
-			mutex_enter(&sc->sc_req_lock);
-			TAILQ_REMOVE(&sc->sc_reqs, msg, msg_entry);
-			mutex_exit(&sc->sc_req_lock);
-		}
-		return EIO;
+			tsleep(wchan, PRIBIO, wchan, uimax(1, mstohz(wait_ms)));
+
+		if (wait_ms < HC_WAIT_MAX)
+			wait_ms *= 2;
 	}
 
-	return 0;
+#undef HC_RETRY_MAX
+#undef HC_WAIT_MAX
+
+	device_printf(sc->sc_dev,
+	    "posting vmbus message failed with %d\n", status);
+
+	if (!(msg->msg_flags & MSGF_NOQUEUE)) {
+		mutex_enter(&sc->sc_req_lock);
+		TAILQ_REMOVE(&sc->sc_reqs, msg, msg_entry);
+		mutex_exit(&sc->sc_req_lock);
+	}
+
+	return EIO;
 }
 
 static int
@@ -639,35 +664,26 @@ vmbus_reply_done(struct vmbus_softc *sc, struct vmbus_msg *msg)
 static int
 vmbus_reply(struct vmbus_softc *sc, struct vmbus_msg *msg)
 {
+	int s;
 
 	if (msg->msg_flags & MSGF_NOQUEUE)
 		return 0;
 
-	vmbus_wait(sc, vmbus_reply_done, msg, msg, "hvreply");
-
-	mutex_enter(&sc->sc_rsp_lock);
-	TAILQ_REMOVE(&sc->sc_rsps, msg, msg_entry);
-	mutex_exit(&sc->sc_rsp_lock);
-
-	return 0;
-}
-
-static void
-vmbus_wait(struct vmbus_softc *sc,
-    int (*cond)(struct vmbus_softc *, struct vmbus_msg *),
-    struct vmbus_msg *msg, void *wchan, const char *wmsg)
-{
-	int s;
-
-	while (!cond(sc, msg)) {
+	while (!vmbus_reply_done(sc, msg)) {
 		if (msg->msg_flags & MSGF_NOSLEEP) {
 			delay(1000);
 			s = splnet();
 			hyperv_intr();
 			splx(s);
 		} else
-			tsleep(wchan, PRIBIO, wmsg ? wmsg : "hvwait", 1);
+			tsleep(msg, PRIBIO, "hvreply", uimax(1, mstohz(1)));
 	}
+
+	mutex_enter(&sc->sc_rsp_lock);
+	TAILQ_REMOVE(&sc->sc_rsps, msg, msg_entry);
+	mutex_exit(&sc->sc_rsp_lock);
+
+	return 0;
 }
 
 static uint16_t
@@ -701,7 +717,8 @@ vmbus_event_flags_proc(struct vmbus_softc *sc, volatile u_long *revents,
 			continue;
 
 		pending = atomic_swap_ulong(&revents[row], 0);
-		chanid_base = row * LONG_BIT;
+		pending &= ~sc->sc_evtmask[row];
+		chanid_base = row * VMBUS_EVTFLAG_LEN;
 
 		while ((chanid_ofs = ffsl(pending)) != 0) {
 			chanid_ofs--;	/* NOTE: ffs is 1-based */
@@ -712,12 +729,12 @@ vmbus_event_flags_proc(struct vmbus_softc *sc, volatile u_long *revents,
 			if (chanid == 0)
 				continue;
 
-			ch = vmbus_channel_lookup(sc, chanid);
-			if (ch == NULL) {
-				device_printf(sc->sc_dev,
-				    "unhandled event on %d\n", chanid);
+			ch = sc->sc_chanmap[chanid];
+			if (__predict_false(ch == NULL)) {
+				/* Channel is closed. */
 				continue;
 			}
+			__insn_barrier();
 			if (ch->ch_state != VMBUS_CHANSTATE_OPENED) {
 				device_printf(sc->sc_dev,
 				    "channel %d is not active\n", chanid);
@@ -850,28 +867,33 @@ vmbus_channel_response(struct vmbus_softc *sc, struct vmbus_chanmsg_hdr *rsphdr)
 static void
 vmbus_channel_offer(struct vmbus_softc *sc, struct vmbus_chanmsg_hdr *hdr)
 {
-	struct vmbus_offer *co;
+	struct vmbus_chanmsg_choffer *co;
 
-	co = kmem_intr_zalloc(sizeof(*co), KM_NOSLEEP);
+	co = kmem_intr_alloc(sizeof(*co), KM_NOSLEEP);
 	if (co == NULL) {
-		device_printf(sc->sc_dev, "couldn't allocate offer\n");
+		device_printf(sc->sc_dev,
+		    "failed to allocate an offer object\n");
 		return;
 	}
 
-	memcpy(&co->co_chan, hdr, sizeof(co->co_chan));
-
-	mutex_enter(&sc->sc_offer_lock);
-	SIMPLEQ_INSERT_TAIL(&sc->sc_offers, co, co_entry);
-	mutex_exit(&sc->sc_offer_lock);
+	memcpy(co, hdr, sizeof(*co));
+	vmbus_chevq_enqueue(sc, VMBUS_CHEV_TYPE_OFFER, co);
 }
 
 static void
 vmbus_channel_rescind(struct vmbus_softc *sc, struct vmbus_chanmsg_hdr *hdr)
 {
-	const struct vmbus_chanmsg_chrescind *cmd;
+	struct vmbus_chanmsg_chrescind *cr;
+ 
+	cr = kmem_intr_alloc(sizeof(*cr), KM_NOSLEEP);
+	if (cr == NULL) {
+		device_printf(sc->sc_dev,
+		    "failed to allocate an rescind object\n");
+		return;
+	}
 
-	cmd = (const struct vmbus_chanmsg_chrescind *)hdr;
-	device_printf(sc->sc_dev, "revoking channel %u\n", cmd->chm_chanid);
+	memcpy(cr, hdr, sizeof(*cr));
+	vmbus_chevq_enqueue(sc, VMBUS_CHEV_TYPE_RESCIND, cr);
 }
 
 static void
@@ -879,7 +901,7 @@ vmbus_channel_delivered(struct vmbus_softc *sc, struct vmbus_chanmsg_hdr *hdr)
 {
 
 	atomic_or_32(&sc->sc_flags, VMBUS_SCFLAG_OFFERS_DELIVERED);
-	wakeup(&sc->sc_offers);
+	wakeup(&sc->sc_devq);
 }
 
 static void
@@ -923,49 +945,75 @@ hyperv_guid_sprint(struct hyperv_guid *guid, char *str, size_t size)
 }
 
 static int
-vmbus_channel_scan_done(struct vmbus_softc *sc, struct vmbus_msg *msg __unused)
-{
-
-	return ISSET(sc->sc_flags, VMBUS_SCFLAG_OFFERS_DELIVERED);
-}
-
-static int
 vmbus_channel_scan(struct vmbus_softc *sc)
 {
 	struct vmbus_chanmsg_hdr hdr;
 	struct vmbus_chanmsg_choffer rsp;
-	struct vmbus_offer *co;
 
-	SIMPLEQ_INIT(&sc->sc_offers);
-	mutex_init(&sc->sc_offer_lock, MUTEX_DEFAULT, IPL_NET);
+	TAILQ_INIT(&sc->sc_prichans);
+	mutex_init(&sc->sc_prichan_lock, MUTEX_DEFAULT, IPL_NET);
+	TAILQ_INIT(&sc->sc_channels);
+	mutex_init(&sc->sc_channel_lock, MUTEX_DEFAULT, IPL_NET);
+
+	/*
+	 * This queue serializes vmbus channel offer and rescind messages.
+	 */
+	SIMPLEQ_INIT(&sc->sc_chevq);
+	mutex_init(&sc->sc_chevq_lock, MUTEX_DEFAULT, IPL_NET);
+	cv_init(&sc->sc_chevq_cv, "hvchevcv");
+	if (kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,
+	    vmbus_chevq_thread, sc, NULL, "hvchevq") != 0) {
+		DPRINTF("%s: failed to create prich chevq thread\n",
+		    device_xname(sc->sc_dev));
+		return -1;
+	}
+
+	/*
+	 * This queue serializes vmbus devices' attach and detach
+	 * for channel offer and rescind messages.
+	 */
+	SIMPLEQ_INIT(&sc->sc_devq);
+	mutex_init(&sc->sc_devq_lock, MUTEX_DEFAULT, IPL_NET);
+	cv_init(&sc->sc_devq_cv, "hvdevqcv");
+	if (kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,
+	    vmbus_devq_thread, sc, NULL, "hvdevq") != 0) {
+		DPRINTF("%s: failed to create prich devq thread\n",
+		    device_xname(sc->sc_dev));
+		return -1;
+	}
+
+	/*
+	 * This queue handles sub-channel detach, so that vmbus
+	 * device's detach running in sc_devq can drain its sub-channels.
+	 */
+	SIMPLEQ_INIT(&sc->sc_subch_devq);
+	mutex_init(&sc->sc_subch_devq_lock, MUTEX_DEFAULT, IPL_NET);
+	cv_init(&sc->sc_subch_devq_cv, "hvsdvqcv");
+	if (kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,
+	    vmbus_subchannel_devq_thread, sc, NULL, "hvsdevq") != 0) {
+		DPRINTF("%s: failed to create subch devq thread\n",
+		    device_xname(sc->sc_dev));
+		return -1;
+	}
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.chm_type = VMBUS_CHANMSG_CHREQUEST;
 
 	if (vmbus_cmd(sc, &hdr, sizeof(hdr), &rsp, sizeof(rsp),
-	    HCF_NOREPLY | (cold ? HCF_NOSLEEP : HCF_SLEEPOK))) {
+	    HCF_NOREPLY | HCF_NOSLEEP)) {
 		DPRINTF("%s: CHREQUEST failed\n", device_xname(sc->sc_dev));
 		return -1;
 	}
 
-	vmbus_wait(sc, vmbus_channel_scan_done, (struct vmbus_msg *)&hdr,
-	    &sc->sc_offers, "hvscan");
+	while (!ISSET(sc->sc_flags, VMBUS_SCFLAG_OFFERS_DELIVERED))
+		tsleep(&sc->sc_devq, PRIBIO, "hvscan", 1);
 
-	TAILQ_INIT(&sc->sc_channels);
-	mutex_init(&sc->sc_channel_lock, MUTEX_DEFAULT, IPL_NET);
-
-	mutex_enter(&sc->sc_offer_lock);
-	while (!SIMPLEQ_EMPTY(&sc->sc_offers)) {
-		co = SIMPLEQ_FIRST(&sc->sc_offers);
-		SIMPLEQ_REMOVE_HEAD(&sc->sc_offers, co_entry);
-		mutex_exit(&sc->sc_offer_lock);
-
-		vmbus_process_offer(sc, co);
-		kmem_free(co, sizeof(*co));
-
-		mutex_enter(&sc->sc_offer_lock);
-	}
-	mutex_exit(&sc->sc_offer_lock);
+	mutex_enter(&sc->sc_chevq_lock);
+	vmbus_process_chevq(sc);
+	mutex_exit(&sc->sc_chevq_lock);
+	mutex_enter(&sc->sc_devq_lock);
+	vmbus_process_devq(sc);
+	mutex_exit(&sc->sc_devq_lock);
 
 	return 0;
 }
@@ -975,7 +1023,7 @@ vmbus_channel_alloc(struct vmbus_softc *sc)
 {
 	struct vmbus_channel *ch;
 
-	ch = kmem_zalloc(sizeof(*ch), cold ? KM_NOSLEEP : KM_SLEEP);
+	ch = kmem_zalloc(sizeof(*ch), KM_SLEEP);
 
 	ch->ch_monprm = hyperv_dma_alloc(sc->sc_dmat, &ch->ch_monprm_dma,
 	    sizeof(*ch->ch_monprm), 8, 0, 1);
@@ -984,11 +1032,13 @@ vmbus_channel_alloc(struct vmbus_softc *sc)
 		kmem_free(ch, sizeof(*ch));
 		return NULL;
 	}
-	memset(ch->ch_monprm, 0, sizeof(*ch->ch_monprm));
 
 	ch->ch_refs = 1;
 	ch->ch_sc = sc;
+	mutex_init(&ch->ch_event_lock, MUTEX_DEFAULT, IPL_NET);
+	cv_init(&ch->ch_event_cv, "hvevwait");
 	mutex_init(&ch->ch_subchannel_lock, MUTEX_DEFAULT, IPL_NET);
+	cv_init(&ch->ch_subchannel_cv, "hvsubch");
 	TAILQ_INIT(&ch->ch_subchannels);
 
 	ch->ch_state = VMBUS_CHANSTATE_CLOSED;
@@ -1009,9 +1059,13 @@ vmbus_channel_free(struct vmbus_channel *ch)
 	    ch->ch_id, ch->ch_refs);
 
 	hyperv_dma_free(sc->sc_dmat, &ch->ch_monprm_dma);
+	mutex_destroy(&ch->ch_event_lock);
+	cv_destroy(&ch->ch_event_cv);
 	mutex_destroy(&ch->ch_subchannel_lock);
+	cv_destroy(&ch->ch_subchannel_cv);
 	/* XXX ch_evcnt */
-	softint_disestablish(ch->ch_taskq);
+	if (ch->ch_taskq != NULL)
+		softint_disestablish(ch->ch_taskq);
 	kmem_free(ch, sizeof(*ch));
 }
 
@@ -1020,7 +1074,7 @@ vmbus_channel_add(struct vmbus_channel *nch)
 {
 	struct vmbus_softc *sc = nch->ch_sc;
 	struct vmbus_channel *ch;
-	u_int refs __diagused;
+	int refs __diagused;
 
 	if (nch->ch_id == 0) {
 		device_printf(sc->sc_dev, "got channel 0 offer, discard\n");
@@ -1031,38 +1085,38 @@ vmbus_channel_add(struct vmbus_channel *nch)
 		return EINVAL;
 	}
 
-	mutex_enter(&sc->sc_channel_lock);
-	TAILQ_FOREACH(ch, &sc->sc_channels, ch_entry) {
+	mutex_enter(&sc->sc_prichan_lock);
+	TAILQ_FOREACH(ch, &sc->sc_prichans, ch_prientry) {
 		if (!memcmp(&ch->ch_type, &nch->ch_type, sizeof(ch->ch_type)) &&
 		    !memcmp(&ch->ch_inst, &nch->ch_inst, sizeof(ch->ch_inst)))
 			break;
 	}
 	if (VMBUS_CHAN_ISPRIMARY(nch)) {
 		if (ch == NULL) {
-			TAILQ_INSERT_TAIL(&sc->sc_channels, nch, ch_entry);
-			mutex_exit(&sc->sc_channel_lock);
+			TAILQ_INSERT_TAIL(&sc->sc_prichans, nch, ch_prientry);
+			mutex_exit(&sc->sc_prichan_lock);
 			goto done;
 		} else {
-			mutex_exit(&sc->sc_channel_lock);
+			mutex_exit(&sc->sc_prichan_lock);
 			device_printf(sc->sc_dev,
 			    "duplicated primary channel%u\n", nch->ch_id);
 			return EINVAL;
 		}
 	} else {
 		if (ch == NULL) {
-			mutex_exit(&sc->sc_channel_lock);
+			mutex_exit(&sc->sc_prichan_lock);
 			device_printf(sc->sc_dev, "no primary channel%u\n",
 			    nch->ch_id);
 			return EINVAL;
 		}
 	}
-	mutex_exit(&sc->sc_channel_lock);
+	mutex_exit(&sc->sc_prichan_lock);
 
 	KASSERT(!VMBUS_CHAN_ISPRIMARY(nch));
 	KASSERT(ch != NULL);
 
-	refs = atomic_add_int_nv(&nch->ch_refs, 1);
-	KASSERT(refs == 1);
+	refs = atomic_inc_uint_nv(&nch->ch_refs);
+	KASSERT(refs == 2);
 
 	nch->ch_primary_channel = ch;
 	nch->ch_dev = ch->ch_dev;
@@ -1070,10 +1124,14 @@ vmbus_channel_add(struct vmbus_channel *nch)
 	mutex_enter(&ch->ch_subchannel_lock);
 	TAILQ_INSERT_TAIL(&ch->ch_subchannels, nch, ch_subentry);
 	ch->ch_subchannel_count++;
+	cv_signal(&ch->ch_subchannel_cv);
 	mutex_exit(&ch->ch_subchannel_lock);
-	wakeup(ch);
 
 done:
+	mutex_enter(&sc->sc_channel_lock);
+	TAILQ_INSERT_TAIL(&sc->sc_channels, nch, ch_entry);
+	mutex_exit(&sc->sc_channel_lock);
+
 	vmbus_channel_cpu_default(nch);
 
 	return 0;
@@ -1093,7 +1151,11 @@ vmbus_channel_cpu_set(struct vmbus_channel *ch, int cpu)
 	}
 
 	ch->ch_cpuid = cpu;
-	ch->ch_vcpu = sc->sc_percpu[cpu].vcpuid;
+	ch->ch_vcpu = hyperv_get_vcpuid(cpu);
+
+	aprint_debug_dev(ch->ch_dev != NULL ? ch->ch_dev : sc->sc_dev,
+	    "channel %u assigned to cpu%u [vcpu%u]\n",
+	    ch->ch_id, ch->ch_cpuid, ch->ch_vcpu);
 }
 
 void
@@ -1102,7 +1164,7 @@ vmbus_channel_cpu_rr(struct vmbus_channel *ch)
 	static uint32_t vmbus_channel_nextcpu;
 	int cpu;
 
-	cpu = atomic_add_32_nv(&vmbus_channel_nextcpu, 1) % ncpu;
+	cpu = atomic_inc_32_nv(&vmbus_channel_nextcpu) % ncpu;
 	vmbus_channel_cpu_set(ch, cpu);
 }
 
@@ -1118,15 +1180,22 @@ vmbus_channel_cpu_default(struct vmbus_channel *ch)
 	vmbus_channel_cpu_set(ch, 0);
 }
 
+bool
+vmbus_channel_is_revoked(struct vmbus_channel *ch)
+{
+
+	return (ch->ch_flags & CHF_REVOKED) ? true : false;
+}
+
 static void
-vmbus_process_offer(struct vmbus_softc *sc, struct vmbus_offer *co)
+vmbus_process_offer(struct vmbus_softc *sc, struct vmbus_chanmsg_choffer *co)
 {
 	struct vmbus_channel *ch;
 
 	ch = vmbus_channel_alloc(sc);
 	if (ch == NULL) {
 		device_printf(sc->sc_dev, "allocate channel %u failed\n",
-		    co->co_chan.chm_chanid);
+		    co->chm_chanid);
 		return;
 	}
 
@@ -1137,46 +1206,79 @@ vmbus_process_offer(struct vmbus_softc *sc, struct vmbus_offer *co)
 	 */
 	ch->ch_flags |= CHF_BATCHED;
 
-	hyperv_guid_sprint(&co->co_chan.chm_chtype, ch->ch_ident,
+	hyperv_guid_sprint(&co->chm_chtype, ch->ch_ident,
 	    sizeof(ch->ch_ident));
 
 	ch->ch_monprm->mp_connid = VMBUS_CONNID_EVENT;
 	if (sc->sc_proto > VMBUS_VERSION_WS2008)
-		ch->ch_monprm->mp_connid = co->co_chan.chm_connid;
+		ch->ch_monprm->mp_connid = co->chm_connid;
 
-	if (co->co_chan.chm_flags1 & VMBUS_CHOFFER_FLAG1_HASMNF) {
-		ch->ch_mgroup = co->co_chan.chm_montrig / VMBUS_MONTRIG_LEN;
-		ch->ch_mindex = co->co_chan.chm_montrig % VMBUS_MONTRIG_LEN;
+	if (co->chm_flags1 & VMBUS_CHOFFER_FLAG1_HASMNF) {
+		ch->ch_mgroup = co->chm_montrig / VMBUS_MONTRIG_LEN;
+		ch->ch_mindex = co->chm_montrig % VMBUS_MONTRIG_LEN;
 		ch->ch_flags |= CHF_MONITOR;
 	}
 
-	ch->ch_id = co->co_chan.chm_chanid;
-	ch->ch_subidx = co->co_chan.chm_subidx;
+	ch->ch_id = co->chm_chanid;
+	ch->ch_subidx = co->chm_subidx;
 
-	memcpy(&ch->ch_type, &co->co_chan.chm_chtype, sizeof(ch->ch_type));
-	memcpy(&ch->ch_inst, &co->co_chan.chm_chinst, sizeof(ch->ch_inst));
-
-	if (VMBUS_CHAN_ISPRIMARY(ch)) {
-		/* set primary channel mgmt wq */
-	} else {
-		/* set sub channel mgmt wq */
-	}
+	memcpy(&ch->ch_type, &co->chm_chtype, sizeof(ch->ch_type));
+	memcpy(&ch->ch_inst, &co->chm_chinst, sizeof(ch->ch_inst));
 
 	if (vmbus_channel_add(ch) != 0) {
+		atomic_dec_uint(&ch->ch_refs);
 		vmbus_channel_free(ch);
 		return;
 	}
 
 	ch->ch_state = VMBUS_CHANSTATE_OFFERED;
 
+	vmbus_devq_enqueue(sc, VMBUS_DEV_TYPE_ATTACH, ch);
+
 #ifdef HYPERV_DEBUG
 	printf("%s: channel %u: \"%s\"", device_xname(sc->sc_dev), ch->ch_id,
 	    ch->ch_ident);
 	if (ch->ch_flags & CHF_MONITOR)
-		printf(", monitor %u\n", co->co_chan.chm_montrig);
+		printf(", monitor %u\n", co->chm_montrig);
 	else
 		printf("\n");
 #endif
+}
+
+static void
+vmbus_process_rescind(struct vmbus_softc *sc,
+    struct vmbus_chanmsg_chrescind *cr)
+{
+	struct vmbus_channel *ch;
+
+	if (cr->chm_chanid > VMBUS_CHAN_MAX) {
+		device_printf(sc->sc_dev, "invalid revoked channel%u\n",
+		    cr->chm_chanid);
+		return;
+	}
+
+	mutex_enter(&sc->sc_channel_lock);
+	ch = vmbus_channel_lookup(sc, cr->chm_chanid);
+	if (ch == NULL) {
+		mutex_exit(&sc->sc_channel_lock);
+		device_printf(sc->sc_dev, "channel%u is not offered\n",
+		    cr->chm_chanid);
+		return;
+	}
+	TAILQ_REMOVE(&sc->sc_channels, ch, ch_entry);
+	mutex_exit(&sc->sc_channel_lock);
+
+	if (VMBUS_CHAN_ISPRIMARY(ch)) {
+		mutex_enter(&sc->sc_prichan_lock);
+		TAILQ_REMOVE(&sc->sc_prichans, ch, ch_prientry);
+		mutex_exit(&sc->sc_prichan_lock);
+	}
+
+	KASSERTMSG(!(ch->ch_flags & CHF_REVOKED),
+	    "channel%u has already been revoked", ch->ch_id);
+	atomic_or_uint(&ch->ch_flags, CHF_REVOKED);
+
+	vmbus_channel_detach(ch);
 }
 
 static int
@@ -1191,7 +1293,7 @@ vmbus_channel_release(struct vmbus_channel *ch)
 	cmd.chm_chanid = ch->ch_id;
 
 	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), NULL, 0,
-	    HCF_NOREPLY | (cold ? HCF_NOSLEEP : HCF_SLEEPOK));
+	    HCF_NOREPLY | HCF_SLEEPOK);
 	if (rv) {
 		DPRINTF("%s: CHFREE failed with %d\n", device_xname(sc->sc_dev),
 		    rv);
@@ -1200,30 +1302,47 @@ vmbus_channel_release(struct vmbus_channel *ch)
 }
 
 struct vmbus_channel **
-vmbus_subchannel_get(struct vmbus_channel *prich, int cnt)
+vmbus_subchannel_get(struct vmbus_channel *prich, int subchan_cnt)
 {
+	struct vmbus_softc *sc = prich->ch_sc;
 	struct vmbus_channel **ret, *ch;
-	int i;
+	int i, s;
 
-	KASSERT(cnt > 0);
+	KASSERTMSG(subchan_cnt > 0,
+	    "invalid sub-channel count %d", subchan_cnt);
 
-	ret = kmem_alloc(sizeof(struct vmbus_channel *) * cnt,
-	    cold ? KM_NOSLEEP : KM_SLEEP);
+	ret = kmem_zalloc(sizeof(struct vmbus_channel *) * subchan_cnt,
+	    KM_SLEEP);
 
 	mutex_enter(&prich->ch_subchannel_lock);
 
-	while (prich->ch_subchannel_count < cnt)
-		/* XXX use condvar(9) instead of mtsleep */
-		mtsleep(prich, PRIBIO, "hvvmsubch", 0,
-		    &prich->ch_subchannel_lock);
+	while (prich->ch_subchannel_count < subchan_cnt) {
+		if (cold) {
+			mutex_exit(&prich->ch_subchannel_lock);
+			delay(1000);
+			s = splnet();
+			hyperv_intr();
+			splx(s);
+			mutex_enter(&sc->sc_chevq_lock);
+			vmbus_process_chevq(sc);
+			mutex_exit(&sc->sc_chevq_lock);
+			mutex_enter(&prich->ch_subchannel_lock);
+		} else {
+			mtsleep(prich, PRIBIO, "hvsubch", 1,
+			    &prich->ch_subchannel_lock);
+		}
+	}
 
 	i = 0;
 	TAILQ_FOREACH(ch, &prich->ch_subchannels, ch_subentry) {
 		ret[i] = ch;	/* XXX inc refs */
 
-		if (++i == cnt)
+		if (++i == subchan_cnt)
 			break;
 	}
+
+	KASSERTMSG(i == subchan_cnt, "invalid subchan count %d, should be %d",
+	    prich->ch_subchannel_count, subchan_cnt);
 
 	mutex_exit(&prich->ch_subchannel_lock);
 
@@ -1231,19 +1350,41 @@ vmbus_subchannel_get(struct vmbus_channel *prich, int cnt)
 }
 
 void
-vmbus_subchannel_put(struct vmbus_channel **subch, int cnt)
+vmbus_subchannel_rel(struct vmbus_channel **subch, int cnt)
 {
 
 	kmem_free(subch, sizeof(struct vmbus_channel *) * cnt);
 }
 
-static struct vmbus_channel *
-vmbus_channel_lookup(struct vmbus_softc *sc, uint32_t relid)
+void
+vmbus_subchannel_drain(struct vmbus_channel *prich)
 {
-	struct vmbus_channel *ch;
+	int s;
+
+	mutex_enter(&prich->ch_subchannel_lock);
+	while (prich->ch_subchannel_count > 0) {
+		if (cold) {
+			mutex_exit(&prich->ch_subchannel_lock);
+			delay(1000);
+			s = splnet();
+			hyperv_intr();
+			splx(s);
+			mutex_enter(&prich->ch_subchannel_lock);
+		} else {
+			cv_wait(&prich->ch_subchannel_cv,
+			    &prich->ch_subchannel_lock);
+		}
+	}
+	mutex_exit(&prich->ch_subchannel_lock);
+}
+
+static struct vmbus_channel *
+vmbus_channel_lookup(struct vmbus_softc *sc, uint32_t chanid)
+{
+	struct vmbus_channel *ch = NULL;
 
 	TAILQ_FOREACH(ch, &sc->sc_channels, ch_entry) {
-		if (ch->ch_id == relid)
+		if (ch->ch_id == chanid)
 			return ch;
 	}
 	return NULL;
@@ -1256,14 +1397,14 @@ vmbus_channel_ring_create(struct vmbus_channel *ch, uint32_t buflen)
 
 	buflen = roundup(buflen, PAGE_SIZE) + sizeof(struct vmbus_bufring);
 	ch->ch_ring_size = 2 * buflen;
+	/* page aligned memory */
 	ch->ch_ring = hyperv_dma_alloc(sc->sc_dmat, &ch->ch_ring_dma,
-	    ch->ch_ring_size, PAGE_SIZE, 0, 1);	/* page aligned memory */
+	    ch->ch_ring_size, PAGE_SIZE, 0, 1);
 	if (ch->ch_ring == NULL) {
 		device_printf(sc->sc_dev,
 		    "failed to allocate channel ring\n");
 		return ENOMEM;
 	}
-	memset(ch->ch_ring, 0, ch->ch_ring_size);
 
 	memset(&ch->ch_wrd, 0, sizeof(ch->ch_wrd));
 	ch->ch_wrd.rd_ring = (struct vmbus_bufring *)ch->ch_ring;
@@ -1320,6 +1461,9 @@ vmbus_channel_open(struct vmbus_channel *ch, size_t buflen, void *udata,
 		return rv;
 	}
 
+	__insn_barrier();
+	sc->sc_chanmap[ch->ch_id] = ch;
+
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.chm_hdr.chm_type = VMBUS_CHANMSG_CHOPEN;
 	cmd.chm_openid = ch->ch_id;
@@ -1336,9 +1480,9 @@ vmbus_channel_open(struct vmbus_channel *ch, size_t buflen, void *udata,
 	ch->ch_ctx = arg;
 	ch->ch_state = VMBUS_CHANSTATE_OPENED;
 
-	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), &rsp, sizeof(rsp),
-	    cold ? HCF_NOSLEEP : HCF_SLEEPOK);
+	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), &rsp, sizeof(rsp), HCF_NOSLEEP);
 	if (rv) {
+		sc->sc_chanmap[ch->ch_id] = NULL;
 		vmbus_channel_ring_destroy(ch);
 		DPRINTF("%s: CHOPEN failed with %d\n", device_xname(sc->sc_dev),
 		    rv);
@@ -1355,25 +1499,15 @@ vmbus_channel_detach(struct vmbus_channel *ch)
 {
 	u_int refs;
 
-	refs = atomic_add_int_nv(&ch->ch_refs, -1);
-	if (refs == 1) {
-		/* XXX on workqueue? */
-		if (VMBUS_CHAN_ISPRIMARY(ch)) {
-			vmbus_channel_release(ch);
-			vmbus_channel_free(ch);
-		} else {
-			struct vmbus_channel *prich = ch->ch_primary_channel;
+	KASSERTMSG(ch->ch_refs > 0, "channel%u: invalid refcnt %d",
+	    ch->ch_id, ch->ch_refs);
 
-			vmbus_channel_release(ch);
-
-			mutex_enter(&prich->ch_subchannel_lock);
-			TAILQ_REMOVE(&prich->ch_subchannels, ch, ch_subentry);
-			prich->ch_subchannel_count--;
-			mutex_exit(&prich->ch_subchannel_lock);
-			wakeup(prich);
-
-			vmbus_channel_free(ch);
-		}
+	membar_release();
+	refs = atomic_dec_uint_nv(&ch->ch_refs);
+	if (refs == 0) {
+		membar_acquire();
+		/* Detach the target channel. */
+		vmbus_devq_enqueue(ch->ch_sc, VMBUS_DEV_TYPE_DETACH, ch);
 	}
 }
 
@@ -1384,13 +1518,15 @@ vmbus_channel_close_internal(struct vmbus_channel *ch)
 	struct vmbus_chanmsg_chclose cmd;
 	int rv;
 
+	sc->sc_chanmap[ch->ch_id] = NULL;
+
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.chm_hdr.chm_type = VMBUS_CHANMSG_CHCLOSE;
 	cmd.chm_chanid = ch->ch_id;
 
 	ch->ch_state = VMBUS_CHANSTATE_CLOSING;
 	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), NULL, 0,
-	    HCF_NOREPLY | (cold ? HCF_NOSLEEP : HCF_SLEEPOK));
+	    HCF_NOREPLY | HCF_NOSLEEP);
 	if (rv) {
 		DPRINTF("%s: CHCLOSE failed with %d\n",
 		    device_xname(sc->sc_dev), rv);
@@ -1429,7 +1565,7 @@ vmbus_channel_close(struct vmbus_channel *ch)
 			(void) rv;	/* XXX */
 			vmbus_channel_detach(ch);
 		}
-		vmbus_subchannel_put(subch, cnt);
+		vmbus_subchannel_rel(subch, cnt);
 	}
 
 	return vmbus_channel_close_internal(ch);
@@ -1532,6 +1668,13 @@ vmbus_ring_avail(struct vmbus_ring_data *rd, uint32_t *towrite,
 		*towrite = w;
 	if (toread)
 		*toread = r;
+}
+
+static bool
+vmbus_ring_is_empty(struct vmbus_ring_data *rd)
+{
+
+	return rd->rd_ring->br_rindex == rd->rd_ring->br_windex;
 }
 
 static int
@@ -1802,25 +1945,29 @@ vmbus_ring_unmask(struct vmbus_ring_data *rd)
 	membar_sync();
 }
 
-static void
+void
 vmbus_channel_pause(struct vmbus_channel *ch)
 {
 
+	atomic_or_ulong(&ch->ch_sc->sc_evtmask[ch->ch_id / VMBUS_EVTFLAG_LEN],
+	    __BIT(ch->ch_id % VMBUS_EVTFLAG_LEN));
 	vmbus_ring_mask(&ch->ch_rrd);
 }
 
-static uint32_t
+uint32_t
 vmbus_channel_unpause(struct vmbus_channel *ch)
 {
 	uint32_t avail;
 
+	atomic_and_ulong(&ch->ch_sc->sc_evtmask[ch->ch_id / VMBUS_EVTFLAG_LEN],
+	    ~__BIT(ch->ch_id % VMBUS_EVTFLAG_LEN));
 	vmbus_ring_unmask(&ch->ch_rrd);
 	vmbus_ring_avail(&ch->ch_rrd, NULL, &avail);
 
 	return avail;
 }
 
-static uint32_t
+uint32_t
 vmbus_channel_ready(struct vmbus_channel *ch)
 {
 	uint32_t avail;
@@ -1828,6 +1975,20 @@ vmbus_channel_ready(struct vmbus_channel *ch)
 	vmbus_ring_avail(&ch->ch_rrd, NULL, &avail);
 
 	return avail;
+}
+
+bool
+vmbus_channel_tx_empty(struct vmbus_channel *ch)
+{
+
+	return vmbus_ring_is_empty(&ch->ch_wrd);
+}
+
+bool
+vmbus_channel_rx_empty(struct vmbus_channel *ch)
+{
+
+	return vmbus_ring_is_empty(&ch->ch_rrd);
 }
 
 /* How many PFNs can be referenced by the header */
@@ -1842,10 +2003,6 @@ int
 vmbus_handle_alloc(struct vmbus_channel *ch, const struct hyperv_dma *dma,
     uint32_t buflen, uint32_t *handle)
 {
-	const int prflags = cold ? PR_NOWAIT : PR_WAITOK;
-	const int kmemflags = cold ? KM_NOSLEEP : KM_SLEEP;
-	const int msgflags = cold ? MSGF_NOSLEEP : 0;
-	const int hcflags = cold ? HCF_NOSLEEP : HCF_SLEEPOK;
 	struct vmbus_softc *sc = ch->ch_sc;
 	struct vmbus_chanmsg_gpadl_conn *hdr;
 	struct vmbus_chanmsg_gpadl_subconn *cmd;
@@ -1864,16 +2021,10 @@ vmbus_handle_alloc(struct vmbus_channel *ch, const struct hyperv_dma *dma,
 	KASSERT((buflen & PAGE_MASK) == 0);
 	KASSERT(buflen == (uint32_t)dma->map->dm_mapsize);
 
-	msg = pool_cache_get_paddr(sc->sc_msgpool, prflags, &pa);
-	if (msg == NULL)
-		return ENOMEM;
+	msg = pool_cache_get_paddr(sc->sc_msgpool, PR_WAITOK, &pa);
 
 	/* Prepare array of frame addresses */
-	frames = kmem_zalloc(total * sizeof(*frames), kmemflags);
-	if (frames == NULL) {
-		pool_cache_put_paddr(sc->sc_msgpool, msg, pa);
-		return ENOMEM;
-	}
+	frames = kmem_zalloc(total * sizeof(*frames), KM_SLEEP);
 	for (i = 0, j = 0; i < dma->map->dm_nsegs && j < total; i++) {
 		bus_dma_segment_t *seg = &dma->map->dm_segs[i];
 		bus_addr_t addr = seg->ds_addr;
@@ -1893,23 +2044,18 @@ vmbus_handle_alloc(struct vmbus_channel *ch, const struct hyperv_dma *dma,
 	hdr = (struct vmbus_chanmsg_gpadl_conn *)msg->msg_req.hc_data;
 	msg->msg_rsp = &rsp;
 	msg->msg_rsplen = sizeof(rsp);
-	msg->msg_flags = msgflags;
+	msg->msg_flags = MSGF_NOSLEEP;
 
 	left = total - inhdr;
 
 	/* Allocate additional gpadl_body structures if required */
 	if (left > 0) {
-		ncmds = MAX(1, left / VMBUS_NPFNBODY + left % VMBUS_NPFNBODY);
+		ncmds = howmany(left, VMBUS_NPFNBODY);
 		bodylen = ncmds * VMBUS_MSG_DSIZE_MAX;
-		body = kmem_zalloc(bodylen, kmemflags);
-		if (body == NULL) {
-			kmem_free(frames, total * sizeof(*frames));
-			pool_cache_put_paddr(sc->sc_msgpool, msg, pa);
-			return ENOMEM;
-		}
+		body = kmem_zalloc(bodylen, KM_SLEEP);
 	}
 
-	*handle = atomic_add_int_nv(&sc->sc_handle, 1);
+	*handle = atomic_inc_32_nv(&sc->sc_handle);
 
 	hdr->chm_hdr.chm_type = VMBUS_CHANMSG_GPADL_CONN;
 	hdr->chm_chanid = ch->ch_id;
@@ -1951,7 +2097,8 @@ vmbus_handle_alloc(struct vmbus_channel *ch, const struct hyperv_dma *dma,
 			cmdlen += last * sizeof(uint64_t);
 		else
 			cmdlen += VMBUS_NPFNBODY * sizeof(uint64_t);
-		rv = vmbus_cmd(sc, cmd, cmdlen, NULL, 0, HCF_NOREPLY | hcflags);
+		rv = vmbus_cmd(sc, cmd, cmdlen, NULL, 0,
+		    HCF_NOREPLY | HCF_NOSLEEP);
 		if (rv != 0) {
 			DPRINTF("%s: GPADL_SUBCONN (iteration %d/%d) failed "
 			    "with %d\n", device_xname(sc->sc_dev), i, ncmds,
@@ -1991,13 +2138,242 @@ vmbus_handle_free(struct vmbus_channel *ch, uint32_t handle)
 	cmd.chm_chanid = ch->ch_id;
 	cmd.chm_gpadl = handle;
 
-	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), &rsp, sizeof(rsp),
-	    cold ? HCF_NOSLEEP : HCF_SLEEPOK);
+	rv = vmbus_cmd(sc, &cmd, sizeof(cmd), &rsp, sizeof(rsp), HCF_NOSLEEP);
 	if (rv) {
 		DPRINTF("%s: GPADL_DISCONN failed with %d\n",
 		    device_xname(sc->sc_dev), rv);
 	}
 }
+
+ static void
+vmbus_chevq_enqueue(struct vmbus_softc *sc, int type, void *arg)
+{
+	struct vmbus_chev *vce;
+ 
+	vce = kmem_intr_alloc(sizeof(*vce), KM_NOSLEEP);
+	if (vce == NULL) {
+		device_printf(sc->sc_dev, "failed to allocate chev\n");
+		return;
+	}
+
+	vce->vce_type = type;
+	vce->vce_arg = arg;
+
+	mutex_enter(&sc->sc_chevq_lock);
+	SIMPLEQ_INSERT_TAIL(&sc->sc_chevq, vce, vce_entry);
+	cv_broadcast(&sc->sc_chevq_cv);
+	mutex_exit(&sc->sc_chevq_lock);
+}
+
+static void
+vmbus_process_chevq(void *arg)
+{
+	struct vmbus_softc *sc = arg;
+	struct vmbus_chev *vce;
+	struct vmbus_chanmsg_choffer *co;
+	struct vmbus_chanmsg_chrescind *cr;
+
+	KASSERT(mutex_owned(&sc->sc_chevq_lock));
+
+	while (!SIMPLEQ_EMPTY(&sc->sc_chevq)) {
+		vce = SIMPLEQ_FIRST(&sc->sc_chevq);
+		SIMPLEQ_REMOVE_HEAD(&sc->sc_chevq, vce_entry);
+		mutex_exit(&sc->sc_chevq_lock);
+
+		switch (vce->vce_type) {
+		case VMBUS_CHEV_TYPE_OFFER:
+			co = vce->vce_arg;
+			vmbus_process_offer(sc, co);
+			kmem_free(co, sizeof(*co));
+			break;
+
+		case VMBUS_CHEV_TYPE_RESCIND:
+			cr = vce->vce_arg;
+			vmbus_process_rescind(sc, cr);
+			kmem_free(cr, sizeof(*cr));
+			break;
+
+		default:
+			DPRINTF("%s: unknown chevq type %d\n",
+			    device_xname(sc->sc_dev), vce->vce_type);
+			break;
+		}
+		kmem_free(vce, sizeof(*vce));
+
+		mutex_enter(&sc->sc_chevq_lock);
+	}
+}
+
+static void
+vmbus_chevq_thread(void *arg)
+{
+	struct vmbus_softc *sc = arg;
+
+	mutex_enter(&sc->sc_chevq_lock);
+	for (;;) {
+		if (SIMPLEQ_EMPTY(&sc->sc_chevq)) {
+			cv_wait(&sc->sc_chevq_cv, &sc->sc_chevq_lock);
+			continue;
+		}
+
+		vmbus_process_chevq(sc);
+	}
+	mutex_exit(&sc->sc_chevq_lock);
+
+	kthread_exit(0);
+}
+
+static void
+vmbus_devq_enqueue(struct vmbus_softc *sc, int type, struct vmbus_channel *ch)
+{
+	struct vmbus_dev *vd;
+
+	vd = kmem_zalloc(sizeof(*vd), KM_SLEEP);
+	if (vd == NULL) {
+		device_printf(sc->sc_dev, "failed to allocate devq\n");
+		return;
+	}
+
+	vd->vd_type = type;
+	vd->vd_chan = ch;
+
+	if (VMBUS_CHAN_ISPRIMARY(ch)) {
+		mutex_enter(&sc->sc_devq_lock);
+		SIMPLEQ_INSERT_TAIL(&sc->sc_devq, vd, vd_entry);
+		cv_broadcast(&sc->sc_devq_cv);
+		mutex_exit(&sc->sc_devq_lock);
+	} else {
+		mutex_enter(&sc->sc_subch_devq_lock);
+		SIMPLEQ_INSERT_TAIL(&sc->sc_subch_devq, vd, vd_entry);
+		cv_broadcast(&sc->sc_subch_devq_cv);
+		mutex_exit(&sc->sc_subch_devq_lock);
+	}
+}
+
+static void
+vmbus_process_devq(void *arg)
+{
+	struct vmbus_softc *sc = arg;
+	struct vmbus_dev *vd;
+	struct vmbus_channel *ch;
+	struct vmbus_attach_args vaa;
+
+	KASSERT(mutex_owned(&sc->sc_devq_lock));
+
+	while (!SIMPLEQ_EMPTY(&sc->sc_devq)) {
+		vd = SIMPLEQ_FIRST(&sc->sc_devq);
+		SIMPLEQ_REMOVE_HEAD(&sc->sc_devq, vd_entry);
+		mutex_exit(&sc->sc_devq_lock);
+
+		switch (vd->vd_type) {
+		case VMBUS_DEV_TYPE_ATTACH:
+			ch = vd->vd_chan;
+			vaa.aa_type = &ch->ch_type;
+			vaa.aa_inst = &ch->ch_inst;
+			vaa.aa_ident = ch->ch_ident;
+			vaa.aa_chan = ch;
+			vaa.aa_iot = sc->sc_iot;
+			vaa.aa_memt = sc->sc_memt;
+			ch->ch_dev = config_found(sc->sc_dev,
+			    &vaa, vmbus_attach_print, CFARGS_NONE);
+			break;
+
+		case VMBUS_DEV_TYPE_DETACH:
+			ch = vd->vd_chan;
+			if (ch->ch_dev != NULL) {
+				config_detach(ch->ch_dev, DETACH_FORCE);
+				ch->ch_dev = NULL;
+			}
+			vmbus_channel_release(ch);
+			vmbus_channel_free(ch);
+			break;
+
+		default:
+			DPRINTF("%s: unknown devq type %d\n",
+			    device_xname(sc->sc_dev), vd->vd_type);
+			break;
+		}
+		kmem_free(vd, sizeof(*vd));
+
+		mutex_enter(&sc->sc_devq_lock);
+	}
+}
+
+static void
+vmbus_devq_thread(void *arg)
+{
+	struct vmbus_softc *sc = arg;
+
+	mutex_enter(&sc->sc_devq_lock);
+	for (;;) {
+		if (SIMPLEQ_EMPTY(&sc->sc_devq)) {
+			cv_wait(&sc->sc_devq_cv, &sc->sc_devq_lock);
+			continue;
+		}
+
+		vmbus_process_devq(sc);
+	}
+	mutex_exit(&sc->sc_devq_lock);
+
+	kthread_exit(0);
+}
+
+static void
+vmbus_subchannel_devq_thread(void *arg)
+{
+	struct vmbus_softc *sc = arg;
+	struct vmbus_dev *vd;
+	struct vmbus_channel *ch, *prich;
+
+	mutex_enter(&sc->sc_subch_devq_lock);
+	for (;;) {
+		if (SIMPLEQ_EMPTY(&sc->sc_subch_devq)) {
+			cv_wait(&sc->sc_subch_devq_cv, &sc->sc_subch_devq_lock);
+			continue;
+		}
+
+		while (!SIMPLEQ_EMPTY(&sc->sc_subch_devq)) {
+			vd = SIMPLEQ_FIRST(&sc->sc_subch_devq);
+			SIMPLEQ_REMOVE_HEAD(&sc->sc_subch_devq, vd_entry);
+			mutex_exit(&sc->sc_subch_devq_lock);
+
+			switch (vd->vd_type) {
+			case VMBUS_DEV_TYPE_ATTACH:
+				/* Nothing to do */
+				break;
+
+			case VMBUS_DEV_TYPE_DETACH:
+				ch = vd->vd_chan;
+
+				vmbus_channel_release(ch);
+
+				prich = ch->ch_primary_channel;
+				mutex_enter(&prich->ch_subchannel_lock);
+				TAILQ_REMOVE(&prich->ch_subchannels, ch,
+				    ch_subentry);
+				prich->ch_subchannel_count--;
+				mutex_exit(&prich->ch_subchannel_lock);
+				wakeup(prich);
+
+				vmbus_channel_free(ch);
+				break;
+
+			default:
+				DPRINTF("%s: unknown devq type %d\n",
+				    device_xname(sc->sc_dev), vd->vd_type);
+				break;
+			}
+
+			kmem_free(vd, sizeof(*vd));
+
+			mutex_enter(&sc->sc_subch_devq_lock);
+		}
+	}
+	mutex_exit(&sc->sc_subch_devq_lock);
+
+	kthread_exit(0);
+}
+
 
 static int
 vmbus_attach_print(void *aux, const char *name)
@@ -2008,78 +2384,6 @@ vmbus_attach_print(void *aux, const char *name)
 		printf("\"%s\" at %s", aa->aa_ident, name);
 
 	return UNCONF;
-}
-
-static int
-vmbus_attach_icdevs(struct vmbus_softc *sc)
-{
-	struct vmbus_dev *dv;
-	struct vmbus_channel *ch;
-
-	SLIST_INIT(&sc->sc_icdevs);
-	mutex_init(&sc->sc_icdev_lock, MUTEX_DEFAULT, IPL_NET);
-
-	TAILQ_FOREACH(ch, &sc->sc_channels, ch_entry) {
-		if (ch->ch_state != VMBUS_CHANSTATE_OFFERED)
-			continue;
-		if (ch->ch_flags & CHF_MONITOR)
-			continue;
-
-		dv = kmem_zalloc(sizeof(*dv), cold ? KM_NOSLEEP : KM_SLEEP);
-		if (dv == NULL) {
-			device_printf(sc->sc_dev,
-			    "failed to allocate ic device object\n");
-			return ENOMEM;
-		}
-		dv->dv_aa.aa_type = &ch->ch_type;
-		dv->dv_aa.aa_inst = &ch->ch_inst;
-		dv->dv_aa.aa_ident = ch->ch_ident;
-		dv->dv_aa.aa_chan = ch;
-		dv->dv_aa.aa_iot = sc->sc_iot;
-		dv->dv_aa.aa_memt = sc->sc_memt;
-		mutex_enter(&sc->sc_icdev_lock);
-		SLIST_INSERT_HEAD(&sc->sc_icdevs, dv, dv_entry);
-		mutex_exit(&sc->sc_icdev_lock);
-		ch->ch_dev = config_found_ia(sc->sc_dev, "hypervvmbus",
-		    &dv->dv_aa, vmbus_attach_print);
-	}
-	return 0;
-}
-
-static int
-vmbus_attach_devices(struct vmbus_softc *sc)
-{
-	struct vmbus_dev *dv;
-	struct vmbus_channel *ch;
-
-	SLIST_INIT(&sc->sc_devs);
-	mutex_init(&sc->sc_dev_lock, MUTEX_DEFAULT, IPL_NET);
-
-	TAILQ_FOREACH(ch, &sc->sc_channels, ch_entry) {
-		if (ch->ch_state != VMBUS_CHANSTATE_OFFERED)
-			continue;
-		if (!(ch->ch_flags & CHF_MONITOR))
-			continue;
-
-		dv = kmem_zalloc(sizeof(*dv), cold ? KM_NOSLEEP : KM_SLEEP);
-		if (dv == NULL) {
-			device_printf(sc->sc_dev,
-			    "failed to allocate device object\n");
-			return ENOMEM;
-		}
-		dv->dv_aa.aa_type = &ch->ch_type;
-		dv->dv_aa.aa_inst = &ch->ch_inst;
-		dv->dv_aa.aa_ident = ch->ch_ident;
-		dv->dv_aa.aa_chan = ch;
-		dv->dv_aa.aa_iot = sc->sc_iot;
-		dv->dv_aa.aa_memt = sc->sc_memt;
-		mutex_enter(&sc->sc_dev_lock);
-		SLIST_INSERT_HEAD(&sc->sc_devs, dv, dv_entry);
-		mutex_exit(&sc->sc_dev_lock);
-		ch->ch_dev = config_found_ia(sc->sc_dev, "hypervvmbus",
-		    &dv->dv_aa, vmbus_attach_print);
-	}
-	return 0;
 }
 
 MODULE(MODULE_CLASS_DRIVER, vmbus, "hyperv");

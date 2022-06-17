@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.115 2018/12/19 13:57:48 maxv Exp $	*/
+/*	$NetBSD: locore.s,v 1.118 2022/05/30 09:56:03 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -974,15 +974,12 @@ Lintrhand_exit:
 
 	/* FALLTHROUGH to rei */
 
-#undef INTERRUPT_SAVEREG
-#undef INTERRUPT_RESTOREREG
-
 /*
  * Emulation of VAX REI instruction.
  *
  * This code deals with checking for and servicing ASTs
  * (profiling, scheduling).
- * After identifing that we need an AST we drop the IPL to allow device
+ * After identifying that we need an AST we drop the IPL to allow device
  * interrupts.
  *
  * This code is complicated by the fact that sendsig may have been called
@@ -1299,5 +1296,5 @@ GLOBAL(eintrnames)
 	.even
 
 GLOBAL(intrcnt)
-	.long	0,0,0,0,0,0,0,0,0,0
+	.long	0,0,0,0,0,0,0,0,0
 GLOBAL(eintrcnt)

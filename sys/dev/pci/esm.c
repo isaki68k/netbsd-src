@@ -1,4 +1,4 @@
-/*      $NetBSD: esm.c,v 1.64 2019/10/05 01:30:28 mrg Exp $      */
+/*      $NetBSD: esm.c,v 1.66 2022/05/23 13:53:37 rin Exp $      */
 
 /*-
  * Copyright (c) 2002, 2003 Matt Fredette
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: esm.c,v 1.64 2019/10/05 01:30:28 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: esm.c,v 1.66 2022/05/23 13:53:37 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1186,6 +1186,8 @@ esm_round_blocksize(void *sc, int blk, int mode,
 	    ("esm_round_blocksize(%p, 0x%x)", sc, blk));
 
 	blk &= ~0x3f;		/* keep good alignment */
+	if (blk < 0x40)
+		blk = 0x40;
 
 	DPRINTF(ESM_DEBUG_PARAM, (" = 0x%x\n", blk));
 
@@ -1416,13 +1418,13 @@ esm_freemem(struct esm_softc *sc, struct esm_dma *p)
 	if (p->size == 0)
 		return;
 
-	bus_dmamem_free(sc->dmat, p->segs, p->nsegs);
-
-	bus_dmamem_unmap(sc->dmat, p->addr, p->size);
+	bus_dmamap_unload(sc->dmat, p->map);
 
 	bus_dmamap_destroy(sc->dmat, p->map);
 
-	bus_dmamap_unload(sc->dmat, p->map);
+	bus_dmamem_unmap(sc->dmat, p->addr, p->size);
+
+	bus_dmamem_free(sc->dmat, p->segs, p->nsegs);
 
 	p->size = 0;
 }

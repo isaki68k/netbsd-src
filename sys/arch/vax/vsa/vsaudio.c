@@ -1,4 +1,4 @@
-/*	$NetBSD: vsaudio.c,v 1.5 2019/05/08 13:40:16 isaki Exp $	*/
+/*	$NetBSD: vsaudio.c,v 1.7 2020/09/12 05:19:16 isaki Exp $	*/
 /*	$OpenBSD: vsaudio.c,v 1.4 2013/05/15 21:21:11 ratchov Exp $	*/
 
 /*
@@ -82,20 +82,13 @@
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
 
-#ifdef AUDIO_DEBUG
-#define DPRINTF(x)	if (am7930debug) printf x
-#define DPRINTFN(n,x)	if (am7930debug>(n)) printf x
-#else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
-#endif  /* AUDIO_DEBUG */
-
 /* physical addresses of the AM79C30 chip */
 #define VSAUDIO_CSR			0x200d0000
 #define VSAUDIO_CSR_KA49		0x26800000
 
 struct vsaudio_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
+
 	bus_space_tag_t sc_bt;		/* bus cookie */
 	bus_space_handle_t sc_bh;	/* device registers */
 };
@@ -202,6 +195,7 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 {
 	struct vsbus_attach_args *va = aux;
 	struct vsaudio_softc *sc = device_private(self);
+	struct am7930_softc *amsc = &sc->sc_am7930;
 
 	if (bus_space_map(va->va_memt, va->va_paddr, AM7930_DREG_SIZE << 2, 0,
 	    &sc->sc_bh) != 0) {
@@ -209,12 +203,12 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_bt = va->va_memt;
-	sc->sc_am7930.sc_dev = device_private(self);
-	sc->sc_am7930.sc_glue = &vsaudio_glue;
-	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
-	scb_vecalloc(va->va_cvec, vsaudio_hwintr, &sc->sc_am7930, SCB_ISTACK,
-	    &sc->sc_am7930.sc_intrcnt);
-	evcnt_attach_dynamic(&sc->sc_am7930.sc_intrcnt, EVCNT_TYPE_INTR, NULL,
+	amsc->sc_dev = self;
+	amsc->sc_glue = &vsaudio_glue;
+	am7930_init(amsc, AUDIOAMD_POLL_MODE);
+	scb_vecalloc(va->va_cvec, vsaudio_hwintr, amsc, SCB_ISTACK,
+	    &amsc->sc_intrcnt);
+	evcnt_attach_dynamic(&amsc->sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
 	aprint_normal("\n");

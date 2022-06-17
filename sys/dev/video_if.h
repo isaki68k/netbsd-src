@@ -1,4 +1,4 @@
-/* $NetBSD: video_if.h,v 1.7 2010/12/24 20:54:28 jmcneill Exp $ */
+/* $NetBSD: video_if.h,v 1.11 2022/03/03 06:23:25 riastradh Exp $ */
 
 /*
  * Copyright (c) 2008 Patrick Mahoney <pat@polycrystal.org>
@@ -378,7 +378,13 @@ struct video_format {
 				 * Must be set to zero if not used. */
 };
 
-/* A payload is the smallest unit transfered from the hardware driver
+/* Represents the amount of time a single frame is displayed. */
+struct video_fract {
+	uint32_t	numerator;
+	uint32_t	denominator;
+};
+
+/* A payload is the smallest unit transferred from the hardware driver
  * to the video layer. Multiple video payloads make up one video
  * sample. */
 struct video_payload {
@@ -488,13 +494,17 @@ struct video_hw_if {
 
 	int	(*get_frequency)(void *, struct video_frequency *);
 	int	(*set_frequency)(void *, struct video_frequency *);
+
+	int	(*get_framerate)(void *, struct video_fract *);
+	int	(*set_framerate)(void *, struct video_fract *);
 };
 
 struct video_attach_args {
 	const struct video_hw_if *hw_if;
+	void	*hw_softc;
 };
 
-device_t video_attach_mi(const struct video_hw_if *, device_t);
+device_t video_attach_mi(const struct video_hw_if *, device_t, void *);
 void video_submit_payload(device_t, const struct video_payload *);
 
 #endif	/* _SYS_DEV_VIDEO_IF_H_ */

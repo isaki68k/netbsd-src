@@ -1,4 +1,4 @@
-/* $NetBSD: tc_dma.c,v 1.13 2011/07/01 19:19:50 dyoung Exp $ */
+/* $NetBSD: tc_dma.c,v 1.15 2021/07/18 05:12:27 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: tc_dma.c,v 1.13 2011/07/01 19:19:50 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tc_dma.c,v 1.15 2021/07/18 05:12:27 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -49,6 +49,7 @@ struct alpha_bus_dma_tag tc_dmat_direct = {
 	NULL,				/* _next_window */
 	0,				/* _boundary */
 	NULL,				/* _sgmap */
+	0,				/* _sgmap_minalign */
 	0,				/* _pfthresh */
 	NULL,				/* _get_tag */
 	_bus_dmamap_create,
@@ -69,11 +70,5 @@ struct alpha_bus_dma_tag tc_dmat_direct = {
 void
 tc_dma_init(void)
 {
-
-	/* XXX XXX BEGIN XXX XXX */
-	{							/* XXX */
-		extern paddr_t alpha_XXX_dmamap_or;		/* XXX */
-		alpha_XXX_dmamap_or = 0;			/* XXX */
-	}							/* XXX */
-	/* XXX XXX END XXX XXX */
+	/* Nada. */
 }

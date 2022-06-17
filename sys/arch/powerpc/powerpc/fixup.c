@@ -1,4 +1,4 @@
-/*	$NetBSD: fixup.c,v 1.10 2014/08/02 15:58:04 joerg Exp $	*/
+/*	$NetBSD: fixup.c,v 1.13 2022/01/01 01:15:11 macallan Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,8 +35,11 @@
  */
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: fixup.c,v 1.13 2022/01/01 01:15:11 macallan Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: fixup.c,v 1.10 2014/08/02 15:58:04 joerg Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -183,7 +186,9 @@ powerpc_fixup_stubs(uint32_t *start, uint32_t *end,
 				break;
 			}
 			case OPC_STW: {
+#ifdef DIAGNOSTIC
 				KASSERT((i.i_d.i_rs == r_lr || i.i_d.i_rs == 31) && i.i_d.i_ra == 1);
+#endif
 				break;
 			}
 			case OPC_STWU: {
@@ -192,8 +197,10 @@ powerpc_fixup_stubs(uint32_t *start, uint32_t *end,
 				break;
 			}
 			case OPC_branch_19: {
+#ifdef DIAGNOSTIC
 				KASSERT(r_lr == -1 || i.i_int == 0x4e800421);
 				KASSERT(r_lr != -1 || i.i_int == 0x4e800420);
+#endif
 				if (ctr == 0) {
 					panic("%s: jump at %p to %p would "
 					    "branch to 0", __func__, insnp,

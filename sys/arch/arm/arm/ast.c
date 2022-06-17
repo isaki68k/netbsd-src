@@ -1,4 +1,4 @@
-/*	$NetBSD: ast.c,v 1.30 2018/01/24 09:04:44 skrll Exp $	*/
+/*	$NetBSD: ast.c,v 1.32 2021/02/01 19:31:34 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994,1995 Mark Brinicombe
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ast.c,v 1.30 2018/01/24 09:04:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ast.c,v 1.32 2021/02/01 19:31:34 skrll Exp $");
 
 #include "opt_ddb.h"
 
@@ -91,8 +91,7 @@ userret(struct lwp *l)
 	/* Invoke MI userret code */
 	mi_userret(l);
 
-	KASSERT(VALID_R15_PSR(lwp_trapframe(l)->tf_pc,
-	    lwp_trapframe(l)->tf_spsr));
+	KASSERT(VALID_PSR(lwp_trapframe(l)->tf_spsr));
 }
 
 
@@ -109,7 +108,7 @@ ast(struct trapframe *tf)
 
 	/* Interrupts were restored by exception_exit. */
 
-	KASSERT(VALID_R15_PSR(tf->tf_pc, tf->tf_spsr));
+	KASSERT(VALID_PSR(tf->tf_spsr));
 
 #ifdef __HAVE_PREEMPTION
 	kpreempt_disable();
@@ -119,7 +118,6 @@ ast(struct trapframe *tf)
 	ci->ci_data.cpu_ntrap++;
 
 	KDASSERT(ci->ci_cpl == IPL_NONE);
-	const int want_resched = ci->ci_want_resched;
 #ifdef __HAVE_PREEMPTION
 	kpreempt_enable();
 #endif
@@ -129,8 +127,5 @@ ast(struct trapframe *tf)
 		ADDUPROF(l);
 	}
 
-	/* Allow a forced task switch. */
-	if (want_resched)
-		preempt();
 	userret(l);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp $ */
+/* $NetBSD: rk3399_pcie.c,v 1.18 2021/10/02 20:41:47 mrg Exp $ */
 /*
  * Copyright (c) 2018 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -17,13 +17,12 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.18 2021/10/02 20:41:47 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bitops.h>
 #include <sys/device.h>
-#include <sys/extent.h>
 #include <sys/kmem.h>
 
 #include <machine/intr.h>
@@ -121,10 +120,10 @@ __KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp
 	bus_space_read_4((sc)->sc_iot, (sc)->sc_ioh, (reg))
 #define HWRITE4(sc, reg, val)						\
 	bus_space_write_4((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
-#define AXIREAD4(sc, reg)						\
-	bus_space_read_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg))
-#define AXIWRITE4(sc, reg, val)						\
-	bus_space_write_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (val))
+#define AXIPEEK4(sc, reg, valp)						\
+	bus_space_peek_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (valp))
+#define AXIPOKE4(sc, reg, val)						\
+	bus_space_poke_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (val))
 
 struct rkpcie_softc {
 	struct pcihost_softc	sc_phsc;
@@ -135,6 +134,7 @@ struct rkpcie_softc {
 	bus_addr_t		sc_apb_addr;
 	bus_size_t		sc_axi_size;
 	bus_size_t		sc_apb_size;
+	kmutex_t		sc_conf_lock;
 };
 
 static int rkpcie_match(device_t, cfdata_t, void *);
@@ -143,16 +143,17 @@ static void rkpcie_attach(device_t, device_t, void *);
 CFATTACH_DECL_NEW(rkpcie, sizeof(struct rkpcie_softc),
         rkpcie_match, rkpcie_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3399-pcie" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 rkpcie_match(device_t parent, cfdata_t cf, void *aux)
 {
-        const char * const compatible[] = {
-		"rockchip,rk3399-pcie",
-		NULL
-	};
 	struct fdt_attach_args *faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void	rkpcie_atr_init(struct rkpcie_softc *);
@@ -205,19 +206,21 @@ rkpcie_attach(device_t parent, device_t self, void *aux)
 	struct pcihost_softc * const phsc = &sc->sc_phsc;
 	struct fdt_attach_args *faa = aux;
 	struct fdtbus_gpio_pin *ep_gpio;
-	u_int max_link_speed, num_lanes;
+	u_int max_link_speed, num_lanes, bus_scan_delay_ms;
 	struct fdtbus_phy *phy[4];
 	const u_int *bus_range;
 	uint32_t status;
+	uint32_t delayed_ms = 0;
 	int timo, len;
 
 	phsc->sc_dev = self;
 	phsc->sc_bst = faa->faa_bst;
+	phsc->sc_pci_bst = faa->faa_bst;
 	phsc->sc_dmat = faa->faa_dmat;
 	sc->sc_iot = phsc->sc_bst;
 	phsc->sc_phandle = faa->faa_phandle;
 	const int phandle = phsc->sc_phandle;
-	
+
 	if (fdtbus_get_reg_byname(faa->faa_phandle, "axi-base", &sc->sc_axi_addr, &sc->sc_axi_size) != 0) {
 		aprint_error(": couldn't get axi registers\n");
 		return;
@@ -228,8 +231,9 @@ rkpcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	if (bus_space_map(sc->sc_iot, sc->sc_apb_addr, sc->sc_apb_size, 0, &sc->sc_ioh) != 0 ||
-	    bus_space_map(sc->sc_iot, sc->sc_axi_addr, sc->sc_axi_size, 0, &sc->sc_axi_ioh) != 0) {
+	const int mapflags = _ARM_BUS_SPACE_MAP_STRONGLY_ORDERED;
+	if (bus_space_map(sc->sc_iot, sc->sc_apb_addr, sc->sc_apb_size, mapflags, &sc->sc_ioh) != 0 ||
+	    bus_space_map(sc->sc_iot, sc->sc_axi_addr, sc->sc_axi_size, mapflags, &sc->sc_axi_ioh) != 0) {
 		printf(": can't map registers\n");
 		sc->sc_axi_size = 0;
 		sc->sc_apb_size = 0;
@@ -241,18 +245,37 @@ rkpcie_attach(device_t parent, device_t self, void *aux)
 
 	struct fdtbus_regulator *regulator;
 	regulator = fdtbus_regulator_acquire(phandle, "vpcie3v3-supply");
-	fdtbus_regulator_enable(regulator);
-	fdtbus_regulator_release(regulator);
+	if (regulator != NULL) {
+		fdtbus_regulator_enable(regulator);
+		fdtbus_regulator_release(regulator);
+	}
 		
 	fdtbus_clock_assign(phandle);
 	clock_enable_all(phandle);
 
 	ep_gpio = fdtbus_gpio_acquire(phandle, "ep-gpios", GPIO_PIN_OUTPUT);
 
+	/*
+	 * Let board-specific properties override the default, which is set
+	 * to PCIe 1.x, due to errata in the RK3399 CPU.  We don't know exactly
+	 * what these errata involved (not public), but posts from the
+	 * @rock-chips.com domain to u-boot and linux-kernel lists indicate
+	 * that there is a errata related to this, and indeed, the Datasheet
+	 * since at least Rev 1.6 and inluding the latest Rev 1.8 say that the
+	 * PCIe can handle 2.5GT/s (ie, PCIe 1.x).
+	 */
 	if (of_getprop_uint32(phandle, "max-link-speed", &max_link_speed) != 0)
-		max_link_speed = 2;
+		max_link_speed = 1;
 	if (of_getprop_uint32(phandle, "num-lanes", &num_lanes) != 0)
 		num_lanes = 1;
+
+	/*
+	 * If the DT has a "bus-scan-delay-ms" property, delay attaching the
+	 * PCI bus this many microseconds.
+	 */
+	if (of_getprop_uint32(phandle, "bus-scan-delay-ms",
+	    &bus_scan_delay_ms) != 0)
+		bus_scan_delay_ms = 0;
 
 again:
 	fdtbus_gpio_write(ep_gpio, 0);
@@ -276,7 +299,8 @@ again:
 	reset_assert(phandle, "mgmt-sticky");
 	reset_assert(phandle, "pipe");
 
-	delay(10);
+	delay(1000);	/* TPERST. use 1ms */
+	delayed_ms += 1;
 	
 	reset_deassert(phandle, "pm");
 	reset_deassert(phandle, "aclk");
@@ -309,16 +333,19 @@ again:
 	reset_deassert(phandle, "mgmt");
 	reset_deassert(phandle, "pipe");
 
+	fdtbus_gpio_write(ep_gpio, 1);
+	delay(20000);	/* 20 ms according to PCI-e BS "Conventional Reset" */
+	delayed_ms += 20;
+
 	/* Start link training. */
 	HWRITE4(sc, PCIE_CLIENT_BASIC_STRAP_CONF, PCBSC_LINK_TRAIN_EN);
-
-	fdtbus_gpio_write(ep_gpio, 1);
 
 	for (timo = 500; timo > 0; timo--) {
 		status = HREAD4(sc, PCIE_CLIENT_BASIC_STATUS1);
 		if (PCBS1_LINK_ST(status) == PCBS1_LS_DL_DONE)
 			break;
 		delay(1000);
+		delayed_ms += 1;
 	}
 	if (timo == 0) {
 		device_printf(self, "link training timeout (link_st %u)\n",
@@ -337,6 +364,7 @@ again:
 			if ((status & PCIE_CORE_PL_CONF_SPEED_MASK) == PCIE_CORE_PL_CONF_SPEED_5G)
 				break;
 			delay(1000);
+			delayed_ms += 1;
 		}
 		if (timo == 0) {
 			device_printf(self, "Gen2 link training timeout\n");
@@ -344,6 +372,8 @@ again:
 			goto again;
 		}
 	}
+	delay(80000);	/* wait 100 ms before CSR access. already waited 20. */
+	delayed_ms += 80;
 
 	fdtbus_gpio_release(ep_gpio);
 
@@ -401,6 +431,17 @@ again:
 	sc->sc_phsc.sc_pc.pc_conf_read = rkpcie_conf_read;
 	sc->sc_phsc.sc_pc.pc_conf_write = rkpcie_conf_write;
 	sc->sc_phsc.sc_pc.pc_conf_hook = rkpcie_conf_hook;
+
+	if (bus_scan_delay_ms > delayed_ms) {
+		uint32_t ms = bus_scan_delay_ms - delayed_ms;
+
+		aprint_verbose_dev(phsc->sc_dev,
+		    "waiting %u extra ms for reset (already waited %u)\n",
+		    ms, delayed_ms);
+		delay(ms * 1000);
+	}
+
+	mutex_init(&sc->sc_conf_lock, MUTEX_DEFAULT, IPL_HIGH);
 	pcihost_init2(&sc->sc_phsc);
 }
 
@@ -415,7 +456,7 @@ rkpcie_atr_init(struct rkpcie_softc *sc)
 	int region, i, ranges_len;
 
 	/* Use region 0 to map PCI configuration space */
-	HWRITE4(sc, PCIE_ATR_OB_ADDR0(0), 25 - 1);
+	HWRITE4(sc, PCIE_ATR_OB_ADDR0(0), 20 - 1);
 	HWRITE4(sc, PCIE_ATR_OB_ADDR1(0), 0);
 	HWRITE4(sc, PCIE_ATR_OB_DESC0(0), PCIE_ATR_HDR_CFG_TYPE0 | PCIE_ATR_HDR_RID);
 	HWRITE4(sc, PCIE_ATR_OB_DESC1(0), 0);
@@ -513,8 +554,13 @@ rkpcie_decompose_tag(void *v, pcitag_t tag, int *bp, int *dp, int *fp)
 
 /* Only one device on root port and the first subordinate port. */
 static bool
-rkpcie_conf_ok(int bus, int dev, int fn, int bus_min)
+rkpcie_conf_ok(int bus, int dev, int fn, int offset, struct rkpcie_softc *sc)
 {
+	int bus_min = sc->sc_phsc.sc_bus_min;
+
+	if ((unsigned int)offset >= (1<<12))
+		return false;
+	/* first two buses use type 0 cfg which doesn't use bus/device numbers */
 	if (dev != 0 && (bus == bus_min || bus == bus_min + 1))
 		return false;
 	return true;
@@ -524,29 +570,45 @@ pcireg_t
 rkpcie_conf_read(void *v, pcitag_t tag, int offset)
 {
 	struct rkpcie_softc *sc = v;
-	struct pcihost_softc *phsc = &sc->sc_phsc;
+	int bus_min = sc->sc_phsc.sc_bus_min;
 	int bus, dev, fn;
 	u_int reg;
+	int32_t val;
 
 	KASSERT(offset >= 0);
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	rkpcie_decompose_tag(sc, tag, &bus, &dev, &fn);
-	if (!rkpcie_conf_ok(bus, dev, fn, phsc->sc_bus_min))
+	if (!rkpcie_conf_ok(bus, dev, fn, offset, sc))
 		return 0xffffffff;
-	reg = (bus << 20) | (dev << 15) | (fn << 12) | offset;
+	reg = (dev << 15) | (fn << 12) | offset;
 
-	if (bus == phsc->sc_bus_min)
-		return HREAD4(sc, PCIE_RC_NORMAL_BASE + reg);
-	else
-		return AXIREAD4(sc, reg);
+	if (bus == bus_min)
+		val = HREAD4(sc, PCIE_RC_NORMAL_BASE + reg);
+	else {
+		mutex_spin_enter(&sc->sc_conf_lock);
+		HWRITE4(sc, PCIE_ATR_OB_ADDR0(0),
+		    (bus << 20) | (20 - 1));
+		HWRITE4(sc, PCIE_ATR_OB_DESC0(0),
+		    PCIE_ATR_HDR_RID | ((bus == bus_min + 1)
+		    ? PCIE_ATR_HDR_CFG_TYPE0 : PCIE_ATR_HDR_CFG_TYPE1));
+		bus_space_barrier(sc->sc_iot, sc->sc_ioh, 0, sc->sc_apb_size,
+		      BUS_SPACE_BARRIER_READ);
+		if (AXIPEEK4(sc, reg, &val) != 0)
+			val = 0xffffffff;
+		bus_space_barrier(sc->sc_iot, sc->sc_axi_ioh,
+		    0, sc->sc_axi_size,
+		    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+		mutex_spin_exit(&sc->sc_conf_lock);
+	}
+	return val;
 }
 
 void
 rkpcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 {
 	struct rkpcie_softc *sc = v;
-	struct pcihost_softc *phsc = &sc->sc_phsc;
+	int bus_min = sc->sc_phsc.sc_bus_min;
 	int bus, dev, fn;
 	u_int reg;
 
@@ -554,14 +616,27 @@ rkpcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	rkpcie_decompose_tag(sc, tag, &bus, &dev, &fn);
-	if (!rkpcie_conf_ok(bus, dev, fn, phsc->sc_bus_min))
+	if (!rkpcie_conf_ok(bus, dev, fn, offset, sc))
 		return;
-	reg = (bus << 20) | (dev << 15) | (fn << 12) | offset;
+	reg = (dev << 15) | (fn << 12) | offset;
 
-	if (bus == phsc->sc_bus_min)
+	if (bus == bus_min)
 		HWRITE4(sc, PCIE_RC_NORMAL_BASE + reg, data);
-	else
-		AXIWRITE4(sc, reg, data);
+	else {
+		mutex_spin_enter(&sc->sc_conf_lock);
+		HWRITE4(sc, PCIE_ATR_OB_ADDR0(0),
+		    (bus << 20) | (20 - 1));
+		HWRITE4(sc, PCIE_ATR_OB_DESC0(0),
+		    PCIE_ATR_HDR_RID | ((bus == bus_min + 1)
+		    ? PCIE_ATR_HDR_CFG_TYPE0 : PCIE_ATR_HDR_CFG_TYPE1));
+		bus_space_barrier(sc->sc_iot, sc->sc_ioh, 0, sc->sc_apb_size,
+		    BUS_SPACE_BARRIER_WRITE);
+		AXIPOKE4(sc, reg, data);
+		bus_space_barrier(sc->sc_iot, sc->sc_axi_ioh,
+		    0, sc->sc_axi_size,
+		    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+		mutex_spin_exit(&sc->sc_conf_lock);
+	}
 }
 
 static int
@@ -573,7 +648,7 @@ rkpcie_conf_hook(void *v, int b, int d, int f, pcireg_t id)
 /* INTx interrupt controller */
 static void *
 rkpcie_intx_establish(device_t dev, u_int *specifier, int ipl, int flags,
-    int (*func)(void *), void *arg)
+    int (*func)(void *), void *arg, const char *xname)
 {
 	struct rkpcie_softc *sc = device_private(dev);
 	void *cookie;
@@ -587,7 +662,8 @@ rkpcie_intx_establish(device_t dev, u_int *specifier, int ipl, int flags,
 	    PCIM_INTx_ENAB(0) | PCIM_INTx_ENAB(1) |
 	    PCIM_INTx_ENAB(2) | PCIM_INTx_ENAB(3));
 
-	cookie = fdtbus_intr_establish_byname(sc->sc_phsc.sc_phandle, "legacy", ipl, flags, func, arg);
+	cookie = fdtbus_intr_establish_byname(sc->sc_phsc.sc_phandle,
+	    "legacy", ipl, flags, func, arg, xname);
 
 	return cookie;
 }

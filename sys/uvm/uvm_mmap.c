@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_mmap.c,v 1.174 2019/10/04 22:48:45 kamil Exp $	*/
+/*	$NetBSD: uvm_mmap.c,v 1.180 2022/06/04 20:54:03 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -46,11 +46,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.174 2019/10/04 22:48:45 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.180 2022/06/04 20:54:03 riastradh Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_pax.h"
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
@@ -200,9 +201,9 @@ sys_mincore(struct lwp *l, const struct sys_mincore_args *uap,
 		uobj = entry->object.uvm_obj;	/* lower layer */
 
 		if (amap != NULL)
-			amap_lock(amap);
+			amap_lock(amap, RW_READER);
 		if (uobj != NULL)
-			mutex_enter(uobj->vmobjlock);
+			rw_enter(uobj->vmobjlock, RW_READER);
 
 		for (/* nothing */; start < lim; start += PAGE_SIZE, vec++) {
 			pgi = 0;
@@ -238,7 +239,7 @@ sys_mincore(struct lwp *l, const struct sys_mincore_args *uap,
 			(void) ustore_char(vec, pgi);
 		}
 		if (uobj != NULL)
-			mutex_exit(uobj->vmobjlock);
+			rw_exit(uobj->vmobjlock);
 		if (amap != NULL)
 			amap_unlock(amap);
 	}
@@ -276,7 +277,8 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 	vsize_t size, pageoff, newsize;
 	vm_prot_t prot, maxprot, extraprot;
 	int flags, fd, advice;
-	vaddr_t defaddr;
+	vaddr_t defaddr = 0;	/* XXXGCC */
+	bool addrhint = false;
 	struct file *fp = NULL;
 	struct uvm_object *uobj;
 	int error;
@@ -301,6 +303,9 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 #endif /* PAX_ASLR */
 
 	if ((flags & (MAP_SHARED|MAP_PRIVATE)) == (MAP_SHARED|MAP_PRIVATE))
+		return EINVAL;
+
+	if (size == 0 && (flags & MAP_ANON) == 0)
 		return EINVAL;
 
 	/*
@@ -345,6 +350,12 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 			addr = MAX(addr, defaddr);
 		else
 			addr = MIN(addr, defaddr);
+
+		/*
+		 * If addr is nonzero and not the default, then the
+		 * address is a hint.
+		 */
+		addrhint = (addr != 0 && addr != defaddr);
 	}
 
 	/*
@@ -395,11 +406,30 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 	pax_aslr_mmap(l, &addr, orig_addr, flags);
 
 	/*
-	 * now let kernel internal function uvm_mmap do the work.
+	 * Now let kernel internal function uvm_mmap do the work.
+	 *
+	 * If the user provided a hint, take a reference to uobj in
+	 * case the first attempt to satisfy the hint fails, so we can
+	 * try again with the default address.
 	 */
-
+	if (addrhint) {
+		if (uobj)
+			(*uobj->pgops->pgo_reference)(uobj);
+	}
 	error = uvm_mmap(&p->p_vmspace->vm_map, &addr, size, prot, maxprot,
 	    flags, advice, uobj, pos, p->p_rlimit[RLIMIT_MEMLOCK].rlim_cur);
+	if (addrhint) {
+		if (error) {
+			addr = defaddr;
+			pax_aslr_mmap(l, &addr, orig_addr, flags);
+			error = uvm_mmap(&p->p_vmspace->vm_map, &addr, size,
+			    prot, maxprot, flags, advice, uobj, pos,
+			    p->p_rlimit[RLIMIT_MEMLOCK].rlim_cur);
+		} else if (uobj) {
+			/* Release the exta reference we took.  */
+			(*uobj->pgops->pgo_detach)(uobj);
+		}
+	}
 
 	/* remember to add offset */
 	*retval = (register_t)(addr + pageoff);
@@ -814,9 +844,12 @@ sys_munlockall(struct lwp *l, const void *v, register_t *retval)
  * - used by sys_mmap and various framebuffers
  * - uobj is a struct uvm_object pointer or NULL for MAP_ANON
  * - caller must page-align the file offset
+ *
+ * XXX This appears to leak the uobj in various error branches?  Need
+ * to clean up the contract around uobj reference.
  */
 
-int
+static int
 uvm_mmap(struct vm_map *map, vaddr_t *addr, vsize_t size, vm_prot_t prot,
     vm_prot_t maxprot, int flags, int advice, struct uvm_object *uobj,
     voff_t foff, vsize_t locklimit)

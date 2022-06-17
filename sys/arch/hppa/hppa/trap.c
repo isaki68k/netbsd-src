@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.111 2019/04/15 20:45:08 skrll Exp $	*/
+/*	$NetBSD: trap.c,v 1.120 2022/06/09 16:45:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.111 2019/04/15 20:45:08 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.120 2022/06/09 16:45:38 skrll Exp $");
 
 /* #define INTRDEBUG */
 /* #define TRAPDEBUG */
@@ -198,19 +198,16 @@ u_int rctr_next_iioq;
 #endif
 
 static inline void
-userret(struct lwp *l, register_t pc, u_quad_t oticks)
+userret(struct lwp *l, struct trapframe *tf)
 {
 	struct proc *p = l->l_proc;
+	int oticks = 0; /* XXX why zero? */
 
-	if (l->l_md.md_astpending) {
+	do {
 		l->l_md.md_astpending = 0;
 		//curcpu()->ci_data.cpu_nast++;
-
-		if (curcpu()->ci_want_resched)
-			preempt();
-	}
-
-	mi_userret(l);
+		mi_userret(l);
+	} while (l->l_md.md_astpending);
 
 	/*
 	 * If profiling, charge recent system time to the trapped pc.
@@ -218,7 +215,8 @@ userret(struct lwp *l, register_t pc, u_quad_t oticks)
 	if (p->p_stflag & PST_PROFIL) {
 		extern int psratio;
 
-		addupc_task(l, pc, (int)(p->p_sticks - oticks) * psratio);
+		addupc_task(l, tf->tf_iioq_head,
+		    (int)(p->p_sticks - oticks) * psratio);
 	}
 }
 
@@ -443,7 +441,7 @@ do {							\
 
 		/*
 		 * Don't check the instruction queues or stack on interrupts
-		 * as we could be be in the sti code (outside normal kernel
+		 * as we could be in the sti code (outside normal kernel
 		 * text) or switching LWPs (curlwp and sp are not in sync)
 		 */
 		if ((type & ~T_USER) == T_INTERRUPT)
@@ -479,6 +477,93 @@ out:
 	}
 }
 #endif /* DEBUG */
+
+
+#define __PABITS(x, y)		__BITS(31 - (x), 31 - (y))
+#define __PABIT(x)		__BIT(31 - (x))
+
+#define LPA_MASK				 \
+     (                      __PABITS(0, 5)     | \
+                            __PABITS(18, 25))
+#define LPA					 \
+     (__SHIFTIN(1,          __PABITS(0, 5))    | \
+      __SHIFTIN(0x4d, __PABITS(18, 25)))
+
+
+#define PROBE_ENCS	(0x46 | 0xc6 | 0x47 | 0xc7)
+#define PROBE_PL	__PABITS(14, 15)
+#define PROBE_IMMED	__PABIT(18)
+#define PROBE_RW	__PABIT(25)
+
+#define PROBE_MASK                               \
+    ((                      __PABITS(0, 5)     | \
+                            __PABITS(18, 25)   | \
+                            __PABIT(26))       ^ \
+     (PROBE_IMMED | PROBE_RW))
+
+#define PROBE					 \
+    ((__SHIFTIN(1,          __PABITS(0, 5))    | \
+      __SHIFTIN(PROBE_ENCS, __PABITS(18, 25))  | \
+      __SHIFTIN(0,          __PABIT(26)))      ^ \
+     (PROBE_IMMED | PROBE_RW))
+
+/* for hppa64 */
+CTASSERT(sizeof(register_t) == sizeof(u_int));
+size_t hppa_regmap[] = {
+	0,	/* r0 is special case */
+	offsetof(struct trapframe, tf_r1  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_rp  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r3  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r4  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r5  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r6  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r7  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r8  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r9  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r10 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r11 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r12 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r13 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r14 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r15 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r16 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r17 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r18 ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_t4  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_t3  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_t2  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_t1  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_arg3) / sizeof(register_t),
+	offsetof(struct trapframe, tf_arg2) / sizeof(register_t),
+	offsetof(struct trapframe, tf_arg1) / sizeof(register_t),
+	offsetof(struct trapframe, tf_arg0) / sizeof(register_t),
+	offsetof(struct trapframe, tf_dp  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_ret0) / sizeof(register_t),
+	offsetof(struct trapframe, tf_ret1) / sizeof(register_t),
+	offsetof(struct trapframe, tf_sp  ) / sizeof(register_t),
+	offsetof(struct trapframe, tf_r31 ) / sizeof(register_t),
+};
+
+
+static inline register_t
+tf_getregno(struct trapframe *tf, u_int regno)
+{
+	register_t *tf_reg = (register_t *)tf;
+	if (regno == 0)
+		return 0;
+	else
+		return tf_reg[hppa_regmap[regno]];
+}
+
+static inline void
+tf_setregno(struct trapframe *tf, u_int regno, register_t val)
+{
+	register_t *tf_reg = (register_t *)tf;
+	if (regno == 0)
+		return;
+	else
+		tf_reg[hppa_regmap[regno]] = val;
+}
 
 void
 trap(int type, struct trapframe *frame)
@@ -593,9 +678,10 @@ trap(int type, struct trapframe *frame)
 		mtctl(frame->tf_eiem, CR_EIEM);
 	}
 
+	const bool user = (type & T_USER) != 0;
 	switch (type) {
 	case T_NONEXIST:
-	case T_NONEXIST|T_USER:
+	case T_NONEXIST | T_USER:
 #if !defined(DDB) && !defined(KGDB)
 		/* we've got screwed up by the central scrutinizer */
 		panic ("trap: elvis has just left the building!");
@@ -603,7 +689,7 @@ trap(int type, struct trapframe *frame)
 #else
 		goto dead_end;
 #endif
-	case T_RECOVERY|T_USER:
+	case T_RECOVERY | T_USER:
 #ifdef USERTRACE
 		for (;;) {
 			if (frame->tf_iioq_head != rctr_next_iioq)
@@ -687,13 +773,13 @@ do_onfault:
 	case T_DBREAK | T_USER:
 		KSI_INIT_TRAP(&ksi);
 		ksi.ksi_signo = SIGTRAP;
-		ksi.ksi_code = TRAP_TRACE;
+		ksi.ksi_code = TRAP_BRKPT;
 		ksi.ksi_trap = trapnum;
 		ksi.ksi_addr = (void *)(frame->tf_iioq_head & ~HPPA_PC_PRIV_MASK);
 #ifdef PTRACE
 		ss_clear_breakpoints(l);
 		if (opcode == SSBREAKPOINT)
-			ksi.ksi_code = TRAP_BRKPT;
+			ksi.ksi_code = TRAP_TRACE;
 #endif
 		/* pass to user debugger */
 		trapsignal(l, &ksi);
@@ -817,11 +903,76 @@ do_onfault:
 		trapsignal(l, &ksi);
 		break;
 
+	case T_ITLBMISSNA:	case T_USER | T_ITLBMISSNA:
+	case T_DTLBMISSNA:	case T_USER | T_DTLBMISSNA:
+		vm = p->p_vmspace;
+
+		if (!vm) {
+#ifdef TRAPDEBUG
+			printf("trap: no vm, p=%p\n", p);
+#endif
+			goto dead_end;
+		}
+
+		/*
+		 * it could be a kernel map for exec_map faults
+		 */
+		if (!user && space == HPPA_SID_KERNEL)
+			map = kernel_map;
+		else {
+			map = &vm->vm_map;
+		}
+
+		va = trunc_page(va);
+
+		if ((opcode & LPA_MASK) == LPA) {
+			/* lpa failure case */
+			const u_int regno =
+			    __SHIFTOUT(opcode, __PABITS(27, 31));
+			tf_setregno(frame, regno, 0);
+			frame->tf_ipsw |= PSW_N;
+		} else if ((opcode & PROBE_MASK) == PROBE) {
+			u_int pl;
+			if ((opcode & PROBE_IMMED) == 0) {
+				pl = __SHIFTOUT(opcode, __PABITS(14, 15));
+			} else {
+				const u_int plreg =
+				    __SHIFTOUT(opcode, __PABITS(11, 15));
+				pl = tf_getregno(frame, plreg);
+			}
+			bool ok = true;
+			if ((user && space == HPPA_SID_KERNEL) ||
+			    (frame->tf_iioq_head & 3) != pl ||
+			    (user && va >= VM_MAXUSER_ADDRESS)) {
+				ok = false;
+			} else {
+				/* Never call uvm_fault in interrupt context. */
+				KASSERT(curcpu()->ci_intr_depth == 0);
+
+				const bool read =
+				    __SHIFTOUT(opcode, PROBE_RW) == 0;
+				onfault = pcb->pcb_onfault;
+				pcb->pcb_onfault = 0;
+				ret = uvm_fault(map, va, read ?
+				    VM_PROT_READ : VM_PROT_WRITE);
+				pcb->pcb_onfault = onfault;
+
+				if (ret)
+					ok = false;
+			}
+			if (!ok) {
+				const u_int regno =
+				    __SHIFTOUT(opcode, __PABITS(27, 31));
+				tf_setregno(frame, regno, 0);
+				frame->tf_ipsw |= PSW_N;
+			}
+		} else {
+		}
+		break;
+
 	case T_DATACC:   	case T_USER | T_DATACC:
 	case T_ITLBMISS:	case T_USER | T_ITLBMISS:
 	case T_DTLBMISS:	case T_USER | T_DTLBMISS:
-	case T_ITLBMISSNA:	case T_USER | T_ITLBMISSNA:
-	case T_DTLBMISSNA:	case T_USER | T_DTLBMISSNA:
 	case T_TLB_DIRTY:	case T_USER | T_TLB_DIRTY:
 		vm = p->p_vmspace;
 
@@ -853,7 +1004,7 @@ do_onfault:
 		}
 
 		/* Never call uvm_fault in interrupt context. */
-		KASSERT(curcpu()->ci_cpl == 0);
+		KASSERT(curcpu()->ci_intr_depth == 0);
 
 		onfault = pcb->pcb_onfault;
 		pcb->pcb_onfault = 0;
@@ -934,7 +1085,7 @@ do_onfault:
 		break;
 
 	case T_INTERRUPT:
-	case T_INTERRUPT|T_USER:
+	case T_INTERRUPT | T_USER:
 		hppa_intr(frame);
 		mtctl(frame->tf_eiem, CR_EIEM);
 		break;
@@ -966,7 +1117,7 @@ do_onfault:
 #endif
 
 	if (type & T_USER)
-		userret(l, l->l_md.md_regs->tf_iioq_head, 0);
+		userret(l, l->l_md.md_regs);
 
 #ifdef DEBUG
 	frame_sanity_check(__func__, __LINE__, type, frame, l);
@@ -983,7 +1134,7 @@ md_child_return(struct lwp *l)
 	 * Return values in the frame set by cpu_lwp_fork().
 	 */
 
-	userret(l, l->l_md.md_regs->tf_iioq_head, 0);
+	userret(l, l->l_md.md_regs);
 #ifdef DEBUG
 	frame_sanity_check(__func__, __LINE__, 0, l->l_md.md_regs, l);
 #endif /* DEBUG */
@@ -996,7 +1147,7 @@ void
 cpu_spawn_return(struct lwp *l)
 {
 
-	userret(l, l->l_md.md_regs->tf_iioq_head, 0);
+	userret(l, l->l_md.md_regs);
 #ifdef DEBUG
 	frame_sanity_check(__func__, __LINE__, 0, l->l_md.md_regs, l);
 #endif /* DEBUG */
@@ -1045,7 +1196,7 @@ ss_put_value(struct lwp *l, vaddr_t addr, u_int value)
 void
 ss_clear_breakpoints(struct lwp *l)
 {
-	/* Restore origional instructions. */
+	/* Restore original instructions. */
 	if (l->l_md.md_bpva != 0) {
 		ss_put_value(l, l->l_md.md_bpva, l->l_md.md_bpsave[0]);
 		ss_put_value(l, l->l_md.md_bpva + 4, l->l_md.md_bpsave[1]);
@@ -1268,7 +1419,7 @@ syscall(struct trapframe *frame, int *args)
 		break;
 	}
 
-	userret(l, frame->tf_iioq_head, 0);
+	userret(l, frame);
 
 #ifdef DIAGNOSTIC
 	if (ci->ci_cpl != oldcpl) {
@@ -1298,5 +1449,5 @@ startlwp(void *arg)
 	KASSERT(error == 0);
 
 	kmem_free(uc, sizeof(ucontext_t));
-	userret(l, l->l_md.md_regs->tf_iioq_head, 0);
+	userret(l, l->l_md.md_regs);
 }

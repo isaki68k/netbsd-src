@@ -1,3 +1,5 @@
+/* $NetBSD: pm3fb.c,v 1.8 2021/08/25 21:50:29 andvar Exp $ */
+
 /*
  * Copyright (c) 2015 Naruaki Etomi
  * All rights reserved.
@@ -28,6 +30,9 @@
  * most of the following was adapted from the xf86-video-glint driver's
  * pm3_accel.c, pm3_dac.c and pm2fb framebuffer console driver
  */
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pm3fb.c,v 1.8 2021/08/25 21:50:29 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -133,8 +138,6 @@ struct wsdisplay_accessops pm3fb_accessops = {
 };
 
 /* I2C glue */
-static int pm3fb_i2c_acquire_bus(void *, int);
-static void pm3fb_i2c_release_bus(void *, int);
 static int pm3fb_i2c_send_start(void *, int);
 static int pm3fb_i2c_send_stop(void *, int);
 static int pm3fb_i2c_initiate_xfer(void *, i2c_addr_t, int);
@@ -334,7 +337,7 @@ pm3fb_attach(device_t parent, device_t self, void *aux)
 	aa.accessops = &pm3fb_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint);
+	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static int
@@ -1004,9 +1007,8 @@ pm3_setup_i2c(struct pm3fb_softc *sc)
 	int i;
 
 	/* Fill in the i2c tag */
+	iic_tag_init(&sc->sc_i2c);
 	sc->sc_i2c.ic_cookie = sc;
-	sc->sc_i2c.ic_acquire_bus = pm3fb_i2c_acquire_bus;
-	sc->sc_i2c.ic_release_bus = pm3fb_i2c_release_bus;
 	sc->sc_i2c.ic_send_start = pm3fb_i2c_send_start;
 	sc->sc_i2c.ic_send_stop = pm3fb_i2c_send_stop;
 	sc->sc_i2c.ic_initiate_xfer = pm3fb_i2c_initiate_xfer;
@@ -1094,19 +1096,6 @@ static uint32_t pm3fb_i2cbb_read(void *cookie)
 }
 
 /* higher level I2C stuff */
-static int
-pm3fb_i2c_acquire_bus(void *cookie, int flags)
-{
-	/* private bus */
-	return (0);
-}
-
-static void
-pm3fb_i2c_release_bus(void *cookie, int flags)
-{
-	/* private bus */
-}
-
 static int
 pm3fb_i2c_send_start(void *cookie, int flags)
 {

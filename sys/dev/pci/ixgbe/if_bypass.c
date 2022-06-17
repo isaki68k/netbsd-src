@@ -1,3 +1,4 @@
+/* $NetBSD: if_bypass.c,v 1.9 2021/08/17 22:00:32 andvar Exp $ */
 /******************************************************************************
 
   Copyright (c) 2001-2017, Intel Corporation
@@ -32,6 +33,8 @@
 ******************************************************************************/
 /*$FreeBSD: head/sys/dev/ixgbe/if_bypass.c 327031 2017-12-20 18:15:06Z erj $*/
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: if_bypass.c,v 1.9 2021/08/17 22:00:32 andvar Exp $");
 
 #include "ixgbe.h"
 
@@ -45,9 +48,9 @@
 static void
 ixgbe_bypass_mutex_enter(struct adapter *adapter)
 {
-	while (atomic_cas_uint(&adapter->bypass.low, 0, 1) == 0)
+	while (atomic_cas_uint(&adapter->bypass.low, 0, 1) != 0)
 		usec_delay(3000);
-	while (atomic_cas_uint(&adapter->bypass.high, 0, 1) == 0)
+	while (atomic_cas_uint(&adapter->bypass.high, 0, 1) != 0)
 		usec_delay(3000);
 	return;
 } /* ixgbe_bypass_mutex_enter */
@@ -58,9 +61,9 @@ ixgbe_bypass_mutex_enter(struct adapter *adapter)
 static void
 ixgbe_bypass_mutex_clear(struct adapter *adapter)
 {
-	while (atomic_cas_uint(&adapter->bypass.high, 1, 0) == 0)
+	while (atomic_cas_uint(&adapter->bypass.high, 1, 0) != 1)
 		usec_delay(6000);
-	while (atomic_cas_uint(&adapter->bypass.low, 1, 0) == 0)
+	while (atomic_cas_uint(&adapter->bypass.low, 1, 0) != 1)
 		usec_delay(6000);
 	return;
 } /* ixgbe_bypass_mutex_clear */
@@ -73,7 +76,7 @@ ixgbe_bypass_mutex_clear(struct adapter *adapter)
 static void
 ixgbe_bypass_wd_mutex_enter(struct adapter *adapter)
 {
-	while (atomic_cas_uint(&adapter->bypass.high, 0, 1) == 0)
+	while (atomic_cas_uint(&adapter->bypass.high, 0, 1) != 0)
 		usec_delay(3000);
 	return;
 } /* ixgbe_bypass_wd_mutex_enter */
@@ -84,7 +87,7 @@ ixgbe_bypass_wd_mutex_enter(struct adapter *adapter)
 static void
 ixgbe_bypass_wd_mutex_clear(struct adapter *adapter)
 {
-	while (atomic_cas_uint(&adapter->bypass.high, 1, 0) == 0)
+	while (atomic_cas_uint(&adapter->bypass.high, 1, 0) != 1)
 		usec_delay(6000);
 	return;
 } /* ixgbe_bypass_wd_mutex_clear */
@@ -101,7 +104,7 @@ ixgbe_get_bypass_time(u32 *year, u32 *sec)
 	nanotime(&current);
 	*sec = current.tv_sec;
 
-	while(*sec > SEC_THIS_YEAR(*year)) {
+	while (*sec > SEC_THIS_YEAR(*year)) {
 		*sec -= SEC_THIS_YEAR(*year);
 		(*year)++;
 	}
@@ -585,7 +588,7 @@ ixgbe_bp_log(SYSCTLFN_ARGS)
 		return (error);
 
 	/* Keep the log display single-threaded */
-	while (atomic_cas_uint(&adapter->bypass.log, 0, 1) == 0)
+	while (atomic_cas_uint(&adapter->bypass.log, 0, 1) != 0)
 		usec_delay(3000);
 
 	ixgbe_bypass_mutex_enter(adapter);
@@ -669,7 +672,7 @@ ixgbe_bp_log(SYSCTLFN_ARGS)
 		const char *action_str[] = {"ignore", "normal", "bypass",
 					    "isolate",};
 
-		/* verify vaild data  1 - 6 */
+		/* verify valid data  1 - 6 */
 		if (event < BYPASS_EVENT_MAIN_ON || event > BYPASS_EVENT_USR)
 			event = 0;
 
@@ -713,14 +716,14 @@ ixgbe_bp_log(SYSCTLFN_ARGS)
 
 	status = 0; /* reset */
 	/* Another log command can now run */
-	while (atomic_cas_uint(&adapter->bypass.log, 1, 0) == 0)
+	while (atomic_cas_uint(&adapter->bypass.log, 1, 0) != 1)
 		usec_delay(3000);
 	return (error);
 
 unlock_err:
 	ixgbe_bypass_mutex_clear(adapter);
 	status = 0; /* reset */
-	while (atomic_cas_uint(&adapter->bypass.log, 1, 0) == 0)
+	while (atomic_cas_uint(&adapter->bypass.log, 1, 0) != 1)
 		usec_delay(3000);
 	return (EINVAL);
 } /* ixgbe_bp_log */

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_netbsd.c,v 1.10 2019/09/04 07:29:34 msaitoh Exp $ */
+/* $NetBSD: ixgbe_netbsd.c,v 1.17 2021/08/25 09:06:02 msaitoh Exp $ */
 /*
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -27,6 +27,10 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: ixgbe_netbsd.c,v 1.17 2021/08/25 09:06:02 msaitoh Exp $");
+
 #include <sys/param.h>
 
 #include <sys/atomic.h>
@@ -79,7 +83,7 @@ ixgbe_dmamap_destroy(ixgbe_dma_tag_t *dt, bus_dmamap_t dmam)
 void
 ixgbe_dmamap_sync(ixgbe_dma_tag_t *dt, bus_dmamap_t dmam, int ops)
 {
-        bus_dmamap_sync(dt->dt_dmat, dmam, 0, dt->dt_maxsize, ops);
+	bus_dmamap_sync(dt->dt_dmat, dmam, 0, dt->dt_maxsize, ops);
 }
 
 void
@@ -95,167 +99,19 @@ ixgbe_dmamap_create(ixgbe_dma_tag_t *dt, int flags, bus_dmamap_t *dmamp)
 	    dt->dt_maxsegsize, dt->dt_boundary, flags, dmamp);
 }
 
-static void
-ixgbe_putext(ixgbe_extmem_t *em)
-{
-	ixgbe_extmem_head_t *eh = em->em_head;
 
-	mutex_enter(&eh->eh_mtx);
-
-	TAILQ_INSERT_HEAD(&eh->eh_freelist, em, em_link);
-
-	mutex_exit(&eh->eh_mtx);
-
-	return;
-}
-
-static ixgbe_extmem_t *
-ixgbe_getext(ixgbe_extmem_head_t *eh, size_t size)
-{
-	ixgbe_extmem_t *em;
-
-	mutex_enter(&eh->eh_mtx);
-
-	TAILQ_FOREACH(em, &eh->eh_freelist, em_link) {
-		if (em->em_size >= size)
-			break;
-	}
-
-	if (em != NULL)
-		TAILQ_REMOVE(&eh->eh_freelist, em, em_link);
-
-	mutex_exit(&eh->eh_mtx);
-
-	return em;
-}
-
-static ixgbe_extmem_t *
-ixgbe_newext(ixgbe_extmem_head_t *eh, bus_dma_tag_t dmat, size_t size)
-{
-	ixgbe_extmem_t *em;
-	int nseg, rc;
-
-	em = kmem_zalloc(sizeof(*em), KM_SLEEP);
-
-	rc = bus_dmamem_alloc(dmat, size, PAGE_SIZE, 0, &em->em_seg, 1, &nseg,
-	    BUS_DMA_WAITOK);
-
-	if (rc != 0)
-		goto post_zalloc_err;
-
-	rc = bus_dmamem_map(dmat, &em->em_seg, 1, size, &em->em_vaddr,
-	    BUS_DMA_WAITOK);
-
-	if (rc != 0)
-		goto post_dmamem_err;
-
-	em->em_dmat = dmat;
-	em->em_size = size;
-	em->em_head = eh;
-
-	return em;
-post_dmamem_err:
-	bus_dmamem_free(dmat, &em->em_seg, 1);
-post_zalloc_err:
-	kmem_free(em, sizeof(*em));
-	return NULL;
-}
-
-void
-ixgbe_jcl_reinit(struct adapter *adapter, bus_dma_tag_t dmat,
-    struct rx_ring *rxr, int nbuf, size_t size)
-{
-	ixgbe_extmem_head_t *eh = &rxr->jcl_head;
-	ixgbe_extmem_t *em;
-	int i;
-
-	if (!eh->eh_initialized) {
-		TAILQ_INIT(&eh->eh_freelist);
-		mutex_init(&eh->eh_mtx, MUTEX_DEFAULT, IPL_NET);
-		eh->eh_initialized = true;
-	}
-
-	/*
-	 *  Check previous parameters. If it's not required to reinit, just
-	 * return.
-	 *
-	 *  Note that the num_rx_desc is currently fixed value. It's never
-	 * changed after device is attached.
-	 */
-	if ((rxr->last_rx_mbuf_sz == rxr->mbuf_sz)
-	    && (rxr->last_num_rx_desc == adapter->num_rx_desc))
-		return;
-
-	/* Free all dmamem */
-	while ((em = ixgbe_getext(eh, 0)) != NULL) {
-		KASSERT(em->em_vaddr != NULL);
-		bus_dmamem_unmap(dmat, em->em_vaddr, em->em_size);
-		bus_dmamem_free(dmat, &em->em_seg, 1);
-		memset(em, 0, sizeof(*em));
-		kmem_free(em, sizeof(*em));
-	}
-
-	for (i = 0; i < nbuf; i++) {
-		if ((em = ixgbe_newext(eh, dmat, size)) == NULL) {
-			device_printf(adapter->dev,
-			    "%s: only %d of %d jumbo buffers allocated\n",
-			    __func__, i, nbuf);
-			break;
-		}
-		ixgbe_putext(em);
-	}
-
-	/* Keep current parameters */
-	rxr->last_rx_mbuf_sz = adapter->rx_mbuf_sz;
-	rxr->last_num_rx_desc = adapter->num_rx_desc;
-}
-
-static void
-ixgbe_jcl_free(struct mbuf *m, void *buf, size_t size, void *arg)
-{
-	ixgbe_extmem_t *em = arg;
-
-	KASSERT(em->em_size == size);
-
-	ixgbe_putext(em);
-	/* this is an abstraction violation, but it does not lead to a
-	 * double-free
-	 */
-	if (__predict_true(m != NULL)) {
-		KASSERT(m->m_type != MT_FREE);
-		m->m_type = MT_FREE;
-		pool_cache_put(mb_cache, m);
-	}
-}
-
-/* XXX need to wait for the system to finish with each jumbo mbuf and
- * free it before detaching the driver from the device.
- */
 struct mbuf *
-ixgbe_getjcl(ixgbe_extmem_head_t *eh, int nowait /* M_DONTWAIT */,
-    int type /* MT_DATA */, int flags /* M_PKTHDR */, size_t size)
+ixgbe_getcl(void)
 {
-	ixgbe_extmem_t *em;
 	struct mbuf *m;
 
-	if ((flags & M_PKTHDR) != 0)
-		m = m_gethdr(nowait, type);
-	else
-		m = m_get(nowait, type);
+	MGETHDR(m, M_DONTWAIT, MT_DATA);
 
 	if (m == NULL)
 		return NULL;
 
-	em = ixgbe_getext(eh, size);
-	if (em == NULL) {
-		m_freem(m);
-		return NULL;
-	}
-
-	MEXTADD(m, em->em_vaddr, em->em_size, M_DEVBUF, &ixgbe_jcl_free, em);
-
+	MCLGET(m, M_DONTWAIT);
 	if ((m->m_flags & M_EXT) == 0) {
-		ixgbe_putext(em);
 		m_freem(m);
 		return NULL;
 	}
@@ -278,15 +134,21 @@ ixgbe_pci_enable_busmaster(pci_chipset_tag_t pc, pcitag_t tag)
 u_int
 atomic_load_acq_uint(volatile u_int *p)
 {
-	u_int rv;
+	return atomic_load_acquire(p);
+}
 
-	rv = *p;
-	/*
-	 * XXX
-	 * membar_sync() is far more than we need on most CPUs;
-	 * we just don't have an MI load-acqure operation.
-	 */
-	membar_sync();
+void
+ixgbe_delay(unsigned int us)
+{
 
-	return rv;
+	if (__predict_false(cold))
+		delay(us);
+	else if ((us / 1000) >= hztoms(1)) {
+		/*
+		 * Wait at least two clock ticks so we know the time has
+		 * passed.
+		 */
+		kpause("ixgdly", false, mstohz(us / 1000) + 1, NULL);
+	} else
+		delay(us);
 }

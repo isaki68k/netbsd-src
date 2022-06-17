@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.h,v 1.97 2019/08/28 01:44:39 mrg Exp $	*/
+/*	$NetBSD: usbdi.h,v 1.107 2022/03/03 06:09:33 riastradh Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usbdi.h,v 1.18 1999/11/17 22:33:49 n_hibma Exp $	*/
 
 /*
@@ -33,6 +33,10 @@
 
 #ifndef _USBDI_H_
 #define _USBDI_H_
+
+#include <sys/types.h>
+
+#include <dev/usb/usb.h>
 
 struct usbd_bus;
 struct usbd_device;
@@ -91,7 +95,7 @@ usbd_status usbd_open_pipe_intr(struct usbd_interface *, uint8_t, uint8_t,
     struct usbd_pipe **, void *, void *, uint32_t, usbd_callback, int);
 usbd_status usbd_open_pipe(struct usbd_interface *, uint8_t, uint8_t,
      struct usbd_pipe **);
-usbd_status usbd_close_pipe(struct usbd_pipe *);
+void usbd_close_pipe(struct usbd_pipe *);
 
 usbd_status usbd_transfer(struct usbd_xfer *);
 
@@ -118,8 +122,11 @@ void usbd_get_xfer_status(struct usbd_xfer *, void **,
 usb_endpoint_descriptor_t *usbd_interface2endpoint_descriptor
     (struct usbd_interface *, uint8_t);
 
-usbd_status usbd_abort_pipe(struct usbd_pipe *);
-usbd_status usbd_abort_default_pipe(struct usbd_device *);
+void usbd_abort_pipe(struct usbd_pipe *);
+void usbd_abort_default_pipe(struct usbd_device *);
+
+void usbd_suspend_pipe(struct usbd_pipe *);
+void usbd_resume_pipe(struct usbd_pipe *);
 
 usbd_status usbd_clear_endpoint_stall(struct usbd_pipe *);
 void usbd_clear_endpoint_stall_async(struct usbd_pipe *);
@@ -188,13 +195,10 @@ int usbd_ratecheck(struct timeval *);
 usbd_status usbd_get_string(struct usbd_device *, int, char *);
 usbd_status usbd_get_string0(struct usbd_device *, int, char *, int);
 
-/* An iterator for descriptors. */
-typedef struct {
-	const uByte *cur;
-	const uByte *end;
-} usbd_desc_iter_t;
-void usb_desc_iter_init(struct usbd_device *, usbd_desc_iter_t *);
-const usb_descriptor_t *usb_desc_iter_next(usbd_desc_iter_t *);
+/* For use by HCI drivers, not USB device drivers */
+void usbd_xfer_schedule_timeout(struct usbd_xfer *);
+bool usbd_xfer_trycomplete(struct usbd_xfer *);
+void usbd_xfer_abort(struct usbd_xfer *);
 
 /* Used to clear endpoint stalls from the softint */
 void usbd_clear_endpoint_stall_task(void *);
@@ -219,10 +223,13 @@ struct usb_task {
 #define	USB_TASKQ_MPSAFE	0x80
 
 void usb_add_task(struct usbd_device *, struct usb_task *, int);
-void usb_rem_task(struct usbd_device *, struct usb_task *);
+bool usb_rem_task(struct usbd_device *, struct usb_task *);
 bool usb_rem_task_wait(struct usbd_device *, struct usb_task *, int,
     kmutex_t *);
+bool usb_task_pending(struct usbd_device *, struct usb_task *);
 #define usb_init_task(t, f, a, fl) ((t)->fun = (f), (t)->arg = (a), (t)->queue = USB_NUM_TASKQS, (t)->flags = (fl))
+
+bool usb_in_event_thread(device_t);
 
 struct usb_devno {
 	uint16_t ud_vendor;

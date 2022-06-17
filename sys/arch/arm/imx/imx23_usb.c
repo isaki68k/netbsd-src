@@ -1,4 +1,4 @@
-/* $Id: imx23_usb.c,v 1.2 2019/07/24 11:20:55 hkenken Exp $ */
+/* $Id: imx23_usb.c,v 1.5 2021/08/07 16:18:44 thorpej Exp $ */
 
 /*
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -113,7 +113,7 @@ imx23_usb_attach(device_t parent, device_t self, void *aux)
 	clkctrl_en_usb();
 
 	/* Enable external USB chip. */
-	pinctrl_en_usb();
+	imx23_pinctrl_en_usb();
 
 	/* USB clock on. */
 	digctl_usb_clkgate(0);
@@ -121,7 +121,8 @@ imx23_usb_attach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	/* attach OTG/EHCI host controllers */
-	config_search_ia(imxusbc_search, self, "imxusbc", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = imxusbc_search));
 
 	return;
 }
@@ -144,8 +145,8 @@ imxusbc_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
         aa.aa_unit = cf->cf_loc[IMXUSBCCF_UNIT];
         aa.aa_irq = cf->cf_loc[IMXUSBCCF_IRQ];
 
-        if (config_match(parent, cf, &aa) > 0)
-                config_attach(parent, cf, &aa, NULL);
+        if (config_probe(parent, cf, &aa))
+                config_attach(parent, cf, &aa, NULL, CFARGS_NONE);
 
         return 0;
 }

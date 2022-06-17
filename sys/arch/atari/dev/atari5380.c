@@ -1,4 +1,4 @@
-/*	$NetBSD: atari5380.c,v 1.63 2017/10/07 16:05:31 jdolecek Exp $	*/
+/*	$NetBSD: atari5380.c,v 1.65 2021/10/04 20:48:05 andvar Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atari5380.c,v 1.63 2017/10/07 16:05:31 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atari5380.c,v 1.65 2021/10/04 20:48:05 andvar Exp $");
 
 #include "opt_atariscsi.h"
 
@@ -628,7 +628,7 @@ ncr5380_drq_intr(int poll)
 
 	/*
 	 * Update the DMA 'registers' to reflect that all bytes
-	 * have been transfered and tell this to the 5380 too.
+	 * have been transferred and tell this to the 5380 too.
 	 */
 	set_scsi_dma(SCSI_DMA->s_dma_ptr, (u_long)dma_ptr);
 	set_scsi_dma(SCSI_DMA->s_dma_cnt, 0);
@@ -900,7 +900,7 @@ falcon_get_dma_result(SC_REQ *reqp, u_long *bytes_left)
 		/*
 		 * Misc. DMA-error according to Atari...
 		 */
-		ncr_tprint(reqp, "Unknow ST-SCSI error near 0x%x\n",
+		ncr_tprint(reqp, "Unknown ST-SCSI error near 0x%x\n",
 		    st_dmaaddr_get());
 		reqp->xs->error = XS_DRIVER_STUFFUP;
 		rv = 1;

@@ -1,7 +1,7 @@
-/* $NetBSD: joy_eap.c,v 1.14 2019/05/08 13:40:19 isaki Exp $ */
+/* $NetBSD: joy_eap.c,v 1.17 2021/08/07 16:19:14 thorpej Exp $ */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: joy_eap.c,v 1.14 2019/05/08 13:40:19 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: joy_eap.c,v 1.17 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -59,7 +59,8 @@ eap_joy_attach(device_t eapdev, struct eap_gameport_args *gpa)
 	aa.aa_aaa.type = AUDIODEV_TYPE_AUX;
 	aa.aa_iot = gpa->gpa_iot;
 	aa.aa_ioh = ioh;
-	joydev = config_found(eapdev, &aa, 0);
+	joydev = config_found(eapdev, &aa, 0,
+	    CFARGS(.iattr = "eap"));
 	/* this cannot fail */
 	KASSERT(joydev != NULL);
 

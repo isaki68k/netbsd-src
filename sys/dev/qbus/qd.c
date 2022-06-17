@@ -1,4 +1,4 @@
-/*	$NetBSD: qd.c,v 1.57 2017/10/25 08:12:38 maya Exp $	*/
+/*	$NetBSD: qd.c,v 1.61 2022/04/16 18:15:22 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1988 Regents of the University of California.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: qd.c,v 1.57 2017/10/25 08:12:38 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: qd.c,v 1.61 2022/04/16 18:15:22 andvar Exp $");
 
 #include "opt_ddb.h"
 
@@ -145,7 +145,7 @@ struct	qd_softc {
 
 /*
  * reference to an array of "uba_device" structures built by the auto
- * configuration program.  The uba_device structure decribes the device
+ * configuration program.  The uba_device structure describes the device
  * sufficiently for the driver to talk to it.  The auto configuration code
  * fills in the uba_device structures (located in ioconf.c) from user
  * maintained info.
@@ -195,8 +195,8 @@ struct DMAreq_header *DMAheader[NQD];  /* DMA buffer header pntrs */
 /*
  * The driver assists a client in scroll operations by loading dragon
  * registers from an interrupt service routine.	The loading is done using
- * parameters found in memory shrade between the driver and its client.
- * The scroll parameter structures are ALL loacted in the same memory page
+ * parameters found in memory shared between the driver and its client.
+ * The scroll parameter structures are ALL located in the same memory page
  * for reasons of memory economy.
  */
 char scroll_shared[2 * 512];	/* reserve space for scroll structs */
@@ -661,7 +661,7 @@ qd_match(device_t parent, cfdata_t match, void *aux)
 
 		if (!qd0cninited) {
 			/*
-			 * qd0 has not been initiallized as the console.
+			 * qd0 has not been initialized as the console.
 			 * We need to do some initialization now
 			 *
 			 * XXX
@@ -691,7 +691,7 @@ qd_match(device_t parent, cfdata_t match, void *aux)
 	* (ADDER) and xx8 (DUART).  Therefore, we take three
 	* vectors from the vector pool, and then continue
 	* to take them until we get a xx0 HEX vector.  The
-	* pool provides vectors in contiguous decending
+	* pool provides vectors in contiguous descending
 	* order.
 	*/
 
@@ -1548,7 +1548,7 @@ filt_qdrdetach(struct knote *kn)
 	int s;
 
 	s = spl5();
-	SLIST_REMOVE(&qdrsel[unit].sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&qdrsel[unit], kn);
 	splx(s);
 }
 
@@ -1581,14 +1581,14 @@ filt_qdwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops qdread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_qdrdetach,
 	.f_event = filt_qdread,
 };
 
 static const struct filterops qdwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_qdrdetach,
 	.f_event = filt_qdwrite,
@@ -1597,7 +1597,6 @@ static const struct filterops qdwrite_filtops = {
 int
 qdkqfilter(dev_t dev, struct knote *kn)
 {
-	struct klist *klist;
 	u_int minor_dev = minor(dev);
 	int s, unit = minor_dev >> 2;
 
@@ -1608,12 +1607,10 @@ qdkqfilter(dev_t dev, struct knote *kn)
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &qdrsel[unit].sel_klist;
 		kn->kn_fop = &qdread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &qdrsel[unit].sel_klist;
 		kn->kn_fop = &qdwrite_filtops;
 		break;
 
@@ -1624,7 +1621,7 @@ qdkqfilter(dev_t dev, struct knote *kn)
 	kn->kn_hook = (void *)(intptr_t) dev;
 
 	s = spl5();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&qdrsel[unit], kn);
 	splx(s);
 
 	return (0);
@@ -2819,7 +2816,7 @@ GET_TBUTTON:
 
 				/*
 				* Test for cntrl characters. If set, see if the character
-				* is elligible to become a control character. */
+				* is eligible to become a control character. */
 
 			default:
 
@@ -3170,7 +3167,7 @@ LOOP:
 
 		/*
 		* Test for cntrl characters. If set, see if the character
-		* is elligible to become a control character.
+		* is eligible to become a control character.
 		*/
 	default:
 
@@ -3393,7 +3390,7 @@ setup_dragon(int unit)
 	adder->sync_phase_adj = 0x0100;
 	adder->x_scan_conf = 0x00C8;
 	/*
-	 * got a bug in secound pass ADDER! lets take care of it
+	 * got a bug in second pass ADDER! lets take care of it
 	 *
 	 * normally, just use the code in the following bug fix code, but to
 	 * make repeated demos look pretty, load the registers as if there was

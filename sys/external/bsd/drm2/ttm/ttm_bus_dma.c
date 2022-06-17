@@ -1,4 +1,4 @@
-/*	$NetBSD: ttm_bus_dma.c,v 1.8 2019/04/21 15:49:50 chs Exp $	*/
+/*	$NetBSD: ttm_bus_dma.c,v 1.10 2021/12/19 11:32:54 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ttm_bus_dma.c,v 1.8 2019/04/21 15:49:50 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ttm_bus_dma.c,v 1.10 2021/12/19 11:32:54 riastradh Exp $");
 
 #include <sys/bus.h>
 
@@ -75,8 +75,8 @@ ttm_bus_dma_populate(struct ttm_dma_tt *ttm_dma)
 
 	/* Load the DMA map.  */
 	/* XXX errno NetBSD->Linux */
-	ret = -bus_dmamap_load_pglist(ttm_dma->ttm.bdev->dmat,
-	    ttm_dma->dma_address, &ttm_dma->ttm.pglist,
+	ret = -bus_dmamap_load_pages(ttm_dma->ttm.bdev->dmat,
+	    ttm_dma->dma_address, ttm_dma->ttm.pages,
 	    (ttm_dma->ttm.num_pages << PAGE_SHIFT), BUS_DMA_NOWAIT);
 	if (ret)
 		goto fail1;
@@ -120,7 +120,7 @@ ttm_bus_dma_put(struct ttm_dma_tt *ttm_dma, int flags)
 	KASSERT(uobj->pgops->pgo_put);
 
 	/* Release or deactivate the pages.  */
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	(void)(*uobj->pgops->pgo_put)(uobj, 0, size, flags);
 	/* pgo_put unlocks uobj->vmobjlock.  */
 

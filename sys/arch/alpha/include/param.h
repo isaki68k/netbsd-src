@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.45 2019/01/07 22:00:30 jdolecek Exp $ */
+/* $NetBSD: param.h,v 1.50 2021/07/19 10:28:58 christos Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -38,6 +38,10 @@
  *	@(#)param.h	8.1 (Berkeley) 6/10/93
  */
 
+#ifdef _KERNEL_OPT
+#include "opt_param.h"
+#endif
+
 /*
  * Machine dependent constants for the Alpha.
  */
@@ -52,6 +56,12 @@
 #else
 #define ALPHA_PGSHIFT	13
 #endif
+
+/*
+ * Compiler assumes 16 byte stack alignment, per recommendation of
+ * Alpha Architecture Handbook.
+ */
+#define	STACK_ALIGNBYTES	(16 - 1)
 
 #define	NBPG		(1 << ALPHA_PGSHIFT)		/* bytes/page */
 #define	PGOFSET		(NBPG-1)			/* byte off. into pg */
@@ -69,6 +79,11 @@
 #ifndef MSGBUFSIZE
 #define MSGBUFSIZE	NBPG		/* default message buffer size */
 #endif
+
+/*
+ * EV4 (21064) and EV5 (21164) have a 32-byte cache line size.
+ * EV6 (21264) and EV7 (21364) have a 64-byte cache line size.
+ */
 
 /*
  * Constants related to network buffer management.
@@ -109,10 +124,6 @@
 
 void	delay(unsigned long);
 #define	DELAY(n)	delay(n)
-
-/* XXX THE FOLLOWING PROTOTYPE SHOULD BE A BUS.H INTERFACE */
-paddr_t alpha_XXX_dmamap(vaddr_t);
-/* XXX END BUS.H */
 
 #endif
 #endif /* !_KERNEL */

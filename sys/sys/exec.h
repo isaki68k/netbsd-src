@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.h,v 1.156 2019/09/17 15:19:27 christos Exp $	*/
+/*	$NetBSD: exec.h,v 1.161 2021/11/26 08:06:12 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -139,6 +139,7 @@ struct ps_strings32 {
  */
 
 #include <sys/uio.h>
+#include <sys/rwlock.h>
 
 struct lwp;
 struct proc;
@@ -247,7 +248,7 @@ struct exec_vmcmd {
 };
 
 /*
- * funtions used either by execve() or the various CPU-dependent execve()
+ * functions used either by execve() or the various CPU-dependent execve()
  * hooks.
  */
 vaddr_t	exec_vm_minaddr		(vaddr_t);
@@ -271,13 +272,9 @@ int	check_veriexec		(struct lwp *, struct vnode *,
 int	check_exec		(struct lwp *, struct exec_package *,
 				     struct pathbuf *, char **);
 int	exec_init		(int);
-int	exec_read_from		(struct lwp *, struct vnode *, u_long off,
-				    void *, size_t);
+int	exec_read		(struct lwp *, struct vnode *, u_long off,
+				    void *, size_t, int);
 int	exec_setup_stack	(struct lwp *, struct exec_package *);
-
-int	coredump_write		(struct coredump_iostate *, enum uio_seg,
-				    const void *, size_t);
-off_t	coredump_offset		(struct coredump_iostate *);
 
 void	exec_free_emul_arg	(struct exec_package *);
 
@@ -292,6 +289,8 @@ int	cpu_coredump32(struct lwp *, struct coredump_iostate *, struct core32 *);
 
 int	exec_add(struct execsw *, int);
 int	exec_remove(struct execsw *, int);
+int	exec_sigcode_alloc(const struct emul *);
+void	exec_sigcode_free(const struct emul *);
 
 void	new_vmcmd(struct exec_vmcmd_set *,
 		    int (*)(struct lwp *, struct exec_vmcmd *),
@@ -316,6 +315,7 @@ int      exec_makepathbuf(struct lwp *, const char *, enum uio_seg,
     struct pathbuf **, size_t *);
 
 extern int	maxexec;
+extern krwlock_t exec_lock;
 
 /*
  * Utility functions

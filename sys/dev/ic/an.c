@@ -1,4 +1,4 @@
-/*	$NetBSD: an.c,v 1.72 2019/09/23 17:37:04 maxv Exp $	*/
+/*	$NetBSD: an.c,v 1.76 2021/09/21 14:40:14 christos Exp $	*/
 /*
  * Copyright (c) 1997, 1998, 1999
  *	Bill Paul <wpaul@ctr.columbia.edu>.  All rights reserved.
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: an.c,v 1.72 2019/09/23 17:37:04 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: an.c,v 1.76 2021/09/21 14:40:14 christos Exp $");
 
 
 #include <sys/param.h>
@@ -315,11 +315,7 @@ an_attach(struct an_softc *sc)
 	/*
 	 * Call MI attach routine.
 	 */
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n", rv);
-		goto fail_2;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	ifp->if_percpuq = if_percpuq_create(ifp);
 	if_register(ifp);
@@ -755,7 +751,7 @@ an_start(struct ifnet *ifp)
 			break;
 		}
 		IFQ_DEQUEUE(&ifp->if_snd, m);
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		bpf_mtap(ifp, m, BPF_D_OUT);
 		eh = mtod(m, struct ether_header *);
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
@@ -853,7 +849,7 @@ an_start(struct ifnet *ifp)
 		sc->sc_txnext = cur;
 		continue;
 bad:
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		m_freem(m);
 	}
 }
@@ -891,7 +887,7 @@ an_watchdog(struct ifnet *ifp)
 	if (sc->sc_tx_timer) {
 		if (--sc->sc_tx_timer == 0) {
 			printf("%s: device timeout\n", ifp->if_xname);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			an_init(ifp);
 			return;
 		}
@@ -1291,7 +1287,7 @@ an_get_nwkey(struct an_softc *sc, struct ieee80211_nwkey *nwkey)
 			continue;
 		/* do not show any keys to non-root user */
 		/* XXX-elad: why is this inside a loop? */
-		if ((error = kauth_authorize_network(curlwp->l_cred,
+		if ((error = kauth_authorize_network(kauth_cred_get(),
 		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_GETPRIV, sc->sc_ic.ic_ifp,
 		    KAUTH_ARG(SIOCG80211NWKEY), NULL)) != 0)
@@ -1390,7 +1386,7 @@ an_rx_intr(struct an_softc *sc)
 	/* First read in the frame header */
 	if (an_read_bap(sc, fid, 0, &frmhdr, sizeof(frmhdr)) != 0) {
 		CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		DPRINTF(("an_rx_intr: read fid %x failed\n", fid));
 		return;
 	}
@@ -1414,7 +1410,7 @@ an_rx_intr(struct an_softc *sc)
 	if ((status & AN_STAT_ERRSTAT) != 0 &&
 	    ic->ic_opmode != IEEE80211_M_MONITOR) {
 		CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		DPRINTF(("an_rx_intr: fid %x status %x\n", fid, status));
 		return;
 	}
@@ -1426,7 +1422,7 @@ an_rx_intr(struct an_softc *sc)
 	if (off + len > MCLBYTES) {
 		if (ic->ic_opmode != IEEE80211_M_MONITOR) {
 			CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			DPRINTF(("an_rx_intr: oversized packet %d\n", len));
 			return;
 		}
@@ -1436,7 +1432,7 @@ an_rx_intr(struct an_softc *sc)
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
 	if (m == NULL) {
 		CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		DPRINTF(("an_rx_intr: MGET failed\n"));
 		return;
 	}
@@ -1445,7 +1441,7 @@ an_rx_intr(struct an_softc *sc)
 		if ((m->m_flags & M_EXT) == 0) {
 			CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
 			m_freem(m);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			DPRINTF(("an_rx_intr: MCLGET failed\n"));
 			return;
 		}
@@ -1457,7 +1453,7 @@ an_rx_intr(struct an_softc *sc)
 		if (gaplen > AN_GAPLEN_MAX) {
 			CSR_WRITE_2(sc, AN_EVENT_ACK, AN_EV_RX);
 			m_freem(m);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			DPRINTF(("%s: gap too long\n", __func__));
 			return;
 		}
@@ -1509,7 +1505,7 @@ an_rx_intr(struct an_softc *sc)
 		    (le16toh(frmhdr.an_rx_status) & AN_STAT_UNDECRYPTABLE))
 		    tap->ar_flags |= IEEE80211_RADIOTAP_F_BADFCS;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, tap->ar_ihdr.it_len, m,
+		bpf_mtap2(sc->sc_drvbpf, tap, htole16(tap->ar_ihdr.it_len), m,
 		    BPF_D_IN);
 	}
 	wh = mtod(m, struct ieee80211_frame_min *);
@@ -1549,9 +1545,9 @@ an_tx_intr(struct an_softc *sc, int status)
 	CSR_WRITE_2(sc, AN_EVENT_ACK, status & (AN_EV_TX | AN_EV_TX_EXC));
 
 	if (status & AN_EV_TX_EXC)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 	else
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 	cur = sc->sc_txcur;
 	if (sc->sc_txd[cur].d_fid == fid) {

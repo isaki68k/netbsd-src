@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_kcpuset.c,v 1.12 2019/07/26 05:39:55 msaitoh Exp $	*/
+/*	$NetBSD: subr_kcpuset.c,v 1.14 2022/04/09 23:38:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_kcpuset.c,v 1.12 2019/07/26 05:39:55 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_kcpuset.c,v 1.14 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -262,9 +262,11 @@ kcpuset_unuse(kcpuset_t *kcp, kcpuset_t **lst)
 	KASSERT(kc_initialised);
 	KASSERT(kc->kc_refcnt > 0);
 
+	membar_release();
 	if (atomic_dec_uint_nv(&kc->kc_refcnt) != 0) {
 		return;
 	}
+	membar_acquire();
 	KASSERT(kc->kc_next == NULL);
 	if (lst == NULL) {
 		kcpuset_destroy(kcp);

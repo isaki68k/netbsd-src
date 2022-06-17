@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.2 2018/04/19 21:50:07 christos Exp $ */
+/* $NetBSD: cpu.h,v 1.5 2021/08/14 17:51:19 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -52,6 +52,7 @@ struct cpu_info {
 	device_t ci_dev;
 	cpuid_t ci_cpuid;
 	struct lwp *ci_curlwp;
+	struct lwp *ci_onproc;		/* current user LWP / kthread */
 	struct lwp *ci_softlwps[SOFTINT_COUNT];
 
 	uint64_t ci_lastintr;
@@ -63,6 +64,9 @@ struct cpu_info {
 	int ci_cpl;
 	u_int ci_softints;
 	volatile u_int ci_intr_depth;
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 };
 
 register struct lwp *or1k_curlwp __asm("r10");
@@ -84,7 +88,6 @@ cpu_number(void)
 #endif
 }
 
-void	cpu_set_curpri(int);
 void	cpu_proc_fork(struct proc *, struct proc *);
 void	cpu_signotify(struct lwp *);
 void	cpu_need_proftick(struct lwp *l);

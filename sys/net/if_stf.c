@@ -1,4 +1,4 @@
-/*	$NetBSD: if_stf.c,v 1.106 2019/04/26 11:51:56 pgoyette Exp $	*/
+/*	$NetBSD: if_stf.c,v 1.108 2021/06/16 00:21:19 riastradh Exp $	*/
 /*	$KAME: if_stf.c,v 1.62 2001/06/07 22:32:16 itojun Exp $ */
 
 /*
@@ -75,7 +75,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_stf.c,v 1.106 2019/04/26 11:51:56 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_stf.c,v 1.108 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -236,16 +236,7 @@ stf_clone_create(struct if_clone *ifc, int unit)
 	sc->sc_if.if_output = stf_output;
 	sc->sc_if.if_type   = IFT_STF;
 	sc->sc_if.if_dlt    = DLT_NULL;
-	error = if_attach(&sc->sc_if);
-	if (error != 0) {
-		aprint_error("%s: if_initialize failed(%d)\n",
-		    if_name(&sc->sc_if), error);
-		encap_lock_enter();
-		encap_detach(sc->encap_cookie);
-		encap_lock_exit();
-		free(sc, M_DEVBUF);
-		return error;
-	}
+	if_attach(&sc->sc_if);
 	if_alloc_sadl(&sc->sc_if);
 	bpf_attach(&sc->sc_if, DLT_NULL, sizeof(u_int));
 	LIST_INSERT_HEAD(&stf_softc_list, sc, sc_list);
@@ -392,14 +383,14 @@ stf_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	ia6 = stf_getsrcifa6(ifp);
 	if (ia6 == NULL) {
 		m_freem(m);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENETDOWN;
 	}
 
 	if (m->m_len < sizeof(*ip6)) {
 		m = m_pullup(m, sizeof(*ip6));
 		if (m == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return ENOBUFS;
 		}
 	}
@@ -416,7 +407,7 @@ stf_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		in4 = GET_V4(&dst6->sin6_addr);
 	else {
 		m_freem(m);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENETUNREACH;
 	}
 
@@ -426,7 +417,7 @@ stf_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	if (m && m->m_len < sizeof(struct ip))
 		m = m_pullup(m, sizeof(struct ip));
 	if (m == NULL) {
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENOBUFS;
 	}
 	ip = mtod(m, struct ip *);
@@ -447,7 +438,7 @@ stf_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	sockaddr_in_init(&u.dst4, &ip->ip_dst, 0);
 	if ((rt = rtcache_lookup(&sc->sc_ro, &u.dst)) == NULL) {
 		m_freem(m);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENETUNREACH;
 	}
 
@@ -456,13 +447,13 @@ stf_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		rtcache_unref(rt, &sc->sc_ro);
 		rtcache_free(&sc->sc_ro);
 		m_freem(m);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENETUNREACH;
 	}
 	rtcache_unref(rt, &sc->sc_ro);
 
-	ifp->if_opackets++;
-	ifp->if_obytes += m->m_pkthdr.len - sizeof(struct ip);
+	if_statadd2(ifp, if_opackets, 1,
+	    if_obytes, m->m_pkthdr.len - sizeof(struct ip));
 	return ip_output(m, NULL, &sc->sc_ro, 0, NULL, NULL);
 }
 
@@ -667,8 +658,7 @@ in_stf_input(struct mbuf *m, int off, int proto, void *eparg)
 
 	s = splnet();
 	if (__predict_true(pktq_enqueue(ip6_pktq, m, 0))) {
-		ifp->if_ipackets++;
-		ifp->if_ibytes += pktlen;
+		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 	} else {
 		m_freem(m);
 	}

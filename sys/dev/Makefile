@@ -1,15 +1,15 @@
-#	$NetBSD: Makefile,v 1.41 2019/02/24 02:30:38 rin Exp $
+#	$NetBSD: Makefile,v 1.47 2020/09/27 11:57:28 jmcneill Exp $
 
-SUBDIR=	apm ata bluetooth dec dm dmover dtv filemon hdaudio hdmicec hid hpc \
+SUBDIR=	apm ata bluetooth dec dm dmover dtv hdaudio hdmicec hid hpc \
 	i2c i2o ic ieee1394 ir isa \
 	microcode ofw pci pckbport pcmcia pud putter raidframe sbus scsipi \
 	spi sun tc usb vme wscons
 
-.if ${MACHINE_ARCH} == "x86_64"
+.include <bsd.own.mk>
+
+.if ${HAVE_NVMM:Uno} == "yes"
 SUBDIR+= nvmm
 .endif
-
-.include <bsd.own.mk>
 
 .if ${MKISCSI} != "no"
 SUBDIR+= iscsi

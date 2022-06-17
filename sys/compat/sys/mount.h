@@ -1,4 +1,4 @@
-/*	$NetBSD: mount.h,v 1.11 2019/10/04 01:28:02 christos Exp $	*/
+/*	$NetBSD: mount.h,v 1.15 2021/08/30 08:40:00 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1991, 1993
@@ -101,10 +101,12 @@ static __inline void
 statvfs_to_statfs12(const struct statvfs *fs, struct statfs12 *s12)
 {
 	size_t i = 0;
+
+	memset(s12, 0, sizeof(*s12));
+
 	s12->f_type = 0;
 	s12->f_oflags = (short)fs->f_flag;
 
-	memset(s12, 0, sizeof(*s12));
 	for (i = 0; i < sizeof(__nv) / sizeof(__nv[0]); i++) {
 		if (strcmp(__nv[i].name, fs->f_fstypename) == 0) {
 			s12->f_type = __nv[i].value;
@@ -137,12 +139,12 @@ statvfs_to_statfs12(const struct statvfs *fs, struct statfs12 *s12)
 static __inline int
 statvfs_to_statfs12_copy(const void *vs, void *vs12, size_t l)
 {
-	struct statfs12 *s12 = STATVFSBUF_GET();
+	struct statfs12 *s12 = kmem_zalloc(sizeof(*s12), KM_SLEEP);
 	int error;
 
-	statvfs_to_statfs12(vs, vs12);
-	error = copyout(s12, vs12, l);
-	STATVFSBUF_PUT(s12);
+	statvfs_to_statfs12(vs, s12);
+	error = copyout(s12, vs12, sizeof(*s12));
+	kmem_free(s12, sizeof(*s12));
 
 	return error;
 }

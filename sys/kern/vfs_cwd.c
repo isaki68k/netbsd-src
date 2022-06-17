@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_cwd.c,v 1.4 2011/02/15 15:54:28 pooka Exp $	*/
+/*	$NetBSD: vfs_cwd.c,v 1.8 2022/04/09 23:38:33 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_cwd.c,v 1.4 2011/02/15 15:54:28 pooka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_cwd.c,v 1.8 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -138,8 +138,10 @@ void
 cwdfree(struct cwdinfo *cwdi)
 {
 
+	membar_release();
 	if (atomic_dec_uint_nv(&cwdi->cwdi_refcnt) > 0)
 		return;
+	membar_acquire();
 
 	vrele(cwdi->cwdi_cdir);
 	if (cwdi->cwdi_rdir)

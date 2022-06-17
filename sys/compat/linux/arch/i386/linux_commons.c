@@ -1,8 +1,8 @@
-/*	$NetBSD: linux_commons.c,v 1.16 2011/05/31 22:35:22 njoly Exp $	*/
+/*	$NetBSD: linux_commons.c,v 1.18 2021/10/12 08:36:29 andvar Exp $	*/
 
 /*
  * This file includes C files from the common
- * area to decrese the number of files to compile
+ * area to decrease the number of files to compile
  * in order to make building a kernel go faster.
  *
  * Option headers and headers which depend on
@@ -13,7 +13,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: linux_commons.c,v 1.16 2011/05/31 22:35:22 njoly Exp $");
+__KERNEL_RCSID(1, "$NetBSD: linux_commons.c,v 1.18 2021/10/12 08:36:29 andvar Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_sysv.h"
@@ -25,7 +25,6 @@ __KERNEL_RCSID(1, "$NetBSD: linux_commons.c,v 1.16 2011/05/31 22:35:22 njoly Exp
 #include <sys/syscallargs.h>
 
 #include "../../common/linux_pipe.c"
-#include "../../common/linux_futex.c"
 #include "../../common/linux_file64.c"
 #include "../../common/linux_fcntl64.c"
 #include "../../common/linux_ipccall.c"

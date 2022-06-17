@@ -1,5 +1,5 @@
 #
-#	$NetBSD: files.luna68k,v 1.28 2019/02/18 01:12:23 thorpej Exp $
+#	$NetBSD: files.luna68k,v 1.30 2022/06/10 21:42:23 tsutsui Exp $
 #
 maxpartitions 8
 maxusers 2 8 64
@@ -52,6 +52,7 @@ device xpbus {}
 attach xpbus at mainbus
 file arch/luna68k/dev/xpbus.c		xpbus
 file arch/luna68k/dev/xpcmd.c		xpbus
+file arch/luna68k/dev/xplxfirm.c	xpbus
 
 device xp
 attach xp at xpbus
@@ -61,6 +62,7 @@ device psgpam: audiobus
 attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
 file arch/luna68k/dev/psgpam_enc.c	psgpam
+file arch/luna68k/dev/psgpam_table.c	psgpam
 
 device ws: wskbddev,wsmousedev
 attach ws at sio
@@ -75,7 +77,7 @@ file arch/luna68k/dev/omrasops.c	fb
 attach spc at mainbus
 file arch/luna68k/dev/spc.c		spc
 
-# Machine-idependent SCSI driver.
+# Machine-independent SCSI driver.
 include "dev/scsipi/files.scsipi"
 
 # Memory Disk for boot tape

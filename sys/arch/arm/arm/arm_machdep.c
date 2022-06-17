@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_machdep.c,v 1.55 2019/04/06 03:06:24 thorpej Exp $	*/
+/*	$NetBSD: arm_machdep.c,v 1.67 2021/02/21 08:47:13 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -80,17 +80,17 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.55 2019/04/06 03:06:24 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.67 2021/02/21 08:47:13 skrll Exp $");
 
+#include <sys/atomic.h>
+#include <sys/cpu.h>
+#include <sys/evcnt.h>
 #include <sys/exec.h>
+#include <sys/kcpuset.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
-#include <sys/kmem.h>
 #include <sys/ucontext.h>
-#include <sys/evcnt.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
-#include <sys/kcpuset.h>
 
 #ifdef EXEC_AOUT
 #include <sys/exec_aout.h>
@@ -106,24 +106,22 @@ char	machine_arch[] = MACHINE_ARCH;	/* from <machine/param.h> */
 
 extern const uint32_t undefinedinstruction_bounce[];
 
-/* Our exported CPU info; we can have only one. */
-struct cpu_info cpu_info_store = {
-	.ci_cpl = IPL_HIGH,
-	.ci_curlwp = &lwp0,
-	.ci_undefsave[2] = (register_t) undefinedinstruction_bounce,
-#if defined(ARM_MMU_EXTENDED) && KERNEL_PID != 0
-	.ci_pmap_asid_cur = KERNEL_PID,
-#endif
-};
-
 #ifdef MULTIPROCESSOR
 #define	NCPUINFO	MAXCPUS
 #else
 #define	NCPUINFO	1
 #endif
 
-struct cpu_info *cpu_info[NCPUINFO] = {
-	[0] = &cpu_info_store
+/* Our exported CPU info; we can have only one. */
+struct cpu_info cpu_info_store[NCPUINFO] = {
+	[0] = {
+		.ci_cpl = IPL_HIGH,
+		.ci_curlwp = &lwp0,
+		.ci_undefsave[2] = (register_t) undefinedinstruction_bounce,
+#if defined(ARM_MMU_EXTENDED) && KERNEL_PID != 0
+		.ci_pmap_asid_cur = KERNEL_PID,
+#endif
+	}
 };
 
 const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
@@ -178,15 +176,14 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	tf->tf_usr_lr = pack->ep_entry;
 	tf->tf_svc_lr = 0x77777777;		/* Something we can see */
 	tf->tf_pc = pack->ep_entry;
-#if defined(__ARMEB__)
-	/*
-	 * If we are running on ARMv7, we need to set the E bit to force
-	 * programs to start as big endian.
-	 */
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
 	tf->tf_spsr = PSR_USR32_MODE;
-#endif /* __ARMEB__ */
+#ifdef _ARM_ARCH_BE8
+	/*
+	 * If we are running on BE8 mode, we need to set the E bit to
+	 * force programs to start as big endian.
+	 */
+	tf->tf_spsr |= PSR_E_BIT;
+#endif
 
 #ifdef THUMB_CODE
 	if (pack->ep_entry & 1)
@@ -223,118 +220,129 @@ startlwp(void *arg)
 }
 
 void
-cpu_need_resched(struct cpu_info *ci, int flags)
+cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
-	struct lwp * const l = ci->ci_data.cpu_onproc;
-	const bool immed = (flags & RESCHED_IMMED) != 0;
-#ifdef MULTIPROCESSOR
-	struct cpu_info * const cur_ci = curcpu();
-	u_long ipi = IPI_NOP;
-#endif
 
-	if (__predict_false((l->l_pflag & LP_INTR) != 0)) {
-		/*
-		 * No point doing anything, it will switch soon.
-		 * Also here to prevent an assertion failure in
-		 * kpreempt() due to preemption being set on a
-		 * soft interrupt LWP.
-		 */
-		return;
-	}
-	if (ci->ci_want_resched && !immed)
-		return;
+	KASSERT(kpreempt_disabled());
 
-	if (l == ci->ci_data.cpu_idlelwp) {
+	if (flags & RESCHED_IDLE) {
 #ifdef MULTIPROCESSOR
 		/*
 		 * If the other CPU is idling, it must be waiting for an
 		 * event.  So give it one.
 		 */
-		if (ci != cur_ci)
-			goto send_ipi;
+		if (flags & RESCHED_REMOTE) {
+			intr_ipi_send(ci->ci_kcpuset, IPI_NOP);
+		}
 #endif
 		return;
 	}
-#ifdef MULTIPROCESSOR
-	atomic_swap_uint(&ci->ci_want_resched, 1);
-#else
-	ci->ci_want_resched = 1;
-#endif
 	if (flags & RESCHED_KPREEMPT) {
 #ifdef __HAVE_PREEMPTION
-		atomic_or_uint(&l->l_dopreempt, DOPREEMPT_ACTIVE);
-		if (ci == cur_ci) {
-			atomic_or_uint(&ci->ci_astpending, __BIT(1));
+		if (flags & RESCHED_REMOTE) {
+			intr_ipi_send(ci->ci_kcpuset, IPI_KPREEMPT);
 		} else {
-			ipi = IPI_KPREEMPT;
-			goto send_ipi;
+			l->l_md.md_astpending |= __BIT(1);
 		}
 #endif /* __HAVE_PREEMPTION */
 		return;
 	}
-#ifdef MULTIPROCESSOR
-	if (ci == cur_ci || !immed) {
-		setsoftast(ci);
-		return;
-	}
-	ipi = IPI_AST;
 
-   send_ipi:
-	intr_ipi_send(ci->ci_kcpuset, ipi);
-#else
-	setsoftast(ci);
+	KASSERT((flags & RESCHED_UPREEMPT) != 0);
+	if (flags & RESCHED_REMOTE) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif /* MULTIPROCESSOR */
+	} else {
+		l->l_md.md_astpending |= __BIT(0);
+	}
+}
+
+
+/*
+ * Notify the current lwp (l) that it has a signal pending,
+ * process as soon as possible.
+ */
+void
+cpu_signotify(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
+#endif
+	} else {
+		l->l_md.md_astpending |= __BIT(0);
+	}
 }
 
 bool
 cpu_intr_p(void)
 {
-	struct cpu_info * const ci = curcpu();
 #ifdef __HAVE_PIC_FAST_SOFTINTS
-	if (ci->ci_cpl < IPL_VM)
+	int cpl;
+#endif
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
+
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_intr_depth;
+#ifdef __HAVE_PIC_FAST_SOFTINTS
+		cpl = l->l_cpu->ci_cpl;
+#endif
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+#ifdef __HAVE_PIC_FAST_SOFTINTS
+	if (cpl < IPL_VM)
 		return false;
 #endif
-	return ci->ci_intr_depth != 0;
+	return idepth != 0;
 }
 
 #ifdef MODULAR
 struct lwp *
 arm_curlwp(void)
 {
+
 	return curlwp;
 }
 
 struct cpu_info *
 arm_curcpu(void)
 {
+
 	return curcpu();
 }
 #endif
 
 #ifdef __HAVE_PREEMPTION
-void
-cpu_set_curpri(int pri)
-{
-	kpreempt_disable();
-	curcpu()->ci_schedstate.spc_curpriority = pri;
-	kpreempt_enable();
-}
-
 bool
 cpu_kpreempt_enter(uintptr_t where, int s)
 {
+
+	KASSERT(kpreempt_disabled());
+
 	return s == IPL_NONE;
 }
 
 void
 cpu_kpreempt_exit(uintptr_t where)
 {
-	atomic_and_uint(&curcpu()->ci_astpending, (unsigned int)~__BIT(1));
+
+	/* do nothing */
 }
 
 bool
 cpu_kpreempt_disabled(void)
 {
+
 	return curcpu()->ci_cpl != IPL_NONE;
 }
 #endif /* __HAVE_PREEMPTION */

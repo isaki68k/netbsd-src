@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_resource.c,v 1.182 2019/04/05 00:33:21 mlelstv Exp $	*/
+/*	$NetBSD: kern_resource.c,v 1.189 2022/04/09 23:38:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_resource.c,v 1.182 2019/04/05 00:33:21 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_resource.c,v 1.189 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -99,7 +99,7 @@ resource_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case KAUTH_PROCESS_RLIMIT: {
 		enum kauth_process_req req;
 
-		req = (enum kauth_process_req)(unsigned long)arg1;
+		req = (enum kauth_process_req)(uintptr_t)arg1;
 
 		switch (req) {
 		case KAUTH_REQ_PROCESS_RLIMIT_GET:
@@ -168,7 +168,7 @@ sys_getpriority(struct lwp *l, const struct sys_getpriority_args *uap,
 	id_t who = SCARG(uap, who);
 	int low = NZERO + PRIO_MAX + 1;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	switch (SCARG(uap, which)) {
 	case PRIO_PROCESS:
 		p = who ? proc_find(who) : curp;
@@ -203,10 +203,10 @@ sys_getpriority(struct lwp *l, const struct sys_getpriority_args *uap,
 		break;
 
 	default:
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return EINVAL;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	if (low == NZERO + PRIO_MAX + 1) {
 		return ESRCH;
@@ -228,7 +228,7 @@ sys_setpriority(struct lwp *l, const struct sys_setpriority_args *uap,
 	id_t who = SCARG(uap, who);
 	int found = 0, error = 0;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	switch (SCARG(uap, which)) {
 	case PRIO_PROCESS:
 		p = who ? proc_find(who) : curp;
@@ -275,10 +275,10 @@ sys_setpriority(struct lwp *l, const struct sys_setpriority_args *uap,
 		break;
 
 	default:
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return EINVAL;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return (found == 0) ? ESRCH : error;
 }
@@ -506,7 +506,8 @@ calcru(struct proc *p, struct timeval *up, struct timeval *sp,
 	LIST_FOREACH(l, &p->p_lwps, l_sibling) {
 		lwp_lock(l);
 		bintime_add(&tm, &l->l_rtime);
-		if ((l->l_pflag & LP_RUNNING) != 0) {
+		if ((l->l_pflag & LP_RUNNING) != 0 &&
+		    (l->l_pflag & (LP_INTR | LP_TIMEINTR)) != LP_INTR) {
 			struct bintime diff;
 			/*
 			 * Adjust for the current time slice.  This is
@@ -516,6 +517,7 @@ calcru(struct proc *p, struct timeval *up, struct timeval *sp,
 			 * error.
 			 */
 			binuptime(&diff);
+			membar_consumer(); /* for softint_dispatch() */
 			bintime_sub(&diff, &l->l_stime);
 			bintime_add(&tm, &diff);
 		}
@@ -791,9 +793,11 @@ lim_free(struct plimit *lim)
 	struct plimit *sv_lim;
 
 	do {
+		membar_release();
 		if (atomic_dec_uint_nv(&lim->pl_refcnt) > 0) {
 			return;
 		}
+		membar_acquire();
 		if (lim->pl_corename != defcorename) {
 			kmem_free(lim->pl_corename, lim->pl_cnlen);
 		}
@@ -842,16 +846,16 @@ sysctl_proc_findproc(lwp_t *l, pid_t pid, proc_t **p2)
 	if (pid == PROC_CURPROC) {
 		p = l->l_proc;
 	} else {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find(pid);
 		if (p == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return ESRCH;
 		}
 	}
 	error = rw_tryenter(&p->p_reflock, RW_READER) ? 0 : EBUSY;
 	if (pid != PROC_CURPROC) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 	*p2 = p;
 	return error;

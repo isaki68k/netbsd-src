@@ -1,4 +1,4 @@
-#	$NetBSD: files.bcm2835,v 1.35 2019/09/04 05:10:38 mlelstv Exp $
+#	$NetBSD: files.bcm2835,v 1.43 2022/04/22 12:41:06 skrll Exp $
 #
 # Configuration info for Broadcom BCM2835 ARM Peripherals
 #
@@ -9,15 +9,21 @@ file	arch/arm/broadcom/bcm283x_platform.c
 
 define bcmmboxbus { }
 
-# Interrupt Controller (BCM2835_ARMICU_BASE) #, pic_splfuncs
+# Interrupt Controller (BCM2835_ARMICU_BASE)
 device	bcmicu: pic, pic_splfuncs
 attach	bcmicu at fdt with bcmicu
 file	arch/arm/broadcom/bcm2835_intr.c	bcmicu
 
 # VC Mailbox (BCM2835_ARMMBOX_BASE)
 device	bcmmbox: bcmmboxbus
-attach	bcmmbox at fdt with bcmmbox
 file	arch/arm/broadcom/bcm2835_mbox.c	bcmmbox
+attach	bcmmbox at fdt with bcmmbox_fdt
+file    arch/arm/broadcom/bcm2835_mbox_fdt.c	bcmmbox_fdt
+
+ifdef acpinodebus
+attach  bcmmbox at acpinodebus with bcmmbox_acpi
+file	arch/arm/broadcom/bcm2835_mbox_acpi.c	bcmmbox_acpi
+endif
 
 # System Timer (BCM2835_TIMER_BASE)
 device	bcmtmr
@@ -40,6 +46,11 @@ attach bcm2838rng at fdt with bcm2838rng_fdt
 file	arch/arm/broadcom/bcm2838_rng.c		bcm2838rng
 file	dev/ic/rng200.c				bcm2838rng
 
+# Broadcom STB PCIE host
+device	bcm2838pcie: pcibus
+attach bcm2838pcie at fdt with bcm2838pcie_fdt
+file	arch/arm/broadcom/bcm2838_pcie.c	bcm2838pcie
+
 # AUX
 device	bcmaux
 attach	bcmaux at fdt with bcmaux_fdt
@@ -49,9 +60,21 @@ file	arch/arm/broadcom/bcm2835_aux.c		bcmaux
 attach	com at fdt with bcmcom
 file	arch/arm/broadcom/bcm2835_com.c		bcmcom
 
+ifdef acpinodebus
+attach	com at acpinodebus with bcmcom_acpi
+file	arch/arm/broadcom/bcm2835_com_acpi.c	bcmcom_acpi
+endif
+
 # External Mass Media Controller (BCM2835_EMMC_BASE)
 attach	sdhc at fdt with bcmemmc
 file	arch/arm/broadcom/bcm2835_emmc.c	bcmemmc
+
+ifdef acpinodebus
+attach	sdhc at acpinodebus with bcmemmc_acpi
+file	arch/arm/broadcom/bcm2835_emmc_acpi.c	bcmemmc_acpi
+attach	sdhc at acpinodebus with bcmemmc2_acpi
+file	arch/arm/broadcom/bcm2838_emmc2_acpi.c	bcmemmc2_acpi
+endif
 
 # SD Host Controller (BCM2835_SDHOST_BASE)
 device	bcmsdhost: sdmmcbus
@@ -74,8 +97,13 @@ file	arch/arm/broadcom/bcm2835_spi.c		bcmspi	needs-flag
 
 # BSC (I2C) controller (BCM2835_BSC[01]_BASE)
 device	bsciic: i2cbus, bcm2835_gpio_subr
-attach	bsciic at fdt
 file	arch/arm/broadcom/bcm2835_bsc.c		bsciic	needs-flag
+attach	bsciic at fdt with bsciic_fdt
+file	arch/arm/broadcom/bcm2835_bsc_fdt.c	bsciic_fdt
+ifdef acpinodebus
+attach	bsciic at acpinodebus with bsciic_acpi
+file	arch/arm/broadcom/bcm2835_bsc_acpi.c	bsciic_acpi
+endif
 
 # Generic framebuffer console driver
 attach genfb at fdt with bcmgenfb: edid

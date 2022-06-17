@@ -1,4 +1,4 @@
-/*	$NetBSD: uirda.c,v 1.44 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: uirda.c,v 1.52 2021/09/26 15:08:29 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uirda.c,v 1.44 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uirda.c,v 1.52 2021/09/26 15:08:29 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -77,7 +77,7 @@ int	uirdadebug = 0;
 #define UR_IRDA_GET_DESC		0x06
 
 #define UIRDA_NEBOFS 8
-static struct {
+static const struct {
 	int count;
 	int mask;
 	int header;
@@ -93,7 +93,7 @@ static struct {
 };
 
 #define UIRDA_NSPEEDS 9
-static struct {
+static const struct {
 	int speed;
 	int mask;
 	int header;
@@ -121,15 +121,15 @@ int uirda_get_turnarounds(void *, int *);
 int uirda_poll(void *, int, struct lwp *);
 int uirda_kqfilter(void *, struct knote *);
 
-struct irframe_methods uirda_methods = {
+static const struct irframe_methods uirda_methods = {
 	uirda_open, uirda_close, uirda_read, uirda_write, uirda_poll,
 	uirda_kqfilter, uirda_set_params, uirda_get_speeds,
 	uirda_get_turnarounds
 };
 
-void uirda_rd_cb(struct usbd_xfer *xfer,	void *priv,
+static void uirda_rd_cb(struct usbd_xfer *xfer,	void *priv,
 		 usbd_status status);
-usbd_status uirda_start_read(struct uirda_softc *sc);
+static usbd_status uirda_start_read(struct uirda_softc *sc);
 
 /*
  * These devices don't quite follow the spec.  Speed changing is broken
@@ -258,7 +258,7 @@ uirda_attach(device_t parent, device_t self, void *aux)
 		}
 		memcpy(&sc->sc_irdadesc, d, USB_IRDA_DESCRIPTOR_SIZE);
 	}
-	DPRINTF(("uirda_attach: bDescriptorSize %d bDescriptorType 0x%x "
+	DPRINTF(("uirda_attach: bDescriptorSize %d bDescriptorType %#x "
 		 "bmDataSize=0x%02x bmWindowSize=0x%02x "
 		 "bmMinTurnaroundTime=0x%02x wBaudRate=0x%04x "
 		 "bmAdditionalBOFs=0x%02x bIrdaSniff=%d bMaxUnicastList=%d\n",
@@ -283,13 +283,12 @@ uirda_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_wr_buf_lk, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_rd_buf_lk, MUTEX_DEFAULT, IPL_NONE);
 	selinit(&sc->sc_rd_sel);
-	selinit(&sc->sc_wr_sel);
 
 	ia.ia_type = IR_TYPE_IRFRAME;
 	ia.ia_methods = sc->sc_irm ? sc->sc_irm : &uirda_methods;
 	ia.ia_handle = sc;
 
-	sc->sc_child = config_found(self, &ia, ir_print);
+	sc->sc_child = config_found(self, &ia, ir_print, CFARGS_NONE);
 
 	return;
 }
@@ -346,7 +345,6 @@ uirda_detach(device_t self, int flags)
 	mutex_destroy(&sc->sc_wr_buf_lk);
 	mutex_destroy(&sc->sc_rd_buf_lk);
 	seldestroy(&sc->sc_rd_sel);
-	seldestroy(&sc->sc_wr_sel);
 
 	return rv;
 }
@@ -616,7 +614,7 @@ filt_uirdardetach(struct knote *kn)
 	int s;
 
 	s = splusb();
-	SLIST_REMOVE(&sc->sc_rd_sel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rd_sel, kn);
 	splx(s);
 }
 
@@ -629,56 +627,35 @@ filt_uirdaread(struct knote *kn, long hint)
 	return kn->kn_data > 0;
 }
 
-static void
-filt_uirdawdetach(struct knote *kn)
-{
-	struct uirda_softc *sc = kn->kn_hook;
-	int s;
-
-	s = splusb();
-	SLIST_REMOVE(&sc->sc_wr_sel.sel_klist, kn, knote, kn_selnext);
-	splx(s);
-}
-
 static const struct filterops uirdaread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_uirdardetach,
 	.f_event = filt_uirdaread,
-};
-
-static const struct filterops uirdawrite_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_uirdawdetach,
-	.f_event = filt_seltrue,
 };
 
 int
 uirda_kqfilter(void *h, struct knote *kn)
 {
 	struct uirda_softc *sc = kn->kn_hook;
-	struct klist *klist;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rd_sel.sel_klist;
 		kn->kn_fop = &uirdaread_filtops;
+		kn->kn_hook = sc;
+		s = splusb();
+		selrecord_knote(&sc->sc_rd_sel, kn);
+		splx(s);
 		break;
+
 	case EVFILT_WRITE:
-		klist = &sc->sc_wr_sel.sel_klist;
-		kn->kn_fop = &uirdawrite_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
+
 	default:
 		return EINVAL;
 	}
-
-	kn->kn_hook = sc;
-
-	s = splusb();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
-	splx(s);
 
 	return 0;
 }
@@ -703,10 +680,10 @@ uirda_set_params(void *h, struct irda_params *p)
 	if (p->ebofs != sc->sc_params.ebofs) {
 		/* round up ebofs */
 		mask = 1 /* sc->sc_irdadesc.bmAdditionalBOFs*/;
-		DPRINTF(("u.s.p.: mask=0x%x, sc->ebofs=%d, p->ebofs=%d\n",
+		DPRINTF(("u.s.p.: mask=%#x, sc->ebofs=%d, p->ebofs=%d\n",
 			mask, sc->sc_params.ebofs, p->ebofs));
 		for (i = 0; i < UIRDA_NEBOFS; i++) {
-			DPRINTF(("u.s.p.: u_e[%d].mask=0x%x, count=%d\n",
+			DPRINTF(("u.s.p.: u_e[%d].mask=%#x, count=%d\n",
 				i, uirda_ebofs[i].mask, uirda_ebofs[i].count));
 			if ((mask & uirda_ebofs[i].mask) &&
 			    uirda_ebofs[i].count >= p->ebofs) {
@@ -715,7 +692,7 @@ uirda_set_params(void *h, struct irda_params *p)
 			}
 		}
 		for (i = 0; i < UIRDA_NEBOFS; i++) {
-			DPRINTF(("u.s.p.: u_e[%d].mask=0x%x, count=%d\n",
+			DPRINTF(("u.s.p.: u_e[%d].mask=%#x, count=%d\n",
 				i, uirda_ebofs[i].mask, uirda_ebofs[i].count));
 			if ((mask & uirda_ebofs[i].mask)) {
 				hdr = uirda_ebofs[i].header;
@@ -832,7 +809,7 @@ uirda_get_speeds(void *h, int *speeds)
 	if (usp & UI_BR_9600)    isp |= IRDA_SPEED_9600;
 	if (usp & UI_BR_2400)    isp |= IRDA_SPEED_2400;
 	*speeds = isp;
-	DPRINTF(("%s: speeds = 0x%x\n", __func__, isp));
+	DPRINTF(("%s: speeds = %#x\n", __func__, isp));
 	return 0;
 }
 
@@ -862,7 +839,7 @@ uirda_get_turnarounds(void *h, int *turnarounds)
 	return 0;
 }
 
-void
+static void
 uirda_rd_cb(struct usbd_xfer *xfer, void *priv,
 	    usbd_status status)
 {
@@ -886,7 +863,7 @@ uirda_rd_cb(struct usbd_xfer *xfer, void *priv,
 	selnotify(&sc->sc_rd_sel, 0, 0);
 }
 
-usbd_status
+static usbd_status
 uirda_start_read(struct uirda_softc *sc)
 {
 	usbd_status err;

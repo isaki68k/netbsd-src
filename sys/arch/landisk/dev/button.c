@@ -1,4 +1,4 @@
-/*	$NetBSD: button.c,v 1.9 2017/10/25 08:12:37 maya Exp $	*/
+/*	$NetBSD: button.c,v 1.15 2021/09/29 15:17:01 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: button.c,v 1.9 2017/10/25 08:12:37 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: button.c,v 1.15 2021/09/29 15:17:01 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -59,7 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: button.c,v 1.9 2017/10/25 08:12:37 maya Exp $");
 /*
  * event handler
  */
-static ONCE_DECL(btn_once);
 static LIST_HEAD(, btn_event) btn_event_list;
 static kmutex_t btn_event_list_lock;
 
@@ -105,7 +104,7 @@ const struct cdevsw button_cdevsw = {
 	.d_flag = 0
 };
 
-static int
+int
 btn_init(void)
 {
 
@@ -160,11 +159,6 @@ int
 btnopen(dev_t dev, int flag, int mode, struct lwp *l)
 {
 	int error;
-
-	error = RUN_ONCE(&btn_once, btn_init);
-	if (error) {
-		return error;
-	}
 
 	if (minor(dev) != 0) {
 		return (ENODEV);
@@ -296,40 +290,41 @@ filt_btn_rdetach(struct knote *kn)
 {
 
 	mutex_enter(&btn_event_queue_lock);
-	SLIST_REMOVE(&btn_event_queue_selinfo.sel_klist,
-	    kn, knote, kn_selnext);
+	selremove_knote(&btn_event_queue_selinfo, kn);
 	mutex_exit(&btn_event_queue_lock);
 }
 
 static int
 filt_btn_read(struct knote *kn, long hint)
 {
+	int rv;
 
-	mutex_enter(&btn_event_queue_lock);
+	if (hint & NOTE_SUBMIT) {
+		KASSERT(mutex_owned(&btn_event_queue_lock));
+	} else {
+		mutex_enter(&btn_event_queue_lock);
+	}
+
 	kn->kn_data = btn_event_queue_count;
-	mutex_exit(&btn_event_queue_lock);
+	rv = kn->kn_data > 0;
 
-	return (kn->kn_data > 0);
+	if ((hint & NOTE_SUBMIT) == 0) {
+		mutex_exit(&btn_event_queue_lock);
+	}
+
+	return rv;
 }
 
 static const struct filterops btn_read_filtops = {
-    .f_isfd = 1,
+    .f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
     .f_attach = NULL,
     .f_detach = filt_btn_rdetach,
     .f_event = filt_btn_read,
 };
 
-static const struct filterops btn_write_filtops = {
-    .f_isfd = 1,
-    .f_attach = NULL,
-    .f_detach = filt_btn_rdetach,
-    .f_event = filt_seltrue,
-};
-
 int
 btnkqfilter(dev_t dev, struct knote *kn)
 {
-	struct klist *klist;
 
 	if (minor(dev) != 0) {
 		return (ENODEV);
@@ -337,22 +332,19 @@ btnkqfilter(dev_t dev, struct knote *kn)
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &btn_event_queue_selinfo.sel_klist;
 		kn->kn_fop = &btn_read_filtops;
+		mutex_enter(&btn_event_queue_lock);
+		selrecord_knote(&btn_event_queue_selinfo, kn);
+		mutex_exit(&btn_event_queue_lock);
 		break;
 
 	case EVFILT_WRITE:
-		klist = &btn_event_queue_selinfo.sel_klist;
-		kn->kn_fop = &btn_write_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
 
 	default:
-		return (1);
+		return (EINVAL);
 	}
-
-	mutex_enter(&btn_event_queue_lock);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
-	mutex_exit(&btn_event_queue_lock);
 
 	return (0);
 }
@@ -417,6 +409,6 @@ btn_event_send(struct btn_event *bev, int event)
 		btn_event_queue_flags &= ~BEVQ_F_WAITING;
 		cv_broadcast(&btn_event_queue_cv);
 	}
-	selnotify(&btn_event_queue_selinfo, 0, 0);
+	selnotify(&btn_event_queue_selinfo, POLLIN | POLLRDNORM, NOTE_SUBMIT);
 	mutex_exit(&btn_event_queue_lock);
 }

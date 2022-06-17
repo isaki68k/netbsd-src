@@ -1,4 +1,4 @@
-/*	$NetBSD: e500_intr.c,v 1.38 2018/09/16 09:25:47 skrll Exp $	*/
+/*	$NetBSD: e500_intr.c,v 1.46 2022/03/16 20:31:01 andvar Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,14 +34,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_mpc85xx.h"
-#include "opt_multiprocessor.h"
-#include "opt_ddb.h"
-
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: e500_intr.c,v 1.38 2018/09/16 09:25:47 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: e500_intr.c,v 1.46 2022/03/16 20:31:01 andvar Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_mpc85xx.h"
+#include "opt_multiprocessor.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -510,7 +511,9 @@ e500_splset(struct cpu_info *ci, int ipl)
 {
 	struct cpu_softc * const cpu = ci->ci_softc;
 
+#ifdef __HAVE_FAST_SOFTINTS /* XXX */
 	KASSERT((curlwp->l_pflag & LP_INTR) == 0 || ipl != IPL_NONE);
+#endif
 	const u_int ctpr = IPL2CTPR(ipl);
 	KASSERT(openpic_read(cpu, OPENPIC_CTPR) == IPL2CTPR(ci->ci_cpl));
 	openpic_write(cpu, OPENPIC_CTPR, ctpr);
@@ -548,7 +551,7 @@ e500_splx(int ipl)
 	struct cpu_info * const ci = curcpu();
 	const int old_ipl = ci->ci_cpl;
 
-	/* if we paniced because of watchdog, PSL_CE will be clear.  */
+	/* if we panicked because of watchdog, PSL_CE will be clear.  */
 	KASSERT(wdog_barked || (mfmsr() & PSL_CE));
 
 	if (ipl == old_ipl)
@@ -587,7 +590,7 @@ e500_splraise(int ipl)
 	struct cpu_info * const ci = curcpu();
 	const int old_ipl = ci->ci_cpl;
 
-	/* if we paniced because of watchdog, PSL_CE will be clear.  */
+	/* if we panicked because of watchdog, PSL_CE will be clear.  */
 	KASSERT(wdog_barked || (mfmsr() & PSL_CE));
 
 	if (old_ipl < ipl) {
@@ -599,15 +602,16 @@ e500_splraise(int ipl)
 			msr = 0;
 #endif
 		wrtee(msr);
-	} else if (ipl == IPL_NONE) {
+	}
+#if 0
+	else if (ipl == IPL_NONE) {
 		panic("%s: %p: cpl=%u: attempt to splraise(IPL_NONE)",
 		    __func__, __builtin_return_address(0), old_ipl);
-#if 0
 	} else if (old_ipl > ipl) {
 		printf("%s: %p: cpl=%u: ignoring splraise(%u) to lower ipl\n",
 		    __func__, __builtin_return_address(0), old_ipl, ipl);
-#endif
 	}
+#endif
 
 	return old_ipl;
 }
@@ -934,7 +938,7 @@ e500_extintr(struct trapframe *tf)
 	struct cpu_softc * const cpu = ci->ci_softc;
 	const int old_ipl = ci->ci_cpl;
 
-	/* if we paniced because of watchdog, PSL_CE will be clear.  */
+	/* if we panicked because of watchdog, PSL_CE will be clear.  */
 	KASSERT(wdog_barked || (mfmsr() & PSL_CE));
 
 #if 0
@@ -997,7 +1001,7 @@ e500_extintr(struct trapframe *tf)
 		struct intr_source * const is = &e500_intr_sources[irq];
 		if (__predict_true(is < e500_intr_last_source)) {
 			/*
-			 * Timer interrupts get their argument overriden with
+			 * Timer interrupts get their argument overridden with
 			 * the pointer to the trapframe.
 			 */
 			KASSERTMSG(is->is_ipl == ipl,
@@ -1335,6 +1339,12 @@ e500_ipi_suspend(void)
 #endif	/* MULTIPROCESSOR */
 }
 
+static void
+e500_ipi_ast(void)
+{
+	curcpu()->ci_onproc->l_md.md_astpending = 1;
+}
+
 static const ipifunc_t e500_ipifuncs[] = {
 	[ilog2(IPI_XCALL)] =	xc_ipi_handler,
 	[ilog2(IPI_GENERIC)] =	ipi_cpu_handler,
@@ -1344,6 +1354,7 @@ static const ipifunc_t e500_ipifuncs[] = {
 #endif
 	[ilog2(IPI_TLB1SYNC)] =	e500_tlb1_sync,
 	[ilog2(IPI_SUSPEND)] =	e500_ipi_suspend,
+	[ilog2(IPI_AST)] =	e500_ipi_ast,
 };
 
 static int

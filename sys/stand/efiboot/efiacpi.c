@@ -1,4 +1,4 @@
-/* $NetBSD: efiacpi.c,v 1.4 2019/08/01 13:11:16 jmcneill Exp $ */
+/* $NetBSD: efiacpi.c,v 1.12 2021/11/03 22:02:36 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -31,17 +31,28 @@
 
 #include "efiboot.h"
 #include "efiacpi.h"
-#include "efifdt.h"
+#include "smbios.h"
 
-#include <libfdt.h>
-
-#define	ACPI_FDT_SIZE	(128 * 1024)
+struct acpi_rdsp {
+	char signature[8];
+	uint8_t checksum;
+	char oemid[6];
+	uint8_t revision;
+	uint32_t rsdtphys;
+	uint32_t length;
+	uint64_t xsdtphys;
+	uint8_t extcsum;
+	uint8_t reserved[3];
+};
 
 static EFI_GUID Acpi20TableGuid = ACPI_20_TABLE_GUID;
 static EFI_GUID Smbios3TableGuid = SMBIOS3_TABLE_GUID;
+static EFI_GUID SmbiosTableGuid = SMBIOS_TABLE_GUID;
 
 static void *acpi_root = NULL;
-static void *smbios3_table = NULL;
+static void *smbios_table = NULL;
+
+static int acpi_enabled = 1;
 
 int
 efi_acpi_probe(void)
@@ -52,9 +63,13 @@ efi_acpi_probe(void)
 	if (EFI_ERROR(status))
 		return EIO;
 
-	status = LibGetSystemConfigurationTable(&Smbios3TableGuid, &smbios3_table);
-	if (EFI_ERROR(status))
-		smbios3_table = NULL;
+	status = LibGetSystemConfigurationTable(&Smbios3TableGuid, &smbios_table);
+	if (EFI_ERROR(status)) {
+		status = LibGetSystemConfigurationTable(&SmbiosTableGuid, &smbios_table);
+	}
+	if (EFI_ERROR(status)) {
+		smbios_table = NULL;
+	}
 
 	return 0;
 }
@@ -62,53 +77,81 @@ efi_acpi_probe(void)
 int
 efi_acpi_available(void)
 {
-	return acpi_root != NULL;
+	return acpi_root != NULL && acpi_enabled;
+}
+
+int
+efi_acpi_enabled(void)
+{
+	return acpi_enabled;
+}
+
+void *
+efi_acpi_root(void)
+{
+	return acpi_root;
+}
+
+void *
+efi_acpi_smbios(void)
+{
+	return smbios_table;
+}
+
+static char model_buf[128];
+
+void
+efi_acpi_enable(int val)
+{
+	if (acpi_root == NULL) {
+		printf("No ACPI node\n");
+	} else
+		acpi_enabled = val;
+}
+
+const char *
+efi_acpi_get_model(void)
+{
+	struct smbtable smbios;
+	struct smbios_sys *psys;
+	const char *s;
+	char *buf;
+
+	memset(model_buf, 0, sizeof(model_buf));
+
+	if (smbios_table != NULL) {
+		smbios_init(smbios_table);
+
+		buf = model_buf;
+		smbios.cookie = 0;
+		if (smbios_find_table(SMBIOS_TYPE_SYSTEM, &smbios)) {
+			psys = smbios.tblhdr;
+			if ((s = smbios_get_string(&smbios, psys->vendor, buf, 64)) != NULL) {
+				buf += strlen(s);
+				*buf++ = ' ';
+			}
+			smbios_get_string(&smbios, psys->product, buf, 64);
+		}
+	}
+
+	if (model_buf[0] == '\0')
+		strcpy(model_buf, "ACPI");
+
+	return model_buf;
 }
 
 void
 efi_acpi_show(void)
 {
+	struct acpi_rdsp *rsdp = acpi_root;
+
 	if (!efi_acpi_available())
 		return;
 
-	printf("ACPI: RSDP %p", acpi_root);
-	if (smbios3_table)
-		printf(", SMBIOS %p", smbios3_table);
-	printf("\n");
-}
+	printf("ACPI: v%02d %c%c%c%c%c%c\n", rsdp->revision,
+	    rsdp->oemid[0], rsdp->oemid[1], rsdp->oemid[2],
+	    rsdp->oemid[3], rsdp->oemid[4], rsdp->oemid[5]);
 
-int
-efi_acpi_create_fdt(void)
-{
-	int error;
-	void *fdt;
-
-	if (acpi_root == NULL)
-		return EINVAL;
-
-	fdt = AllocatePool(ACPI_FDT_SIZE);
-	if (fdt == NULL)
-		return ENOMEM;
-
-	error = fdt_create_empty_tree(fdt, ACPI_FDT_SIZE);
-	if (error)
-		return EIO;
-
-	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/"), "compatible", "netbsd,generic-acpi");
-	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/"), "model", "ACPI");
-	fdt_setprop_cell(fdt, fdt_path_offset(fdt, "/"), "#address-cells", 2);
-	fdt_setprop_cell(fdt, fdt_path_offset(fdt, "/"), "#size-cells", 2);
-
-	fdt_add_subnode(fdt, fdt_path_offset(fdt, "/"), "chosen");
-	fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,acpi-root-table", (uint64_t)(uintptr_t)acpi_root);
-	if (smbios3_table)
-		fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,smbios-table", (uint64_t)(uintptr_t)smbios3_table);
-#ifdef EFIBOOT_RUNTIME_ADDRESS
-	fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,uefi-system-table", (uint64_t)(uintptr_t)ST);
-#endif
-
-	fdt_add_subnode(fdt, fdt_path_offset(fdt, "/"), "acpi");
-	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/acpi"), "compatible", "netbsd,acpi");
-
-	return efi_fdt_set_data(fdt);
+	if (smbios_table)
+		printf("SMBIOS: %s\n", efi_acpi_get_model());
 }

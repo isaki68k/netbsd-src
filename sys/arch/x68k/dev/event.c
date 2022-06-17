@@ -1,4 +1,4 @@
-/*	$NetBSD: event.c,v 1.15 2017/10/25 08:12:38 maya Exp $ */
+/*	$NetBSD: event.c,v 1.20 2022/05/26 14:30:36 tsutsui Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: event.c,v 1.15 2017/10/25 08:12:38 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: event.c,v 1.20 2022/05/26 14:30:36 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/fcntl.h>
@@ -101,18 +101,18 @@ ev_read(struct evvar *ev, struct uio *uio, int flags)
 	 * Make sure we can return at least 1.
 	 */
 	if (uio->uio_resid < sizeof(struct firm_event))
-		return (EMSGSIZE);	/* ??? */
+		return EMSGSIZE;	/* ??? */
 	mutex_enter(ev->ev_lock);
 	while (ev->ev_get == ev->ev_put) {
 		if (flags & IO_NDELAY) {
 			mutex_exit(ev->ev_lock);
-			return (EWOULDBLOCK);
+			return EWOULDBLOCK;
 		}
 		ev->ev_wanted = true;
 		error = cv_wait_sig(&ev->ev_cv, ev->ev_lock);
 		if (error != 0) {
 			mutex_exit(ev->ev_lock);
-			return (error);
+			return error;
 		}
 	}
 	/*
@@ -138,13 +138,13 @@ ev_read(struct evvar *ev, struct uio *uio, int flags)
 	 */
 	if ((ev->ev_get = (ev->ev_get + cnt) % EV_QSIZE) != 0 ||
 	    n == 0 || error || (cnt = put) == 0)
-		return (error);
+		return error;
 	if (cnt > n)
 		cnt = n;
 	error = uiomove((void *)&ev->ev_q[0],
 	    cnt * sizeof(struct firm_event), uio);
 	ev->ev_get = cnt;
-	return (error);
+	return error;
 }
 
 int
@@ -161,7 +161,7 @@ ev_poll(struct evvar *ev, int events, struct lwp *l)
 	}
 	revents |= events & (POLLOUT | POLLWRNORM);
 	mutex_exit(ev->ev_lock);
-	return (revents);
+	return revents;
 }
 
 void
@@ -177,9 +177,9 @@ ev_wakeup(struct evvar *ev)
 	mutex_exit(ev->ev_lock);
 
 	if (ev->ev_async) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		psignal(ev->ev_io, SIGIO);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 }
 
@@ -189,7 +189,7 @@ filt_evrdetach(struct knote *kn)
 	struct evvar *ev = kn->kn_hook;
 
 	mutex_enter(ev->ev_lock);
-	SLIST_REMOVE(&ev->ev_sel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&ev->ev_sel, kn);
 	mutex_exit(ev->ev_lock);
 }
 
@@ -217,7 +217,7 @@ filt_evread(struct knote *kn, long hint)
 }
 
 static const struct filterops ev_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_evrdetach,
 	.f_event = filt_evread,
@@ -226,23 +226,21 @@ static const struct filterops ev_filtops = {
 int
 ev_kqfilter(struct evvar *ev, struct knote *kn)
 {
-	struct klist *klist;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &ev->ev_sel.sel_klist;
 		kn->kn_fop = &ev_filtops;
 		break;
 
 	default:
-		return (1);
+		return EINVAL;
 	}
 
 	kn->kn_hook = ev;
 
 	mutex_enter(ev->ev_lock);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&ev->ev_sel, kn);
 	mutex_exit(ev->ev_lock);
 
-	return (0);
+	return 0;
 }

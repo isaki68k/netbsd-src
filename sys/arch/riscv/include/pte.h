@@ -1,11 +1,12 @@
-/* $NetBSD: pte.h,v 1.3 2019/06/16 07:42:52 maxv Exp $ */
+/* $NetBSD: pte.h,v 1.6 2021/05/01 07:41:24 skrll Exp $ */
 
 /*
- * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014, 2019, 2021 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas (of 3am Software Foundry) and Maxime Villard.
+ * by Matt Thomas (of 3am Software Foundry), Maxime Villard, and
+ * Nick Hudson.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -56,17 +57,24 @@ typedef __uint32_t pd_entry_t;
 #define NPDEPG		NPTEPG
 
 /* Software PTE bits. */
-#define	PTE_WIRED	__BIT(8)
+#define	PTE_RSW		__BITS(9,8)
+#define	PTE_WIRED	__BIT(9)
 
 /* Hardware PTE bits. */
-#define	PTE_D		__BIT(7)
-#define	PTE_A		__BIT(6)
-#define	PTE_G		__BIT(5)
-#define	PTE_U		__BIT(4)
-#define	PTE_X		__BIT(3)
-#define	PTE_W		__BIT(2)
-#define	PTE_R		__BIT(1)
-#define	PTE_V		__BIT(0)
+// These are hardware defined bits
+#define	PTE_D		__BIT(7)	// Dirty
+#define	PTE_A		__BIT(6)	// Accessed
+#define	PTE_G		__BIT(5)	// Global
+#define	PTE_U		__BIT(4)	// User
+#define	PTE_X		__BIT(3)	// eXecute
+#define	PTE_W		__BIT(2)	// Write
+#define	PTE_R		__BIT(1)	// Read
+#define	PTE_V		__BIT(0)	// Valid
+
+#define PTE_HARDWIRED	(PTE_A | PTE_D)
+#define PTE_KERN	(PTE_V | PTE_G)
+#define PTE_RW		(PTE_R | PTE_W)
+#define PTE_RX		(PTE_R | PTE_X)
 
 #define PA_TO_PTE(pa)	(((pa) >> PAGE_SHIFT) << PTE_PPN_SHIFT)
 #define PTE_TO_PA(pte)	(((pte) >> PTE_PPN_SHIFT) << PAGE_SHIFT)
@@ -89,6 +97,12 @@ typedef __uint32_t pd_entry_t;
 #define pl2_i(va)	(((va) >> L2_SHIFT) & Ln_ADDR_MASK)
 #define pl1_i(va)	(((va) >> L1_SHIFT) & Ln_ADDR_MASK)
 #define pl0_i(va)	(((va) >> L0_SHIFT) & Ln_ADDR_MASK)
+
+static inline const size_t
+pte_index(vaddr_t va)
+{
+	return ((va >> PGSHIFT) & (NPTEPG - 1));
+}
 
 static inline bool
 pte_valid_p(pt_entry_t pte)
@@ -125,8 +139,8 @@ pte_wire_entry(pt_entry_t pte)
 {
 	return pte | PTE_WIRED;
 }
-        
-static inline pt_entry_t   
+
+static inline pt_entry_t
 pte_unwire_entry(pt_entry_t pte)
 {
 	return pte & ~PTE_WIRED;
@@ -135,7 +149,7 @@ pte_unwire_entry(pt_entry_t pte)
 static inline paddr_t
 pte_to_paddr(pt_entry_t pte)
 {
-	return pte & ~PAGE_MASK;
+	return PTE_TO_PA(pte);
 }
 
 static inline pt_entry_t
@@ -223,7 +237,7 @@ pte_make_kenter_pa(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 {
 	pt_entry_t pte = (pt_entry_t)PA_TO_PTE(pa);
 
-	pte |= PTE_WIRED | PTE_V;
+	pte |= PTE_WIRED | PTE_G | PTE_V;
 	pte |= pte_flag_bits(NULL, flags, true);
 	pte |= pte_prot_bits(NULL, prot, true); /* pretend unmanaged */
 
@@ -235,6 +249,59 @@ pte_set(pt_entry_t *ptep, pt_entry_t pte)
 {
 	*ptep = pte;
 }
+
+static inline pd_entry_t
+pte_invalid_pde(void)
+{
+	return 0;
+}
+
+static inline pd_entry_t
+pte_pde_pdetab(paddr_t pa, bool kernel_p)
+{
+	return PTE_V | (pa >> PAGE_SHIFT) << L2_SHIFT;
+}
+
+static inline pd_entry_t
+pte_pde_ptpage(paddr_t pa, bool kernel_p)
+{
+	return PTE_V | PTE_X | PTE_W | PTE_R | (pa >> PAGE_SHIFT) << L2_SHIFT;
+}
+
+static inline bool
+pte_pde_valid_p(pd_entry_t pde)
+{
+	return (pde & (PTE_X | PTE_W | PTE_R)) == 0;
+}
+
+static inline paddr_t
+pte_pde_to_paddr(pd_entry_t pde)
+{
+	return pte_to_paddr((pt_entry_t)pde);
+}
+
+static inline pd_entry_t
+pte_pde_cas(pd_entry_t *pdep, pd_entry_t opde, pt_entry_t npde)
+{
+#ifdef MULTIPROCESSOR
+#ifdef _LP64
+	return atomic_cas_64(pdep, opde, npde);
+#else
+	return atomic_cas_32(pdep, opde, npde);
+#endif
+#else
+	*pdep = npde;
+	return 0;
+#endif
+}
+
+static inline void
+pte_pde_set(pd_entry_t *pdep, pd_entry_t npde)
+{
+
+	*pdep = npde;
+}
+
 
 static inline pt_entry_t
 pte_value(pt_entry_t pte)

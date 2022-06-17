@@ -1,7 +1,7 @@
-/*	$NetBSD: lockstat.c,v 1.25 2017/06/01 02:45:09 chs Exp $	*/
+/*	$NetBSD: lockstat.c,v 1.30 2022/04/08 10:17:54 andvar Exp $	*/
 
 /*-
- * Copyright (c) 2006, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2007, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -37,26 +37,28 @@
  * Only one thread can hold the device at a time, providing a global lock.
  *
  * XXX Timings for contention on sleep locks are currently incorrect.
+ * XXX Convert this to use timecounters!
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lockstat.c,v 1.25 2017/06/01 02:45:09 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lockstat.c,v 1.30 2022/04/08 10:17:54 andvar Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
-#include <sys/proc.h> 
-#include <sys/resourcevar.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/kmem.h>
+
+#include <sys/atomic.h>
 #include <sys/conf.h>
 #include <sys/cpu.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/lock.h>
+#include <sys/proc.h>
+#include <sys/resourcevar.h>
 #include <sys/syslog.h>
-#include <sys/atomic.h>
+#include <sys/systm.h>
+#include <sys/xcall.h>
 
 #include <dev/lockstat.h>
-
-#include <machine/lock.h>
 
 #include "ioconf.h"
 
@@ -71,7 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: lockstat.c,v 1.25 2017/06/01 02:45:09 chs Exp $");
 #endif
 
 #define	LOCKSTAT_MINBUFS	1000
-#define	LOCKSTAT_DEFBUFS	10000
+#define	LOCKSTAT_DEFBUFS	20000
 #define	LOCKSTAT_MAXBUFS	1000000
 
 #define	LOCKSTAT_HASH_SIZE	128
@@ -100,6 +102,7 @@ dev_type_ioctl(lockstat_ioctl);
 
 volatile u_int	lockstat_enabled;
 volatile u_int	lockstat_dev_enabled;
+__cpu_simple_lock_t lockstat_enabled_lock;
 uintptr_t	lockstat_csstart;
 uintptr_t	lockstat_csend;
 uintptr_t	lockstat_csmask;
@@ -153,6 +156,7 @@ lockstatattach(int nunits)
 	(void)nunits;
 
 	__cpu_simple_lock_init(&lockstat_lock);
+	__cpu_simple_lock_init(&lockstat_enabled_lock);
 }
 
 /*
@@ -234,10 +238,26 @@ lockstat_start(lsenable_t *le)
 	lockstat_lockstart = le->le_lockstart;
 	lockstat_lockstart = le->le_lockstart;
 	lockstat_lockend = le->le_lockend;
-	membar_sync();
+
+	/*
+	 * Ensure everything is initialized on all CPUs, by issuing a
+	 * null xcall with the side effect of a release barrier on this
+	 * CPU and an acquire barrier on all other CPUs, before they
+	 * can witness any flags set in lockstat_dev_enabled -- this
+	 * way we don't need to add any barriers in lockstat_event.
+	 */
+	xc_barrier(0);
+
+	/*
+	 * Start timing after the xcall, so we don't spuriously count
+	 * xcall communication time, but before flipping the switch, so
+	 * we don't dirty sample with locks taken in the timecounter.
+	 */
 	getnanotime(&lockstat_stime);
-	lockstat_dev_enabled = le->le_mask;
-	LOCKSTAT_ENABLED_UPDATE();
+
+	LOCKSTAT_ENABLED_UPDATE_BEGIN();
+	atomic_store_relaxed(&lockstat_dev_enabled, le->le_mask);
+	LOCKSTAT_ENABLED_UPDATE_END();
 }
 
 /*
@@ -257,13 +277,13 @@ lockstat_stop(lsdisable_t *ld)
 	KASSERT(lockstat_dev_enabled);
 
 	/*
-	 * Set enabled false, force a write barrier, and wait for other CPUs
-	 * to exit lockstat_event().
+	 * Disable and wait for other CPUs to exit lockstat_event().
 	 */
-	lockstat_dev_enabled = 0;
-	LOCKSTAT_ENABLED_UPDATE();
+	LOCKSTAT_ENABLED_UPDATE_BEGIN();
+	atomic_store_relaxed(&lockstat_dev_enabled, 0);
+	LOCKSTAT_ENABLED_UPDATE_END();
 	getnanotime(&ts);
-	tsleep(&lockstat_stop, PPAUSE, "lockstat", mstohz(10));
+	xc_barrier(0);
 
 	/*
 	 * Did we run out of buffers while tracing?
@@ -282,13 +302,13 @@ lockstat_stop(lsdisable_t *ld)
 	lockstat_init_tables(NULL);
 
 	/* Run through all LWPs and clear the slate for the next run. */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_FOREACH(l, &alllwp, l_list) {
 		l->l_pfailaddr = 0;
 		l->l_pfailtime = 0;
 		l->l_pfaillock = 0;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	if (ld == NULL)
 		return error;
@@ -333,7 +353,7 @@ lockstat_alloc(lsenable_t *le)
 	KASSERT(lockstat_baseb == NULL);
 	lockstat_sizeb = sz;
 	lockstat_baseb = lb;
-		
+
 	return (0);
 }
 
@@ -354,7 +374,7 @@ lockstat_free(void)
 }
 
 /*
- * Main entry point from lock primatives.
+ * Main entry point from lock primitives.
  */
 void
 lockstat_event(uintptr_t lock, uintptr_t callsite, u_int flags, u_int count,
@@ -369,12 +389,14 @@ lockstat_event(uintptr_t lock, uintptr_t callsite, u_int flags, u_int count,
 #ifdef KDTRACE_HOOKS
 	uint32_t id;
 	CTASSERT((LS_NPROBES & (LS_NPROBES - 1)) == 0);
-	if ((id = lockstat_probemap[LS_COMPRESS(flags)]) != 0)
+	if ((id = atomic_load_relaxed(&lockstat_probemap[LS_COMPRESS(flags)]))
+	    != 0)
 		(*lockstat_probe_func)(id, lock, callsite, flags, count,
 		    cycles);
 #endif
 
-	if ((flags & lockstat_dev_enabled) != flags || count == 0)
+	if ((flags & atomic_load_relaxed(&lockstat_dev_enabled)) != flags ||
+	    count == 0)
 		return;
 	if (lock < lockstat_lockstart || lock > lockstat_lockend)
 		return;
@@ -453,6 +475,10 @@ lockstat_close(dev_t dev, int flag, int mode, lwp_t *l)
 {
 
 	lockstat_lwp = NULL;
+	if (lockstat_dev_enabled) {
+		lockstat_stop(NULL);
+		lockstat_free();
+	}
 	__cpu_simple_unlock(&lockstat_lock);
 	return 0;
 }
@@ -482,7 +508,7 @@ lockstat_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 			error = ENODEV;
 			break;
 		}
-		if (lockstat_dev_enabled) {
+		if (atomic_load_relaxed(&lockstat_dev_enabled)) {
 			error = EBUSY;
 			break;
 		}
@@ -490,9 +516,10 @@ lockstat_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 		/*
 		 * Sanitize the arguments passed in and set up filtering.
 		 */
-		if (le->le_nbufs == 0)
-			le->le_nbufs = LOCKSTAT_DEFBUFS;
-		else if (le->le_nbufs > LOCKSTAT_MAXBUFS ||
+		if (le->le_nbufs == 0) {
+			le->le_nbufs = MIN(LOCKSTAT_DEFBUFS * ncpu,
+			    LOCKSTAT_MAXBUFS);
+		} else if (le->le_nbufs > LOCKSTAT_MAXBUFS ||
 		    le->le_nbufs < LOCKSTAT_MINBUFS) {
 			error = EINVAL;
 			break;
@@ -518,7 +545,7 @@ lockstat_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 		break;
 
 	case IOC_LOCKSTAT_DISABLE:
-		if (!lockstat_dev_enabled)
+		if (!atomic_load_relaxed(&lockstat_dev_enabled))
 			error = EINVAL;
 		else
 			error = lockstat_stop((lsdisable_t *)data);

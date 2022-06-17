@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_ccu.h,v 1.21 2019/01/30 01:24:00 jmcneill Exp $ */
+/* $NetBSD: sunxi_ccu.h,v 1.23 2021/11/07 17:13:12 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -64,6 +64,7 @@ enum sunxi_ccu_clktype {
 	SUNXI_CCU_PHASE,
 	SUNXI_CCU_FIXED_FACTOR,
 	SUNXI_CCU_FRACTIONAL,
+	SUNXI_CCU_MUX,
 };
 
 struct sunxi_ccu_gate {
@@ -405,12 +406,41 @@ const char *sunxi_ccu_fractional_get_parent(struct sunxi_ccu_softc *,
 		.u.fractional.frac[0] = (_frac0),			\
 		.u.fractional.frac[1] = (_frac1),			\
 		.u.fractional.enable = (_enable),			\
+		.u.fractional.flags = (_flags),				\
 		.enable = sunxi_ccu_fractional_enable,			\
 		.get_rate = sunxi_ccu_fractional_get_rate,		\
 		.set_rate = sunxi_ccu_fractional_set_rate,		\
 		.round_rate = sunxi_ccu_fractional_round_rate,		\
 		.get_parent = sunxi_ccu_fractional_get_parent,		\
 	}
+
+struct sunxi_ccu_mux {
+	bus_size_t	reg;
+	const char	**parents;
+	u_int		nparents;
+	uint32_t	sel;
+	uint32_t	flags;
+};
+
+int	sunxi_ccu_mux_set_parent(struct sunxi_ccu_softc *,
+				 struct sunxi_ccu_clk *,
+				 const char *);
+const char *sunxi_ccu_mux_get_parent(struct sunxi_ccu_softc *,
+				     struct sunxi_ccu_clk *);
+
+#define	SUNXI_CCU_MUX(_id, _name, _parents, _reg, _sel, _flags)	\
+	[_id] = {						\
+		.type = SUNXI_CCU_MUX,				\
+		.base.name = (_name),				\
+		.u.mux.reg = (_reg),				\
+		.u.mux.parents = (_parents),			\
+		.u.mux.nparents = __arraycount(_parents),	\
+		.u.mux.sel = (_sel),				\
+		.u.mux.flags = (_flags),			\
+		.set_parent = sunxi_ccu_mux_set_parent,		\
+		.get_parent = sunxi_ccu_mux_get_parent,		\
+	}
+
 
 struct sunxi_ccu_clk {
 	struct clk	base;
@@ -424,6 +454,7 @@ struct sunxi_ccu_clk {
 		struct sunxi_ccu_phase phase;
 		struct sunxi_ccu_fixed_factor fixed_factor;
 		struct sunxi_ccu_fractional fractional;
+		struct sunxi_ccu_mux mux;
 	} u;
 
 	int		(*enable)(struct sunxi_ccu_softc *,

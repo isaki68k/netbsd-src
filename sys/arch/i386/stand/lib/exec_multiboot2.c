@@ -1,4 +1,4 @@
-/* $NetBSD: exec_multiboot2.c,v 1.3 2019/10/18 01:15:54 manu Exp $ */
+/* $NetBSD: exec_multiboot2.c,v 1.5 2021/07/21 23:16:08 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -34,7 +34,8 @@
 
 #include <dev/acpi/acpica.h>
 #include <x86/acpi_machdep.h>
-#include <x86/smbiosvar.h>
+#include <dev/smbiosvar.h>
+#include <x86/smbios_machdep.h>
 
 #include <lib/libsa/stand.h> 
 #include <lib/libkern/libkern.h> 
@@ -863,7 +864,7 @@ mbi_apm(struct multiboot_package *mbp, void *buf)
 		mbt->cseg = 0;
 		mbt->offset = 0;
 		mbt->cseg_16 = 0;
-		mbt->dseg = 0;; 
+		mbt->dseg = 0; 
 		mbt->flags = 0;
 		mbt->cseg_len = 0;
 		mbt->cseg_16_len = 0;

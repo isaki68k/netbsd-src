@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_var.h,v 1.94 2015/07/15 03:28:55 manu Exp $	*/
+/*	$NetBSD: nfs_var.h,v 1.96 2022/04/27 17:38:52 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -271,8 +271,8 @@ void nfs_delayedtruncate(struct vnode *);
 int nfs_check_wccdata(struct nfsnode *, const struct timespec *,
 	struct timespec *, bool);
 int nfs_namei(struct nameidata *, nfsrvfh_t *, uint32_t, struct nfssvc_sock *,
-	struct mbuf *, struct mbuf **, char **, struct vnode **, struct lwp *,
-	int, int);
+	struct mbuf *, struct mbuf **, char **, struct vnode **,
+	int *, struct vattr *, struct lwp *, int, int);
 void nfs_zeropad(struct mbuf *, int, int);
 void nfsm_srvwcc(struct nfsrv_descript *, int, struct vattr *, int,
 	struct vattr *, struct mbuf **, char **);
@@ -356,7 +356,7 @@ int do_nfssvc(struct nfssvc_copy_ops *, struct lwp *, int, void *, register_t *)
 /* nfs_export.c */
 extern struct nfs_public nfs_pub;
 int mountd_set_exports_list(const struct mountd_exports_list *, struct lwp *,
-    struct mount *);
+    struct mount *, int);
 int netexport_check(const fsid_t *, struct mbuf *, struct mount **, int *,
     kauth_cred_t *);
 void netexport_rdlock(void);

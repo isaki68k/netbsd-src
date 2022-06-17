@@ -1,4 +1,4 @@
-/*	$NetBSD: apbus.c,v 1.25 2018/10/14 00:10:11 tsutsui Exp $	*/
+/*	$NetBSD: apbus.c,v 1.29 2021/08/07 16:19:01 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1999 SHIMIZU Ryo.  All rights reserved.
@@ -27,13 +27,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: apbus.c,v 1.25 2018/10/14 00:10:11 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: apbus.c,v 1.29 2021/08/07 16:19:01 thorpej Exp $");
 
 #define __INTR_PRIVATE
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/proc.h>
 #include <sys/intr.h>
@@ -149,7 +149,8 @@ apbusattach(device_t parent, device_t self, void *aux)
 				child.apa_slotno = apctl->apbc_sl;
 				child.apa_hwbase = apctl->apbc_hwbase;
 
-				config_found(self, &child, apbusprint);
+				config_found(self, &child, apbusprint,
+				    CFARGS_NONE);
 
 				apctl = apctl->apbc_link;
 			}
@@ -230,9 +231,7 @@ apbus_intr_establish(int level, int mask, int priority, int (*func)(void *),
 
 	ip = &apintr_tab[level];
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		panic("%s: can't malloc handler info", __func__);
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_mask = mask;
 	ih->ih_priority = priority;
 	ih->ih_func = func;
@@ -503,12 +502,10 @@ apbus_dmatag_init(struct apbus_attach_args *apa)
 {
 	struct newsmips_bus_dma_tag *dmat;
 
-	dmat = malloc(sizeof(*dmat), M_DEVBUF, M_NOWAIT);
-	if (dmat != NULL) {
-		memcpy(dmat, &apbus_dma_tag, sizeof(*dmat));
-		dmat->_slotno = apa->apa_slotno;
-		dmat->_slotbaset = 0;
-		dmat->_slotbaseh = apa->apa_hwbase;
-	}
+	dmat = kmem_alloc(sizeof(*dmat), KM_SLEEP);
+	memcpy(dmat, &apbus_dma_tag, sizeof(*dmat));
+	dmat->_slotno = apa->apa_slotno;
+	dmat->_slotbaset = 0;
+	dmat->_slotbaseh = apa->apa_hwbase;
 	return dmat;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig_16.c,v 1.3 2019/01/27 02:08:39 pgoyette Exp $	*/
+/*	$NetBSD: kern_sig_16.c,v 1.8 2021/12/02 04:26:09 ryo Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -66,13 +66,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig_16.c,v 1.3 2019/01/27 02:08:39 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig_16.c,v 1.8 2021/12/02 04:26:09 ryo Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
 #endif
 
 #include <sys/param.h>
+#include <sys/exec.h>
 #include <sys/kernel.h>
 #include <sys/rwlock.h>
 #include <sys/signalvar.h>
@@ -84,14 +85,13 @@ __KERNEL_RCSID(0, "$NetBSD: kern_sig_16.c,v 1.3 2019/01/27 02:08:39 pgoyette Exp
 #include <sys/kauth.h>
 #include <sys/wait.h>
 #include <sys/kmem.h>
+#include <sys/compat_stub.h>
 
 #include <uvm/uvm_object.h>
 #include <uvm/uvm_prot.h>
 #include <uvm/uvm_pager.h>
 
 #include <compat/common/compat_mod.h>
-
-extern krwlock_t exec_lock;
 
 #if !defined(__amd64__) || defined(COMPAT_NETBSD32)
 #define COMPAT_SIGCONTEXT
@@ -154,9 +154,16 @@ kern_sig_16_init(void)
 	emul_netbsd.e_sigcode = sigcode;
 	emul_netbsd.e_esigcode = esigcode;
 	emul_netbsd.e_sigobject = &emul_netbsd_object;
+	error = exec_sigcode_alloc(&emul_netbsd);
+	if (error) {
+		emul_netbsd.e_sigcode = NULL;
+		emul_netbsd.e_esigcode = NULL;
+		emul_netbsd.e_sigobject = NULL;
+	}
 	rw_exit(&exec_lock);
-	KASSERT(sendsig_sigcontext_vec == NULL);
-	sendsig_sigcontext_vec = sendsig_sigcontext;
+	if (error)
+		return error;
+	MODULE_HOOK_SET(sendsig_sigcontext_16_hook, sendsig_sigcontext);
 #endif
 
 	return 0;
@@ -177,18 +184,17 @@ kern_sig_16_fini(void)
 	 * further processes while we are here.  See
 	 * sigaction1() for the opposing half.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	PROCLIST_FOREACH(p, &allproc) {
 		if ((p->p_lflag & PL_SIGCOMPAT) != 0) {
 			break;
 		}
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	if (p != NULL) {
 		syscall_establish(NULL, kern_sig_16_syscalls);
 		return EBUSY;
 	}
-	sendsig_sigcontext_vec = NULL;
 
 #if defined(COMPAT_SIGCONTEXT)
 	/*
@@ -196,14 +202,14 @@ kern_sig_16_fini(void)
 	 * is reference counted so will die eventually.
 	 */
 	rw_enter(&exec_lock, RW_WRITER);
-	if (emul_netbsd_object != NULL) {
-		(*emul_netbsd_object->pgops->pgo_detach)(emul_netbsd_object);
-	}
+	exec_sigcode_free(&emul_netbsd);
 	emul_netbsd_object = NULL;
 	emul_netbsd.e_sigcode = NULL;
 	emul_netbsd.e_esigcode = NULL;
 	emul_netbsd.e_sigobject = NULL;
 	rw_exit(&exec_lock);
+
+	MODULE_HOOK_UNSET(sendsig_sigcontext_16_hook);
 #endif
 	return 0;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: pinctrl_single.c,v 1.1 2019/10/27 15:31:15 jmcneill Exp $ */
+/* $NetBSD: pinctrl_single.c,v 1.6 2021/11/07 17:12:25 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pinctrl_single.c,v 1.1 2019/10/27 15:31:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pinctrl_single.c,v 1.6 2021/11/07 17:12:25 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -50,10 +50,10 @@ static const struct pinctrl_single_config pinconf_config = {
 	.flags = PINCTRL_FLAG_PINCONF
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "pinctrl-single",		(uintptr_t)&pinctrl_config },
-	{ "pinconf-single",		(uintptr_t)&pinconf_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "pinctrl-single",	.data = &pinctrl_config },
+	{ .compat = "pinconf-single",	.data = &pinconf_config },
+	DEVICE_COMPAT_EOL
 };
 
 struct pinctrl_single_softc {
@@ -110,7 +110,7 @@ pinctrl_single_pins_set_config(device_t dev, const void *data, size_t len)
 	const u_int *pins;
 	int pinslen;
 
-	if (len != 4)
+	if (len != 4 && len != 8)
 		return -1;
 
 	const int phandle = fdtbus_get_phandle_from_native(be32dec(data));
@@ -119,13 +119,14 @@ pinctrl_single_pins_set_config(device_t dev, const void *data, size_t len)
 	if (pins == NULL)
 		return -1;
 
-	while (pinslen >= 8) {
+	while (pinslen >= 4 + len) {
 		const int off = be32toh(pins[0]);
 		const int val = be32toh(pins[1]);
+		const int mux = len == 4 ? 0 : be32toh(pins[2]);
 
-		pinctrl_single_pins_write(sc, off, val);
-		pins += 2;
-		pinslen -= 8;
+		pinctrl_single_pins_write(sc, off, val | mux);
+		pins += 1 + (len / 4);
+		pinslen -= (4 + len);
 	}
 
 	return 0;
@@ -140,7 +141,7 @@ pinctrl_single_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -159,7 +160,7 @@ pinctrl_single_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	conf = (const void *)of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;

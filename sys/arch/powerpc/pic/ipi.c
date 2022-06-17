@@ -1,4 +1,4 @@
-/* $NetBSD: ipi.c,v 1.12 2015/01/23 07:27:05 nonaka Exp $ */
+/* $NetBSD: ipi.c,v 1.16 2020/07/06 11:01:24 rin Exp $ */
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,12 +29,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipi.c,v 1.12 2015/01/23 07:27:05 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipi.c,v 1.16 2020/07/06 11:01:24 rin Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
-#include "opt_pic.h"
-#include "opt_interrupt.h"
-#include "opt_altivec.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -47,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: ipi.c,v 1.12 2015/01/23 07:27:05 nonaka Exp $");
 
 #include <powerpc/pic/picvar.h>
 #include <powerpc/pic/ipivar.h>
-#include "opt_ipi.h"
 
 #ifdef MULTIPROCESSOR
 
@@ -77,6 +75,9 @@ ipi_intr(void *v)
 
 	if (ipi & IPI_SUSPEND)
 		cpu_pause(NULL);
+
+	if (ipi & IPI_AST)
+		ci->ci_onproc->l_md.md_astpending = 1;
 
 	if (ipi & IPI_HALT) {
 		struct cpuset_info * const csi = &cpuset_info;

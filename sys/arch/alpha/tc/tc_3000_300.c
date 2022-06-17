@@ -1,4 +1,4 @@
-/* $NetBSD: tc_3000_300.c,v 1.33 2014/03/26 08:09:06 christos Exp $ */
+/* $NetBSD: tc_3000_300.c,v 1.39 2021/05/07 16:58:34 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,12 +29,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: tc_3000_300.c,v 1.33 2014/03/26 08:09:06 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tc_3000_300.c,v 1.39 2021/05/07 16:58:34 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
+#include <sys/cpu.h>
 
 #include <machine/autoconf.h>
 #include <machine/pte.h>
@@ -51,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: tc_3000_300.c,v 1.33 2014/03/26 08:09:06 christos Ex
 extern int	sfb_cnattach(tc_addr_t);
 #endif
 
-int	tc_3000_300_intrnull(void *);
+static int	tc_3000_300_intrnull(void *);
 
 #define	C(x)	((void *)(u_long)x)
 #define	KV(x)	(ALPHA_PHYS_TO_K0SEG(x))
@@ -64,7 +65,7 @@ int	tc_3000_300_intrnull(void *);
  */
 #define	DEC_3000_300_IOASIC_ADDR	KV(0x1a0000000)
 
-struct tc_slotdesc tc_3000_300_slots[] = {
+const struct tc_slotdesc tc_3000_300_slots[] = {
 	{ KV(0x100000000), C(TC_3000_300_DEV_OPT0), },	/* 0 - opt slot 0 */
 	{ KV(0x120000000), C(TC_3000_300_DEV_OPT1), },	/* 1 - opt slot 1 */
 	{ KV(0x140000000), C(TC_3000_300_DEV_BOGUS), }, /* 2 - unused */
@@ -73,18 +74,16 @@ struct tc_slotdesc tc_3000_300_slots[] = {
 	{ KV(0x1a0000000), C(TC_3000_300_DEV_BOGUS), }, /* 5 - IOCTL ASIC */
 	{ KV(0x1c0000000), C(TC_3000_300_DEV_BOGUS), }, /* 6 - CXTurbo */
 };
-int tc_3000_300_nslots =
-    sizeof(tc_3000_300_slots) / sizeof(tc_3000_300_slots[0]);
+const int tc_3000_300_nslots = __arraycount(tc_3000_300_slots);
 
-struct tc_builtin tc_3000_300_builtins[] = {
+const struct tc_builtin tc_3000_300_builtins[] = {
 	{ "PMAGB-BA",	6, 0x02000000, C(TC_3000_300_DEV_CXTURBO),	},
 	{ "FLAMG-IO",	5, 0x00000000, C(TC_3000_300_DEV_IOASIC),	},
 	{ "PMAZ-DS ",	4, 0x00000000, C(TC_3000_300_DEV_TCDS),		},
 };
-int tc_3000_300_nbuiltins =
-    sizeof(tc_3000_300_builtins) / sizeof(tc_3000_300_builtins[0]);
+const int tc_3000_300_nbuiltins = __arraycount(tc_3000_300_builtins);
 
-struct tcintr {
+static struct tcintr {
 	int	(*tci_func)(void *);
 	void	*tci_arg;
 	struct evcnt tci_evcnt;
@@ -107,14 +106,10 @@ tc_3000_300_intr_setup(void)
 	 * Set up interrupt handlers.
 	 */
 	for (i = 0; i < TC_3000_300_NCOOKIES; i++) {
-		static const size_t len = 12;
 	        tc_3000_300_intr[i].tci_func = tc_3000_300_intrnull;
 	        tc_3000_300_intr[i].tci_arg = (void *)i;
 		
-		cp = malloc(len, M_DEVBUF, M_NOWAIT);
-		if (cp == NULL)
-			panic("tc_3000_300_intr_setup");
-		snprintf(cp, len, "slot %lu", i);
+		cp = kmem_asprintf("slot %lu", i);
 		evcnt_attach_dynamic(&tc_3000_300_intr[i].tci_evcnt,
 		    EVCNT_TYPE_INTR, NULL, "tc", cp);
 	}
@@ -145,8 +140,17 @@ tc_3000_300_intr_establish(device_t tcadev, void *cookie, tc_intrlevel_t level, 
 	if (tc_3000_300_intr[dev].tci_func != tc_3000_300_intrnull)
 		panic("tc_3000_300_intr_establish: cookie %lu twice", dev);
 
+	const int s = splhigh();
+
+	/* All TC systems are uniprocessors. */
+	KASSERT(CPU_IS_PRIMARY(curcpu()));
+	KASSERT(ncpu == 1);
+	curcpu()->ci_nintrhand++;
+
 	tc_3000_300_intr[dev].tci_func = func;
 	tc_3000_300_intr[dev].tci_arg = arg;
+
+	splx(s);
 
 	imskp = (volatile uint32_t *)(DEC_3000_300_IOASIC_ADDR + IOASIC_IMSK);
 	switch (dev) {
@@ -189,11 +193,17 @@ tc_3000_300_intr_disestablish(device_t tcadev, void *cookie)
 		break;
 	}
 
+	const int s = splhigh();
+
+	curcpu()->ci_nintrhand--;
+
 	tc_3000_300_intr[dev].tci_func = tc_3000_300_intrnull;
 	tc_3000_300_intr[dev].tci_arg = (void *)dev;
+
+	splx(s);
 }
 
-int
+static int
 tc_3000_300_intrnull(void *val)
 {
 
@@ -207,14 +217,16 @@ tc_3000_300_iointr(void *arg, unsigned long vec)
 	uint32_t tcir, ioasicir, ioasicimr;
 	int ifound;
 
+	KERNEL_LOCK(1, NULL);
+
 #ifdef DIAGNOSTIC
 	int s;
 	if (vec != 0x800)
 		panic("INVALID ASSUMPTION: vec 0x%lx, not 0x800", vec);
 	s = splhigh();
-	if (s != ALPHA_PSL_IPL_IO)
+	if (s != ALPHA_PSL_IPL_IO_HI)
 		panic("INVALID ASSUMPTION: IPL %d, not %d", s,
-		    ALPHA_PSL_IPL_IO);
+		    ALPHA_PSL_IPL_IO_HI);
 	splx(s);
 #endif
 
@@ -275,6 +287,8 @@ tc_3000_300_iointr(void *arg, unsigned long vec)
 #undef PRINTINTR
 #endif
 	} while (ifound);
+
+	KERNEL_UNLOCK_ONE(NULL);
 }
 
 #if NWSDISPLAY > 0

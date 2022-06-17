@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.50 2011/06/30 00:52:57 matt Exp $	*/
+/*	$NetBSD: zs.c,v 1.56 2022/02/16 23:49:26 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1998 Bill Studenmund
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.50 2011/06/30 00:52:57 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.56 2022/02/16 23:49:26 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -73,6 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.50 2011/06/30 00:52:57 matt Exp $");
 
 #include <dev/cons.h>
 #include <dev/ofw/openfirm.h>
+#include <powerpc/ofw_cons.h>
 #include <dev/ic/z8530reg.h>
 
 #include <machine/z8530var.h>
@@ -115,11 +116,28 @@ int	zs_cons_canabort = 1;
 #else
 int	zs_cons_canabort = 0;
 #endif /* ZS_CONSOLE_ABORT*/
+#if PMAC_G5
+static void zscn_delayed_init(struct zsdevice *zsd);
+#endif
 
 /* device to which the console is attached--if serial. */
 /* Mac stuff */
 
 static int zs_get_speed(struct zs_chanstate *);
+void zscnprobe(struct consdev *cp);
+void zscninit(struct consdev *cp);
+int zscngetc(dev_t dev);
+void zscnputc(dev_t dev, int c);
+#define zscnpollc	nullcnpollc
+cons_decl(zs);
+
+struct consdev consdev_zs = {
+	zscnprobe,
+	zscninit,
+	zscngetc,
+	zscnputc,
+	zscnpollc,
+};
 
 /*
  * Even though zsparam will set up the clock multiples, etc., we
@@ -211,6 +229,7 @@ zsc_attach(device_t parent, device_t self, void *aux)
 	int s, chip, theflags;
 	int node, intr[2][3];
 	u_int regs[6];
+	char intr_xname[INTRDEVNAMEBUF];
 
 	zsc_attached = 1;
 
@@ -249,6 +268,12 @@ zsc_attach(device_t parent, device_t self, void *aux)
 	}
 
 	aprint_normal(" irq %d,%d\n", intr[0][0], intr[1][0]);
+
+#if PMAC_G5
+	extern struct consdev failsafe_cons;
+	if (ofwoea_use_serial_console && cn_tab == &failsafe_cons)
+		zscn_delayed_init(zsd);
+#endif
 
 	/*
 	 * Initialize software state for each channel.
@@ -366,7 +391,8 @@ zsc_attach(device_t parent, device_t self, void *aux)
 		 * Look for a child driver for this channel.
 		 * The child attach will setup the hardware.
 		 */
-		if (!config_found(self, (void *)&zsc_args, zsc_print)) {
+		if (!config_found(self, (void *)&zsc_args, zsc_print,
+		    CFARGS_NONE)) {
 			/* No sub-driver.  Just reset it. */
 			uint8_t reset = (channel == 0) ?
 				ZSWR9_A_RESET : ZSWR9_B_RESET;
@@ -377,12 +403,18 @@ zsc_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* XXX - Now safe to install interrupt handlers. */
-	intr_establish(intr[0][0], IST_EDGE, IPL_TTY, zshard, zsc);
-	intr_establish(intr[1][0], IST_EDGE, IPL_TTY, zshard, zsc);
+	for (channel = 0; channel < 2; channel++) {
+		snprintf(intr_xname, sizeof(intr_xname), "%s pio%d",
+		    device_xname(self), channel);
+		intr_establish_xname(intr[channel][0], IST_EDGE, IPL_TTY,
+		    zshard, zsc, intr_xname);
 #ifdef ZS_TXDMA
-	intr_establish(intr[0][1], IST_EDGE, IPL_TTY, zs_txdma_int, (void *)0);
-	intr_establish(intr[1][1], IST_EDGE, IPL_TTY, zs_txdma_int, (void *)1);
+		snprintf(intr_xname, sizeof(intr_xname), "%s dma%d",
+		    device_xname(self), channel);
+		intr_establish_xname(intr[channel][1], IST_EDGE, IPL_TTY,
+		    zs_txdma_int, (void *)channel, intr_xname);
 #endif
+	}
 
 	zsc->zsc_si = softint_establish(SOFTINT_SERIAL,
 		(void (*)(void *)) zsc_intr_soft, zsc);
@@ -492,7 +524,7 @@ zs_dma_setup(struct zs_chanstate *cs, void *pa, int len)
 	DBDMA_BUILD(cmdp, DBDMA_CMD_STOP, 0, 0, 0,
 		DBDMA_INT_NEVER, DBDMA_WAIT_NEVER, DBDMA_BRANCH_NEVER);
 
-	__asm volatile("eieio");
+	__asm volatile("eieio" ::: "memory");
 
 	dbdma_start(zsc->zsc_txdmareg[ch], zsc->zsc_txdmacmd[ch]);
 }
@@ -546,7 +578,7 @@ zs_set_speed(struct zs_chanstate *cs, int bps)
 	 * Step through all the sources and see which one matches
 	 * the best. A source has to match BETTER than tol to be chosen.
 	 * Thus if two sources give the same error, the first one will be
-	 * chosen. Also, allow for the possability that one source might run
+	 * chosen. Also, allow for the possibility that one source might run
 	 * both the BRG and the direct divider (i.e. RTxC).
 	 */
 	for (i = 0; i < xcs->cs_clock_count; i++) {
@@ -677,7 +709,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Make sure we don't enable hfc on a signal line we're ignoring.
 	 * As we enable CTS interrupts only if we have CRTSCTS or CDTRCTS,
-	 * this code also effectivly turns off ZSWR15_CTS_IE.
+	 * this code also effectively turns off ZSWR15_CTS_IE.
 	 *
 	 * Also, disable DCD interrupts if we've been told to ignore
 	 * the DCD pin. Happens on mac68k because the input line for
@@ -699,7 +731,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */
@@ -818,9 +850,6 @@ zs_write_data(struct zs_chanstate *cs, uint8_t val)
  * XXX - I think I like the mvme167 code better. -gwr
  * XXX - Well :-P  :-)  -wrs
  ****************************************************************/
-
-#define zscnpollc	nullcnpollc
-cons_decl(zs);
 
 static int stdin, stdout;
 
@@ -960,17 +989,6 @@ zs_abort(struct zs_chanstate *cs)
 #endif
 }
 
-extern int ofccngetc(dev_t);
-extern void ofccnputc(dev_t, int);
-
-struct consdev consdev_zs = {
-	zscnprobe,
-	zscninit,
-	zscngetc,
-	zscnputc,
-	zscnpollc,
-};
-
 void
 zscnprobe(struct consdev *cp)
 {
@@ -1029,3 +1047,40 @@ zscninit(struct consdev *cp)
 		return;
 	zs_conschan = (void *)(reg[2] + zs_offset);
 }
+
+#if PMAC_G5
+/*
+ * Do a delayed (now that the device is properly mapped) init of the
+ * global zs console state, basically the equivalent of calling
+ *	zscnprobe(&consdev_zs); zscninit(&consdev_zs);
+ * but with the mapped address of the device passed in as zsd.
+ */
+static void
+zscn_delayed_init(struct zsdevice *zsd)
+{
+	int chosen, escc_ch;
+	char name[16];
+
+	if ((chosen = OF_finddevice("/chosen")) == -1)
+		return;
+
+	if (OF_getprop(chosen, "stdin", &stdin, sizeof(stdin)) == -1)
+		return;
+
+	if (OF_getprop(chosen, "stdout", &stdout, sizeof(stdout)) == -1)
+		return;
+
+	if ((escc_ch = OF_instance_to_package(stdin)) == -1)
+		return;
+
+	memset(name, 0, sizeof(name));
+	if (OF_getprop(escc_ch, "name", name, sizeof(name)) == -1)
+		return;
+
+	zs_conschannel = strcmp(name, "ch-b") == 0;
+	zs_conschan = (zs_conschannel == 0) ?
+	    &zsd->zs_chan_a :
+	    &zsd->zs_chan_b;
+	cn_tab = &consdev_zs;
+}
+#endif

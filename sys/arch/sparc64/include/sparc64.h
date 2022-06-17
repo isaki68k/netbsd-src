@@ -1,4 +1,4 @@
-/*	$NetBSD: sparc64.h,v 1.13 2014/09/06 20:56:39 palle Exp $	*/
+/*	$NetBSD: sparc64.h,v 1.15 2022/01/10 20:14:54 palle Exp $	*/
 
 /*
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -59,5 +59,8 @@ int  prom_stop_other(u_int);
 bool prom_has_stop_other(void);
 void prom_startcpu(u_int, void *, u_long);
 int prom_startcpu_by_cpuid(u_int, void *, u_long arg);
+uint64_t prom_set_sun4v_api_version(uint64_t, uint64_t, uint64_t, uint64_t *);
+uint64_t prom_get_sun4v_api_version(uint64_t, uint64_t *, uint64_t *);
+void prom_sun4v_soft_state_supported(void);
 
 #endif	/* _MACHINE_SPARC64_H_ */

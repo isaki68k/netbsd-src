@@ -1,4 +1,4 @@
-/*	$NetBSD: pccbb.c,v 1.214 2019/03/01 09:26:00 msaitoh Exp $	*/
+/*	$NetBSD: pccbb.c,v 1.217 2021/08/07 16:19:14 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 and 2000
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pccbb.c,v 1.214 2019/03/01 09:26:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pccbb.c,v 1.217 2021/08/07 16:19:14 thorpej Exp $");
 
 /*
 #define CBB_DEBUG
@@ -680,8 +680,8 @@ pccbb_pci_callback(device_t self)
 
 	pccbb_intrinit(sc);
 
-	if (NULL != (csc = config_found_ia(self, "pcmciaslot", &caa,
-					   cbbprint))) {
+	if (NULL != (csc = config_found(self, &caa, cbbprint,
+					CFARGS(.iattr = "pcmciaslot")))) {
 		DPRINTF(("%s: found cardslot\n", __func__));
 		sc->sc_csc = device_private(csc);
 	}
@@ -2938,10 +2938,8 @@ pccbb_winlist_insert(struct pccbb_win_chain_head *head, bus_addr_t start,
 {
 	struct pccbb_win_chain *chainp, *elem;
 
-	if ((elem = malloc(sizeof(struct pccbb_win_chain), M_DEVBUF,
-	    M_NOWAIT)) == NULL)
-		return 1;		/* fail */
-
+	elem = malloc(sizeof(struct pccbb_win_chain), M_DEVBUF,
+	    M_WAITOK);
 	elem->wc_start = start;
 	elem->wc_end = start + (size - 1);
 	elem->wc_handle = bsh;

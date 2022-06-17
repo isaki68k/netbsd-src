@@ -1,4 +1,4 @@
-/*	$NetBSD: atapi_wdc.c,v 1.133 2018/11/12 20:54:03 jdolecek Exp $	*/
+/*	$NetBSD: atapi_wdc.c,v 1.141 2021/10/05 08:01:05 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.133 2018/11/12 20:54:03 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.141 2021/10/05 08:01:05 rin Exp $");
 
 #ifndef ATADEBUG
 #define ATADEBUG
@@ -90,7 +90,7 @@ static int	wdc_atapi_intr(struct ata_channel *, struct ata_xfer *, int);
 static void	wdc_atapi_kill_xfer(struct ata_channel *,
 				    struct ata_xfer *, int);
 static void	wdc_atapi_phase_complete(struct ata_xfer *, int);
-static void	wdc_atapi_poll(struct ata_channel *, struct ata_xfer *);
+static int	wdc_atapi_poll(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_done(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_reset(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_scsipi_request(struct scsipi_channel *,
@@ -101,12 +101,12 @@ static void	wdc_atapi_polldsc(void *arg);
 #define MAX_SIZE MAXPHYS
 
 static const struct scsipi_bustype wdc_atapi_bustype = {
-	SCSIPI_BUSTYPE_ATAPI,
-	atapi_scsipi_cmd,
-	atapi_interpret_sense,
-	atapi_print_addr,
-	wdc_atapi_kill_pending,
-	NULL,
+	.bustype_type = SCSIPI_BUSTYPE_ATAPI,
+	.bustype_cmd = atapi_scsipi_cmd,
+	.bustype_interpret_sense = atapi_interpret_sense,
+	.bustype_printaddr = atapi_print_addr,
+	.bustype_kill_pending = wdc_atapi_kill_pending,
+	.bustype_async_event_xfer_mode = NULL,
 };
 
 void
@@ -138,11 +138,11 @@ wdc_atapibus_attach(struct atabus_softc *ata_sc)
 	chan->chan_flags = SCSIPI_CHAN_OPENINGS;
 	chan->chan_openings = 1;
 	chan->chan_max_periph = 1;
-	chan->chan_ntargets = 2;
+	chan->chan_ntargets = chp->ch_ndrives;
 	chan->chan_nluns = 1;
 
-	chp->atapibus = config_found_ia(ata_sc->sc_dev, "atapi", chan,
-		atapiprint);
+	chp->atapibus = config_found(ata_sc->sc_dev, chan, atapiprint,
+	    CFARGS(.iattr = "atapi"));
 }
 
 static void
@@ -222,12 +222,10 @@ wdc_atapi_get_params(struct scsipi_channel *chan, int drive,
 	xfer->c_ata_c.r_st_pmask = 0;
 	xfer->c_ata_c.flags = AT_WAIT | AT_POLL;
 	xfer->c_ata_c.timeout = WDC_RESET_WAIT;
-	if (wdc_exec_command(&chp->ch_drive[drive], xfer) != ATACMD_COMPLETE) {
-		printf("wdc_atapi_get_params: ATAPI_SOFT_RESET failed for"
-		    " drive %s:%d:%d: driver failed\n",
-		    device_xname(atac->atac_dev), chp->ch_channel, drive);
-		panic("wdc_atapi_get_params");
-	}
+
+	wdc_exec_command(&chp->ch_drive[drive], xfer);
+	ata_wait_cmd(chp, xfer);
+
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		ATADEBUG_PRINT(("wdc_atapi_get_params: ATAPI_SOFT_RESET "
 		    "failed for drive %s:%d:%d: error 0x%x\n",
@@ -294,13 +292,7 @@ wdc_atapi_probe_device(struct atapibus_softc *sc, int target)
 		    id->atap_config & ATAPI_CFG_CMD_MASK,
 		    id->atap_config & ATAPI_CFG_DRQ_MASK);
 #endif
-		periph = scsipi_alloc_periph(M_NOWAIT);
-		if (periph == NULL) {
-			aprint_error_dev(sc->sc_dev,
-			    "unable to allocate periph for drive %d\n",
-			    target);
-			return;
-		}
+		periph = scsipi_alloc_periph(M_WAITOK);
 		periph->periph_dev = NULL;
 		periph->periph_channel = chan;
 		periph->periph_switch = &atapi_probe_periphsw;
@@ -507,10 +499,9 @@ wdc_atapi_start(struct ata_channel *chp, struct ata_xfer *xfer)
 	/* Do control operations specially. */
 	if (__predict_false(drvp->state < READY)) {
 		/* If it's not a polled command, we need the kernel thread */
-		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0 &&
-		    (chp->ch_flags & ATACH_TH_RUN) == 0) {
+		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0
+		    && !ata_is_thread_run(chp))
 			return ATASTART_TH;
-		}
 		/*
 		 * disable interrupts, all commands here should be quick
 		 * enough to be able to poll, and we don't go here that often
@@ -705,7 +696,7 @@ error:
 	return ATASTART_ABORT;
 }
 
-static void
+static int
 wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 {
 	/*
@@ -720,7 +711,7 @@ wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 	wdc_atapi_intr(chp, xfer, 0);
 
 	if (!poll)
-		return;
+		return ATAPOLL_DONE;
 
 #if NATA_DMA
 	if (chp->ch_flags & ATACH_DMA_WAIT) {
@@ -733,6 +724,8 @@ wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 		DELAY(1);
 		wdc_atapi_intr(chp, xfer, 0);
 	}
+
+	return ATAPOLL_DONE;
 }
 
 static int

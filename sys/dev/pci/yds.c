@@ -1,4 +1,4 @@
-/*	$NetBSD: yds.c,v 1.64 2019/06/08 08:02:38 isaki Exp $	*/
+/*	$NetBSD: yds.c,v 1.68 2021/08/07 16:19:14 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 Kazuki Sakamoto and Minoura Makoto.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: yds.c,v 1.64 2019/06/08 08:02:38 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: yds.c,v 1.68 2021/08/07 16:19:14 thorpej Exp $");
 
 #include "mpu.h"
 
@@ -592,7 +592,7 @@ yds_configure_legacy(device_t self)
 
 			aa.type = AUDIODEV_TYPE_OPL;
 			aa.hwif = aa.hdl = NULL;
-			dev = config_found(self, &aa, audioprint);
+			dev = config_found(self, &aa, audioprint, CFARGS_NONE);
 			if (dev == 0)
 				bus_space_unmap(sc->sc_opl_iot,
 						sc->sc_opl_ioh, 4);
@@ -628,7 +628,7 @@ yds_configure_legacy(device_t self)
 
 			aa.type = AUDIODEV_TYPE_MPU;
 			aa.hwif = aa.hdl = NULL;
-			dev = config_found(self, &aa, audioprint);
+			dev = config_found(self, &aa, audioprint, CFARGS_NONE);
 			if (dev == 0)
 				bus_space_unmap(sc->sc_mpu_iot,
 						sc->sc_mpu_ioh, 2);
@@ -725,7 +725,6 @@ yds_resume(device_t dv, const pmf_qual_t *qual)
 
 	pci_conf_write(pc, tag, YDS_PCI_DSCTRL, sc->sc_dsctrl);
 	sc->sc_enabled = 1;
-	mutex_spin_exit(&sc->sc_intr_lock);
 	sc->sc_codec[0].codec_if->vtbl->restore_ports(sc->sc_codec[0].codec_if);
 	mutex_exit(&sc->sc_lock);
 
@@ -1280,7 +1279,7 @@ yds_round_blocksize(void *addr, int blk, int mode,
 	if (blk < 1024)
 		blk = 1024;
 
-	return blk & ~3;
+	return blk;
 }
 
 static uint32_t

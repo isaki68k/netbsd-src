@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.47 2019/10/30 10:12:37 msaitoh Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.57 2022/05/07 05:01:29 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,14 +34,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.57 2022/05/07 05:01:29 rin Exp $");
+
+#ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_mpc85xx.h"
 #include "opt_multiprocessor.h"
 #include "opt_net_mpsafe.h"
-
-#include <sys/cdefs.h>
-
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.47 2019/10/30 10:12:37 msaitoh Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -56,6 +57,8 @@ __KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.47 2019/10/30 10:12:37 msaitoh Exp $"
 #include <sys/atomic.h>
 #include <sys/callout.h>
 #include <sys/sysctl.h>
+
+#include <sys/rndsource.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -236,6 +239,8 @@ struct pq3etsec_softc {
 	int sc_ic_rx_count;
 	int sc_ic_tx_time;
 	int sc_ic_tx_count;
+
+	krndsource_t rnd_source;
 };
 
 #define	ETSEC_IC_RX_ENABLED(sc)						\
@@ -245,8 +250,6 @@ struct pq3etsec_softc {
 
 struct pq3mdio_softc {
 	device_t mdio_dev;
-
-	kmutex_t *mdio_lock;
 
 	bus_space_tag_t mdio_bst;
 	bus_space_handle_t mdio_bsh;
@@ -375,7 +378,6 @@ pq3mdio_attach(device_t parent, device_t self, void *aux)
 	struct cpunode_locators * const cnl = &cna->cna_locs;
 
 	mdio->mdio_dev = self;
-	mdio->mdio_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SOFTNET);
 
 	if (device_is_a(parent, "cpunode")) {
 		struct cpunode_softc * const psc = device_private(parent);
@@ -411,8 +413,6 @@ pq3mdio_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 	struct pq3mdio_softc * const mdio = device_private(self);
 	uint32_t miimcom = etsec_mdio_read(mdio, MIIMCOM);
 
-	mutex_enter(mdio->mdio_lock);
-
 	etsec_mdio_write(mdio, MIIMADD,
 	    __SHIFTIN(phy, MIIMADD_PHY) | __SHIFTIN(reg, MIIMADD_REG));
 
@@ -431,7 +431,6 @@ pq3mdio_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 	aprint_normal_dev(mdio->mdio_dev, "%s: phy %d reg %d: %#x\n",
 	    __func__, phy, reg, data);
 #endif
-	mutex_exit(mdio->mdio_lock);
 	return 0;
 }
 
@@ -446,8 +445,6 @@ pq3mdio_mii_writereg(device_t self, int phy, int reg, uint16_t data)
 	    __func__, phy, reg, data);
 #endif
 
-	mutex_enter(mdio->mdio_lock);
-
 	etsec_mdio_write(mdio, MIIMADD,
 	    __SHIFTIN(phy, MIIMADD_PHY) | __SHIFTIN(reg, MIIMADD_REG));
 	etsec_mdio_write(mdio, MIIMCOM, 0);	/* clear any past bits */
@@ -460,8 +457,6 @@ pq3mdio_mii_writereg(device_t self, int phy, int reg, uint16_t data)
 
 	if (miimcom == MIIMCOM_SCAN)
 		etsec_mdio_write(mdio, MIIMCOM, miimcom);
-
-	mutex_exit(mdio->mdio_lock);
 
 	return 0;
 }
@@ -712,9 +707,11 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (mdio == CPUNODECF_MDIO_DEFAULT) {
 		aprint_normal("\n");
-		cfdata_t mdio_cf = config_search_ia(pq3mdio_find, self, NULL, cna);
+		cfdata_t mdio_cf = config_search(self, cna,
+		    CFARGS(.submatch = pq3mdio_find));
 		if (mdio_cf != NULL) {
-			sc->sc_mdio_dev = config_attach(self, mdio_cf, cna, NULL);
+			sc->sc_mdio_dev =
+			    config_attach(self, mdio_cf, cna, NULL, CFARGS_NONE);
 		}
 	} else {
 		sc->sc_mdio_dev = device_find_by_driver_unit("mdio", mdio);
@@ -796,15 +793,14 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach the interface.
 	 */
-	error = if_initialize(ifp);
-	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		goto fail_10;
-	}
+	if_initialize(ifp);
 	pq3etsec_sysctl_setup(NULL, sc);
+	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
-	if_register(ifp);
+
+	rnd_attach_source(&sc->rnd_source, xname, RND_TYPE_NET,
+	    RND_FLAG_DEFAULT);
 
 	pq3etsec_ifstop(ifp, true);
 
@@ -828,9 +824,6 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	    NULL, xname, "mii ticks");
 	return;
 
-fail_10:
-	ifmedia_removeall(&mii->mii_media);
-	mii_detach(mii, sc->sc_phy_addr, MII_OFFSET_ANY);
 fail_9:
 	softint_disestablish(sc->sc_soft_ih);
 fail_8:
@@ -1612,9 +1605,7 @@ pq3etsec_rx_input(
 	/*
 	 * Let's give it to the network subsystm to deal with.
 	 */
-	int s = splnet();
-	if_input(ifp, m);
-	splx(s);
+	if_percpuq_enqueue(ifp->if_percpuq, m);
 }
 
 static void
@@ -1633,14 +1624,14 @@ pq3etsec_rxq_consume(
 			rxq->rxq_consumer = consumer;
 			rxq->rxq_inuse -= rxconsumed;
 			KASSERT(rxq->rxq_inuse == 0);
-			return;
+			break;
 		}
 		pq3etsec_rxq_desc_postsync(sc, rxq, consumer, 1);
 		const uint16_t rxbd_flags = consumer->rxbd_flags;
 		if (rxbd_flags & RXBD_E) {
 			rxq->rxq_consumer = consumer;
 			rxq->rxq_inuse -= rxconsumed;
-			return;
+			break;
 		}
 		KASSERT(rxq->rxq_mconsumer != NULL);
 #ifdef ETSEC_DEBUG
@@ -1683,7 +1674,7 @@ pq3etsec_rxq_consume(
 			 * We encountered an error, take the mbufs and add
 			 * then to the rx bufcache so we can reuse them.
 			 */
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			for (m = rxq->rxq_mhead;
 			     m != rxq->rxq_mconsumer;
 			     m = m->m_next) {
@@ -1714,6 +1705,9 @@ pq3etsec_rxq_consume(
 		KASSERT(rxq->rxq_mbufs[consumer - rxq->rxq_first] == rxq->rxq_mconsumer);
 #endif
 	}
+
+	if (rxconsumed != 0)
+		rnd_add_uint32(&sc->rnd_source, rxconsumed);
 }
 
 static void
@@ -2168,6 +2162,7 @@ pq3etsec_txq_consume(
 	struct ifnet * const ifp = &sc->sc_if;
 	volatile struct txbd *consumer = txq->txq_consumer;
 	size_t txfree = 0;
+	bool ret;
 
 #if 0
 	printf("%s: entry: free=%zu\n", __func__, txq->txq_free);
@@ -2179,13 +2174,11 @@ pq3etsec_txq_consume(
 			txq->txq_consumer = consumer;
 			txq->txq_free += txfree;
 			txq->txq_lastintr -= uimin(txq->txq_lastintr, txfree);
-#if 0
-			printf("%s: empty: freed %zu descriptors going form %zu to %zu\n",
-			    __func__, txfree, txq->txq_free - txfree, txq->txq_free);
-#endif
 			KASSERT(txq->txq_lastintr == 0);
-			KASSERT(txq->txq_free == txq->txq_last - txq->txq_first - 1);
-			return true;
+			KASSERT(txq->txq_free ==
+			    txq->txq_last - txq->txq_first - 1);
+			ret = true;
+			break;
 		}
 		pq3etsec_txq_desc_postsync(sc, txq, consumer, 1);
 		const uint16_t txbd_flags = consumer->txbd_flags;
@@ -2193,11 +2186,8 @@ pq3etsec_txq_consume(
 			txq->txq_consumer = consumer;
 			txq->txq_free += txfree;
 			txq->txq_lastintr -= uimin(txq->txq_lastintr, txfree);
-#if 0
-			printf("%s: freed %zu descriptors\n",
-			    __func__, txfree);
-#endif
-			return pq3etsec_txq_fillable_p(sc, txq);
+			ret = pq3etsec_txq_fillable_p(sc, txq);
+			break;
 		}
 
 		/*
@@ -2226,12 +2216,14 @@ pq3etsec_txq_consume(
 			if (m->m_flags & M_HASFCB)
 				m_adj(m, sizeof(struct txfcb));
 			bpf_mtap(ifp, m, BPF_D_OUT);
-			ifp->if_opackets++;
-			ifp->if_obytes += m->m_pkthdr.len;
+			net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+			if_statinc_ref(nsr, if_opackets);
+			if_statadd_ref(nsr, if_obytes, m->m_pkthdr.len);
 			if (m->m_flags & M_MCAST)
-				ifp->if_omcasts++;
+				if_statinc_ref(nsr, if_omcasts);
 			if (txbd_flags & TXBD_ERRORS)
-				ifp->if_oerrors++;
+				if_statinc_ref(nsr, if_oerrors);
+			IF_STAT_PUTREF(ifp);
 			m_freem(m);
 #ifdef ETSEC_DEBUG
 			txq->txq_lmbufs[consumer - txq->txq_first] = NULL;
@@ -2259,6 +2251,10 @@ pq3etsec_txq_consume(
 			KASSERT(consumer < txq->txq_last);
 		}
 	}
+
+	if (txfree != 0)
+		rnd_add_uint32(&sc->rnd_source, txfree);
+	return ret;
 }
 
 static void

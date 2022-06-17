@@ -1,7 +1,7 @@
-/*	$NetBSD: uipc_usrreq.c,v 1.194 2019/07/29 09:42:17 maxv Exp $	*/
+/*	$NetBSD: uipc_usrreq.c,v 1.203 2022/05/28 22:08:46 andvar Exp $	*/
 
 /*-
- * Copyright (c) 1998, 2000, 2004, 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2000, 2004, 2008, 2009, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.194 2019/07/29 09:42:17 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.203 2022/05/28 22:08:46 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -196,6 +196,8 @@ static kcondvar_t unp_thread_cv;
 static lwp_t *unp_thread_lwp;
 static SLIST_HEAD(,file) unp_thread_discard;
 static int unp_defer;
+static struct sysctllog *usrreq_sysctllog;
+static void unp_sysctl_create(void);
 
 /* Compat interface */
 
@@ -218,6 +220,8 @@ void
 uipc_init(void)
 {
 	int error;
+
+	unp_sysctl_create();
 
 	uipc_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&unp_thread_cv, "unpgc");
@@ -287,7 +291,12 @@ unp_setpeerlocks(struct socket *so, struct socket *so2)
 	lock = unp->unp_streamlock;
 	unp->unp_streamlock = NULL;
 	mutex_obj_hold(lock);
-	membar_exit();
+	/*
+	 * Ensure lock is initialized before publishing it with
+	 * solockreset.  Pairs with atomic_load_consume in solock and
+	 * various loops to reacquire lock after wakeup.
+	 */
+	membar_release();
 	/*
 	 * possible race if lock is not held - see comment in
 	 * uipc_usrreq(PRU_ACCEPT).
@@ -604,7 +613,7 @@ uipc_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 	KASSERT(solocked(so));
 
-	if (sopt->sopt_level != 0) {
+	if (sopt->sopt_level != SOL_LOCAL) {
 		error = ENOPROTOOPT;
 	} else switch (op) {
 
@@ -842,7 +851,7 @@ unp_accept(struct socket *so, struct sockaddr *nam)
 	 * this should be harmless, except that this makes
 	 * solocked2() and solocked() unreliable.
 	 * Another problem is that unp_setaddr() expects the
-	 * the socket locked. Grabing sotounpcb(so2)->unp_streamlock
+	 * the socket locked. Grabbing sotounpcb(so2)->unp_streamlock
 	 * fixes both issues.
 	 */
 	mutex_enter(sotounpcb(so2)->unp_streamlock);
@@ -898,6 +907,8 @@ unp_stat(struct socket *so, struct stat *ub)
 		unp->unp_ino = unp_ino++;
 	ub->st_atimespec = ub->st_mtimespec = ub->st_ctimespec = unp->unp_ctime;
 	ub->st_ino = unp->unp_ino;
+	ub->st_uid = so->so_uidinfo->ui_uid;
+	ub->st_gid = so->so_egid;
 	return (0);
 }
 
@@ -1523,6 +1534,7 @@ static int
 unp_internalize(struct mbuf **controlp)
 {
 	filedesc_t *fdescp = curlwp->l_fd;
+	fdtab_t *dt;
 	struct mbuf *control = *controlp;
 	struct cmsghdr *newcm, *cm = mtod(control, struct cmsghdr *);
 	file_t **rp, **files;
@@ -1585,7 +1597,8 @@ unp_internalize(struct mbuf **controlp)
 	fdp = (int *)CMSG_DATA(cm) + nfds;
 	rp = files + nfds;
 	for (i = 0; i < nfds; i++) {
-		fp = fdescp->fd_dt->dt_ff[*--fdp]->ff_file;
+		dt = atomic_load_consume(&fdescp->fd_dt);
+		fp = atomic_load_consume(&dt->dt_ff[*--fdp]->ff_file);
 		KASSERT(fp != NULL);
 		mutex_enter(&fp->f_lock);
 		*--rp = fp;
@@ -1984,40 +1997,42 @@ unp_discard_later(file_t *fp)
 	mutex_exit(&filelist_lock);
 }
 
-void
-unp_sysctl_create(struct sysctllog **clog)
+static void
+unp_sysctl_create(void)
 {
-	sysctl_createv(clog, 0, NULL, NULL,
+
+	KASSERT(usrreq_sysctllog == NULL);
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "sendspace",
 		       SYSCTL_DESCR("Default stream send space"),
 		       NULL, 0, &unpst_sendspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_STREAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "recvspace",
 		       SYSCTL_DESCR("Default stream recv space"),
 		       NULL, 0, &unpst_recvspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_STREAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "sendspace",
 		       SYSCTL_DESCR("Default datagram send space"),
 		       NULL, 0, &unpdg_sendspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "recvspace",
 		       SYSCTL_DESCR("Default datagram recv space"),
 		       NULL, 0, &unpdg_recvspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "inflight",
 		       SYSCTL_DESCR("File descriptors in flight"),
 		       NULL, 0, &unp_rights, 0,
 		       CTL_NET, PF_LOCAL, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "deferred",
 		       SYSCTL_DESCR("File descriptors deferred for close"),

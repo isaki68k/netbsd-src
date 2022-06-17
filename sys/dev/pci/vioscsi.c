@@ -1,4 +1,4 @@
-/*	$NetBSD: vioscsi.c,v 1.21 2019/04/13 06:17:33 maxv Exp $	*/
+/*	$NetBSD: vioscsi.c,v 1.29 2022/01/27 18:38:07 jakllsch Exp $	*/
 /*	$OpenBSD: vioscsi.c,v 1.3 2015/03/14 03:38:49 jsg Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.21 2019/04/13 06:17:33 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.29 2022/01/27 18:38:07 jakllsch Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -67,7 +67,7 @@ struct vioscsi_softc {
 	kmutex_t		 sc_mutex;
 };
 
-/*      
+/*
  * Each block request uses at least two segments - one for the header
  * and one for the status.
 */
@@ -104,7 +104,7 @@ vioscsi_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct virtio_attach_args *va = aux;
 
-	if (va->sc_childdevid == PCI_PRODUCT_VIRTIO_SCSI)
+	if (va->sc_childdevid == VIRTIO_DEVICE_ID_SCSI)
 		return 1;
 
 	return 0;
@@ -129,7 +129,7 @@ vioscsi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 
 	virtio_child_attach_start(vsc, self, ipl, sc->sc_vqs,
-	    NULL, virtio_vq_intr, VIRTIO_F_PCI_INTR_MSIX,
+	    NULL, virtio_vq_intr, VIRTIO_F_INTR_MSIX,
 	    0, VIRTIO_COMMON_FLAG_BITS);
 
 	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, ipl);
@@ -192,12 +192,12 @@ vioscsi_attach(device_t parent, device_t self, void *aux)
 	chan->chan_adapter = adapt;
 	chan->chan_bustype = &scsi_bustype;
 	chan->chan_channel = 0;
-	chan->chan_ntargets = MIN(max_target, 16);	/* cap reasonably */
-	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
-	chan->chan_id = 0;
+	chan->chan_ntargets = MIN(1 + max_target, 256);	/* cap reasonably */
+	chan->chan_nluns = MIN(1 + max_lun, 16384);	/* cap reasonably */
+	chan->chan_id = max_target + 1;
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
 
-	config_found(self, &sc->sc_channel, scsiprint);
+	config_found(self, &sc->sc_channel, scsiprint, CFARGS_NONE);
 	return;
 
 err:
@@ -264,7 +264,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	struct vioscsi_softc *sc =
 	    device_private(chan->chan_adapter->adapt_dev);
 	struct virtio_softc *vsc = device_private(device_parent(sc->sc_dev));
-	struct scsipi_xfer *xs; 
+	struct scsipi_xfer *xs;
 	struct scsipi_periph *periph;
 	struct vioscsi_req *vr;
 	struct virtio_scsi_req_hdr *req;
@@ -290,7 +290,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		DPRINTF(("%s: unhandled %d\n", __func__, request));
 		return;
 	}
-	
+
 	xs = arg;
 	periph = xs->xs_periph;
 
@@ -318,7 +318,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	}
 
 	req->lun[0] = 1;
-	req->lun[1] = periph->periph_target - 1;
+	req->lun[1] = periph->periph_target;
 	req->lun[2] = 0x40 | ((periph->periph_lun >> 8) & 0x3F);
 	req->lun[3] = periph->periph_lun & 0xFF;
 	memset(req->lun + 4, 0, 4);
@@ -346,7 +346,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		req->task_attr = VIRTIO_SCSI_S_SIMPLE;
 		break;
 	}
-	req->id = slot;
+	req->id = virtio_rw64(vsc, slot);
 
 	if ((size_t)xs->cmdlen > sizeof(req->cdb)) {
 		DPRINTF(("%s: bad cmdlen %zu > %zu\n", __func__,
@@ -463,15 +463,17 @@ vioscsi_req_done(struct vioscsi_softc *sc, struct virtio_softc *vsc,
 	    offsetof(struct vioscsi_req, vr_res),
 	    sizeof(struct virtio_scsi_res_hdr),
 	    BUS_DMASYNC_POSTREAD);
-	bus_dmamap_sync(virtio_dmat(vsc), vr->vr_data, 0, xs->datalen,
-	    XS2DMAPOST(xs));
+	if (xs->datalen)
+		bus_dmamap_sync(virtio_dmat(vsc), vr->vr_data, 0, xs->datalen,
+		    XS2DMAPOST(xs));
 
 	xs->status = vr->vr_res.status;
-	xs->resid = vr->vr_res.residual;
+	xs->resid  = virtio_rw32(vsc, vr->vr_res.residual);
 
 	switch (vr->vr_res.response) {
 	case VIRTIO_SCSI_S_OK:
-		sense_len = MIN(sizeof(xs->sense), vr->vr_res.sense_len);
+		sense_len = MIN(sizeof(xs->sense),
+				virtio_rw32(vsc, vr->vr_res.sense_len));
 		memcpy(&xs->sense, vr->vr_res.sense, sense_len);
 		xs->error = (sense_len == 0) ? XS_NOERROR : XS_SENSE;
 		break;
@@ -602,7 +604,7 @@ vioscsi_alloc_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc,
 	sc->sc_reqs = vaddr;
 	sc->sc_nreqs = qsize;
 
-	/* Prepare maps for the requests */ 
+	/* Prepare maps for the requests */
 	for (slot=0; slot < qsize; slot++) {
 		vr = &sc->sc_reqs[slot];
 
@@ -672,7 +674,7 @@ vioscsi_free_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc)
 		return;
 	}
 
-	/* Free request maps */ 
+	/* Free request maps */
 	for (slot=0; slot < sc->sc_nreqs; slot++) {
 		vr = &sc->sc_reqs[slot];
 

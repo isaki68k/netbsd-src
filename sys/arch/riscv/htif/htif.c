@@ -1,3 +1,5 @@
+/*	$NetBSD: htif.c,v 1.4 2021/08/07 16:19:03 thorpej Exp $	*/
+
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__RCSID("$NetBSD: htif.c,v 1.1 2015/03/28 16:13:56 matt Exp $");
+__RCSID("$NetBSD: htif.c,v 1.4 2021/08/07 16:19:03 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -66,7 +68,7 @@ htif_mainbus_attach(device_t parent, device_t self, void *aux)
 	struct htif_attach_args haa;
 
 	haa.haa_name = "htifcons";
-	config_found(self, &haa, htif_mainbus_print);
+	config_found(self, &haa, htif_mainbus_print, CFARGS_NONE);
 	haa.haa_name = "htifdisk";
-	config_found(self, &haa, htif_mainbus_print);
+	config_found(self, &haa, htif_mainbus_print, CFARGS_NONE);
 }

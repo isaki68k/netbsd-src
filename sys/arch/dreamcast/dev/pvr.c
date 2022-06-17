@@ -1,4 +1,4 @@
-/*	$NetBSD: pvr.c,v 1.36 2016/03/11 13:16:55 tsutsui Exp $	*/
+/*	$NetBSD: pvr.c,v 1.39 2021/08/07 16:18:47 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 Marcus Comstedt.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pvr.c,v 1.36 2016/03/11 13:16:55 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pvr.c,v 1.39 2021/08/07 16:18:47 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -301,7 +301,7 @@ pvr_attach(device_t parent, device_t self, void *aux)
 	waa.accessops = &pvr_accessops;
 	waa.accesscookie = sc;
 
-	(void) config_found(self, &waa, wsemuldisplaydevprint);
+	(void) config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 int
@@ -377,7 +377,7 @@ pvrmmap(void *v, void *vs, off_t offset, int prot)
 
 	/*
 	 * XXX This should be easy to support -- just need to define
-	 * XXX offsets for the contol regs, etc.
+	 * XXX offsets for the control regs, etc.
 	 */
 
 	struct pvr_softc *sc = v;

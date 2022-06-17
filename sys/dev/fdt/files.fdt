@@ -1,15 +1,19 @@
-# $NetBSD: files.fdt,v 1.47 2019/10/30 21:37:56 jmcneill Exp $
+# $NetBSD: files.fdt,v 1.64 2022/03/25 21:23:51 jmcneill Exp $
 
 include	"external/bsd/libfdt/conf/files.libfdt"
 
 defflag	opt_fdt.h				FDTBASE : libfdt, ofw_subr
 defflag	opt_fdt.h				FDT: FDTBASE
+defparam opt_fdt.h				FDT_MEMORY_RANGES
+defparam opt_fdt.h				FDT_DEFAULT_STDOUT_PATH
 
 define	fdt { [pass = 10] } : clk, pwm
 
-device	simplebus { } : fdt
+device	simplebus: fdt
 attach	simplebus at fdt
 file	dev/fdt/fdtbus.c			fdt
+
+file	dev/fdt/fdt_userconf.c			fdt & userconf
 
 device	fregulator
 attach	fregulator at fdt
@@ -18,6 +22,10 @@ file	dev/fdt/fixedregulator.c		fregulator
 device	gregulator
 attach	gregulator at fdt
 file	dev/fdt/gpioregulator.c			gregulator
+
+device	pregulator
+attach	pregulator at fdt
+file	dev/fdt/pwmregulator.c			pregulator
 
 device	fclock: clk
 attach	fclock at fdt
@@ -45,21 +53,34 @@ device	panel: fdt_port
 attach	panel at fdt with fdt_panel
 file	dev/fdt/panel_fdt.c			fdt_panel
 
+attach	panel at fdt with panel_fdt: drmkms
+file	dev/fdt/fdt_panel.c			panel_fdt
+
 device	dispcon: fdt_port, drmkms, ddc_read_edid
 attach	dispcon at fdt with dispcon_hdmi
 file	dev/fdt/hdmi_connector.c		dispcon_hdmi
 
+device	iicmux: i2cbus, i2cmux
+attach	iicmux at fdt with iicmux_fdt
+file	dev/fdt/i2cmux_fdt.c			iicmux_fdt
+
+file	dev/fdt/fdt_memory.c			fdtbase
 file	dev/fdt/fdt_openfirm.c			fdtbase
 file	dev/fdt/fdt_subr.c			fdtbase
+
 file	dev/fdt/fdt_clock.c			fdt
 file	dev/fdt/fdt_dai.c			fdt
 file	dev/fdt/fdt_dma.c			fdt
+file	dev/fdt/fdt_ddb.c			fdt & ddb
 file	dev/fdt/fdt_gpio.c			fdt
 file	dev/fdt/fdt_i2c.c			fdt
+file	dev/fdt/fdt_iommu.c			fdt
 file	dev/fdt/fdt_intr.c			fdt
+file	dev/fdt/fdt_mbox.c			fdt
 file	dev/fdt/fdt_mmc_pwrseq.c		fdt
 file	dev/fdt/fdt_phy.c			fdt
 file	dev/fdt/fdt_power.c			fdt
+file	dev/fdt/fdt_powerdomain.c		fdt
 file	dev/fdt/fdt_pwm.c			fdt
 file	dev/fdt/fdt_regulator.c			fdt
 file	dev/fdt/fdt_reset.c			fdt
@@ -68,7 +89,7 @@ file	dev/fdt/fdt_spi.c			fdt
 file	dev/fdt/fdt_syscon.c			fdt
 file	dev/fdt/fdt_pinctrl.c			fdt
 
-device	cpus { } : fdt
+device	cpus: fdt
 attach	cpus at fdt
 file	dev/fdt/cpus.c				cpus
 
@@ -78,7 +99,7 @@ file	dev/fdt/mmc_pwrseq_simple.c		mmcpwrseq_simple
 attach	mmcpwrseq at fdt with mmcpwrseq_emmc
 file	dev/fdt/mmc_pwrseq_emmc.c		mmcpwrseq_emmc
 
-device	syscon { } : fdt
+device	syscon: fdt
 attach	syscon at fdt
 file	dev/fdt/syscon.c			syscon
 
@@ -98,6 +119,10 @@ device	ausoc: audiobus
 attach	ausoc at fdt
 file	dev/fdt/ausoc.c				ausoc
 
+device	spdiftx
+attach	spdiftx at fdt
+file	dev/fdt/spdif_tx.c			spdiftx
+
 define	fdt_display_timing
 file	dev/fdt/display_timing.c		fdt_display_timing
 
@@ -105,9 +130,21 @@ file	dev/fdt/display_timing.c		fdt_display_timing
 attach	genfb at fdt with simplefb
 file	dev/fdt/simplefb.c			simplefb
 
+# NS 8250 compatible UART
+attach	com at fdt with ns8250_uart
+file	dev/fdt/ns8250_uart.c			ns8250_uart
+
 # Designware APB UART
 attach	com at fdt with dw_apb_uart
 file	dev/fdt/dw_apb_uart.c			dw_apb_uart
+
+# EHCI
+attach	ehci at fdt with ehci_fdt
+file	dev/fdt/ehci_fdt.c			ehci_fdt
+
+# OHCI
+attach	ohci at fdt with ohci_fdt
+file	dev/fdt/ohci_fdt.c			ohci_fdt
 
 # Designware USB2 OTG
 attach	dwctwo at fdt with dwc2_fdt
@@ -158,3 +195,16 @@ file	dev/fdt/arasan_sdhc_fdt.c		arasan_sdhc_fdt
 device	usbnopphy
 attach	usbnopphy at fdt
 file	dev/fdt/usbnopphy.c			usbnopphy
+
+# Simple Amplifier Audio Driver
+device	simpleamp
+attach	simpleamp at fdt
+file	dev/fdt/simple_amplifier.c		simpleamp
+
+# Broadcom GENET v5
+attach	genet at fdt with genet_fdt
+file	dev/fdt/genet_fdt.c			genet_fdt
+
+# VMware Tools driver
+attach	vmt at fdt with vmt_fdt
+file	dev/fdt/vmt_fdt.c			vmt_fdt

@@ -1,4 +1,4 @@
-/*	$NetBSD: oj6sh.c,v 1.5 2019/08/21 08:03:22 martin Exp $	*/
+/*	$NetBSD: oj6sh.c,v 1.11 2022/01/19 05:21:44 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2014  Genetec Corporation.  All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oj6sh.c,v 1.5 2019/08/21 08:03:22 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oj6sh.c,v 1.11 2022/01/19 05:21:44 thorpej Exp $");
 
 #include "opt_oj6sh.h"
 
@@ -127,8 +127,8 @@ static const struct wsmouse_accessops oj6sh_accessops = {
 };
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "oj6sh",	0 },
-	{ NULL,		0 }
+	{ .compat = "oj6sh" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -137,8 +137,6 @@ oj6sh_match(device_t parent, cfdata_t cf, void *aux)
 	struct spi_attach_args *sa = aux;
 
 	if (spi_compatible_match(sa, cf, compat_data) == 0)
-		return 0;
-	if (spi_configure(sa->sa_handle, SPI_MODE_0, 2500000))
 		return 0;
 
 	return 2;
@@ -184,9 +182,15 @@ oj6sh_attach(device_t parent, device_t self, void *aux)
 	struct oj6sh_softc *sc = device_private(self);
 	struct spi_attach_args *sa = aux;
 	struct wsmousedev_attach_args a;
+	int error;
 
 	aprint_naive("\n");
 	aprint_normal(": OJ6SH-T25 Optical Joystick\n");
+
+	error = spi_configure(self, sa->sa_handle, SPI_MODE_0, 2500000);
+	if (error) {
+		return;
+	}
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 
@@ -202,7 +206,7 @@ oj6sh_attach(device_t parent, device_t self, void *aux)
 	a.accessops = &oj6sh_accessops;
 	a.accesscookie = sc;
 
-	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint);
+	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint, CFARGS_NONE);
 
 	config_interrupts(self, oj6sh_doattach);
 }

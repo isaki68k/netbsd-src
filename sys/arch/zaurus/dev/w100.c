@@ -1,4 +1,4 @@
-/* $NetBSD: w100.c,v 1.1 2012/01/29 10:12:42 tsutsui Exp $ */
+/* $NetBSD: w100.c,v 1.4 2021/11/20 00:17:10 rin Exp $ */
 /*
  * Copyright (c) 2002, 2003  Genetec Corporation.  All rights reserved.
  * Written by Hiroyuki Bessho for Genetec Corporation.
@@ -28,13 +28,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: w100.c,v 1.1 2012/01/29 10:12:42 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: w100.c,v 1.4 2021/11/20 00:17:10 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/uio.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/kernel.h>			/* for cold */
 
 #include <uvm/uvm_extern.h>
@@ -235,12 +235,7 @@ w100_new_screen(struct w100_softc *sc, int depth, struct w100_screen **scrpp)
 	struct w100_screen *scr = NULL;
 	int error = 0;
 
-	scr = malloc(sizeof(*scr), M_DEVBUF, M_NOWAIT);
-	if (scr == NULL)
-		return ENOMEM;
-
-	memset(scr, 0, sizeof(*scr));
-
+	scr = kmem_zalloc(sizeof(*scr), KM_SLEEP);
 	scr->buf_va = (u_char *)bus_space_vaddr(sc->iot, sc->ioh_vram);
 	scr->depth = depth;
 
@@ -262,7 +257,7 @@ w100_setup_rasops(struct w100_softc *sc, struct rasops_info *rinfo,
     struct w100_wsscreen_descr *descr, const struct w100_panel_geometry *geom)
 {
 
-	rinfo->ri_flg = descr->flags;
+	rinfo->ri_flg = descr->flags | RI_CLEAR | RI_ENABLE_ALPHA;
 	rinfo->ri_depth = descr->depth;
 	rinfo->ri_width = sc->display_width;
 	rinfo->ri_height = sc->display_height;

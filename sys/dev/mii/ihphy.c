@@ -1,4 +1,4 @@
-/*	$NetBSD: ihphy.c,v 1.14 2019/03/25 07:34:13 msaitoh Exp $	*/
+/*	$NetBSD: ihphy.c,v 1.20 2021/11/05 01:53:30 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ihphy.c,v 1.14 2019/03/25 07:34:13 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ihphy.c,v 1.20 2021/11/05 01:53:30 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -81,9 +81,8 @@ __KERNEL_RCSID(0, "$NetBSD: ihphy.c,v 1.14 2019/03/25 07:34:13 msaitoh Exp $");
 static int	ihphymatch(device_t, cfdata_t, void *);
 static void	ihphyattach(device_t, device_t, void *);
 
-CFATTACH_DECL3_NEW(ihphy, sizeof(struct mii_softc),
-    ihphymatch, ihphyattach, mii_phy_detach, mii_phy_activate, NULL, NULL,
-    DVF_DETACH_SHUTDOWN);
+CFATTACH_DECL_NEW(ihphy, sizeof(struct mii_softc),
+    ihphymatch, ihphyattach, mii_phy_detach, mii_phy_activate);
 
 static int	ihphy_service(struct mii_softc *, struct mii_data *, int);
 static void	ihphy_status(struct mii_softc *);
@@ -135,7 +134,8 @@ ihphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &ihphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -143,19 +143,18 @@ ihphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
 
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
+
+	mii_lock(mii);
 	/* Link setup (as done by Intel's Linux driver for the 82577). */
 	PHY_READ(sc, IHPHY_MII_CFG, &reg);
 	reg |= IHPHY_CFG_TX_CRS;
 	reg |= IHPHY_CFG_DOWN_SHIFT;
 	PHY_WRITE(sc, IHPHY_MII_CFG, reg);
+	mii_unlock(mii);
 }
 
 static int
@@ -163,6 +162,8 @@ ihphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -210,7 +211,6 @@ ihphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	case MII_DOWN:
 		mii_phy_down(sc);
-		PHY_WRITE(sc, MII_BMCR, BMCR_PDOWN);
 		return 0;
 	}
 
@@ -228,6 +228,8 @@ ihphy_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t esr, bmcr, gtsr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -239,7 +241,6 @@ ihphy_status(struct mii_softc *sc)
 	PHY_READ(sc, MII_BMCR, &bmcr);
 	if (bmcr & (BMCR_ISO | BMCR_PDOWN)) {
 		mii->mii_media_active |= IFM_NONE;
-		mii->mii_media_status = 0;
 		return;
 	}
 
@@ -289,15 +290,9 @@ ihphy_reset(struct mii_softc *sc)
 	int i;
 	uint16_t reg;
 
-	PHY_WRITE(sc, MII_BMCR, BMCR_RESET | BMCR_ISO);
+	KASSERT(mii_locked(sc->mii_pdata));
 
-	/*
-	 * Regarding reset, the data sheet specifies (page 55):
-	 *
-	 * "After PHY reset, a delay of 10 ms is required before
-	 *  any register access using MDIO."
-	 */
-	delay(10000);
+	PHY_WRITE(sc, MII_BMCR, BMCR_RESET | BMCR_ISO);
 
 	/* Wait another 100ms for it to complete. */
 	for (i = 0; i < 100; i++) {

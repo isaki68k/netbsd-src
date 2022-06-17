@@ -1,4 +1,4 @@
-/* $NetBSD: argpio.c,v 1.7 2016/09/15 21:45:37 jdolecek Exp $ */
+/* $NetBSD: argpio.c,v 1.10 2021/08/07 16:18:58 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Garrett D'Amore
@@ -32,7 +32,7 @@
  */ 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: argpio.c,v 1.7 2016/09/15 21:45:37 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: argpio.c,v 1.10 2021/08/07 16:18:58 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -55,7 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: argpio.c,v 1.7 2016/09/15 21:45:37 jdolecek Exp $");
  * General Plan:
  *
  * Register GPIOs for all pins that are _not_ associated with the reset
- * pin.  (Possibly also not the sytem LED.)
+ * pin.  (Possibly also not the system LED.)
  */
 
 struct argpio_softc {
@@ -205,7 +205,7 @@ argpio_attach(device_t parent, device_t self, void *aux)
 	gba.gba_gc = &sc->sc_gc;
 	gba.gba_pins = sc->sc_pins;
 	gba.gba_npins = sc->sc_npins;
-	config_found_ia(sc->sc_dev, "gpiobus", &gba, gpiobus_print);
+	config_found(sc->sc_dev, &gba, gpiobus_print, CFARGS_NONE);
 }
 
 void

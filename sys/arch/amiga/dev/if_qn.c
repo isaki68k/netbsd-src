@@ -1,4 +1,4 @@
-/*	$NetBSD: if_qn.c,v 1.47 2019/02/05 06:17:00 msaitoh Exp $ */
+/*	$NetBSD: if_qn.c,v 1.50 2021/12/05 08:16:10 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1995 Mika Kortelainen
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_qn.c,v 1.47 2019/02/05 06:17:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_qn.c,v 1.50 2021/12/05 08:16:10 msaitoh Exp $");
 
 #include "qn.h"
 #if NQN > 0
@@ -195,6 +195,7 @@ qnattach(device_t parent, device_t self, void *aux)
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	u_int8_t myaddr[ETHER_ADDR_LEN];
 
+	sc->sc_dev = self;
 	zap = (struct zbus_args *)aux;
 
 	sc->sc_base = zap->va;
@@ -304,7 +305,7 @@ qnwatchdog(struct ifnet *ifp)
 	struct qn_softc *sc = ifp->if_softc;
 
 	log(LOG_INFO, "qn: device timeout (watchdog)\n");
-	++sc->sc_ethercom.ec_if.if_oerrors;
+	if_statinc(ifp, if_oerrors);
 
 	qnreset(sc);
 }
@@ -415,13 +416,13 @@ qnstart(struct ifnet *ifp)
 	/* Wait for the packet to really leave. */
 	while (!(*sc->nic_t_status & T_TMT_OK) && --timout) {
 		if ((timout % 10000) == 0)
-			log(LOG_INFO, "qn: timout...\n");
+			log(LOG_INFO, "qn: timeout...\n");
 	}
 
 	if (timout == 0)
 		/* Maybe we should try to recover from this one? */
 		/* But now, let's just fall thru and hope the best... */
-		log(LOG_INFO, "qn: transmit timout (fatal?)\n");
+		log(LOG_INFO, "qn: transmit timeout (fatal?)\n");
 
 	sc->transmit_pending = 1;
 	*sc->nic_t_mask = INT_TMT_OK | INT_SIXTEEN_COL;
@@ -612,19 +613,19 @@ qn_rint(struct qn_softc *sc, u_short rstat)
 #ifdef QN_DEBUG
 		log(LOG_INFO, "Overflow\n");
 #endif
-		++sc->sc_ethercom.ec_if.if_ierrors;
+		if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 	}
 	if (rstat & R_INT_CRC_ERR) {
 #ifdef QN_DEBUG
 		log(LOG_INFO, "CRC Error\n");
 #endif
-		++sc->sc_ethercom.ec_if.if_ierrors;
+		if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 	}
 	if (rstat & R_INT_ALG_ERR) {
 #ifdef QN_DEBUG
 		log(LOG_INFO, "Alignment error\n");
 #endif
-		++sc->sc_ethercom.ec_if.if_ierrors;
+		if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 	}
 	if (rstat & R_INT_SRT_PKT) {
 		/* Short packet (these may occur and are
@@ -634,13 +635,13 @@ qn_rint(struct qn_softc *sc, u_short rstat)
 #ifdef QN_DEBUG
 		log(LOG_INFO, "Short packet\n");
 #endif
-		++sc->sc_ethercom.ec_if.if_ierrors;
+		if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 	}
 	if (rstat & 0x4040) {
 #ifdef QN_DEBUG
 		log(LOG_INFO, "Bus read error\n");
 #endif
-		++sc->sc_ethercom.ec_if.if_ierrors;
+		if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 		qnreset(sc);
 	}
 
@@ -676,7 +677,7 @@ qn_rint(struct qn_softc *sc, u_short rstat)
 			    "%s: received a %s packet? (%u bytes)\n",
 			    device_xname(sc->sc_dev),
 			    len < ETHER_HDR_LEN ? "partial" : "big", len);
-			++sc->sc_ethercom.ec_if.if_ierrors;
+			if_statinc(&sc->sc_ethercom.ec_if, if_ierrors);
 			continue;
 		}
 #endif
@@ -741,7 +742,7 @@ qnintr(void *arg)
 			 * Update total number of successfully
 			 * transmitted packets.
 			 */
-			sc->sc_ethercom.ec_if.if_opackets++;
+			if_statinc(&sc->sc_ethercom.ec_if, if_opackets);
 		}
 
 		if (tint & T_SIXTEEN_COL) {
@@ -752,8 +753,8 @@ qnintr(void *arg)
 #ifdef QN_DEBUG1
 			qn_dump(sc);
 #endif
-			sc->sc_ethercom.ec_if.if_oerrors++;
-			sc->sc_ethercom.ec_if.if_collisions += 16;
+			if_statadd2(&sc->sc_ethercom.ec_if,
+			    if_oerrors, 1, if_collisions, 16);
 			sc->transmit_pending = 0;
 		}
 

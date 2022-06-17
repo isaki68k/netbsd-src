@@ -1,4 +1,4 @@
-/* $NetBSD: ti_edma.c,v 1.1 2019/10/27 12:14:51 jmcneill Exp $ */
+/* $NetBSD: ti_edma.c,v 1.5 2022/05/21 19:07:23 andvar Exp $ */
 
 /*-
  * Copyright (c) 2014 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_edma.c,v 1.1 2019/10/27 12:14:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_edma.c,v 1.5 2022/05/21 19:07:23 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -96,9 +96,9 @@ CFATTACH_DECL_NEW(ti_edma, sizeof(struct edma_softc),
 #define EDMA_WRITE(sc, reg, val) \
 	bus_space_write_4((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
 
-static const char * compatible[] = {
-	"ti,edma3-tpcc",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,edma3-tpcc" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -106,7 +106,7 @@ edma_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -159,7 +159,7 @@ edma_attach(device_t parent, device_t self, void *aux)
 	edma_init(sc);
 
 	sc->sc_ih = fdtbus_intr_establish_byname(phandle, "edma3_ccint",
-	    IPL_VM, FDT_INTR_MPSAFE, edma_intr, sc);
+	    IPL_VM, FDT_INTR_MPSAFE, edma_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt\n");
 		return;
@@ -353,7 +353,7 @@ edma_channel_free(struct edma_channel *ch)
 }
 
 /*
- * Allocate a PaRAM entry. The driver artifically restricts the number
+ * Allocate a PaRAM entry. The driver artificially restricts the number
  * of PaRAM entries available for each channel to MAX_PARAM_PER_CHANNEL.
  * If the number of entries for the channel has been exceeded, or there
  * are no entries available, 0xffff is returned.
@@ -464,7 +464,7 @@ edma_transfer_start(struct edma_channel *ch)
 }
 
 /*
- * Halt a DMA transfer. Called after successfull transfer, or to abort
+ * Halt a DMA transfer. Called after successful transfer, or to abort
  * a transfer.
  */
 void

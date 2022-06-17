@@ -28,9 +28,10 @@
  */
 
 #include <machine/asm.h>
+
 #include "assym.h"
 
-RCSID("$NetBSD: spe_subr.S,v 1.4 2014/08/10 18:08:33 joerg Exp $")
+RCSID("$NetBSD: spe_subr.S,v 1.6 2021/07/24 21:31:34 andvar Exp $")
 
 	.text
 #ifndef __clang__
@@ -56,7 +57,7 @@ ENTRY(vec_load_from_vreg)
 	 * are loading it), and we know SPE is on (to load it), just load two
 	 * high parts at one time and merge appropriately.  For each even-odd
 	 * register pair, the evldw will load high part for the even register
-	 * in the high 32 bits and the high part for the odd regiter in the
+	 * in the high 32 bits and the high part for the odd register in the
 	 * low 32 bits.
 	 *
 	 * The evmergelo will move the lower half of r0 to the high half of the

@@ -1,4 +1,4 @@
-/*	$NetBSD: advnops.c,v 1.50 2017/05/26 14:21:00 riastradh Exp $	*/
+/*	$NetBSD: advnops.c,v 1.59 2022/04/04 19:33:45 andvar Exp $	*/
 
 /*
  * Copyright (c) 1994 Christian E. Hopps
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: advnops.c,v 1.50 2017/05/26 14:21:00 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: advnops.c,v 1.59 2022/04/04 19:33:45 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -57,17 +57,10 @@ __KERNEL_RCSID(0, "$NetBSD: advnops.c,v 1.50 2017/05/26 14:21:00 riastradh Exp $
 
 extern struct vnodeops adosfs_vnodeops;
 
-#define	adosfs_open	genfs_nullop
 int	adosfs_getattr(void *);
 int	adosfs_read(void *);
 int	adosfs_write(void *);
-#define	adosfs_fcntl	genfs_fcntl
-#define	adosfs_ioctl	genfs_enoioctl
-#define	adosfs_poll	genfs_poll
 int	adosfs_strategy(void *);
-int	adosfs_link(void *);
-int	adosfs_symlink(void *);
-#define	adosfs_abortop	genfs_abortop
 int	adosfs_bmap(void *);
 int	adosfs_print(void *);
 int	adosfs_readdir(void *);
@@ -77,53 +70,39 @@ int	adosfs_inactive(void *);
 int	adosfs_reclaim(void *);
 int	adosfs_pathconf(void *);
 
-#define adosfs_close 	genfs_nullop
-#define adosfs_fsync 	genfs_nullop
-#define adosfs_seek 	genfs_seek
-
-#define adosfs_advlock 	genfs_einval
-#define adosfs_bwrite 	genfs_eopnotsupp
-#define adosfs_create 	genfs_eopnotsupp
-#define adosfs_mkdir 	genfs_eopnotsupp
-#define adosfs_mknod 	genfs_eopnotsupp
-#define adosfs_revoke	genfs_revoke
-#define adosfs_mmap 	genfs_mmap
-#define adosfs_remove 	genfs_eopnotsupp
-#define adosfs_rename 	genfs_eopnotsupp
-#define adosfs_rmdir 	genfs_eopnotsupp
-#define adosfs_setattr 	genfs_eopnotsupp
-
 const struct vnodeopv_entry_desc adosfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, adosfs_lookup },		/* lookup */
-	{ &vop_create_desc, adosfs_create },		/* create */
-	{ &vop_mknod_desc, adosfs_mknod },		/* mknod */
-	{ &vop_open_desc, adosfs_open },		/* open */
-	{ &vop_close_desc, adosfs_close },		/* close */
+	{ &vop_create_desc, genfs_eopnotsupp },		/* create */
+	{ &vop_mknod_desc, genfs_eopnotsupp },		/* mknod */
+	{ &vop_open_desc, genfs_nullop },		/* open */
+	{ &vop_close_desc, genfs_nullop },		/* close */
 	{ &vop_access_desc, adosfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, adosfs_getattr },		/* getattr */
-	{ &vop_setattr_desc, adosfs_setattr },		/* setattr */
+	{ &vop_setattr_desc, genfs_eopnotsupp },	/* setattr */
 	{ &vop_read_desc, adosfs_read },		/* read */
 	{ &vop_write_desc, adosfs_write },		/* write */
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
-	{ &vop_fcntl_desc, adosfs_fcntl },		/* fcntl */
-	{ &vop_ioctl_desc, adosfs_ioctl },		/* ioctl */
-	{ &vop_poll_desc, adosfs_poll },		/* poll */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
+	{ &vop_ioctl_desc, genfs_enoioctl },		/* ioctl */
+	{ &vop_poll_desc, genfs_poll },			/* poll */
 	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
-	{ &vop_revoke_desc, adosfs_revoke },		/* revoke */
-	{ &vop_mmap_desc, adosfs_mmap },		/* mmap */
-	{ &vop_fsync_desc, adosfs_fsync },		/* fsync */
-	{ &vop_seek_desc, adosfs_seek },		/* seek */
-	{ &vop_remove_desc, adosfs_remove },		/* remove */
-	{ &vop_link_desc, adosfs_link },		/* link */
-	{ &vop_rename_desc, adosfs_rename },		/* rename */
-	{ &vop_mkdir_desc, adosfs_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, adosfs_rmdir },		/* rmdir */
-	{ &vop_symlink_desc, adosfs_symlink },		/* symlink */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
+	{ &vop_mmap_desc, genfs_mmap },			/* mmap */
+	{ &vop_fsync_desc, genfs_nullop },		/* fsync */
+	{ &vop_seek_desc, genfs_seek },			/* seek */
+	{ &vop_remove_desc, genfs_eopnotsupp },		/* remove */
+	{ &vop_link_desc, genfs_erofs_link },		/* link */
+	{ &vop_rename_desc, genfs_eopnotsupp },		/* rename */
+	{ &vop_mkdir_desc, genfs_eopnotsupp },		/* mkdir */
+	{ &vop_rmdir_desc, genfs_eopnotsupp },		/* rmdir */
+	{ &vop_symlink_desc, genfs_erofs_symlink },	/* symlink */
 	{ &vop_readdir_desc, adosfs_readdir },		/* readdir */
 	{ &vop_readlink_desc, adosfs_readlink },	/* readlink */
-	{ &vop_abortop_desc, adosfs_abortop },		/* abortop */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, adosfs_inactive },	/* inactive */
 	{ &vop_reclaim_desc, adosfs_reclaim },		/* reclaim */
 	{ &vop_lock_desc, genfs_lock },			/* lock */
@@ -133,8 +112,8 @@ const struct vnodeopv_entry_desc adosfs_vnodeop_entries[] = {
 	{ &vop_print_desc, adosfs_print },		/* print */
 	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, adosfs_pathconf },	/* pathconf */
-	{ &vop_advlock_desc, adosfs_advlock },		/* advlock */
-	{ &vop_bwrite_desc, adosfs_bwrite },		/* bwrite */
+	{ &vop_advlock_desc, genfs_einval },		/* advlock */
+	{ &vop_bwrite_desc, genfs_eopnotsupp },		/* bwrite */
 	{ &vop_getpages_desc, genfs_getpages },		/* getpages */
 	{ &vop_putpages_desc, genfs_putpages },		/* putpages */
 	{ NULL, NULL }
@@ -190,7 +169,7 @@ adosfs_getattr(void *v)
 		vap->va_nlink = 1 + (ap->linkto != 0);
 		/*
 		 * round up to nearest blocks add number of file list
-		 * blocks needed and mutiply by number of bytes per block.
+		 * blocks needed and multiply by number of bytes per block.
 		 */
 		fblks = howmany(ap->fsize, amp->dbsize);
 		fblks += howmany(fblks, ANODENDATBLKENT(ap));
@@ -270,7 +249,7 @@ adosfs_read(void *v)
 				break;
 			}
 			error = ubc_uiomove(&vp->v_uobj, uio, bytelen, advice,
-			    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+			    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 			if (error) {
 				break;
 			}
@@ -387,7 +366,7 @@ adosfs_strategy(void *v)
 	if (bp->b_blkno == bp->b_lblkno) {
 		error = VOP_BMAP(vp, bp->b_lblkno, NULL, &bp->b_blkno, NULL);
 		if (error) {
-			bp->b_flags = error;
+			bp->b_error = error;
 			biodone(bp);
 			goto reterr;
 		}
@@ -404,34 +383,6 @@ reterr:
 	printf(" %d)", error);
 #endif
 	return(error);
-}
-
-int
-adosfs_link(void *v)
-{
-	struct vop_link_v2_args /* {
-		struct vnode *a_dvp;
-		struct vnode *a_vp;
-		struct componentname *a_cnp;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
-}
-
-int
-adosfs_symlink(void *v)
-{
-	struct vop_symlink_v3_args /* {
-		struct vnode *a_dvp;
-		struct vnode **a_vpp;
-		struct componentname *a_cnp;
-		struct vattr *a_vap;
-		char *a_target;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
 }
 
 /*
@@ -657,7 +608,8 @@ adosfs_readdir(void *v)
 		 */
 		ap = NULL;
 		do {
-			error = VFS_VGET(pap->amp->mp, (ino_t)nextbn, &vp);
+			error = VFS_VGET(pap->amp->mp, (ino_t)nextbn,
+			    LK_EXCLUSIVE, &vp);
 			if (error)
 				goto reterr;
 			ap = VTOA(vp);
@@ -748,7 +700,7 @@ reterr:
 }
 
 static int
-adosfs_check_possible(struct vnode *vp, struct anode *ap, mode_t mode)
+adosfs_check_possible(struct vnode *vp, struct anode *ap, accmode_t accmode)
 {
 
 	/*
@@ -756,7 +708,7 @@ adosfs_check_possible(struct vnode *vp, struct anode *ap, mode_t mode)
 	 * fifo, or a block or character device resident on the
 	 * file system.
 	 */
-	if (mode & VWRITE) {
+	if (accmode & VWRITE) {
 		switch (vp->v_type) {
 		case VDIR:
 		case VLNK:
@@ -771,14 +723,14 @@ adosfs_check_possible(struct vnode *vp, struct anode *ap, mode_t mode)
 }
 
 static int
-adosfs_check_permitted(struct vnode *vp, struct anode *ap, mode_t mode,
+adosfs_check_permitted(struct vnode *vp, struct anode *ap, accmode_t accmode,
     kauth_cred_t cred)
 {
 	mode_t file_mode = adunixprot(ap->adprot) & ap->amp->mask;
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, file_mode), vp, NULL, genfs_can_access(vp->v_type,
-	    file_mode, ap->uid, ap->gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, file_mode), vp, NULL, genfs_can_access(vp,
+	    cred, ap->uid, ap->gid, file_mode, NULL, accmode));
 }
 
 int
@@ -786,7 +738,7 @@ adosfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int  a_mode;
+		accmode_t  a_accmode;
 		kauth_cred_t a_cred;
 	} */ *sp = v;
 	struct anode *ap;
@@ -805,11 +757,11 @@ adosfs_access(void *v)
 	}
 #endif
 
-	error = adosfs_check_possible(vp, ap, sp->a_mode);
+	error = adosfs_check_possible(vp, ap, sp->a_accmode);
 	if (error)
 		return error;
 
-	error = adosfs_check_permitted(vp, ap, sp->a_mode, sp->a_cred);
+	error = adosfs_check_permitted(vp, ap, sp->a_accmode, sp->a_cred);
 
 #ifdef ADOSFS_DIAGNOSTIC
 	printf(" %d)", error);
@@ -929,7 +881,7 @@ adosfs_pathconf(void *v)
 		*ap->a_retval = 32;
 		return (0);
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 	/* NOTREACHED */
 }

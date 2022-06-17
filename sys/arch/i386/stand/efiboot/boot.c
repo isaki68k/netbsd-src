@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.17 2019/09/26 12:21:03 nonaka Exp $	*/
+/*	$NetBSD: boot.c,v 1.21 2022/06/08 21:43:45 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -38,6 +38,10 @@
 #include "biosdisk.h"
 #include "devopen.h"
 
+#ifdef _STANDALONE
+#include <bootinfo.h>
+#endif
+
 int errno;
 int boot_biosdev;
 daddr_t boot_biossector;
@@ -65,6 +69,7 @@ void	command_quit(char *);
 void	command_boot(char *);
 void	command_pkboot(char *);
 void	command_consdev(char *);
+void	command_root(char *);
 void	command_dev(char *);
 void	command_devpath(char *);
 void	command_efivar(char *);
@@ -88,6 +93,7 @@ const struct bootblk_command commands[] = {
 	{ "boot",	command_boot },
 	{ "pkboot",	command_pkboot },
 	{ "consdev",	command_consdev },
+	{ "root",	command_root },
 	{ "dev",	command_dev },
 	{ "devpath",	command_devpath },
 	{ "efivar",	command_efivar },
@@ -272,20 +278,6 @@ bootit(const char *filename, int howto)
 }
 
 void
-print_banner(void)
-{
-	int n;
-
-	clearit();
-	if (bootcfg_info.banner[0]) {
-		for (n = 0; n < BOOTCFG_MAXBANNER && bootcfg_info.banner[n];
-		    n++)
-			printf("%s\n", bootcfg_info.banner[n]);
-	} else
-		command_version("short");
-}
-
-void
 boot(void)
 {
 	int currname;
@@ -327,10 +319,12 @@ boot(void)
 	 * If console set in boot.cfg, switch to it.
 	 * This will print the banner, so we don't need to explicitly do it
 	 */
-	if (bootcfg_info.consdev)
+	if (bootcfg_info.consdev) {
 		command_consdev(bootcfg_info.consdev);
-	else
-		print_banner();
+	} else {
+		clearit();
+		print_bootcfg_banner(bootprog_name, bootprog_rev);
+	}
 
 	/* Display the menu, if applicable */
 	twiddle_toggle = 0;
@@ -396,6 +390,9 @@ command_help(char *arg)
 	       "pkboot [dev:][filename] [-12acdqsvxz]\n"
 	       "dev [dev:]\n"
 	       "consdev {pc|com[0123][,{speed}]|com,{ioport}[,{speed}]}\n"
+	       "root    {spec}\n"
+	       "     spec can be disk, e.g. wd0, sd0\n"
+	       "     or string like wedge:name\n"
 	       "devpath\n"
 	       "efivar\n"
 	       "gop [{modenum|list}]\n"
@@ -456,8 +453,6 @@ command_boot(char *arg)
 	} else {
 		int i;
 
-		if (howto == 0)
-			bootdefault();
 		for (i = 0; i < NUMNAMES; i++) {
 			bootit(names[i][0], howto);
 			bootit(names[i][1], howto);
@@ -582,13 +577,27 @@ command_consdev(char *arg)
 				}
 			}
 			efi_consinit(cdp->tag, ioport, speed);
-			print_banner();
+			clearit();
+			print_bootcfg_banner(bootprog_name, bootprog_rev);
 			return;
 		}
 	}
 error:
 	printf("invalid console device.\n");
 }
+
+void
+command_root(char *arg)
+{
+	struct btinfo_rootdevice *biv = &bi_root;
+
+	strncpy(biv->devname, arg, sizeof(biv->devname));
+	if (biv->devname[sizeof(biv->devname)-1] != '\0') {
+		biv->devname[sizeof(biv->devname)-1] = '\0';
+		printf("truncated to %s\n",biv->devname);
+	}
+}
+
 
 #ifndef SMALL
 /* ARGSUSED */

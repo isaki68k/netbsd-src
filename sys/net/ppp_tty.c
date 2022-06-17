@@ -1,4 +1,4 @@
-/*	$NetBSD: ppp_tty.c,v 1.66 2019/09/20 08:45:29 maxv Exp $	*/
+/*	$NetBSD: ppp_tty.c,v 1.70 2022/05/04 07:48:35 andvar Exp $	*/
 /*	Id: ppp_tty.c,v 1.3 1996/07/01 01:04:11 paulus Exp 	*/
 
 /*
@@ -93,7 +93,7 @@
 /* from NetBSD: if_ppp.c,v 1.15.2.2 1994/07/28 05:17:58 cgd Exp */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ppp_tty.c,v 1.66 2019/09/20 08:45:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ppp_tty.c,v 1.70 2022/05/04 07:48:35 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "ppp.h"
@@ -168,7 +168,7 @@ static void	pppdumpframe(struct ppp_softc *sc, struct mbuf* m, int xmit);
 /*
  * Does c need to be escaped?
  */
-#define ESCAPE_P(c)	(sc->sc_asyncmap[(c) >> 5] & (1 << ((c) & 0x1F)))
+#define ESCAPE_P(c)	(sc->sc_asyncmap[(c) >> 5] & (1U << ((c) & 0x1F)))
 
 /*
  * Procedures for using an async tty interface for PPP.
@@ -313,7 +313,7 @@ pppread(struct tty *tp, struct uio *uio, int flag)
     if (sc == NULL)
 	return 0;
     /*
-     * Loop waiting for input, checking that nothing disasterous
+     * Loop waiting for input, checking that nothing disastrous
      * happens in the meantime.
      */
     mutex_spin_enter(&tty_lock);
@@ -1008,7 +1008,7 @@ pppinput(int c, struct tty *tp)
 	sc->sc_flags |= SC_RCV_B7_1;
     else
 	sc->sc_flags |= SC_RCV_B7_0;
-    if (paritytab[c >> 5] & (1 << (c & 0x1F)))
+    if (paritytab[c >> 5] & (1U << (c & 0x1F)))
 	sc->sc_flags |= SC_RCV_ODDP;
     else
 	sc->sc_flags |= SC_RCV_EVNP;
@@ -1035,7 +1035,7 @@ pppinput(int c, struct tty *tp)
 		if (sc->sc_flags & SC_DEBUG)
 		    printf("%s: bad fcs %x\n", sc->sc_if.if_xname,
 			sc->sc_fcs);
-		sc->sc_if.if_ierrors++;
+		if_statinc(&sc->sc_if, if_ierrors);
 		sc->sc_stats.ppp_ierrors++;
 	    } else
 		sc->sc_flags &= ~(SC_FLUSH | SC_ESCAPED);
@@ -1048,7 +1048,7 @@ pppinput(int c, struct tty *tp)
 		if (sc->sc_flags & SC_DEBUG)
 		    printf("%s: too short (%d)\n", sc->sc_if.if_xname, ilen);
 		s = spltty();
-		sc->sc_if.if_ierrors++;
+		if_statinc(&sc->sc_if, if_ierrors);
 		sc->sc_stats.ppp_ierrors++;
 		sc->sc_flags |= SC_PKTLOST;
 		splx(s);
@@ -1089,7 +1089,7 @@ pppinput(int c, struct tty *tp)
 	return 0;
     }
 
-    if (c < 0x20 && (sc->sc_rasyncmap & (1 << c)))
+    if (c < 0x20 && (sc->sc_rasyncmap & (1U << c)))
 	return 0;
 
     s = spltty();
@@ -1192,7 +1192,7 @@ pppinput(int c, struct tty *tp)
  flush:
     if (!(sc->sc_flags & SC_FLUSH)) {
 	s = spltty();
-	sc->sc_if.if_ierrors++;
+	if_statinc(&sc->sc_if, if_ierrors);
 	sc->sc_stats.ppp_ierrors++;
 	sc->sc_flags |= SC_FLUSH;
 	splx(s);

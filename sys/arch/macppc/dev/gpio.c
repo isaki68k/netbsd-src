@@ -1,4 +1,4 @@
-/*	$NetBSD: gpio.c,v 1.12 2012/10/27 17:18:00 chs Exp $	*/
+/*	$NetBSD: gpio.c,v 1.16 2022/01/22 11:49:16 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1998	Internet Research Institute, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gpio.c,v 1.12 2012/10/27 17:18:00 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gpio.c,v 1.16 2022/01/22 11:49:16 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -97,6 +97,7 @@ gpio_obio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_port = mapiodev(ca->ca_baseaddr + ca->ca_reg[0], ca->ca_reg[1],
 	    false);
 
+	devhandle_t selfh = device_handle(self);
 	ca2.ca_baseaddr = ca->ca_baseaddr;
 	for (child = OF_child(ca->ca_node); child; child = OF_peer(child)) {
 		namelen = OF_getprop(child, "name", name, sizeof(name));
@@ -119,7 +120,8 @@ gpio_obio_attach(device_t parent, device_t self, void *aux)
 		ca2.ca_reg = reg;
 		ca2.ca_intr = intr;
 
-		config_found(self, &ca2, gpio_obio_print);
+		config_found(self, &ca2, gpio_obio_print,
+		    CFARGS(.devhandle = devhandle_from_of(selfh, child)));
 	}
 }
 
@@ -159,7 +161,8 @@ gpio_gpio_attach(device_t parent, device_t self, void *aux)
 
 
 	sc->sc_port = device_private(parent)->sc_port;
-	intr_establish(ca->ca_intr[0], IST_LEVEL, IPL_HIGH, gpio_intr, sc);
+	intr_establish_xname(ca->ca_intr[0], IST_LEVEL, IPL_HIGH, gpio_intr, sc,
+	    device_xname(self));
 
 	printf(" irq %d\n", ca->ca_intr[0]);
 }

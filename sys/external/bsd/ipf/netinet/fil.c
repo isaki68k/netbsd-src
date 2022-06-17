@@ -1,4 +1,4 @@
-/*	$NetBSD: fil.c,v 1.31 2019/09/30 16:58:06 bouyer Exp $	*/
+/*	$NetBSD: fil.c,v 1.35 2021/12/05 07:28:20 msaitoh Exp $	*/
 
 /*
  * Copyright (C) 2012 by Darren Reed.
@@ -141,7 +141,7 @@ extern struct timeout ipf_slowtimer_ch;
 #if !defined(lint)
 #if defined(__NetBSD__)
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fil.c,v 1.31 2019/09/30 16:58:06 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fil.c,v 1.35 2021/12/05 07:28:20 msaitoh Exp $");
 #else
 static const char sccsid[] = "@(#)fil.c	1.36 6/5/96 (C) 1993-2000 Darren Reed";
 static const char rcsid[] = "@(#)Id: fil.c,v 1.1.1.2 2012/07/22 13:45:07 darrenr Exp $";
@@ -611,7 +611,7 @@ ipf_pr_ipv6hdr(fr_info_t *fin)
 
 	/*
 	 * IPv6 fragment case 1 - see comment for ipf_pr_fragment6().
-	 * "go != 0" imples the above loop hasn't arrived at a layer 4 header.
+	 * "go != 0" implies the above loop hasn't arrived at a layer 4 header.
 	 */
 	if ((go != 0) && (fin->fin_flx & FI_FRAG) && (fin->fin_off == 0)) {
 		ipf_main_softc_t *softc = fin->fin_main_soft;
@@ -1696,7 +1696,7 @@ ipf_pr_ipv4hdr(fr_info_t *fin)
 	fi->fi_p = p;
 	fin->fin_crc = p;
 	fi->fi_tos = ip->ip_tos;
-	fin->fin_id = ip->ip_id;
+	fin->fin_id = ntohs(ip->ip_id);
 	off = ntohs(ip->ip_off);
 
 	/* Get both TTL and protocol */
@@ -1724,11 +1724,10 @@ ipf_pr_ipv4hdr(fr_info_t *fin)
 	 */
 	off &= IP_MF|IP_OFFMASK;
 	if (off != 0) {
+		int morefrag = off & IP_MF;
 		fi->fi_flx |= FI_FRAG;
 		off &= IP_OFFMASK;
 		if (off != 0) {
-			int morefrag = off & IP_MF;
-
 			if (off == 1 && p == IPPROTO_TCP) {
 				fin->fin_flx |= FI_SHORT;       /* RFC 3128 */
 				DT1(ipf_fi_tcp_frag_off_1, fr_info_t *, fin);
@@ -2363,7 +2362,7 @@ ipf_check_ipf(fr_info_t *fin, frentry_t *fr, int portcmp)
 /* If a match is found, the value of fr_flags from the rule becomes the     */
 /* return value and fin->fin_fr points to the matched rule.                 */
 /*                                                                          */
-/* This function may be called recusively upto 16 times (limit inbuilt.)    */
+/* This function may be called recursively upto 16 times (limit inbuilt.)   */
 /* When unwinding, it should finish up with fin_depth as 0.                 */
 /*                                                                          */
 /* Could be per interface, but this gets real nasty when you don't have,    */

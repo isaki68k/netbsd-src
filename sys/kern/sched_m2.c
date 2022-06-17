@@ -1,4 +1,4 @@
-/*	$NetBSD: sched_m2.c,v 1.33 2018/09/03 16:29:35 riastradh Exp $	*/
+/*	$NetBSD: sched_m2.c,v 1.39 2020/05/23 21:24:41 ad Exp $	*/
 
 /*
  * Copyright (c) 2007, 2008 Mindaugas Rasiukevicius <rmind at NetBSD org>
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sched_m2.c,v 1.33 2018/09/03 16:29:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sched_m2.c,v 1.39 2020/05/23 21:24:41 ad Exp $");
 
 #include <sys/param.h>
 
@@ -68,9 +68,9 @@ __KERNEL_RCSID(0, "$NetBSD: sched_m2.c,v 1.33 2018/09/03 16:29:35 riastradh Exp 
  */
 static u_int	min_ts;			/* Minimal time-slice */
 static u_int	max_ts;			/* Maximal time-slice */
-static u_int	rt_ts;			/* Real-time time-slice */
 static u_int	ts_map[PRI_COUNT];	/* Map of time-slices */
 static pri_t	high_pri[PRI_COUNT];	/* Map for priority increase */
+u_int		sched_rrticks;		/* Real-time time-slice */
 
 static void	sched_precalcts(void);
 
@@ -88,7 +88,7 @@ sched_rqinit(void)
 	/* Default timing ranges */
 	min_ts = mstohz(20);			/*  ~20 ms */
 	max_ts = mstohz(150);			/* ~150 ms */
-	rt_ts = mstohz(100);			/* ~100 ms */
+	sched_rrticks = mstohz(100);			/* ~100 ms */
 	sched_precalcts();
 
 #ifdef notdef
@@ -117,7 +117,7 @@ sched_precalcts(void)
 
 	/* Real-time range */
 	for (p = (PRI_HIGHEST_TS + 1); p < PRI_COUNT; p++) {
-		ts_map[p] = rt_ts;
+		ts_map[p] = sched_rrticks;
 		high_pri[p] = p;
 	}
 }
@@ -255,7 +255,7 @@ sched_pstats_hook(struct lwp *l, int batch)
 
 	/* If thread was not ran a second or more - set a high priority */
 	if (l->l_stat == LSRUN) {
-		if (l->l_rticks && (hardclock_ticks - l->l_rticks >= hz))
+		if (l->l_rticks && (getticks() - l->l_rticks >= hz))
 			prio = high_pri[prio];
 		/* Re-enqueue the thread if priority has changed */
 		if (prio != l->l_priority)
@@ -282,19 +282,20 @@ sched_oncpu(lwp_t *l)
  */
 
 /*
- * Called once per time-quantum.  This routine is CPU-local and runs at
- * IPL_SCHED, thus the locking is not needed.
+ * Called once per time-quantum, with the running LWP lock held (spc_lwplock).
  */
 void
 sched_tick(struct cpu_info *ci)
 {
 	struct schedstate_percpu *spc = &ci->ci_schedstate;
-	struct lwp *l = curlwp;
+	struct lwp *l = ci->ci_onproc;
 	struct proc *p;
 
 	if (__predict_false(CURCPU_IDLE_P()))
 		return;
 
+	lwp_lock(l);
+	KASSERT(l->l_mutex != spc->spc_mutex);
 	switch (l->l_class) {
 	case SCHED_FIFO:
 		/*
@@ -303,6 +304,7 @@ sched_tick(struct cpu_info *ci)
 		 */
 		KASSERT(l->l_priority > PRI_HIGHEST_TS);
 		spc->spc_ticks = l->l_sched.timeslice;
+		lwp_unlock(l);
 		return;
 	case SCHED_OTHER:
 		/*
@@ -328,9 +330,12 @@ sched_tick(struct cpu_info *ci)
 	 */
 	if (lwp_eprio(l) <= spc->spc_maxpriority || l->l_target_cpu) {
 		spc->spc_flags |= SPCF_SHOULDYIELD;
-		cpu_need_resched(ci, 0);
+		spc_lock(ci);
+		sched_resched_cpu(ci, MAXPRI_KTHREAD, true);
+		/* spc now unlocked */
 	} else
-		spc->spc_ticks = l->l_sched.timeslice;
+		spc->spc_ticks = l->l_sched.timeslice; 
+	lwp_unlock(l);
 }
 
 /*
@@ -341,7 +346,7 @@ static int
 sysctl_sched_rtts(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
-	int rttsms = hztoms(rt_ts);
+	int rttsms = hztoms(sched_rrticks);
 
 	node = *rnode;
 	node.sysctl_data = &rttsms;

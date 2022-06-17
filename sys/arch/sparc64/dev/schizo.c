@@ -1,4 +1,4 @@
-/*	$NetBSD: schizo.c,v 1.42 2019/10/01 18:00:07 chs Exp $	*/
+/*	$NetBSD: schizo.c,v 1.47 2022/01/21 19:14:14 thorpej Exp $	*/
 /*	$OpenBSD: schizo.c,v 1.55 2008/08/18 20:29:37 brad Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: schizo.c,v 1.42 2019/10/01 18:00:07 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: schizo.c,v 1.47 2022/01/21 19:14:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -365,7 +365,8 @@ schizo_attach(device_t parent, device_t self, void *aux)
 		schizo_pbm_write(pbm, SCZ_PCI_IOCACHE_CSR, iocache_csr);
 	}
 
-	config_found(sc->sc_dev, &pba, schizo_print);
+	config_found(sc->sc_dev, &pba, schizo_print,
+	    CFARGS(.devhandle = device_handle(self)));
 }
 
 int
@@ -526,13 +527,13 @@ pcireg_t
 schizo_conf_read(pci_chipset_tag_t pc, pcitag_t tag, int reg)
 {
 	struct schizo_pbm *sp = pc->cookie;
-	struct cpu_info *ci = curcpu();
 	pcireg_t val = (pcireg_t)~0;
 	int s;
 
 	DPRINTF(SDB_CONF, ("%s: tag %lx reg %x ", __func__, (long)tag, reg));
 	if (PCITAG_NODE(tag) != -1 && (unsigned int)reg < PCI_CONF_SIZE) {
 		s = splhigh();
+		struct cpu_info *ci = curcpu();
 		ci->ci_pci_probe = true;
 		membar_Sync();
 		val = bus_space_read_4(sp->sp_cfgt, sp->sp_cfgh,

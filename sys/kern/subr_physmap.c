@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_physmap.c,v 1.2 2013/01/19 01:04:51 rmind Exp $	*/
+/*	$NetBSD: subr_physmap.c,v 1.5 2021/09/06 20:55:08 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -30,11 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: subr_physmap.c,v 1.2 2013/01/19 01:04:51 rmind Exp $");
+__KERNEL_RCSID(1, "$NetBSD: subr_physmap.c,v 1.5 2021/09/06 20:55:08 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/physmap.h>
 #include <sys/kmem.h>
+
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_page.h>
 
 #include <dev/mm.h>
 
@@ -203,7 +206,7 @@ physmap_create_pagelist(struct vm_page **pgs, size_t npgs)
 		if (curaddr != lastaddr) {
 			/*
 			 * If the addresses are not the same, we need to use
-			 * a new segemnt.  Set its address and update lastaddr.
+			 * a new segment.  Set its address and update lastaddr.
 			 */
 			ps++;
 			ps->ps_addr = curaddr;
@@ -316,7 +319,7 @@ physmap_map(void *cookie, vaddr_t *kvap)
 		 * so we map it via the kernel_map.
 		 */
 		pc->pc_kva = uvm_km_alloc(kernel_map, pc->pc_klen,
-		    atop(pa) & uvmexp.ncolors,
+		    atop(pa) & uvmexp.colormask,
 		    UVM_KMF_VAONLY | UVM_KMF_WAITVA | UVM_KMF_COLORMATCH);
 		KASSERT(pc->pc_kva != 0);
 

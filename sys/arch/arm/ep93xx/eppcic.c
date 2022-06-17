@@ -1,4 +1,4 @@
-/*	$NetBSD: eppcic.c,v 1.7 2012/10/27 17:17:37 chs Exp $	*/
+/*	$NetBSD: eppcic.c,v 1.11 2021/11/21 08:25:26 skrll Exp $	*/
 
 /*
  * Copyright (c) 2005 HAMAJIMA Katsuomi. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: eppcic.c,v 1.7 2012/10/27 17:17:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: eppcic.c,v 1.11 2021/11/21 08:25:26 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -39,14 +39,14 @@ __KERNEL_RCSID(0, "$NetBSD: eppcic.c,v 1.7 2012/10/27 17:17:37 chs Exp $");
 #include <dev/pcmcia/pcmciareg.h>
 #include <dev/pcmcia/pcmciavar.h>
 #include <dev/pcmcia/pcmciachip.h>
-#include <arm/ep93xx/epsocvar.h> 
-#include <arm/ep93xx/epgpiovar.h> 
-#include <arm/ep93xx/eppcicvar.h> 
+#include <arm/ep93xx/epsocvar.h>
+#include <arm/ep93xx/epgpiovar.h>
+#include <arm/ep93xx/eppcicvar.h>
 #include <arm/ep93xx/ep93xxreg.h>
 #include <arm/ep93xx/epsmcreg.h>
 #include "epled.h"
 #if NEPLED > 0
-#include <arm/ep93xx/epledvar.h> 
+#include <arm/ep93xx/epledvar.h>
 #endif
 
 #include "epgpio.h"
@@ -175,10 +175,7 @@ eppcic_attach_common(device_t parent, device_t self, void *aux,
 	epled_red_off();
 #endif
 	/* socket 0 */
-	if (!(ph = malloc(sizeof(struct eppcic_handle), M_DEVBUF, M_NOWAIT))) {
-		printf("%s: Cannot allocate memory\n", device_xname(self));
-		return; /* ENOMEM */
-	}
+	ph = malloc(sizeof(struct eppcic_handle), M_DEVBUF, M_WAITOK);
 	sc->sc_ph[0] = ph;
 	ph->ph_sc = sc;
 	ph->ph_socket = 0;
@@ -245,9 +242,8 @@ eppcic_config_socket(struct eppcic_handle *ph)
 	paa.paa_busname = "pcmcia";
 	paa.pct = (pcmcia_chipset_tag_t)&eppcic_functions;
 	paa.pch = (pcmcia_chipset_handle_t)ph;
-	ph->ph_card = config_found_ia((void*)sc, "pcmciabus", &paa,
-				      eppcic_print);
-	
+	ph->ph_card = config_found(sc->sc_dev, &paa, eppcic_print, CFARGS_NONE);
+
 	epgpio_intr_establish(sc->sc_gpio, ph->ph_port, ph->ph_cd[0],
 			      EDGE_TRIGGER | FALLING_EDGE | DEBOUNCE,
 			      IPL_TTY, eppcic_intr_carddetect, ph);
@@ -269,11 +265,11 @@ eppcic_config_socket(struct eppcic_handle *ph)
 	    ph->ph_socket);
 }
 
-static int     
+static int
 eppcic_print(void *arg, const char *pnp)
-{                       
+{
 	return (UNCONF);
-}       
+}
 
 static void
 eppcic_event_thread(void *arg)

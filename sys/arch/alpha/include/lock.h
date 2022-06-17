@@ -1,4 +1,4 @@
-/* $NetBSD: lock.h,v 1.29 2017/09/17 00:01:07 christos Exp $ */
+/* $NetBSD: lock.h,v 1.33 2022/02/13 13:42:30 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000 The NetBSD Foundation, Inc.
@@ -69,12 +69,7 @@ static __inline void
 __cpu_simple_lock_init(__cpu_simple_lock_t *alp)
 {
 
-	__asm volatile(
-		"# BEGIN __cpu_simple_lock_init\n"
-		"	stl	$31, %0		\n"
-		"	mb			\n"
-		"	# END __cpu_simple_lock_init"
-		: "=m" (*alp));
+	*alp = __SIMPLELOCK_UNLOCKED;
 }
 
 static __inline void
@@ -106,7 +101,7 @@ __cpu_simple_lock(__cpu_simple_lock_t *alp)
 		"	# END __cpu_simple_lock\n"
 		: "=&r" (t0), "=m" (*alp)
 		: "i" (__SIMPLELOCK_LOCKED), "m" (*alp)
-		: "memory");
+		: "cc", "memory");
 }
 
 static __inline int
@@ -131,7 +126,7 @@ __cpu_simple_lock_try(__cpu_simple_lock_t *alp)
 		"	# END __cpu_simple_lock_try"
 		: "=&r" (t0), "=r" (v0), "=m" (*alp)
 		: "i" (__SIMPLELOCK_LOCKED), "m" (*alp)
-		: "memory");
+		: "cc", "memory");
 
 	return (v0 != 0);
 }
@@ -145,52 +140,36 @@ __cpu_simple_unlock(__cpu_simple_lock_t *alp)
 		"	mb			\n"
 		"	stl	$31, %0		\n"
 		"	# END __cpu_simple_unlock"
-		: "=m" (*alp));
+		: "=m" (*alp)
+		: /* no inputs */
+		: "memory");
 }
 
 #if defined(MULTIPROCESSOR)
 /*
  * On the Alpha, interprocessor interrupts come in at device priority
- * level.  This can cause some problems while waiting for r/w spinlocks
- * from a high'ish priority level: IPIs that come in will not be processed.
- * This can lead to deadlock.
+ * level (ALPHA_PSL_IPL_CLOCK).  This can cause some problems while
+ * waiting for spin locks from a high'ish priority level (like spin
+ * mutexes used by the scheduler): IPIs that come in will not be
+ * processed. This can lead to deadlock.
  *
- * This hook allows IPIs to be processed while a spinlock's interlock
- * is released.
+ * This hook allows IPIs to be processed while spinning.  Note we only
+ * do the special thing if IPIs are blocked (current IPL >= IPL_CLOCK).
+ * IPIs will be processed in the normal fashion otherwise, and checking
+ * this way ensures that preemption is disabled (i.e. curcpu() is stable).
  */
 #define	SPINLOCK_SPIN_HOOK						\
 do {									\
-	struct cpu_info *__ci = curcpu();				\
-	int __s;							\
+	unsigned long _ipl_ = alpha_pal_rdps() & ALPHA_PSL_IPL_MASK;	\
 									\
-	if (__ci->ci_ipis != 0) {					\
-		/* printf("CPU %lu has IPIs pending\n",			\
-		    __ci->ci_cpuid); */					\
-		__s = splhigh();						\
-		alpha_ipi_process(__ci, NULL);				\
-		splx(__s);						\
+	if (_ipl_ >= ALPHA_PSL_IPL_CLOCK) {				\
+		struct cpu_info *__ci = curcpu();			\
+		if (atomic_load_relaxed(&__ci->ci_ipis) != 0) {		\
+			alpha_ipi_process(__ci, NULL);			\
+		}							\
 	}								\
-} while (0)
+} while (/*CONSTCOND*/0)
 #define	SPINLOCK_BACKOFF_HOOK	(void)nullop((void *)0)
 #endif /* MULTIPROCESSOR */
-
-static __inline void
-mb_read(void)
-{
-	__asm __volatile("mb" : : : "memory");
-}
-
-static __inline void
-mb_write(void)
-{
-	/* XXX wmb */
-	__asm __volatile("mb" : : : "memory");
-}
-
-static __inline void
-mb_memory(void)
-{
-	__asm __volatile("mb" : : : "memory");
-}
 
 #endif /* _ALPHA_LOCK_H_ */

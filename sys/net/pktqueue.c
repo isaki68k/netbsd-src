@@ -1,4 +1,4 @@
-/*	$NetBSD: pktqueue.c,v 1.10 2018/08/10 07:24:09 msaitoh Exp $	*/
+/*	$NetBSD: pktqueue.c,v 1.16 2021/12/21 04:09:32 knakahara Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -36,7 +36,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.10 2018/08/10 07:24:09 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.16 2021/12/21 04:09:32 knakahara Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_net_mpsafe.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -48,14 +52,14 @@ __KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.10 2018/08/10 07:24:09 msaitoh Exp $"
 #include <sys/mbuf.h>
 #include <sys/proc.h>
 #include <sys/percpu.h>
+#include <sys/xcall.h>
 
 #include <net/pktqueue.h>
+#include <net/rss_config.h>
 
-/*
- * WARNING: update this if struct pktqueue changes.
- */
-#define	PKTQ_CLPAD	\
-    MAX(COHERENCY_UNIT, COHERENCY_UNIT - sizeof(kmutex_t) - sizeof(u_int))
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 
 struct pktqueue {
 	/*
@@ -63,9 +67,13 @@ struct pktqueue {
 	 * as well as the drop counter, are managed atomically though.
 	 * Ensure this group is in a separate cache line.
 	 */
-	kmutex_t	pq_lock;
-	volatile u_int	pq_barrier;
-	uint8_t		_pad[PKTQ_CLPAD];
+	union {
+		struct {
+			kmutex_t	pq_lock;
+			volatile u_int	pq_barrier;
+		};
+		uint8_t	 _pad[COHERENCY_UNIT];
+	};
 
 	/* The size of the queue, counters and the interrupt handler. */
 	u_int		pq_maxlen;
@@ -73,7 +81,7 @@ struct pktqueue {
 	void *		pq_sih;
 
 	/* Finally, per-CPU queues. */
-	pcq_t *		pq_queue[];
+	struct percpu *	pq_pcq;	/* struct pcq * */
 };
 
 /* The counters of the packet queue. */
@@ -89,17 +97,46 @@ typedef struct {
 /* Special marker value used by pktq_barrier() mechanism. */
 #define	PKTQ_MARKER	((void *)(~0ULL))
 
-/*
- * The total size of pktqueue_t which depends on the number of CPUs.
- */
-#define	PKTQUEUE_STRUCT_LEN(ncpu)	\
-    roundup2(offsetof(pktqueue_t, pq_queue[ncpu]), coherency_unit)
+static void
+pktq_init_cpu(void *vqp, void *vpq, struct cpu_info *ci)
+{
+	struct pcq **qp = vqp;
+	struct pktqueue *pq = vpq;
+
+	*qp = pcq_create(pq->pq_maxlen, KM_SLEEP);
+}
+
+static void
+pktq_fini_cpu(void *vqp, void *vpq, struct cpu_info *ci)
+{
+	struct pcq **qp = vqp, *q = *qp;
+
+	KASSERT(pcq_peek(q) == NULL);
+	pcq_destroy(q);
+	*qp = NULL;		/* paranoia */
+}
+
+static struct pcq *
+pktq_pcq(struct pktqueue *pq, struct cpu_info *ci)
+{
+	struct pcq **qp, *q;
+
+	/*
+	 * As long as preemption is disabled, the xcall to swap percpu
+	 * buffers can't complete, so it is safe to read the pointer.
+	 */
+	KASSERT(kpreempt_disabled());
+
+	qp = percpu_getptr_remote(pq->pq_pcq, ci);
+	q = *qp;
+
+	return q;
+}
 
 pktqueue_t *
 pktq_create(size_t maxlen, void (*intrh)(void *), void *sc)
 {
 	const u_int sflags = SOFTINT_NET | SOFTINT_MPSAFE | SOFTINT_RCPU;
-	const size_t len = PKTQUEUE_STRUCT_LEN(ncpu);
 	pktqueue_t *pq;
 	percpu_t *pc;
 	void *sih;
@@ -110,14 +147,13 @@ pktq_create(size_t maxlen, void (*intrh)(void *), void *sc)
 		return NULL;
 	}
 
-	pq = kmem_zalloc(len, KM_SLEEP);
-	for (u_int i = 0; i < ncpu; i++) {
-		pq->pq_queue[i] = pcq_create(maxlen, KM_SLEEP);
-	}
+	pq = kmem_zalloc(sizeof(*pq), KM_SLEEP);
 	mutex_init(&pq->pq_lock, MUTEX_DEFAULT, IPL_NONE);
 	pq->pq_maxlen = maxlen;
 	pq->pq_counters = pc;
 	pq->pq_sih = sih;
+	pq->pq_pcq = percpu_create(sizeof(struct pcq *),
+	    pktq_init_cpu, pktq_fini_cpu, pq);
 
 	return pq;
 }
@@ -125,17 +161,12 @@ pktq_create(size_t maxlen, void (*intrh)(void *), void *sc)
 void
 pktq_destroy(pktqueue_t *pq)
 {
-	const size_t len = PKTQUEUE_STRUCT_LEN(ncpu);
 
-	for (u_int i = 0; i < ncpu; i++) {
-		pcq_t *q = pq->pq_queue[i];
-		KASSERT(pcq_peek(q) == NULL);
-		pcq_destroy(q);
-	}
+	percpu_free(pq->pq_pcq, sizeof(struct pcq *));
 	percpu_free(pq->pq_counters, sizeof(pktq_counters_t));
 	softint_disestablish(pq->pq_sih);
 	mutex_destroy(&pq->pq_lock);
-	kmem_free(pq, len);
+	kmem_free(pq, sizeof(*pq));
 }
 
 /*
@@ -161,9 +192,13 @@ pktq_collect_counts(void *mem, void *arg, struct cpu_info *ci)
 	const pktq_counters_t *c = mem;
 	pktq_counters_t *sum = arg;
 
+	int s = splnet();
+
 	for (u_int i = 0; i < PQCNT_NCOUNTERS; i++) {
 		sum->count[i] += c->count[i];
 	}
+
+	splx(s);
 }
 
 uint64_t
@@ -173,7 +208,8 @@ pktq_get_count(pktqueue_t *pq, pktq_count_t c)
 
 	if (c != PKTQ_MAXLEN) {
 		memset(&sum, 0, sizeof(sum));
-		percpu_foreach(pq->pq_counters, pktq_collect_counts, &sum);
+		percpu_foreach_xcall(pq->pq_counters,
+		    XC_HIGHPRI_IPL(IPL_SOFTNET), pktq_collect_counts, &sum);
 	}
 	switch (c) {
 	case PKTQ_NITEMS:
@@ -187,14 +223,147 @@ pktq_get_count(pktqueue_t *pq, pktq_count_t c)
 }
 
 uint32_t
-pktq_rps_hash(const struct mbuf *m __unused)
+pktq_rps_hash(pktq_rps_hash_func_t *funcp, const struct mbuf *m)
 {
-	/*
-	 * XXX: No distribution yet; the softnet_lock contention
-	 * XXX: must be eliminated first.
-	 */
+	pktq_rps_hash_func_t func = atomic_load_relaxed(funcp);
+
+	KASSERT(func != NULL);
+
+	return (*func)(m);
+}
+
+static uint32_t
+pktq_rps_hash_zero(const struct mbuf *m __unused)
+{
+
 	return 0;
 }
+
+static uint32_t
+pktq_rps_hash_curcpu(const struct mbuf *m __unused)
+{
+
+	return cpu_index(curcpu());
+}
+
+static uint32_t
+pktq_rps_hash_toeplitz(const struct mbuf *m)
+{
+	struct ip *ip;
+	/*
+	 * Disable UDP port - IP fragments aren't currently being handled
+	 * and so we end up with a mix of 2-tuple and 4-tuple
+	 * traffic.
+	 */
+	const u_int flag = RSS_TOEPLITZ_USE_TCP_PORT;
+
+	/* glance IP version */
+	if ((m->m_flags & M_PKTHDR) == 0)
+		return 0;
+
+	ip = mtod(m, struct ip *);
+	if (ip->ip_v == IPVERSION) {
+		if (__predict_false(m->m_len < sizeof(struct ip)))
+			return 0;
+		return rss_toeplitz_hash_from_mbuf_ipv4(m, flag);
+	} else if (ip->ip_v == 6) {
+		if (__predict_false(m->m_len < sizeof(struct ip6_hdr)))
+			return 0;
+		return rss_toeplitz_hash_from_mbuf_ipv6(m, flag);
+	}
+
+	return 0;
+}
+
+/*
+ * toeplitz without curcpu.
+ * Generally, this has better performance than toeplitz.
+ */
+static uint32_t
+pktq_rps_hash_toeplitz_othercpus(const struct mbuf *m)
+{
+	uint32_t hash;
+
+	if (ncpu == 1)
+		return 0;
+
+	hash = pktq_rps_hash_toeplitz(m);
+	hash %= ncpu - 1;
+	if (hash >= cpu_index(curcpu()))
+		return hash + 1;
+	else
+		return hash;
+}
+
+static struct pktq_rps_hash_table {
+	const char* prh_type;
+	pktq_rps_hash_func_t prh_func;
+} const pktq_rps_hash_tab[] = {
+	{ "zero", pktq_rps_hash_zero },
+	{ "curcpu", pktq_rps_hash_curcpu },
+	{ "toeplitz", pktq_rps_hash_toeplitz },
+	{ "toeplitz-othercpus", pktq_rps_hash_toeplitz_othercpus },
+};
+const pktq_rps_hash_func_t pktq_rps_hash_default =
+#ifdef NET_MPSAFE
+	pktq_rps_hash_curcpu;
+#else
+	pktq_rps_hash_zero;
+#endif
+
+static const char *
+pktq_get_rps_hash_type(pktq_rps_hash_func_t func)
+{
+
+	for (int i = 0; i < __arraycount(pktq_rps_hash_tab); i++) {
+		if (func == pktq_rps_hash_tab[i].prh_func) {
+			return pktq_rps_hash_tab[i].prh_type;
+		}
+	}
+
+	return NULL;
+}
+
+static int
+pktq_set_rps_hash_type(pktq_rps_hash_func_t *func, const char *type)
+{
+
+	if (strcmp(type, pktq_get_rps_hash_type(*func)) == 0)
+		return 0;
+
+	for (int i = 0; i < __arraycount(pktq_rps_hash_tab); i++) {
+		if (strcmp(type, pktq_rps_hash_tab[i].prh_type) == 0) {
+			atomic_store_relaxed(func, pktq_rps_hash_tab[i].prh_func);
+			return 0;
+		}
+	}
+
+	return ENOENT;
+}
+
+int
+sysctl_pktq_rps_hash_handler(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	pktq_rps_hash_func_t *func;
+	int error;
+	char type[PKTQ_RPS_HASH_NAME_LEN];
+
+	node = *rnode;
+	func = node.sysctl_data;
+
+	strlcpy(type, pktq_get_rps_hash_type(*func), PKTQ_RPS_HASH_NAME_LEN);
+
+	node.sysctl_data = &type;
+	node.sysctl_size = sizeof(type);
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	error = pktq_set_rps_hash_type(func, type);
+
+	return error;
+ }
 
 /*
  * pktq_enqueue: inject the packet into the end of the queue.
@@ -207,18 +376,18 @@ bool
 pktq_enqueue(pktqueue_t *pq, struct mbuf *m, const u_int hash __unused)
 {
 #if defined(_RUMPKERNEL) || defined(_RUMP_NATIVE_ABI)
-	const unsigned cpuid = curcpu()->ci_index;
+	struct cpu_info *ci = curcpu();
 #else
-	const unsigned cpuid = hash % ncpu;
+	struct cpu_info *ci = cpu_lookup(hash % ncpu);
 #endif
 
 	KASSERT(kpreempt_disabled());
 
-	if (__predict_false(!pcq_put(pq->pq_queue[cpuid], m))) {
+	if (__predict_false(!pcq_put(pktq_pcq(pq, ci), m))) {
 		pktq_inc_count(pq, PQCNT_DROP);
 		return false;
 	}
-	softint_schedule_cpu(pq->pq_sih, cpu_lookup(cpuid));
+	softint_schedule_cpu(pq->pq_sih, ci);
 	pktq_inc_count(pq, PQCNT_ENQUEUE);
 	return true;
 }
@@ -232,11 +401,12 @@ pktq_enqueue(pktqueue_t *pq, struct mbuf *m, const u_int hash __unused)
 struct mbuf *
 pktq_dequeue(pktqueue_t *pq)
 {
-	const struct cpu_info *ci = curcpu();
-	const unsigned cpuid = cpu_index(ci);
+	struct cpu_info *ci = curcpu();
 	struct mbuf *m;
 
-	m = pcq_get(pq->pq_queue[cpuid]);
+	KASSERT(kpreempt_disabled());
+
+	m = pcq_get(pktq_pcq(pq, ci));
 	if (__predict_false(m == PKTQ_MARKER)) {
 		/* Note the marker entry. */
 		atomic_inc_uint(&pq->pq_barrier);
@@ -256,13 +426,19 @@ pktq_dequeue(pktqueue_t *pq)
 void
 pktq_barrier(pktqueue_t *pq)
 {
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
 	u_int pending = 0;
 
 	mutex_enter(&pq->pq_lock);
 	KASSERT(pq->pq_barrier == 0);
 
-	for (u_int i = 0; i < ncpu; i++) {
-		pcq_t *q = pq->pq_queue[i];
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		struct pcq *q;
+
+		kpreempt_disable();
+		q = pktq_pcq(pq, ci);
+		kpreempt_enable();
 
 		/* If the queue is empty - nothing to do. */
 		if (pcq_peek(q) == NULL) {
@@ -273,7 +449,7 @@ pktq_barrier(pktqueue_t *pq)
 			kpause("pktqsync", false, 1, NULL);
 		}
 		kpreempt_disable();
-		softint_schedule_cpu(pq->pq_sih, cpu_lookup(i));
+		softint_schedule_cpu(pq->pq_sih, ci);
 		kpreempt_enable();
 		pending++;
 	}
@@ -294,19 +470,50 @@ pktq_barrier(pktqueue_t *pq)
 void
 pktq_flush(pktqueue_t *pq)
 {
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
 	struct mbuf *m;
 
-	for (u_int i = 0; i < ncpu; i++) {
-		while ((m = pcq_get(pq->pq_queue[i])) != NULL) {
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		struct pcq *q;
+
+		kpreempt_disable();
+		q = pktq_pcq(pq, ci);
+		kpreempt_enable();
+
+		/*
+		 * XXX This can't be right -- if the softint is running
+		 * then pcq_get isn't safe here.
+		 */
+		while ((m = pcq_get(q)) != NULL) {
 			pktq_inc_count(pq, PQCNT_DEQUEUE);
 			m_freem(m);
 		}
 	}
 }
 
+static void
+pktq_set_maxlen_cpu(void *vpq, void *vqs)
+{
+	struct pktqueue *pq = vpq;
+	struct pcq **qp, *q, **qs = vqs;
+	unsigned i = cpu_index(curcpu());
+	int s;
+
+	s = splnet();
+	qp = percpu_getref(pq->pq_pcq);
+	q = *qp;
+	*qp = qs[i];
+	qs[i] = q;
+	percpu_putref(pq->pq_pcq);
+	splx(s);
+}
+
 /*
  * pktq_set_maxlen: create per-CPU queues using a new size and replace
  * the existing queues without losing any packets.
+ *
+ * XXX ncpu must remain stable throughout.
  */
 int
 pktq_set_maxlen(pktqueue_t *pq, size_t maxlen)
@@ -319,18 +526,18 @@ pktq_set_maxlen(pktqueue_t *pq, size_t maxlen)
 	if (pq->pq_maxlen == maxlen)
 		return 0;
 
-	/* First, allocate the new queues and replace them. */
+	/* First, allocate the new queues. */
 	qs = kmem_zalloc(slotbytes, KM_SLEEP);
 	for (u_int i = 0; i < ncpu; i++) {
 		qs[i] = pcq_create(maxlen, KM_SLEEP);
 	}
+
+	/*
+	 * Issue an xcall to replace the queue pointers on each CPU.
+	 * This implies all the necessary memory barriers.
+	 */
 	mutex_enter(&pq->pq_lock);
-	for (u_int i = 0; i < ncpu; i++) {
-		/* Swap: store of a word is atomic. */
-		pcq_t *q = pq->pq_queue[i];
-		pq->pq_queue[i] = qs[i];
-		qs[i] = q;
-	}
+	xc_wait(xc_broadcast(XC_HIGHPRI, pktq_set_maxlen_cpu, pq, qs));
 	pq->pq_maxlen = maxlen;
 	mutex_exit(&pq->pq_lock);
 
@@ -349,10 +556,15 @@ pktq_set_maxlen(pktqueue_t *pq, size_t maxlen)
 	pktq_barrier(pq);
 
 	for (u_int i = 0; i < ncpu; i++) {
+		struct pcq *q;
 		struct mbuf *m;
 
+		kpreempt_disable();
+		q = pktq_pcq(pq, cpu_lookup(i));
+		kpreempt_enable();
+
 		while ((m = pcq_get(qs[i])) != NULL) {
-			while (!pcq_put(pq->pq_queue[i], m)) {
+			while (!pcq_put(q, m)) {
 				kpause("pktqrenq", false, 1, NULL);
 			}
 		}

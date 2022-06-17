@@ -1,4 +1,4 @@
-/*	$NetBSD: mpt_mpilib.h,v 1.3 2007/07/27 13:06:51 tron Exp $	*/
+/*	$NetBSD: mpt_mpilib.h,v 1.5 2022/04/04 19:33:45 andvar Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 by LSI Logic Corporation
@@ -2208,7 +2208,7 @@ typedef struct _CONFIG_PAGE_LAN_1
  *  11-02-00  01.01.01  Original release for post 1.0 work
  *  12-04-00  01.01.02  Added messages for Common Transport Send and
  *                      Primitive Send.
- *  01-09-01  01.01.03  Modifed some of the new flags to have an MPI prefix
+ *  01-09-01  01.01.03  Modified some of the new flags to have an MPI prefix
  *                      and modified the FcPrimitiveSend flags.
  *  01-25-01  01.01.04  Move InitiatorIndex in LinkServiceRsp reply to a larger
  *                      field.
@@ -2613,7 +2613,7 @@ typedef struct _MSG_FC_PRIMITIVE_SEND_REPLY
 *****************************************************************************/
 
 /****************************************************************************/
-/*  SCSI IO messages and assocaited structures                              */
+/*  SCSI IO messages and associated structures                              */
 /****************************************************************************/
 
 typedef struct _MSG_SCSI_IO_REQUEST

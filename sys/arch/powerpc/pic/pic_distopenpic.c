@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_distopenpic.c,v 1.11 2018/09/03 16:29:26 riastradh Exp $ */
+/*	$NetBSD: pic_distopenpic.c,v 1.14 2022/02/23 21:54:40 andvar Exp $ */
 
 /*-
  * Copyright (c) 2008 Tim Rightnour
@@ -30,10 +30,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_distopenpic.c,v 1.11 2018/09/03 16:29:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_distopenpic.c,v 1.14 2022/02/23 21:54:40 andvar Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_openpic.h"
-#include "opt_interrupt.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -120,7 +121,7 @@ setup_distributed_openpic(void *addr, int nrofisus, void **isu, int *maps)
 
 	openpic_set_priority(0, 0);
 
-	/* clear all pending interrunts */
+	/* clear all pending interrupts */
 	for (irq = 0; irq < pic->pic_numintrs; irq++) {
 		openpic_read_irq(0);
 		openpic_eoi(0);

@@ -1,4 +1,4 @@
-/*	$NetBSD: epgpio.c,v 1.5 2012/10/27 17:17:37 chs Exp $	*/
+/*	$NetBSD: epgpio.c,v 1.8 2021/11/21 08:25:26 skrll Exp $	*/
 
 /*
  * Copyright (c) 2005 HAMAJIMA Katsuomi. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: epgpio.c,v 1.5 2012/10/27 17:17:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: epgpio.c,v 1.8 2021/11/21 08:25:26 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -36,8 +36,8 @@ __KERNEL_RCSID(0, "$NetBSD: epgpio.c,v 1.5 2012/10/27 17:17:37 chs Exp $");
 #include <machine/intr.h>
 #include <sys/gpio.h>
 #include <dev/gpio/gpiovar.h>
-#include <arm/ep93xx/ep93xxvar.h> 
-#include <arm/ep93xx/epsocvar.h> 
+#include <arm/ep93xx/ep93xxvar.h>
+#include <arm/ep93xx/epsocvar.h>
 #include <arm/ep93xx/epgpioreg.h>
 #include <arm/ep93xx/epgpiovar.h>
 #include "opt_ep93xx_gpio_mask.h"
@@ -310,11 +310,14 @@ epgpio_attach(device_t parent, device_t self, void *aux)
 		gba.gba_gc = &pi->gpio_chipset;
 		gba.gba_pins = pi->pins;
 		gba.gba_npins = pin;
-		config_found_ia(self, "gpiobus", &gba, epgpiobus_print);
+		config_found(self, &gba, epgpiobus_print,
+		    CFARGS(.iattr = "gpiobus"));
 	}
 #endif
 
-	config_search_ia(epgpio_search, self, "epgpio", epgpio_print);
+	config_search(self, NULL,
+	    CFARGS(.search = epgpio_search,
+		   .iattr = "epgpio"));
 }
 
 #if NGPIO > 0
@@ -344,8 +347,8 @@ epgpio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	ga.ga_bit1 = cf->cf_loc[EPGPIOCF_BIT1];
 	ga.ga_bit2 = cf->cf_loc[EPGPIOCF_BIT2];
 
-	if (config_match(parent, cf, &ga) > 0)
-		config_attach(parent, cf, &ga, epgpio_print);
+	if (config_probe(parent, cf, &ga))
+		config_attach(parent, cf, &ga, epgpio_print, CFARGS_NONE);
 
 	return 0;
 }

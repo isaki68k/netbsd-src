@@ -1,4 +1,4 @@
-/*	$NetBSD: mii_physubr.c,v 1.87 2019/04/09 11:28:45 msaitoh Exp $	*/
+/*	$NetBSD: mii_physubr.c,v 1.97 2021/12/28 12:00:48 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mii_physubr.c,v 1.87 2019/04/09 11:28:45 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mii_physubr.c,v 1.97 2021/12/28 12:00:48 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -44,37 +44,43 @@ __KERNEL_RCSID(0, "$NetBSD: mii_physubr.c,v 1.87 2019/04/09 11:28:45 msaitoh Exp
 #include <sys/socket.h>
 #include <sys/errno.h>
 #include <sys/module.h>
+#include <sys/module_hook.h>
 #include <sys/proc.h>
 
 #include <net/if.h>
 #include <net/if_media.h>
 #include <net/route.h>
 
+#include <dev/dev_verbose.h>
+
 #include <dev/mii/mii.h>
+#include <dev/mii/miidevs.h>
 #include <dev/mii/miivar.h>
 
-const char *(*mii_get_descr)(int, int) = mii_get_descr_stub;
-
-int mii_verbose_loaded = 0;
+DEV_VERBOSE_DEFINE(mii);
 
 const char *
-mii_get_descr_stub(int oui, int model)
+mii_get_descr(char *descr, size_t len, uint32_t oui, uint32_t model)
 {
-	mii_load_verbose();
-	if (mii_verbose_loaded)
-		return mii_get_descr(oui, model);
-	else
-		return NULL;
-}
+	char temp[MII_MAX_DESCR_LEN];
 
-/*
- * Routine to load the miiverbose kernel module as needed
- */
-void
-mii_load_verbose(void)
-{
-	if (mii_verbose_loaded == 0)
-		module_autoload("miiverbose", MODULE_CLASS_MISC);
+	mii_load_verbose();
+	if (miiverbose_loaded) {
+		if (mii_findvendor(temp, sizeof(temp), oui) == NULL) {
+			descr[0] = '\0';
+			return NULL;
+		}
+		strlcpy(descr, temp, len);
+		strlcat(descr, " ", len);
+		if (mii_findproduct(temp, sizeof(temp), oui, model) == NULL) {
+			descr[0] = '\0';
+			return NULL;
+		}
+		strlcat(descr, temp, len);
+		return descr;
+	}
+	snprintf(descr, len, "OUI 0x%06x model 0x%04x", oui, model);
+	return NULL;
 }
 
 static void mii_phy_statusmsg(struct mii_softc *);
@@ -125,6 +131,7 @@ static const struct mii_media mii_media_table[MII_NMEDIA] = {
 };
 
 static void	mii_phy_auto_timeout(void *);
+static void	mii_phy_auto_timeout_locked(struct mii_softc *);
 
 void
 mii_phy_setmedia(struct mii_softc *sc)
@@ -132,6 +139,8 @@ mii_phy_setmedia(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, anar, gtcr;
+
+	KASSERT(mii_locked(mii));
 
 	if (IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO) {
 		/*
@@ -144,7 +153,7 @@ mii_phy_setmedia(struct mii_softc *sc)
 		PHY_READ(sc, MII_BMCR, &bmcr);
 		if ((bmcr & BMCR_AUTOEN) == 0 ||
 		    (sc->mii_flags & (MIIF_FORCEANEG | MIIF_DOPAUSE)))
-			(void) mii_phy_auto(sc, 1);
+			(void) mii_phy_auto(sc);
 		return;
 	}
 
@@ -190,17 +199,19 @@ mii_phy_setmedia(struct mii_softc *sc)
 	if (sc->mii_flags & MIIF_HAVE_GTCR)
 		PHY_WRITE(sc, MII_100T2CR, gtcr);
 	if (IFM_SUBTYPE(ife->ifm_media) == IFM_1000_T)
-		mii_phy_auto(sc, 0);
+		mii_phy_auto(sc);
 	else
 		PHY_WRITE(sc, MII_BMCR, bmcr);
 }
 
+/* Setup autonegotiation and start it. */
 int
-mii_phy_auto(struct mii_softc *sc, int waitfor)
+mii_phy_auto(struct mii_softc *sc)
 {
-	int i;
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
+
+	KASSERT(mii_locked(mii));
 
 	sc->mii_ticks = 0;
 	if ((sc->mii_flags & MIIF_DOINGAUTO) == 0) {
@@ -261,33 +272,16 @@ mii_phy_auto(struct mii_softc *sc, int waitfor)
 		PHY_WRITE(sc, MII_BMCR, BMCR_AUTOEN | BMCR_STARTNEG);
 	}
 
-	if (waitfor) {
-		/* Wait 500ms for it to complete. */
-		for (i = 0; i < 500; i++) {
-			uint16_t bmsr;
-
-			PHY_READ(sc, MII_BMSR, &bmsr);
-			if (bmsr & BMSR_ACOMP)
-				return 0;
-			delay(1000);
-		}
-
-		/*
-		 * Don't need to worry about clearing MIIF_DOINGAUTO. If that's
-		 * set, a timeout is pending, and it will clear the flag.
-		 */
-		return EIO;
-	}
-
 	/*
 	 * Just let it finish asynchronously.  This is for the benefit of
 	 * the tick handler driving autonegotiation.  Don't want 500ms
 	 * delays all the time while the system is running!
 	 */
 	if (sc->mii_flags & MIIF_AUTOTSLEEP) {
+		ASSERT_SLEEPABLE();
 		sc->mii_flags |= MIIF_DOINGAUTO;
-		tsleep(&sc->mii_flags, PZERO, "miiaut", hz >> 1);
-		mii_phy_auto_timeout(sc);
+		kpause("miiaut", false, hz >> 1, mii->mii_media.ifm_lock);
+		mii_phy_auto_timeout_locked(sc);
 	} else if ((sc->mii_flags & MIIF_DOINGAUTO) == 0) {
 		sc->mii_flags |= MIIF_DOINGAUTO;
 		callout_reset(&sc->mii_nway_ch, hz >> 1,
@@ -296,21 +290,44 @@ mii_phy_auto(struct mii_softc *sc, int waitfor)
 	return EJUSTRETURN;
 }
 
-static void
-mii_phy_auto_timeout(void *arg)
+/* Just restart autonegotiation without changing any setting */
+int
+mii_phy_auto_restart(struct mii_softc *sc)
 {
-	struct mii_softc *sc = arg;
-	int s;
+	uint16_t reg;
+
+	PHY_READ(sc, MII_BMCR, &reg);
+	reg |= BMCR_STARTNEG;
+	PHY_WRITE(sc, MII_BMCR, reg);
+	sc->mii_ticks = 0;
+
+	return EJUSTRETURN;
+}
+
+static void
+mii_phy_auto_timeout_locked(struct mii_softc *sc)
+{
 
 	if (!device_is_active(sc->mii_dev))
 		return;
 
-	s = splnet();
 	sc->mii_flags &= ~MIIF_DOINGAUTO;
 
 	/* Update the media status. */
 	(void) PHY_SERVICE(sc, sc->mii_pdata, MII_POLLSTAT);
-	splx(s);
+}
+
+static void
+mii_phy_auto_timeout(void *arg)
+{
+	struct mii_softc *sc = arg;
+
+	if (!device_is_active(sc->mii_dev))
+		return;
+
+	mii_lock(sc->mii_pdata);
+	mii_phy_auto_timeout_locked(sc);
+	mii_unlock(sc->mii_pdata);
 }
 
 int
@@ -319,6 +336,8 @@ mii_phy_tick(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	/* Just bail now if the interface is down. */
 	if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
@@ -367,9 +386,7 @@ mii_phy_tick(struct mii_softc *sc)
 	if (sc->mii_ticks <= sc->mii_anegticks)
 		return EJUSTRETURN;
 
-	PHY_RESET(sc);
-
-	if (mii_phy_auto(sc, 0) == EJUSTRETURN)
+	if (mii_phy_auto_restart(sc) == EJUSTRETURN)
 		return EJUSTRETURN;
 
 	/*
@@ -384,6 +401,8 @@ mii_phy_reset(struct mii_softc *sc)
 {
 	int i;
 	uint16_t reg;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	if (sc->mii_flags & MIIF_NOISOLATE)
 		reg = BMCR_RESET;
@@ -407,9 +426,23 @@ void
 mii_phy_down(struct mii_softc *sc)
 {
 
+	KASSERT(mii_locked(sc->mii_pdata));
+
 	if (sc->mii_flags & MIIF_DOINGAUTO) {
-		sc->mii_flags &= ~MIIF_DOINGAUTO;
-		callout_stop(&sc->mii_nway_ch);
+		/*
+		 * Try to stop it.
+		 *
+		 * - If we stopped it before it expired, callout_stop
+		 *   returns 0, and it is our responsibility to clear
+		 *   MIIF_DOINGAUTO.
+		 *
+		 * - Otherwise, we're too late -- the callout has
+		 *   already begun, and we must leave MIIF_DOINGAUTO
+		 *   set so mii_phy_detach will wait for it to
+		 *   complete.
+		 */
+		if (!callout_stop(&sc->mii_nway_ch))
+			sc->mii_flags &= ~MIIF_DOINGAUTO;
 	}
 }
 
@@ -417,6 +450,7 @@ void
 mii_phy_status(struct mii_softc *sc)
 {
 
+	KASSERT(mii_locked(sc->mii_pdata));
 	PHY_STATUS(sc);
 }
 
@@ -424,14 +458,21 @@ void
 mii_phy_update(struct mii_softc *sc, int cmd)
 {
 	struct mii_data *mii = sc->mii_pdata;
+	u_int mii_media_active;
+	int   mii_media_status;
 
-	if (sc->mii_media_active != mii->mii_media_active ||
-	    sc->mii_media_status != mii->mii_media_status ||
+	KASSERT(mii_locked(mii));
+
+	mii_media_active = mii->mii_media_active;
+	mii_media_status = mii->mii_media_status;
+
+	if (sc->mii_media_active != mii_media_active ||
+	    sc->mii_media_status != mii_media_status ||
 	    cmd == MII_MEDIACHG) {
 		mii_phy_statusmsg(sc);
 		(*mii->mii_statchg)(mii->mii_ifp);
-		sc->mii_media_active = mii->mii_media_active;
-		sc->mii_media_status = mii->mii_media_status;
+		sc->mii_media_active = mii_media_active;
+		sc->mii_media_status = mii_media_status;
 	}
 }
 
@@ -441,6 +482,8 @@ mii_phy_statusmsg(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifnet *ifp = mii->mii_ifp;
 
+	KASSERT(mii_locked(mii));
+
 	if (mii->mii_media_status & IFM_AVALID) {
 		if (mii->mii_media_status & IFM_ACTIVE)
 			if_link_state_change(ifp, LINK_STATE_UP);
@@ -449,6 +492,7 @@ mii_phy_statusmsg(struct mii_softc *sc)
 	} else
 		if_link_state_change(ifp, LINK_STATE_UNKNOWN);
 
+	/* XXX NET_MPSAFE */
 	ifp->if_baudrate = ifmedia_baudrate(mii->mii_media_active);
 }
 
@@ -465,9 +509,25 @@ mii_phy_add_media(struct mii_softc *sc)
 	const char *sep = "";
 	int fdx = 0;
 
+	aprint_normal_dev(self, "");
+	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
+	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0) {
+		aprint_error("no media present\n");
+		goto out;
+	}
+
+	/*
+	 * Set the autonegotiation timer for 10/100 media.  Gigabit media is
+	 * handled below.
+	 */
+	mii_lock(mii);
+	sc->mii_anegticks = MII_ANEGTICKS;
+	mii_unlock(mii);
+
 #define	ADD(m, c)	ifmedia_add(&mii->mii_media, (m), (c), NULL)
 #define	PRINT(n)	aprint_normal("%s%s", sep, (n)); sep = ", "
 
+	/* This flag is static; no need to lock. */
 	if ((sc->mii_flags & MIIF_NOISOLATE) == 0)
 		ADD(IFM_MAKEWORD(IFM_ETHER, IFM_NONE, 0, sc->mii_inst),
 		    MII_MEDIA_NONE);
@@ -475,7 +535,8 @@ mii_phy_add_media(struct mii_softc *sc)
 	/*
 	 * There are different interpretations for the bits in
 	 * HomePNA PHYs.  And there is really only one media type
-	 * that is supported.
+	 * that is supported.  This flag is also static, and so
+	 * no need to lock.
 	 */
 	if (sc->mii_flags & MIIF_IS_HPNA) {
 		if (sc->mii_capabilities & BMSR_10THDX) {
@@ -525,15 +586,19 @@ mii_phy_add_media(struct mii_softc *sc)
 		 * all the gigabit media types.
 		 */
 		if (sc->mii_extcapabilities & EXTSR_1000XHDX) {
+			mii_lock(mii);
 			sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 			sc->mii_flags |= MIIF_IS_1000X;
+			mii_unlock(mii);
 			ADD(IFM_MAKEWORD(IFM_ETHER, IFM_1000_SX, 0,
 			    sc->mii_inst), MII_MEDIA_1000_X);
 			PRINT("1000baseSX");
 		}
 		if (sc->mii_extcapabilities & EXTSR_1000XFDX) {
+			mii_lock(mii);
 			sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 			sc->mii_flags |= MIIF_IS_1000X;
+			mii_unlock(mii);
 			ADD(IFM_MAKEWORD(IFM_ETHER, IFM_1000_SX, IFM_FDX,
 			    sc->mii_inst), MII_MEDIA_1000_X_FDX);
 			PRINT("1000baseSX-FDX");
@@ -549,17 +614,21 @@ mii_phy_add_media(struct mii_softc *sc)
 		 * All 1000baseT PHYs have a 1000baseT control register.
 		 */
 		if (sc->mii_extcapabilities & EXTSR_1000THDX) {
+			mii_lock(mii);
 			sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 			sc->mii_flags |= MIIF_HAVE_GTCR;
 			mii->mii_media.ifm_mask |= IFM_ETH_MASTER;
+			mii_unlock(mii);
 			ADD(IFM_MAKEWORD(IFM_ETHER, IFM_1000_T, 0,
 			    sc->mii_inst), MII_MEDIA_1000_T);
 			PRINT("1000baseT");
 		}
 		if (sc->mii_extcapabilities & EXTSR_1000TFDX) {
+			mii_lock(mii);
 			sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 			sc->mii_flags |= MIIF_HAVE_GTCR;
 			mii->mii_media.ifm_mask |= IFM_ETH_MASTER;
+			mii_unlock(mii);
 			ADD(IFM_MAKEWORD(IFM_ETHER, IFM_1000_T, IFM_FDX,
 			    sc->mii_inst), MII_MEDIA_1000_T_FDX);
 			PRINT("1000baseT-FDX");
@@ -574,12 +643,16 @@ mii_phy_add_media(struct mii_softc *sc)
 	}
 #undef ADD
 #undef PRINT
-	if (fdx != 0 && (sc->mii_flags & MIIF_DOPAUSE))
+	/* This flag is static; no need to lock. */
+	if (fdx != 0 && (sc->mii_flags & MIIF_DOPAUSE)) {
+		mii_lock(mii);
 		mii->mii_media.ifm_mask |= IFM_ETH_FMASK;
+		mii_unlock(mii);
+	}
 out:
+	aprint_normal("\n");
 	if (!pmf_device_register(self, NULL, mii_phy_resume)) {
-		aprint_normal("\n");
-		aprint_error_dev(self, "couldn't establish power handler");
+		aprint_error_dev(self, "couldn't establish power handler\n");
 	}
 }
 
@@ -610,15 +683,16 @@ mii_phy_detach(device_t self, int flags)
 {
 	struct mii_softc *sc = device_private(self);
 
-	/* XXX Invalidate parent's media setting? */
-
-	if (sc->mii_flags & MIIF_DOINGAUTO)
-		callout_halt(&sc->mii_nway_ch, NULL);
+	mii_lock(sc->mii_pdata);
+	if (sc->mii_flags & MIIF_DOINGAUTO) {
+		callout_halt(&sc->mii_nway_ch,
+		    sc->mii_pdata->mii_media.ifm_lock);
+	}
+	mii_unlock(sc->mii_pdata);
 
 	callout_destroy(&sc->mii_nway_ch);
 
 	mii_phy_delete_media(sc);
-	LIST_REMOVE(sc, mii_list);
 
 	return 0;
 }
@@ -627,7 +701,7 @@ const struct mii_phydesc *
 mii_phy_match(const struct mii_attach_args *ma, const struct mii_phydesc *mpd)
 {
 
-	for (; mpd->mpd_name != NULL; mpd++) {
+	for (; mpd->mpd_oui != 0; mpd++) {
 		if (MII_OUI(ma->mii_id1, ma->mii_id2) == mpd->mpd_oui &&
 		    MII_MODEL(ma->mii_id2) == mpd->mpd_model)
 			return mpd;
@@ -642,6 +716,8 @@ u_int
 mii_phy_flowstatus(struct mii_softc *sc)
 {
 	uint16_t anar, anlpar;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	if ((sc->mii_flags & MIIF_DOPAUSE) == 0)
 		return 0;
@@ -691,25 +767,26 @@ mii_phy_resume(device_t dv, const pmf_qual_t *qual)
 {
 	struct mii_softc *sc = device_private(dv);
 
+	mii_lock(sc->mii_pdata);
 	PHY_RESET(sc);
-	return PHY_SERVICE(sc, sc->mii_pdata, MII_MEDIACHG) == 0;
+	bool rv = PHY_SERVICE(sc, sc->mii_pdata, MII_MEDIACHG) == 0;
+	mii_unlock(sc->mii_pdata);
+
+	return rv;
 }
 
 
 /*
- * Given an ifmedia word, return the corresponding ANAR value.
+ * Given an ifmedia_entry, return the corresponding ANAR value.
  */
 uint16_t
-mii_anar(int media)
+mii_anar(struct ifmedia_entry *ife)
 {
-	int rv;
 
 #ifdef DIAGNOSTIC
-	if (/* media < 0 || */ media >= MII_NMEDIA)
+	if (ife->ifm_data >= MII_NMEDIA)
 		panic("mii_anar");
 #endif
 
-	rv = mii_media_table[media].mm_anar;
-
-	return rv;
+	return mii_media_table[ife->ifm_data].mm_anar;
 }

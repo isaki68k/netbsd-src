@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_spi.c,v 1.6 2019/08/13 17:03:10 tnn Exp $	*/
+/*	$NetBSD: bcm2835_spi.c,v 1.12 2022/05/07 07:26:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 2012 Jonathan A. Kollasch
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_spi.c,v 1.6 2019/08/13 17:03:10 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_spi.c,v 1.12 2022/05/07 07:26:27 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -53,6 +53,7 @@ struct bcmspi_softc {
 	bus_space_handle_t	sc_ioh;
 	void			*sc_intrh;
 	struct spi_controller	sc_spi;
+	kmutex_t                sc_mutex;
 	SIMPLEQ_HEAD(,spi_transfer) sc_q;
 	struct spi_transfer	*sc_transfer;
 	struct spi_chunk	*sc_wchunk;
@@ -76,16 +77,17 @@ static void bcmspi_recv(struct bcmspi_softc * const);
 CFATTACH_DECL_NEW(bcmspi, sizeof(struct bcmspi_softc),
     bcmspi_match, bcmspi_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-spi" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 bcmspi_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"brcm,bcm2835-spi",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -122,8 +124,8 @@ bcmspi_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_intrh = fdtbus_intr_establish(phandle, 0, IPL_VM, 0,
-	    bcmspi_intr, sc);
+	sc->sc_intrh = fdtbus_intr_establish_xname(phandle, 0, IPL_VM, 0,
+	    bcmspi_intr, sc, device_xname(self));
 	if (sc->sc_intrh == NULL) {
 		aprint_error_dev(sc->sc_dev, "unable to establish interrupt\n");
 		return;
@@ -131,6 +133,7 @@ bcmspi_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
 	sc->sc_spi.sct_cookie = sc;
+	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, IPL_VM);
 	sc->sc_spi.sct_configure = bcmspi_configure;
 	sc->sc_spi.sct_transfer = bcmspi_transfer;
 	sc->sc_spi.sct_nslaves = 3;
@@ -138,7 +141,7 @@ bcmspi_attach(device_t parent, device_t self, void *aux)
 	memset(&sba, 0, sizeof(sba));
 	sba.sba_controller = &sc->sc_spi;
 
-	(void) config_found_ia(self, "spibus", &sba, spibus_print);
+	config_found(self, &sba, spibus_print, CFARGS_NONE);
 }
 
 static int
@@ -189,14 +192,13 @@ static int
 bcmspi_transfer(void *cookie, struct spi_transfer *st)
 {
 	struct bcmspi_softc * const sc = cookie;
-	int s;
 
-	s = splbio();
+	mutex_enter(&sc->sc_mutex);
 	spi_transq_enqueue(&sc->sc_q, st);
 	if (sc->sc_running == false) {
 		bcmspi_start(sc);
 	}
-	splx(s);
+	mutex_exit(&sc->sc_mutex);
 	return 0;
 }
 
@@ -226,13 +228,13 @@ bcmspi_start(struct bcmspi_softc * const sc)
 		if (!cold)
 			return;
 
-		int s = splbio();
 		for (;;) {
+		        mutex_exit(&sc->sc_mutex);
 			bcmspi_intr(sc);
+			mutex_enter(&sc->sc_mutex);
 			if (ISSET(st->st_flags, SPI_F_DONE))
 				break;
 		}
-		splx(s);
 	}
 
 	sc->sc_running = false;
@@ -291,11 +293,11 @@ bcmspi_intr(void *cookie)
 	struct spi_transfer *st;
 	uint32_t cs;
 
+	mutex_enter(&sc->sc_mutex);
 	cs = bus_space_read_4(sc->sc_iot, sc->sc_ioh, SPI_CS);
 	if (ISSET(cs, SPI_CS_DONE)) {
 		if (sc->sc_wchunk != NULL) {
 			bcmspi_send(sc);
-			goto end;
 		} else {
 			bus_space_write_4(sc->sc_iot, sc->sc_ioh, SPI_CS,
 			    sc->sc_CS);
@@ -306,13 +308,12 @@ bcmspi_intr(void *cookie)
 			KASSERT(st != NULL);
 			spi_done(st, 0);
 			sc->sc_running = false;
-			goto end;
 		}
 	} else if (ISSET(cs, SPI_CS_RXR)) {
 		bcmspi_recv(sc);
 		bcmspi_send(sc);
 	}
 
-end:
+	mutex_exit(&sc->sc_mutex);
 	return ISSET(cs, SPI_CS_DONE|SPI_CS_RXR);
 }

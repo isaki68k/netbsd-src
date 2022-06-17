@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.19 2019/08/30 00:01:33 jmcneill Exp $ */
+/* $NetBSD: efifdt.c,v 1.34 2022/03/25 21:23:00 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jason R. Thorpe
@@ -30,6 +30,12 @@
 #include "efiboot.h"
 #include "efifdt.h"
 #include "efiblock.h"
+#include "overlay.h"
+#include "module.h"
+
+#ifdef EFIBOOT_ACPI
+#include "efiacpi.h"
+#endif
 
 #include <libfdt.h>
 
@@ -47,7 +53,30 @@ static EFI_GUID FdtTableGuid = FDT_TABLE_GUID;
 	 (_md)->Type == EfiBootServicesCode || (_md)->Type == EfiBootServicesData || \
 	 (_md)->Type == EfiConventionalMemory)
 
+#define	FDT_SPACE	(4 * 1024 * 1024)
+#define	FDT_ALIGN	(2 * 1024 * 1024)
+
+#ifdef _LP64
+#define PRIdUINTN "ld"
+#define PRIxUINTN "lx"
+#else
+#define PRIdUINTN "d"
+#define PRIxUINTN "x"
+#endif
 static void *fdt_data = NULL;
+static size_t fdt_data_size = 512*1024;
+
+static EFI_PHYSICAL_ADDRESS initrd_addr, dtb_addr, rndseed_addr;
+static u_long initrd_size = 0, dtb_size = 0, rndseed_size = 0;
+
+/* exec.c */
+extern EFI_PHYSICAL_ADDRESS efirng_addr;
+extern u_long efirng_size;
+
+#ifdef EFIBOOT_ACPI
+#define ACPI_FDT_SIZE	(128 * 1024)
+static int efi_fdt_create_acpifdt(void);
+#endif
 
 int
 efi_fdt_probe(void)
@@ -69,10 +98,23 @@ efi_fdt_probe(void)
 int
 efi_fdt_set_data(void *data)
 {
+	int err;
+
 	if (fdt_check_header(data) != 0)
 		return EINVAL;
 
-	fdt_data = data;
+	fdt_data = alloc(fdt_data_size);
+	if (fdt_data == NULL)
+		return ENOMEM;
+	memset(fdt_data, 0, fdt_data_size);
+
+	err = fdt_open_into(data, fdt_data, fdt_data_size);
+	if (err != 0) {
+		dealloc(fdt_data, fdt_data_size);
+		fdt_data = NULL;
+		return ENXIO;
+	}
+
 	return 0;
 }
 
@@ -178,6 +220,34 @@ efi_fdt_show(void)
 	printf("]\n");
 }
 
+static int
+efi_fdt_chosen(void)
+{
+	int chosen;
+
+	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
+	if (chosen < 0)
+		chosen = fdt_add_subnode(fdt_data,
+		    fdt_path_offset(fdt_data, "/"),
+		    FDT_CHOSEN_NODE_NAME);
+	if (chosen < 0)
+		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+
+	return chosen;
+}
+
+void
+efi_fdt_system_table(void)
+{
+#ifdef EFIBOOT_RUNTIME_ADDRESS
+	int chosen;
+
+	chosen = efi_fdt_chosen();
+
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,uefi-system-table", (uint64_t)(uintptr_t)ST);
+#endif
+}
+
 void
 efi_fdt_memory_map(void)
 {
@@ -185,19 +255,13 @@ efi_fdt_memory_map(void)
 	EFI_MEMORY_DESCRIPTOR *md, *memmap;
 	UINT32 descver;
 	UINT64 phys_start, phys_size;
-	int n, memory, chosen;
+	int n, memory;
 
 	memory = fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH);
 	if (memory < 0)
 		memory = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_MEMORY_NODE_NAME);
 	if (memory < 0)
 		panic("FDT: Failed to create " FDT_MEMORY_NODE_PATH " node");
-
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
 
 	fdt_delprop(fdt_data, memory, "reg");
 
@@ -206,10 +270,15 @@ efi_fdt_memory_map(void)
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
 	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
-		fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->Type);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->PhysicalStart);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->NumberOfPages);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->Attribute);
+		/*
+		 * create / find the chosen node for each iteration as it might have changed
+		 * when adding to the memory node
+		 */
+		int chosen = efi_fdt_chosen();
+		fdt_appendprop_u32(fdt_data, chosen, "netbsd,uefi-memmap", md->Type);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->PhysicalStart);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->NumberOfPages);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->Attribute);
 
 		if ((md->Attribute & EFI_MEMORY_RUNTIME) != 0)
 			continue;
@@ -227,26 +296,31 @@ efi_fdt_memory_map(void)
 		phys_size = md->NumberOfPages * EFI_PAGE_SIZE;
 
 		if (phys_start & EFI_PAGE_MASK) {
-			/* UEFI spec says these should be 4KB aligned, but U-Boot doesn't always.. */
+			/*
+			 * UEFI spec says these should be 4KB aligned, but
+			 * U-Boot doesn't always, so round up to the next
+			 * page.
+			 */
 			phys_start = (phys_start + EFI_PAGE_SIZE) & ~EFI_PAGE_MASK;
 			phys_size -= (EFI_PAGE_SIZE * 2);
 			if (phys_size == 0)
 				continue;
 		}
 
+		memory = fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH);
 		if (address_cells == 1)
-			fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", (uint32_t)phys_start);
+			fdt_appendprop_u32(fdt_data, memory, "reg",
+			    (uint32_t)phys_start);
 		else
-			fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", phys_start);
+			fdt_appendprop_u64(fdt_data, memory, "reg",
+			    phys_start);
 
 		if (size_cells == 1)
-			fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", (uint32_t)phys_size);
+			fdt_appendprop_u32(fdt_data, memory, "reg",
+			    (uint32_t)phys_size);
 		else
-			fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", phys_size);
+			fdt_appendprop_u64(fdt_data, memory, "reg",
+			    phys_size);
 	}
 }
 
@@ -259,7 +333,7 @@ efi_fdt_gop(void)
 	EFI_HANDLE *gop_handle;
 	UINTN ngop_handle, n;
 	char buf[48];
-	int fb;
+	int fb, chosen;
 
 	status = LibLocateHandle(ByProtocol, &GraphicsOutputProtocol, NULL, &ngop_handle, &gop_handle);
 	if (EFI_ERROR(status) || ngop_handle == 0)
@@ -275,7 +349,7 @@ efi_fdt_gop(void)
 			continue;
 
 #ifdef EFIBOOT_DEBUG
-		printf("GOP: FB @ 0x%lx size 0x%lx\n", mode->FrameBufferBase, mode->FrameBufferSize);
+		printf("GOP: FB @ 0x%" PRIx64 " size 0x%" PRIxUINTN "\n", mode->FrameBufferBase, mode->FrameBufferSize);
 		printf("GOP: Version %d\n", mode->Info->Version);
 		printf("GOP: HRes %d VRes %d\n", mode->Info->HorizontalResolution, mode->Info->VerticalResolution);
 		printf("GOP: PixelFormat %d\n", mode->Info->PixelFormat);
@@ -292,17 +366,17 @@ efi_fdt_gop(void)
 			continue;
 		}
 
-		fdt_setprop_u32(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "#address-cells", 2);
-		fdt_setprop_u32(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "#size-cells", 2);
-		fdt_setprop_empty(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "ranges");
+		chosen = efi_fdt_chosen();
+		fdt_setprop_u32(fdt_data, chosen, "#address-cells", 2);
+		fdt_setprop_u32(fdt_data, chosen, "#size-cells", 2);
+		fdt_setprop_empty(fdt_data, chosen, "ranges");
 
 		snprintf(buf, sizeof(buf), "framebuffer@%" PRIx64, mode->FrameBufferBase);
-		fb = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), buf);
-		if (fb < 0)
-			panic("FDT: Failed to create framebuffer node");
+		fb = fdt_add_subnode(fdt_data, chosen, buf);
+		if (fb < 0) {
+			/* Framebuffer node already exists. No need to create a new one! */
+			return;
+		}
 
 		fdt_appendprop_string(fdt_data, fb, "compatible", "simple-framebuffer");
 		fdt_appendprop_string(fdt_data, fb, "status", "okay");
@@ -313,9 +387,15 @@ efi_fdt_gop(void)
 		fdt_appendprop_u32(fdt_data, fb, "stride", mode->Info->PixelsPerScanLine * 4);	/* XXX */
 		fdt_appendprop_string(fdt_data, fb, "format", "a8b8g8r8");
 
-		snprintf(buf, sizeof(buf), "/chosen/framebuffer@%" PRIx64, mode->FrameBufferBase);
-		fdt_setprop_string(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH),
-		    "stdout-path", buf);
+#ifdef EFIBOOT_ACPI
+		/*
+		 * In ACPI mode, use GOP as console.
+		 */
+		if (efi_acpi_available()) {
+			snprintf(buf, sizeof(buf), "/chosen/framebuffer@%" PRIx64, mode->FrameBufferBase);
+			fdt_setprop_string(fdt_data, chosen, "stdout-path", buf);
+		}
+#endif
 
 		return;
 	}
@@ -328,11 +408,7 @@ efi_fdt_bootargs(const char *bootargs)
 	uint8_t macaddr[6];
 	int chosen;
 
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+	chosen = efi_fdt_chosen();
 
 	if (*bootargs)
 		fdt_setprop_string(fdt_data, chosen, "bootargs", bootargs);
@@ -366,6 +442,20 @@ efi_fdt_bootargs(const char *bootargs)
 	}
 }
 
+static void
+efi_fdt_userconf_addprop(const char *cmd)
+{
+	const int chosen = efi_fdt_chosen();
+
+	fdt_appendprop_string(fdt_data, chosen, "netbsd,userconf", cmd);
+}
+
+void
+efi_fdt_userconf(void)
+{
+	userconf_foreach(efi_fdt_userconf_addprop);
+}
+
 void
 efi_fdt_initrd(u_long initrd_addr, u_long initrd_size)
 {
@@ -374,12 +464,341 @@ efi_fdt_initrd(u_long initrd_addr, u_long initrd_size)
 	if (initrd_size == 0)
 		return;
 
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
-
+	chosen = efi_fdt_chosen();
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-start", initrd_addr);
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-end", initrd_addr + initrd_size);
 }
+
+/* pass in the NetBSD on-disk random seed */
+void
+efi_fdt_rndseed(u_long addr, u_long size)
+{
+	int chosen;
+
+	if (size == 0)
+		return;
+
+	chosen = efi_fdt_chosen();
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-start", addr);
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-end", addr + size);
+}
+
+/* pass in output from the EFI firmware's RNG from some unknown source */
+void
+efi_fdt_efirng(u_long efirng_addr, u_long efirng_size)
+{
+	int chosen;
+
+	if (efirng_size == 0)
+		return;
+
+	chosen = efi_fdt_chosen();
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,efirng-start",
+	    efirng_addr);
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,efirng-end",
+	    efirng_addr + efirng_size);
+}
+
+/* pass in module information */
+void
+efi_fdt_module(const char *module_name, u_long module_addr, u_long module_size)
+{
+	int chosen;
+
+	if (module_size == 0)
+		return;
+
+	chosen = efi_fdt_chosen();
+	fdt_appendprop_string(fdt_data, chosen, "netbsd,module-names", module_name);
+	fdt_appendprop_u64(fdt_data, chosen, "netbsd,modules", module_addr);
+	fdt_appendprop_u64(fdt_data, chosen, "netbsd,modules", module_size);
+}
+
+static void
+apply_overlay(const char *path, void *dtbo)
+{
+
+	if (!efi_fdt_overlay_is_compatible(dtbo)) {
+		printf("boot: %s: incompatible overlay\n", path);
+		return;
+	}
+
+	int fdterr;
+
+	if (efi_fdt_overlay_apply(dtbo, &fdterr) != 0) {
+		printf("boot: %s: error %d applying overlay\n", path, fdterr);
+	}
+}
+
+static void
+apply_overlay_file(const char *path)
+{
+	EFI_PHYSICAL_ADDRESS dtbo_addr;
+	u_long dtbo_size;
+
+	if (strlen(path) == 0)
+		return;
+
+	if (load_file(path, 0, false, &dtbo_addr, &dtbo_size) != 0 ||
+	    dtbo_addr == 0) {
+		/* Error messages have already been displayed. */
+		goto out;
+	}
+
+	apply_overlay(path, (void *)(uintptr_t)dtbo_addr);
+
+out:
+	if (dtbo_addr) {
+		uefi_call_wrapper(BS->FreePages, 2, dtbo_addr,
+		    EFI_SIZE_TO_PAGES(dtbo_size));
+	}
+}
+
+static void
+load_fdt_overlays(void)
+{
+	if (!dtoverlay_enabled)
+		return;
+
+	dtoverlay_foreach(apply_overlay_file);
+}
+
+static void
+load_module(const char *module_name)
+{
+	EFI_PHYSICAL_ADDRESS addr;
+	u_long size;
+	char path[PATH_MAX];
+
+	snprintf(path, sizeof(path), "%s/%s/%s.kmod", module_prefix,
+	    module_name, module_name);
+
+	if (load_file(path, 0, false, &addr, &size) != 0 || addr == 0 || size == 0)
+	    return;
+
+	efi_fdt_module(module_name, (u_long)addr, size);
+}
+
+static void
+load_modules(const char *kernel_name)
+{
+	if (!module_enabled)
+		return;
+
+	module_init(kernel_name);
+	module_foreach(load_module);
+}
+
+
+/*
+ * Prepare kernel arguments and shutdown boot services.
+ */
+int
+arch_prepare_boot(const char *fname, const char *args, u_long *marks)
+{
+	load_file(get_initrd_path(), 0, false, &initrd_addr, &initrd_size);
+	load_file(get_dtb_path(), 0, false, &dtb_addr, &dtb_size);
+
+#ifdef EFIBOOT_ACPI
+	/* ACPI support only works for little endian kernels */
+	if (efi_acpi_available() && netbsd_elf_data == ELFDATA2LSB) {
+		int error = efi_fdt_create_acpifdt();
+		if (error != 0) {
+			return error;
+		}
+	} else
+#endif
+	if (dtb_addr && efi_fdt_set_data((void *)(uintptr_t)dtb_addr) != 0) {
+		return EINVAL;
+	}
+
+	if (efi_fdt_size() > 0) {
+		/*
+		 * Load the rndseed as late as possible -- after we
+		 * have committed to using fdt and executing this
+		 * kernel -- so that it doesn't hang around in memory
+		 * if we have to bail or the kernel won't use it.
+		 */
+		load_file(get_rndseed_path(), 0, false,
+		    &rndseed_addr, &rndseed_size);
+
+		efi_fdt_init((marks[MARK_END] + FDT_ALIGN - 1) & -FDT_ALIGN, FDT_ALIGN);
+		load_modules(fname);
+		load_fdt_overlays();
+		efi_fdt_initrd(initrd_addr, initrd_size);
+		efi_fdt_rndseed(rndseed_addr, rndseed_size);
+		efi_fdt_efirng(efirng_addr, efirng_size);
+		efi_fdt_bootargs(args);
+		efi_fdt_userconf();
+		efi_fdt_system_table();
+		efi_fdt_gop();
+		efi_fdt_memory_map();
+	}
+
+	efi_cleanup();
+
+	if (efi_fdt_size() > 0) {
+		efi_fdt_fini();
+	}
+
+	return 0;
+}
+
+/*
+ * Free memory after a failed boot.
+ */
+void
+arch_cleanup_boot(void)
+{
+	if (rndseed_addr) {
+		uefi_call_wrapper(BS->FreePages, 2, rndseed_addr, EFI_SIZE_TO_PAGES(rndseed_size));
+		rndseed_addr = 0;
+		rndseed_size = 0;
+	}
+	if (initrd_addr) {
+		uefi_call_wrapper(BS->FreePages, 2, initrd_addr, EFI_SIZE_TO_PAGES(initrd_size));
+		initrd_addr = 0;
+		initrd_size = 0;
+	}
+	if (dtb_addr) {
+		uefi_call_wrapper(BS->FreePages, 2, dtb_addr, EFI_SIZE_TO_PAGES(dtb_size));
+		dtb_addr = 0;
+		dtb_size = 0;
+	}
+}
+
+size_t
+arch_alloc_size(void)
+{
+	return FDT_SPACE;
+}
+
+#ifdef EFIBOOT_ACPI
+int
+efi_fdt_create_acpifdt(void)
+{
+	void *acpi_root = efi_acpi_root();
+	void *smbios_table = efi_acpi_smbios();
+	void *fdt;
+	int error;
+
+	if (acpi_root == NULL)
+		return EINVAL;
+
+	fdt = AllocatePool(ACPI_FDT_SIZE);
+	if (fdt == NULL)
+		return ENOMEM;
+
+	error = fdt_create_empty_tree(fdt, ACPI_FDT_SIZE);
+	if (error)
+		return EIO;
+
+	const char *model = efi_acpi_get_model();
+
+	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/"), "compatible", "netbsd,generic-acpi");
+	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/"), "model", model);
+	fdt_setprop_cell(fdt, fdt_path_offset(fdt, "/"), "#address-cells", 2);
+	fdt_setprop_cell(fdt, fdt_path_offset(fdt, "/"), "#size-cells", 2);
+
+	fdt_add_subnode(fdt, fdt_path_offset(fdt, "/"), "chosen");
+	fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,acpi-root-table", (uint64_t)(uintptr_t)acpi_root);
+	if (smbios_table)
+		fdt_setprop_u64(fdt, fdt_path_offset(fdt, "/chosen"), "netbsd,smbios-table", (uint64_t)(uintptr_t)smbios_table);
+
+	fdt_add_subnode(fdt, fdt_path_offset(fdt, "/"), "acpi");
+	fdt_setprop_string(fdt, fdt_path_offset(fdt, "/acpi"), "compatible", "netbsd,acpi");
+
+	return efi_fdt_set_data(fdt);
+}
+#endif
+
+#ifdef EFIBOOT_RUNTIME_ADDRESS
+static uint64_t
+efi_fdt_runtime_alloc_va(uint64_t npages)
+{
+	static uint64_t va = EFIBOOT_RUNTIME_ADDRESS;
+	static uint64_t sz = EFIBOOT_RUNTIME_SIZE;
+	uint64_t nva;
+
+	if (sz < (npages * EFI_PAGE_SIZE)) {
+		panic("efi_acpi_alloc_va: couldn't allocate %" PRIu64 " pages",
+		    npages);
+	}
+
+	nva = va;
+	va += (npages * EFI_PAGE_SIZE);
+	sz -= (npages * EFI_PAGE_SIZE);
+
+	return nva;
+}
+
+void
+arch_set_virtual_address_map(EFI_MEMORY_DESCRIPTOR *memmap, UINTN nentries,
+    UINTN mapkey, UINTN descsize, UINT32 descver)
+{
+	EFI_MEMORY_DESCRIPTOR *md, *vmd, *vmemmap;
+	EFI_STATUS status;
+	int n, nrt;
+	void *fdt;
+
+	fdt = efi_fdt_data();
+
+	vmemmap = alloc(nentries * descsize);
+	if (vmemmap == NULL)
+		panic("FATAL: couldn't allocate virtual memory map");
+
+	for (n = 0, nrt = 0, vmd = vmemmap, md = memmap;
+	     n < nentries;
+	     n++, md = NextMemoryDescriptor(md, descsize)) {
+
+		if ((md->Attribute & EFI_MEMORY_RUNTIME) == 0) {
+			continue;
+		}
+
+		md->VirtualStart = efi_fdt_runtime_alloc_va(md->NumberOfPages);
+
+		switch (md->Type) {
+		case EfiRuntimeServicesCode:
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-code", md->PhysicalStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-code", md->VirtualStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-code",
+			    md->NumberOfPages * EFI_PAGE_SIZE);
+			break;
+		case EfiRuntimeServicesData:
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-data", md->PhysicalStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-data", md->VirtualStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-data",
+			    md->NumberOfPages * EFI_PAGE_SIZE);
+			break;
+		case EfiMemoryMappedIO:
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-mmio", md->PhysicalStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-mmio", md->VirtualStart);
+			fdt_appendprop_u64(fdt, fdt_path_offset(fdt, "/chosen"),
+			    "netbsd,uefi-runtime-mmio",
+			    md->NumberOfPages * EFI_PAGE_SIZE);
+			break;
+		default:
+			break;
+		}
+
+		*vmd = *md;
+		vmd = NextMemoryDescriptor(vmd, descsize);
+		++nrt;
+	}
+
+	status = uefi_call_wrapper(RT->SetVirtualAddressMap, 4, nrt * descsize,
+	    descsize, descver, vmemmap);
+	if (EFI_ERROR(status)) {
+		printf("WARNING: SetVirtualAddressMap failed\n");
+		return;
+	}
+}
+#endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: promlib.c,v 1.46 2017/09/11 19:25:07 palle Exp $ */
+/*	$NetBSD: promlib.c,v 1.52 2022/01/22 11:49:16 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: promlib.c,v 1.46 2017/09/11 19:25:07 palle Exp $");
+__KERNEL_RCSID(0, "$NetBSD: promlib.c,v 1.52 2022/01/22 11:49:16 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_sparc_arch.h"
@@ -43,11 +43,13 @@ __KERNEL_RCSID(0, "$NetBSD: promlib.c,v 1.46 2017/09/11 19:25:07 palle Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/device.h>
 
 #ifdef _STANDALONE
 #include <lib/libsa/stand.h>
 #define malloc(s,t,f)	alloc(s)
 #else
+#include <sys/device_calls.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #endif /* _STANDALONE */
@@ -55,7 +57,9 @@ __KERNEL_RCSID(0, "$NetBSD: promlib.c,v 1.46 2017/09/11 19:25:07 palle Exp $");
 #include <machine/oldmon.h>
 #include <machine/promlib.h>
 #include <machine/ctlreg.h>
+
 #include <sparc/sparc/asm.h>
+#include <sparc/sparc/cache.h>
 
 #include <lib/libkern/libkern.h>
 
@@ -91,6 +95,19 @@ static int	opf_instance_to_package(int);
 static char	*opf_nextprop(int, const char *);
 static void	opf_interpret_simple(const char *);
 
+#ifndef _STANDALONE
+static devhandle_t
+null_prom_to_devhandle(int node __unused)
+{
+	return devhandle_invalid();
+}
+
+static int
+null_devhandle_to_prom(devhandle_t devhandle __unused)
+{
+	return 0;
+}
+#endif /* ! _STANDALONE */
 
 /*
  * PROM entry points.
@@ -140,7 +157,20 @@ struct promops promops = {
 	(void *)notimplemented,		/* getprop */
 	(void *)notimplemented,		/* setprop */
 	(void *)notimplemented,		/* nextprop */
-	(void *)notimplemented		/* finddevice */
+	(void *)notimplemented,		/* finddevice */
+
+	/*
+	 * These should never be called in the STANDALONE environment,
+	 * but when we're in the kernel environment, it's not really
+	 * invalid to do so.
+	 */
+#ifdef STANDALONE
+	(void *)notimplemented,		/* node_to_devhandle */
+	(void *)notimplemented,		/* devhandle_to_node */
+#else
+	(void *)null_prom_to_devhandle,	/* node_to_devhandle */
+	(void *)null_devhandle_to_prom,	/* devhandle_to_node */
+#endif /* STANDALONE */
 };
 
 static void
@@ -179,6 +209,79 @@ notimplemented(void)
 	}
 }
 
+#ifndef _STANDALONE
+/*
+ * OBP device handle support.  We subsume v0-v3 into a single implementation
+ * and use promops to handle differences.
+ *
+ * On 32-bit SPARC, the OpenFirmware variant also gets redirected here.
+ * See prom_init_opf().
+ */
+
+static device_call_t
+obp_devhandle_lookup_device_call(devhandle_t handle, const char *name,
+    devhandle_t *call_handlep)
+{
+	__link_set_decl(obp_device_calls, struct device_call_descriptor);
+	struct device_call_descriptor * const *desc;
+
+	__link_set_foreach(desc, obp_device_calls) {
+		if (strcmp((*desc)->name, name) == 0) {
+			return (*desc)->call;
+		}
+	}
+	return NULL;
+}
+
+static const struct devhandle_impl obp_devhandle_impl = {
+	.type = DEVHANDLE_TYPE_OPENBOOT,
+	.lookup_device_call = obp_devhandle_lookup_device_call,
+};
+
+static devhandle_t
+devhandle_from_obp(devhandle_t super_handle, int node)
+{
+	devhandle_type_t super_type = devhandle_type(super_handle);
+	devhandle_t handle = { 0 };
+
+	if (super_type == DEVHANDLE_TYPE_OPENBOOT) {
+		handle.impl = super_handle.impl;
+	} else {
+		KASSERT(super_type == DEVHANDLE_TYPE_INVALID);
+		handle.impl = &obp_devhandle_impl;
+	}
+	handle.integer = node;
+
+	return handle;
+}
+
+static int
+devhandle_to_obp(devhandle_t const handle)
+{
+	KASSERT(devhandle_type(handle) == DEVHANDLE_TYPE_OPENBOOT);
+
+	return handle.integer;
+}
+
+static int
+obp_device_enumerate_children(device_t dev, devhandle_t call_handle, void *v)
+{
+	struct device_enumerate_children_args *args = v;
+	int node = devhandle_to_obp(call_handle);
+
+	for (node = prom_firstchild(node); node != 0;
+	     node = prom_nextsibling(node)) {
+		if (!args->callback(dev, devhandle_from_obp(call_handle, node),
+				    args->callback_arg)) {
+			break;
+		}
+	}
+
+	return 0;
+}
+OBP_DEVICE_CALL_REGISTER(DEVICE_ENUMERATE_CHILDREN_STR,
+			 obp_device_enumerate_children)
+#endif /* ! _STANDALONE */
 
 /*
  * prom_getprop() reads the named property data from a given node.
@@ -1105,7 +1208,6 @@ static inline void
 prom_init_oldmon(void)
 {
 	struct om_vector *oldpvec = (struct om_vector *)PROM_BASE;
-	extern void sparc_noop(void);
 
 	promops.po_version = PROM_OLDMON;
 	promops.po_revision = oldpvec->monId[0];	/*XXX*/
@@ -1133,7 +1235,6 @@ prom_init_oldmon(void)
 #ifdef SUN4
 #ifndef _STANDALONE
 	if (oldpvec->romvecVersion >= 2) {
-		extern void oldmon_w_cmd(u_long, char *);
 		*oldpvec->vector_cmd = oldmon_w_cmd;
 	}
 #endif
@@ -1184,6 +1285,11 @@ prom_init_obp(void)
 	promops.po_getprop = (void *)no->no_getprop;
 	promops.po_setprop = no->no_setprop;
 	promops.po_nextprop = no->no_nextprop;
+
+#ifndef _STANDALONE
+	promops.po_node_to_devhandle = devhandle_from_obp;
+	promops.po_devhandle_to_node = devhandle_to_obp;
+#endif /* _STANDALONE */
 
 	/*
 	 * Next, deal with prom vector differences between versions.
@@ -1287,6 +1393,23 @@ prom_init_opf(void)
 	promops.po_seek = OF_seek;
 	promops.po_instance_to_package = opf_instance_to_package;
 	promops.po_finddevice = opf_finddevice;
+
+#ifndef _STANDALONE
+#ifdef __sparc64__
+	promops.po_node_to_devhandle = devhandle_from_of;
+	promops.po_devhandle_to_node = devhandle_to_of;
+#else
+	/*
+	 * For 32-bit SPARC, pretend this is OpenBoot for now.
+	 * The differences will be hidden behind the promops
+	 * anyway.  We do this because this platform doesn't
+	 * pull in all of the OpenFirmware support code that
+	 * 64-bit SPARC does.
+	 */
+	promops.po_node_to_devhandle = devhandle_from_obp;
+	promops.po_devhandle_to_node = devhandle_to_obp;
+#endif /* __sparc64__ */
+#endif /* _STANDALONE */
 
 	/* Retrieve and cache stdio handles */
 	node = findchosen();

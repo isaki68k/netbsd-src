@@ -1,5 +1,5 @@
 /*	$KAME: sctp_input.c,v 1.28 2005/04/21 18:36:21 nishida Exp $	*/
-/*	$NetBSD: sctp_input.c,v 1.14 2019/05/28 08:59:35 msaitoh Exp $	*/
+/*	$NetBSD: sctp_input.c,v 1.16 2022/04/08 10:27:04 andvar Exp $	*/
 
 /*
  * Copyright (C) 2002, 2003, 2004 Cisco Systems Inc,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_input.c,v 1.14 2019/05/28 08:59:35 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_input.c,v 1.16 2022/04/08 10:27:04 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -387,7 +387,7 @@ sctp_process_init_ack(struct mbuf *m, int iphlen, int offset,
 
 	/*
 	 * Cancel the INIT timer, We do this first before queueing
-	 * the cookie. We always cancel at the primary to assue that
+	 * the cookie. We always cancel at the primary to assume that
 	 * we are canceling the timer started by the INIT which always
 	 * goes to the primary.
 	 */
@@ -1476,7 +1476,7 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 			u_int8_t *pp;
 			pp = (u_int8_t *)initack_cp;
 			printf("process_cookie_new: could not find INIT-ACK chunk!\n");
-			printf("Found bytes %x %x %x %x at postion %d\n",
+			printf("Found bytes %x %x %x %x at position %d\n",
 			    (u_int)pp[0], (u_int)pp[1], (u_int)pp[2],
 			    (u_int)pp[3], initack_offset);
 		}

@@ -1,4 +1,4 @@
-/*	$NetBSD: dcm.c,v 1.88 2014/11/15 19:20:01 christos Exp $	*/
+/*	$NetBSD: dcm.c,v 1.90 2022/04/10 09:50:45 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dcm.c,v 1.88 2014/11/15 19:20:01 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dcm.c,v 1.90 2022/04/10 09:50:45 andvar Exp $");
 
 #include "opt_kgdb.h"
 
@@ -306,16 +306,11 @@ static	int dcm_lastcnpri = CN_DEAD; 	/* XXX last priority */
 #endif
 
 static struct consdev dcm_cons = {
-	NULL,
-	NULL,
-	dcmcngetc,
-	dcmcnputc,
-	nullcnpollc,
-	NULL,
-	NULL,
-	NULL,
-	NODEV,
-	CN_REMOTE
+	.cn_getc = dcmcngetc,
+	.cn_putc = dcmcnputc,
+	.cn_pollc = nullcnpollc,
+	.cn_dev = NODEV,
+	.cn_pri = CN_REMOTE
 };
 int	dcmconscode;
 int	dcmdefaultrate = DEFAULT_BAUD_RATE;
@@ -1370,7 +1365,7 @@ dcmsetischeme(int brd, int flags)
 		    device_xname(sc->sc_dev), perchar, dis->dis_perchar,
 		    dis->dis_intr, dis->dis_char);
 	if ((flags & DIS_RESET) == 0 && perchar == dis->dis_perchar) {
-		printf("%s: dcmsetischeme: redundent request %d\n",
+		printf("%s: dcmsetischeme: redundant request %d\n",
 		    device_xname(sc->sc_dev), perchar);
 		return;
 	}

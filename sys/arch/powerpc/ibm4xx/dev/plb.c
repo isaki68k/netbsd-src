@@ -1,4 +1,4 @@
-/* $NetBSD: plb.c,v 1.21 2013/11/21 13:33:15 kiyohara Exp $ */
+/* $NetBSD: plb.c,v 1.24 2021/08/07 16:19:03 thorpej Exp $ */
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -66,10 +66,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plb.c,v 1.21 2013/11/21 13:33:15 kiyohara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plb.c,v 1.24 2021/08/07 16:19:03 thorpej Exp $");
 
-#include "locators.h"
 #include "emac.h"
+#include "locators.h"
 
 #define _POWERPC_BUS_DMA_PRIVATE
 
@@ -178,7 +178,7 @@ plb_attach(device_t parent, device_t self, void *aux)
 		paa.plb_dmat = &ibm4xx_default_bus_dma_tag;
 		paa.plb_irq = PLBCF_IRQ_DEFAULT;
 
-		(void) config_found_ia(self, "plb", &paa, plb_print);
+		config_found(self, &paa, plb_print, CFARGS_NONE);
 	}
 
 	while (local_plb_devs && local_plb_devs->plb_name != NULL) {
@@ -190,7 +190,7 @@ plb_attach(device_t parent, device_t self, void *aux)
 		paa.plb_dmat = &ibm4xx_default_bus_dma_tag;
 		paa.plb_irq = PLBCF_IRQ_DEFAULT;
 
-		(void) config_found_ia(self, "plb", &paa, plb_print);
+		config_found(self, &paa, plb_print, CFARGS_NONE);
 		local_plb_devs++;
 	}
 }

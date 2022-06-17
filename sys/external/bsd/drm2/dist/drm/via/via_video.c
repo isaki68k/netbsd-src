@@ -1,4 +1,4 @@
-/*	$NetBSD: via_video.c,v 1.6 2018/08/27 04:58:37 riastradh Exp $	*/
+/*	$NetBSD: via_video.c,v 1.8 2021/12/18 23:45:44 riastradh Exp $	*/
 
 /*
  * Copyright 2005 Thomas Hellstrom. All Rights Reserved.
@@ -28,10 +28,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: via_video.c,v 1.6 2018/08/27 04:58:37 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: via_video.c,v 1.8 2021/12/18 23:45:44 riastradh Exp $");
 
-#include <drm/drmP.h>
+#include <drm/drm_device.h>
 #include <drm/via_drm.h>
+
 #include "via_drv.h"
 
 void via_init_futex(drm_via_private_t *dev_priv)
@@ -111,11 +112,11 @@ int via_decoder_futex(struct drm_device *dev, void *data, struct drm_file *file_
 		spin_lock(&dev_priv->decoder_lock[fx->lock]);
 		DRM_SPIN_WAIT_ON(ret, &dev_priv->decoder_queue[fx->lock],
 		    &dev_priv->decoder_lock[fx->lock],
-		    (fx->ms / 10) * (DRM_HZ / 100),
+		    (fx->ms / 10) * (HZ / 100),
 		    *lock != fx->val);
 		spin_unlock(&dev_priv->decoder_lock[fx->lock]);
 #else
-		DRM_WAIT_ON(ret, dev_priv->decoder_queue[fx->lock],
+		VIA_WAIT_ON(ret, dev_priv->decoder_queue[fx->lock],
 			    (fx->ms / 10) * (HZ / 100), *lock != fx->val);
 #endif
 		return ret;

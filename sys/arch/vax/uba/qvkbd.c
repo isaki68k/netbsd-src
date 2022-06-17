@@ -1,4 +1,4 @@
-/*	$NetBSD: qvkbd.c,v 1.1 2015/07/05 03:07:21 matt Exp $	*/
+/*	$NetBSD: qvkbd.c,v 1.6 2022/02/12 17:09:43 riastradh Exp $	*/
 
 /* Copyright (c) 2015 Charles H. Dickman. All rights reserved.
  * Derived from dzkbd.c
@@ -54,7 +54,7 @@ __KERNEL_RCSID(0, "$$");
 #include <sys/device.h>
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/intr.h>
 
 #include <dev/wscons/wsconsio.h>
@@ -81,8 +81,6 @@ struct qvkbd_internal {
 struct qvkbd_internal qvkbd_console_internal;
 
 struct qvkbd_softc {
-	struct device qvkbd_dev;	/* required first: base device */
-
 	struct qvkbd_internal *sc_itl;
 
 	int sc_enabled;
@@ -171,8 +169,7 @@ qvkbd_attach(device_t parent, device_t self, void *aux)
 	if (isconsole) {
 		qvi = &qvkbd_console_internal;
 	} else {
-		qvi = malloc(sizeof(struct qvkbd_internal),
-				       M_DEVBUF, M_NOWAIT);
+		qvi = kmem_alloc(sizeof(struct qvkbd_internal), KM_SLEEP);
 		qvi->qvi_ks.attmt.sendchar = qvkbd_sendchar;
 		qvi->qvi_ks.attmt.cookie = ls;
 	}
@@ -199,7 +196,7 @@ qvkbd_attach(device_t parent, device_t self, void *aux)
 	a.accessops = &qvkbd_accessops;
 	a.accesscookie = qvkbd;
 
-	qvkbd->sc_wskbddev = config_found(self, &a, wskbddevprint);
+	qvkbd->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARGS_NONE);
 }
 
 int
@@ -312,4 +309,3 @@ qvkbd_input(void *v, int data)
         } while (decode == LKD_MORE);
 	return(1);
 }
-

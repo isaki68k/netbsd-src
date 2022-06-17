@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.58 2009/10/27 03:45:32 snj Exp $	*/
+/*	$NetBSD: zs.c,v 1.61 2021/09/11 20:28:04 andvar Exp $	*/
 
 /*
  * Copyright (c) 1996-1998 Bill Studenmund
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.58 2009/10/27 03:45:32 snj Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.61 2021/09/11 20:28:04 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mac68k.h"
@@ -363,7 +363,8 @@ zsc_attach(device_t parent, device_t self, void *aux)
 		 * Look for a child driver for this channel.
 		 * The child attach will setup the hardware.
 		 */
-		if (!config_found(self, (void *)&zsc_args, zsc_print)) {
+		if (!config_found(self, (void *)&zsc_args, zsc_print,
+		    CFARGS_NONE)) {
 			/* No sub-driver.  Just reset it. */
 			uint8_t reset = (channel == 0) ?
 				ZSWR9_A_RESET : ZSWR9_B_RESET;
@@ -513,7 +514,7 @@ zs_set_speed(struct zs_chanstate *cs, int bps)
 	 * Step through all the sources and see which one matches
 	 * the best. A source has to match BETTER than tol to be chosen.
 	 * Thus if two sources give the same error, the first one will be
-	 * chosen. Also, allow for the possability that one source might run
+	 * chosen. Also, allow for the possibility that one source might run
 	 * both the BRG and the direct divider (i.e. RTxC).
 	 */
 	for (i=0; i < xcs->cs_clock_count; i++) {
@@ -644,7 +645,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Make sure we don't enable hfc on a signal line we're ignoring.
 	 * As we enable CTS interrupts only if we have CRTSCTS or CDTRCTS,
-	 * this code also effectivly turns off ZSWR15_CTS_IE.
+	 * this code also effectively turns off ZSWR15_CTS_IE.
 	 *
 	 * Also, disable DCD interrupts if we've been told to ignore
 	 * the DCD pin. Happens on mac68k because the input line for
@@ -675,7 +676,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */
@@ -805,7 +806,7 @@ static void	zscnsetup(void);
  */
 
 /*
- * This code modled after the zs_setparam routine in zskgdb
+ * This code modeled after the zs_setparam routine in zskgdb
  * It sets the console unit to a known state so we can output
  * correctly.
  */
@@ -906,7 +907,7 @@ zscnprobe(struct consdev * cp)
 	 * chip for console I/O, we just set up the internal addresses for it.
 	 *
 	 * Now turn off interrupts for the chip. Note: using sccA to get at
-	 * the chip is the only vestage of the NetBSD 1.0 ser driver. :-)
+	 * the chip is the only vestige of the NetBSD 1.0 ser driver. :-)
 	 */
 	unit = sccA[2];			/* reset reg. access */
 	unit = sccA[0];

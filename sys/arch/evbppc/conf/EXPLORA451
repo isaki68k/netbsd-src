@@ -1,6 +1,6 @@
-#	$NetBSD: EXPLORA451,v 1.64 2019/04/26 21:40:29 sevan Exp $
+#	$NetBSD: EXPLORA451,v 1.71 2021/03/14 03:35:39 rin Exp $
 #
-#	GENERIC -- everything that's currently supported
+#	EXPLORA451 -- NCD Explora 450 Series Thin Client
 #
 
 include 	"arch/evbppc/conf/std.explora"
@@ -75,8 +75,8 @@ file-system 	PROCFS		# /proc
 file-system 	UMAPFS		# NULLFS + uid and gid remapping
 file-system 	UNION		# union file system
 file-system	CODA		# Coda File System; also needs vcoda (below)
-file-system	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/pts/N support
+file-system	TMPFS		# Efficient memory file-system
 
 # File system options
 options 	QUOTA		# legacy UFS quotas
@@ -121,6 +121,7 @@ options 	WS_KERNEL_FG=WSCOL_GREEN
 options 	WSDISPLAY_DEFAULTSCREENS=1
 
 # Options for netboot
+options 	NFS_BOOT_UDP		# for much better performance
 options 	NFS_BOOT_BOOTPARAM
 options 	NFS_BOOT_DHCP
 
@@ -158,7 +159,6 @@ pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	sl			# Serial Line IP
-pseudo-device	strip			# Starmode Radio IP (Metricom)
 pseudo-device	irframetty		# IrDA frame line discipline
 pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
@@ -168,7 +168,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 
 # miscellaneous pseudo-devices
 pseudo-device	pty			# pseudo-terminals
@@ -178,9 +178,6 @@ pseudo-device	ksyms			# /dev/ksyms
 
 # a pseudo device needed for Coda	# also needs CODA (above)
 pseudo-device	vcoda			# coda minicache <-> venus comm.
-
-# a pseudo device needed for SMBFS
-pseudo-device	nsmb			# experimental - SMB requester
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor

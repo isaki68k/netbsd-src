@@ -1,4 +1,4 @@
-/*	$NetBSD: esp_sbus.c,v 1.54 2018/02/06 09:21:07 mrg Exp $	*/
+/*	$NetBSD: esp_sbus.c,v 1.57 2022/03/28 12:38:58 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -31,11 +31,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: esp_sbus.c,v 1.54 2018/02/06 09:21:07 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: esp_sbus.c,v 1.57 2022/03/28 12:38:58 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/buf.h>
 #include <sys/malloc.h>
 
@@ -191,19 +192,9 @@ espattach_sbus(device_t parent, device_t self, void *aux)
 		 * allocate space for dma, in SUNW,fas there are no separate
 		 * dma device
 		 */
-		lsc = malloc(sizeof(struct lsi64854_softc), M_DEVBUF, M_NOWAIT);
-
-		if (lsc == NULL) {
-			aprint_error(": out of memory (lsi64854_softc)\n");
-			return;
-		}
+		lsc = malloc(sizeof(struct lsi64854_softc), M_DEVBUF, M_WAITOK);
 		lsc->sc_dev = malloc(sizeof(struct device), M_DEVBUF,
-		    M_NOWAIT | M_ZERO);
-		if (lsc->sc_dev == NULL) {
-			aprint_error(": out of memory (device_t)\n");
-			free(lsc, M_DEVBUF);
-			return;
-		}
+		    M_WAITOK | M_ZERO);
 		esc->sc_dma = lsc;
 
 		lsc->sc_bustag = sa->sa_bustag;
@@ -697,7 +688,7 @@ const struct db_command db_esp_command_table[] = {
 	{ DDB_ADD_CMD("esp",	db_esp,	0, 
 	  "display status of all esp SCSI controllers and their devices",
 	  NULL, NULL) },
-	{ DDB_ADD_CMD(NULL,	NULL,	0, NULL, NULL, NULL) }
+	{ DDB_END_CMD },
 };
 
 static void

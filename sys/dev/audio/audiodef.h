@@ -1,4 +1,4 @@
-/*	$NetBSD: audiodef.h,v 1.7 2019/07/06 12:58:58 isaki Exp $	*/
+/*	$NetBSD: audiodef.h,v 1.19 2022/04/23 07:55:07 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
@@ -29,25 +29,33 @@
 #ifndef _SYS_DEV_AUDIO_AUDIODEF_H_
 #define _SYS_DEV_AUDIO_AUDIODEF_H_
 
-/* Number of HW buffer's blocks. */
+#ifdef _KERNEL_OPT
+#include "opt_audio.h"
+#endif
+
+/* Number of blocks in HW buffer. */
 #define NBLKHW (3)
 
-/* Number of track output buffer's blocks.  Must be > NBLKHW */
+/* Number of blocks in output buffer on playback track.  Must be > NBLKHW */
 #define NBLKOUT	(4)
 
-/* Minimum number of usrbuf's blocks. */
-#define AUMINNOBLK	(3)
-
 /*
- * Hardware blocksize in msec.
- * We use 40 msec as default.  (1 / 40ms) = 25 = 5^2.
- * In this case, the number of frames in a block can be an integer
- * even if the frequency is a multiple of 100 (44100, 48000, etc),
- * or even if 15625Hz (vs(4)).
+ * Number of blocks in input buffer on recording track.
+ *
+ * For references:
+ *  On 48000Hz/2ch (blk_ms=10), the buffer time is 160 [msec], and
+ *  the input buffer size is 30720 [bytes] (= 1920 [byte/block] * 16).
+ *
+ *  On 192000Hz/12ch (blk_ms=10), the buffer time is 160 [msec], and
+ *  the input buffer size is 737280 [bytes] (= 46080 [byte/block] * 16).
+ *
+ *  On 8000Hz/1ch (blk_ms=40), the buffer time is 640 [msec], and
+ *  the input buffer size = 10240 [bytes] (= 640 [byte/block] * 16).
  */
-#if !defined(AUDIO_BLK_MS)
-#define AUDIO_BLK_MS 40
-#endif
+#define NBLKIN	(16)
+
+/* Minimum number of blocks in usrbuf on playback track. */
+#define AUMINNOBLK	(3)
 
 /*
  * Whether the playback mixer use single buffer mode.
@@ -85,6 +93,8 @@
 #define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
 #endif
 
+#if defined(_KERNEL)
+
 /* conversion stage */
 typedef struct {
 	audio_ring_t srcbuf;
@@ -99,10 +109,10 @@ typedef enum {
 	AUDIO_STATE_DRAINING,	/* now draining */
 } audio_state_t;
 
-typedef struct audio_track {
+struct audio_track {
 	/*
 	 * AUMODE_PLAY for playback track, or
-	 * AUMODE_RECORD for recoding track.
+	 * AUMODE_RECORD for recording track.
 	 * Note that AUMODE_PLAY_ALL is maintained by file->mode, not here.
 	 */
 	int mode;
@@ -111,8 +121,6 @@ typedef struct audio_track {
 	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
 	struct uvm_object *uobj;
 	bool		mmapped;	/* device is mmap()-ed */
-	u_int		usrbuf_stamp;	/* transferred bytes from/to stage */
-	u_int		usrbuf_stamp_last; /* last stamp */
 	u_int		usrbuf_usedhigh;/* high water mark in bytes */
 	u_int		usrbuf_usedlow;	/* low water mark in bytes */
 
@@ -152,6 +160,13 @@ typedef struct audio_track {
 	u_int		volume;
 #endif
 
+	/*
+	 * For AUDIO_GET[IO]OFFS.
+	 * No locks are required for these.
+	 */
+	u_int		stamp;		/* number of transferred blocks */
+	u_int		last_stamp;
+
 	audio_trackmixer_t *mixer;	/* connected track mixer */
 
 	/* Sequence number picked up by track mixer. */
@@ -160,11 +175,7 @@ typedef struct audio_track {
 	audio_state_t	pstate;		/* playback state */
 	bool		is_pause;
 
-	/* Statistic counters. */
-	uint64_t	inputcounter;	/* # of frames input to track */
-	uint64_t	outputcounter;	/* # of frames output from track */
-	uint64_t	useriobytes;	/* # of bytes xfer to/from userland */
-	uint64_t	dropframes;	/* # of frames dropped */
+	uint64_t	dropframes;	/* number of dropped frames */
 	int		eofcounter;	/* count of zero-sized write */
 
 	/*
@@ -174,7 +185,10 @@ typedef struct audio_track {
 	volatile uint	lock;
 
 	int		id;		/* track id for debug */
-} audio_track_t;
+};
+#endif /* _KERNEL */
+
+typedef struct audio_track audio_track_t;
 
 struct audio_file {
 	struct audio_softc *sc;
@@ -198,8 +212,13 @@ struct audio_file {
 	/* process who wants audio SIGIO. */
 	pid_t		async_audio;
 
+	/* true when closing */
+	bool		dying;
+
 	SLIST_ENTRY(audio_file) entry;
 };
+
+#if defined(_KERNEL)
 
 struct audio_trackmixer {
 	struct audio_softc *sc;
@@ -292,8 +311,9 @@ static __inline int
 auring_round(const audio_ring_t *ring, int idx)
 {
 	DIAGNOSTIC_ring(ring);
-	KASSERT(idx >= 0);
-	KASSERT(idx < ring->capacity * 2);
+	KASSERTMSG(idx >= 0, "idx=%d", idx);
+	KASSERTMSG(idx < ring->capacity * 2,
+	    "idx=%d ring->capacity=%d", idx, ring->capacity);
 
 	if (idx < ring->capacity) {
 		return idx;
@@ -320,7 +340,9 @@ auring_tail(const audio_ring_t *ring)
 static __inline aint_t *
 auring_headptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }
@@ -333,7 +355,9 @@ auring_headptr_aint(const audio_ring_t *ring)
 static __inline aint_t *
 auring_tailptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + auring_tail(ring) * ring->fmt.channels;
 }
@@ -437,5 +461,7 @@ auring_get_contig_free(const audio_ring_t *ring)
 		return ring->capacity - ring->used;
 	}
 }
+
+#endif /* _KERNEL */
 
 #endif /* !_SYS_DEV_AUDIO_AUDIODEF_H_ */

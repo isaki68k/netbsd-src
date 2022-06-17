@@ -1,4 +1,5 @@
-/* $NetBSD: locore.h,v 1.4 2019/04/11 11:23:51 kamil Exp $ */
+/* $NetBSD: locore.h,v 1.10 2021/10/05 11:01:49 jmcneill Exp $ */
+
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -39,9 +40,9 @@
 
 struct trapframe {
 	struct reg tf_regs;
-	register_t tf_badaddr;	
-	uint32_t tf_cause;		// 32-bit register
-	uint32_t tf_sr;			// 32-bit register
+	register_t tf_tval;
+	register_t tf_cause;
+	register_t tf_sr;
 #define tf_reg		tf_regs.r_reg
 #define tf_pc		tf_regs.r_pc
 #define tf_ra		tf_reg[_X_RA]
@@ -77,15 +78,17 @@ struct trapframe {
 #define tf_t6		tf_reg[_X_T6]
 };
 
+#ifdef _LP64
 // For COMPAT_NETBSD32 coredumps
 struct trapframe32 {
 	struct reg32 tf_regs;
-	register32_t tf_badaddr;	
-	uint32_t tf_cause;		// 32-bit register
-	uint32_t tf_sr;			// 32-bit register
+	register32_t tf_tval;
+	register32_t tf_cause;
+	register32_t tf_sr;
 };
+#endif
 
-#define FB_A0	0
+#define	FB_A0	0
 #define	FB_RA	1
 #define	FB_SP	2
 #define	FB_GP	3
@@ -101,11 +104,11 @@ struct trapframe32 {
 #define	FB_S9	13
 #define	FB_S10	14
 #define	FB_S11	15
-#define FB_MAX	16
+#define	FB_MAX	16
 
 struct faultbuf {
 	register_t fb_reg[FB_MAX];
-	uint32_t fb_sr;
+	register_t fb_sr;
 };
 
 CTASSERT(sizeof(label_t) == sizeof(struct faultbuf));
@@ -117,7 +120,10 @@ struct mainbus_attach_args {
 
 #ifdef _KERNEL
 extern int cpu_printfataltraps;
+
+#ifdef FPE
 extern const pcu_ops_t pcu_fpu_ops;
+#endif
 
 static inline vaddr_t
 stack_align(vaddr_t sp)
@@ -134,31 +140,43 @@ userret(struct lwp *l)
 static inline void
 fpu_load(void)
 {
+#ifdef FPE
 	pcu_load(&pcu_fpu_ops);
+#endif
 }
 
 static inline void
 fpu_save(lwp_t *l)
 {
+#ifdef FPE
 	pcu_save(&pcu_fpu_ops, l);
+#endif
 }
 
 static inline void
 fpu_discard(lwp_t *l)
 {
+#ifdef FPE
 	pcu_discard(&pcu_fpu_ops, l, false);
+#endif
 }
 
 static inline void
 fpu_replace(lwp_t *l)
 {
+#ifdef FPE
 	pcu_discard(&pcu_fpu_ops, l, true);
+#endif
 }
 
 static inline bool
 fpu_valid_p(lwp_t *l)
 {
+#ifdef FPE
 	return pcu_valid_p(&pcu_fpu_ops, l);
+#else
+	return false;
+#endif
 }
 
 void	__syncicache(const void *, size_t);

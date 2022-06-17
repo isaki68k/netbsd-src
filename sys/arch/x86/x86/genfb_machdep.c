@@ -1,4 +1,4 @@
-/* $NetBSD: genfb_machdep.c,v 1.14 2019/10/01 18:00:08 chs Exp $ */
+/* $NetBSD: genfb_machdep.c,v 1.16 2021/01/28 01:57:31 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2009 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,9 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.14 2019/10/01 18:00:08 chs Exp $");
-
-#include "opt_mtrr.h"
+__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.16 2021/01/28 01:57:31 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -45,7 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.14 2019/10/01 18:00:08 chs Exp $
 
 #include <sys/bus.h>
 #include <machine/bootinfo.h>
-#include <machine/mtrr.h>
 
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsdisplayvar.h>
@@ -99,60 +96,20 @@ x86_genfb_ddb_trap_callback(int where)
 	}
 }
 
-void
-x86_genfb_mtrr_init(uint64_t physaddr, uint32_t size)
-{
-#if notyet
-#ifdef MTRR
-	struct mtrr mtrr;
-	int error, n;
-
-	if (mtrr_funcs == NULL) {
-		aprint_debug("%s: no mtrr funcs\n", __func__);
-		return;
-	}
-
-	mtrr.base = physaddr;
-	mtrr.len = size;
-	mtrr.type = MTRR_TYPE_WC;
-	mtrr.flags = MTRR_VALID;
-	mtrr.owner = 0;
-
-	aprint_debug("%s: 0x%" PRIx64 "-0x%" PRIx64 "\n", __func__,
-	    mtrr.base, mtrr.base + mtrr.len - 1);
-
-	n = 1;
-	KERNEL_LOCK(1, NULL);
-	error = mtrr_set(&mtrr, &n, curlwp->l_proc, MTRR_GETSET_KERNEL);
-	if (n != 0)
-		mtrr_commit();
-	KERNEL_UNLOCK_ONE(NULL);
-
-	aprint_debug("%s: mtrr_set returned %d\n", __func__, error);
-#else
-	aprint_debug("%s: kernel lacks MTRR option\n", __func__);
-#endif
-#endif
-}
-
 int
-x86_genfb_cnattach(void)
+x86_genfb_init(void)
 {
-	static int ncalls = 0;
+	static int inited, attached;
 	struct rasops_info *ri = &x86_genfb_console_screen.scr_ri;
 	const struct btinfo_framebuffer *fbinfo;
 	bus_space_tag_t t = x86_bus_space_mem;
 	bus_space_handle_t h;
 	void *bits;
-	long defattr;
 	int err;
 
-	/* XXX jmcneill
-	 *  Defer console initialization until UVM is initialized
-	 */
-	++ncalls;
-	if (ncalls < 3)
-		return -1;
+	if (inited)
+		return attached;
+	inited = 1;
 
 	memset(&x86_genfb_console_screen, 0, sizeof(x86_genfb_console_screen));
 
@@ -202,12 +159,39 @@ x86_genfb_cnattach(void)
 	x86_genfb_stdscreen.textops = &ri->ri_ops;
 	x86_genfb_stdscreen.capabilities = ri->ri_caps;
 
+	attached = 1;
+	return 1;
+}
+
+int
+x86_genfb_cnattach(void)
+{
+	static int ncalls = 0;
+	struct rasops_info *ri = &x86_genfb_console_screen.scr_ri;
+	long defattr;
+
+	/* XXX jmcneill
+	 *  Defer console initialization until UVM is initialized
+	 */
+	++ncalls;
+	if (ncalls < 3)
+		return -1;
+
+	if (!x86_genfb_init())
+		return 0;
+
 	ri->ri_ops.allocattr(ri, 0, 0, 0, &defattr);
 	wsdisplay_preattach(&x86_genfb_stdscreen, ri, 0, 0, defattr);
 
 	return 1;
 }
 #else	/* NWSDISPLAY > 0 && NGENFB > 0 */
+int
+x86_genfb_init(void)
+{
+	return 0;
+}
+
 int
 x86_genfb_cnattach(void)
 {

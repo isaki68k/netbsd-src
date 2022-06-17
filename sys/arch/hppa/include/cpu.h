@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.5 2019/04/16 12:25:17 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.12 2021/11/02 11:26:04 ryo Exp $	*/
 
 /*	$OpenBSD: cpu.h,v 1.55 2008/07/23 17:39:35 kettenis Exp $	*/
 
@@ -55,6 +55,7 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_cputype.h"
+#include "opt_gprof.h"
 #include "opt_multiprocessor.h"
 #endif
 
@@ -288,6 +289,7 @@ struct cpu_info {
 	struct hppa_interrupt_register	ci_ir;
 	struct hppa_interrupt_bit	ci_ib[HPPA_INTERRUPT_BITS];
 
+	struct lwp	*ci_onproc;	/* current user LWP / kthread */
 #if defined(MULTIPROCESSOR)
 	struct lwp	*ci_curlwp;	/* CPU owner */
 	paddr_t		ci_stack;	/* stack for spin up */
@@ -299,7 +301,9 @@ struct cpu_info {
 
 	struct cpu_softc *ci_softc;
 #endif
-
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 #endif /* !_KMEMUSER */
 } __aligned(64);
 
@@ -315,12 +319,20 @@ struct cpu_info {
 
 void	cpu_proc_fork(struct proc *, struct proc *);
 
-#ifdef MULTIPROCESSOR
+struct lwp *hppa_curlwp(void);
+struct cpu_info *hppa_curcpu(void);
 
+#if defined(_MODULE)
+#define	curcpu()			hppa_curcpu()
+#define	curlwp				hppa_curlwp()
+#endif
+
+#if defined(MULTIPROCESSOR) || defined(_MODULE)
 /* Number of CPUs in the system */
 extern int hppa_ncpu;
 
 #define	HPPA_MAXCPUS	4
+
 #define	cpu_number()			(curcpu()->ci_cpuid)
 
 #define	CPU_IS_PRIMARY(ci)		((ci)->ci_cpuid == 0)
@@ -329,8 +341,9 @@ extern int hppa_ncpu;
 
 void	cpu_boot_secondary_processors(void);
 
-static __inline struct cpu_info *
-hppa_curcpu(void)
+#if !defined(_MODULE)
+static __inline __always_inline struct cpu_info *
+_hppa_curcpu(void)
 {
 	struct cpu_info *ci;
 
@@ -339,7 +352,8 @@ hppa_curcpu(void)
 	return ci;
 }
 
-#define	curcpu()			hppa_curcpu()
+#define	curcpu()			_hppa_curcpu()
+#endif
 
 #else /*  MULTIPROCESSOR */
 
@@ -348,7 +362,7 @@ hppa_curcpu(void)
 #define	cpu_number()			0
 
 static __inline struct lwp *
-hppa_curlwp(void)
+_hppa_curlwp(void)
 {
 	struct lwp *l;
 
@@ -357,7 +371,7 @@ hppa_curlwp(void)
 	return l;
 }
 
-#define	curlwp				hppa_curlwp()
+#define	curlwp				_hppa_curlwp()
 
 #endif /* MULTIPROCESSOR */
 

@@ -1,6 +1,4 @@
-#	$NetBSD: files.acpi,v 1.114 2018/12/25 11:56:14 mlelstv Exp $
-
-include "dev/acpi/acpica/files.acpica"
+#	$NetBSD: files.acpi,v 1.126 2022/05/26 02:16:44 mrg Exp $
 
 defflag	opt_acpi.h	ACPIVERBOSE ACPI_DEBUG ACPI_ACTIVATE_DEV
 			ACPI_DSDT_OVERRIDE ACPI_SCANPCI ACPI_BREAKPOINT
@@ -21,11 +19,12 @@ device	acpi: acpica, acpiapmbus, acpinodebus, acpiecdtbus, acpisdtbus, acpigtdtb
 attach	acpi at acpibus
 file	dev/acpi/acpi.c			acpi
 file	dev/acpi/acpi_debug.c		acpi
+file	dev/acpi/acpi_dev.c		acpi
 file	dev/acpi/acpi_event.c		acpi
 file	dev/acpi/acpi_i2c.c		acpi
 file	dev/acpi/acpi_mcfg.c		acpi & pci
-file	dev/acpi/acpi_pci.c		acpi
-file	dev/acpi/acpi_pci_link.c	acpi
+file	dev/acpi/acpi_pci.c		acpi & pci
+file	dev/acpi/acpi_pci_link.c	acpi & pci
 file	dev/acpi/acpi_power.c		acpi
 file	dev/acpi/acpi_quirks.c		acpi
 file	dev/acpi/acpi_resource.c	acpi
@@ -99,6 +98,21 @@ file	dev/acpi/acpi_tz.c		acpitz
 device	acpiwdrt: sysmon_wdog
 attach	acpiwdrt at acpiwdrtbus
 file	dev/acpi/acpi_wdrt.c		acpiwdrt
+
+# ACPI Processor Container Device
+device	acpipcd
+attach	acpipcd at acpinodebus
+file	dev/acpi/acpi_pcd.c		acpipcd
+
+# Platform Communications Channel
+device	acpipcc
+attach	acpipcc at acpisdtbus
+file	dev/acpi/acpi_pcc.c		acpipcc
+
+# ACPI Collaborative Processor Performance Control
+device	acpicppc: acpipcc
+attach	acpicppc at acpinodebus
+file	dev/acpi/acpi_cppc.c		acpicppc
 
 # Serial interface
 attach	com at acpinodebus with com_acpi
@@ -248,6 +262,11 @@ file	dev/acpi/plgpio_acpi.c		plgpio_acpi
 attach	dwiic at acpinodebus with dwiic_acpi
 file	dev/acpi/dwiic_acpi.c		dwiic_acpi
 
+# NXP Layerscape I2C controller
+device	nxpiic: motoi2c, i2cbus, i2cexec
+attach	nxpiic at acpinodebus with nxpiic_acpi
+file	dev/acpi/nxpiic_acpi.c		nxpiic_acpi
+
 # AMD Cryptographic Coprocessor
 attach	amdccp at acpinodebus with amdccp_acpi
 file	dev/acpi/amdccp_acpi.c		amdccp_acpi
@@ -255,6 +274,10 @@ file	dev/acpi/amdccp_acpi.c		amdccp_acpi
 # QEMU Virtio
 attach	virtio at acpinodebus with virtio_acpi
 file	dev/acpi/virtio_acpi.c		virtio_acpi
+
+# OHCI-compliant USB controller
+attach	ohci at acpinodebus with ohci_acpi
+file	dev/acpi/ohci_acpi.c		ohci_acpi
 
 # EHCI-compliant USB controller
 attach	ehci at acpinodebus with ehci_acpi
@@ -268,5 +291,21 @@ file	dev/acpi/xhci_acpi.c		xhci_acpi
 device	ipmi_acpi: ipmibus
 attach	ipmi_acpi at acpinodebus
 file	dev/acpi/ipmi_acpi.c		ipmi_acpi
+
+# Broadcom GENETv5
+attach	genet at acpinodebus with genet_acpi
+file	dev/acpi/genet_acpi.c		genet_acpi
+
+# DesignWare Ethernet Quality-of-Service controller
+attach	eqos at acpinodebus with eqos_acpi
+file	dev/acpi/eqos_acpi.c		eqos_acpi
+
+# Intel GPIO
+attach	igpio at acpinodebus with igpio_acpi
+file	dev/acpi/igpio_acpi.c		igpio_acpi
+
+# DesignWare Mobile Storage Host Controller
+attach	dwcmmc at acpinodebus with dwcmmc_acpi
+file	dev/acpi/dwcmmc_acpi.c		dwcmmc_acpi
 
 include	"dev/acpi/wmi/files.wmi"

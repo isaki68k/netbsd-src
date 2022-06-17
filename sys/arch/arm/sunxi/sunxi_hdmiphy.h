@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_hdmiphy.h,v 1.1 2019/01/30 01:24:00 jmcneill Exp $ */
+/* $NetBSD: sunxi_hdmiphy.h,v 1.3 2021/12/19 11:00:46 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -29,9 +29,10 @@
 #ifndef _ARM_SUNXI_HDMIPHY_H
 #define _ARM_SUNXI_HDMIPHY_H
 
-#include <drm/drmP.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_modes.h>
 
+void	sunxi_hdmiphy_init(struct fdtbus_phy *);
 int	sunxi_hdmiphy_config(struct fdtbus_phy *, struct drm_display_mode *);
 bool	sunxi_hdmiphy_detect(struct fdtbus_phy *, bool);
 

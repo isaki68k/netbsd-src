@@ -1,4 +1,4 @@
-/*	$NetBSD: intelfb.c,v 1.17 2019/08/15 00:27:47 rin Exp $	*/
+/*	$NetBSD: intelfb.c,v 1.22 2021/12/19 11:49:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,19 +30,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intelfb.c,v 1.17 2019/08/15 00:27:47 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intelfb.c,v 1.22 2021/12/19 11:49:12 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <drm/drmP.h>
+#include <drm/drm_device.h>
 #include <drm/drmfb.h>
 #include <drm/drmfb_pci.h>
 
+#include "display/intel_display_types.h"
+#include "display/intel_vga.h"
 #include "i915_drv.h"
 #include "i915_pci.h"
-#include "intel_drv.h"
 #include "intelfb.h"
 
 static int	intelfb_match(device_t, cfdata_t, void *);
@@ -55,13 +56,14 @@ static bool	intelfb_shutdown(device_t, int);
 
 static paddr_t	intelfb_drmfb_mmapfb(struct drmfb_softc *, off_t, int);
 
+static void	intelfb_disable_vga(struct drm_device *);
+
 struct intelfb_softc {
 	struct drmfb_softc		sc_drmfb; /* XXX Must be first.  */
 	device_t			sc_dev;
 	struct intelfb_attach_args	sc_ifa;
 	bus_space_handle_t		sc_fb_bsh;
 	struct i915drmkms_task		sc_attach_task;
-	bool				sc_mapped:1;
 	bool				sc_scheduled:1;
 	bool				sc_attached:1;
 };
@@ -71,7 +73,7 @@ static const struct drmfb_params intelfb_drmfb_params = {
 	.dp_mmap = drmfb_pci_mmap,
 	.dp_ioctl = drmfb_pci_ioctl,
 	.dp_is_vga_console = drmfb_pci_is_vga_console,
-	.dp_disable_vga = i915_disable_vga,
+	.dp_disable_vga = intelfb_disable_vga,
 };
 
 CFATTACH_DECL_NEW(intelfb, sizeof(struct intelfb_softc),
@@ -93,41 +95,24 @@ intelfb_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_ifa = *ifa;
-	sc->sc_mapped = false;
 	sc->sc_scheduled = false;
 	sc->sc_attached = false;
 
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	/* XXX Defer this too?  */
-	error = bus_space_map(ifa->ifa_fb_bst, ifa->ifa_fb_addr,
-	    ifa->ifa_fb_size,
-	    BUS_SPACE_MAP_LINEAR|BUS_SPACE_MAP_PREFETCHABLE,
-	    &sc->sc_fb_bsh);
-	if (error) {
-		aprint_error_dev(self, "unable to map framebuffer: %d\n",
-		    error);
-		goto fail0;
-	}
-	sc->sc_mapped = true;
-
 	i915drmkms_task_init(&sc->sc_attach_task, &intelfb_attach_task);
 	error = i915drmkms_task_schedule(parent, &sc->sc_attach_task);
 	if (error) {
 		aprint_error_dev(self, "failed to schedule mode set: %d\n",
 		    error);
-		goto fail1;
+		return;
 	}
-	self->dv_flags |= DVF_ATTACH_INPROGRESS;
+	config_pending_incr(self);
 	sc->sc_scheduled = true;
 
 	/* Success!  */
 	return;
-
-fail1:	bus_space_unmap(ifa->ifa_fb_bst, sc->sc_fb_bsh, ifa->ifa_fb_size);
-	sc->sc_mapped = false;
-fail0:	return;
 }
 
 static int
@@ -151,12 +136,6 @@ intelfb_detach(device_t self, int flags)
 		sc->sc_attached = false;
 	}
 
-	if (sc->sc_mapped) {
-		bus_space_unmap(sc->sc_ifa.ifa_fb_bst, sc->sc_fb_bsh,
-		    sc->sc_ifa.ifa_fb_size);
-		sc->sc_mapped = false;
-	}
-
 	return 0;
 }
 
@@ -170,7 +149,7 @@ intelfb_attach_task(struct i915drmkms_task *task)
 		.da_dev = sc->sc_dev,
 		.da_fb_helper = ifa->ifa_fb_helper,
 		.da_fb_sizes = &ifa->ifa_fb_sizes,
-		.da_fb_vaddr = bus_space_vaddr(ifa->ifa_fb_bst, sc->sc_fb_bsh),
+		.da_fb_vaddr = ifa->ifa_fb_vaddr,
 		.da_fb_linebytes = ifa->ifa_fb_helper->fb->pitches[0],
 		.da_params = &intelfb_drmfb_params,
 	};
@@ -189,7 +168,7 @@ intelfb_attach_task(struct i915drmkms_task *task)
 
 	sc->sc_attached = true;
 out:
-	sc->sc_dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
+	config_pending_decr(sc->sc_dev);
 }
 
 static bool
@@ -209,12 +188,23 @@ intelfb_drmfb_mmapfb(struct drmfb_softc *drmfb, off_t offset, int prot)
 	struct intel_fbdev *const fbdev = container_of(helper,
 	    struct intel_fbdev, helper);
 	struct drm_device *const dev = helper->dev;
-	struct drm_i915_private *const dev_priv = dev->dev_private;
+	struct drm_i915_private *const i915 =
+	    container_of(dev, struct drm_i915_private, drm);
+	struct i915_ggtt *const ggtt = &i915->ggtt;
+	struct i915_vma *const vma = fbdev->vma;
 
 	KASSERT(0 <= offset);
-	KASSERT(offset < fbdev->fb->obj->base.size);
+	KASSERT(offset < vma->node.size);
 
-	return bus_space_mmap(dev->bst, dev_priv->gtt.mappable_base,
-	    i915_gem_obj_ggtt_offset(fbdev->fb->obj) + offset,
+	return bus_space_mmap(dev->bst, ggtt->gmadr.start, vma->node.start,
 	    prot, BUS_SPACE_MAP_PREFETCHABLE);
+}
+
+static void
+intelfb_disable_vga(struct drm_device *dev)
+{
+	struct drm_i915_private *i915 =
+	    container_of(dev, struct drm_i915_private, drm);
+
+	intel_vga_disable(i915);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: in_pcb.c,v 1.183 2019/05/15 02:59:18 ozaki-r Exp $	*/
+/*	$NetBSD: in_pcb.c,v 1.188 2022/06/10 09:51:10 knakahara Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.183 2019/05/15 02:59:18 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.188 2022/06/10 09:51:10 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -205,6 +205,8 @@ in_pcballoc(struct socket *so, void *v)
 	inp->inp_portalgo = PORTALGO_DEFAULT;
 	inp->inp_bindportonsend = false;
 	inp->inp_prefsrcip.s_addr = INADDR_ANY;
+	inp->inp_overudp_cb = NULL;
+	inp->inp_overudp_arg = NULL;
 #if defined(IPSEC)
 	if (ipsec_enabled) {
 		int error = ipsec_init_pcbpolicy(so, &inp->inp_sp);
@@ -272,7 +274,8 @@ in_pcbsetport(struct sockaddr_in *sin, struct inpcb *inp, kauth_cred_t cred)
 }
 
 int
-in_pcbbindableaddr(struct sockaddr_in *sin, kauth_cred_t cred)
+in_pcbbindableaddr(const struct inpcb *inp, struct sockaddr_in *sin,
+    kauth_cred_t cred)
 {
 	int error = EADDRNOTAVAIL;
 	struct ifaddr *ifa = NULL;
@@ -293,6 +296,10 @@ in_pcbbindableaddr(struct sockaddr_in *sin, kauth_cred_t cred)
 			ifa = ifa_ifwithaddr(sintosa(sin));
 			if (ifa != NULL)
 				ia = ifatoia(ifa);
+			else if ((inp->inp_flags & INP_BINDANY) != 0) {
+				error = 0;
+				goto error;
+			}
 		}
 		if (ia == NULL)
 			goto error;
@@ -310,7 +317,7 @@ in_pcbbind_addr(struct inpcb *inp, struct sockaddr_in *sin, kauth_cred_t cred)
 {
 	int error;
 
-	error = in_pcbbindableaddr(sin, cred);
+	error = in_pcbbindableaddr(inp, sin, cred);
 	if (error == 0)
 		inp->inp_laddr = sin->sin_addr;
 	return error;
@@ -429,8 +436,6 @@ in_pcbbind(void *v, struct sockaddr_in *sin, struct lwp *l)
 	if (inp->inp_af != AF_INET)
 		return (EINVAL);
 
-	if (IN_ADDRLIST_READER_EMPTY())
-		return (EADDRNOTAVAIL);
 	if (inp->inp_lport || !in_nullhost(inp->inp_laddr))
 		return (EINVAL);
 
@@ -544,7 +549,7 @@ in_pcbconnect(void *v, struct sockaddr_in *sin, struct lwp *l)
 		}
 		s = pserialize_read_enter();
 		_ia = in_get_ia(IA_SIN(ia)->sin_addr);
-		if (_ia == NULL) {
+		if (_ia == NULL && (inp->inp_flags & INP_BINDANY) == 0) {
 			pserialize_read_exit(s);
 			ia4_release(ia, &psref);
 			curlwp_bindx(bound);
@@ -585,7 +590,7 @@ in_pcbconnect(void *v, struct sockaddr_in *sin, struct lwp *l)
 		lsin.sin_addr = inp->inp_laddr;
 		lsin.sin_port = 0;
 
-               if ((error = in_pcbbind_port(inp, &lsin, l->l_cred)) != 0)
+		if ((error = in_pcbbind_port(inp, &lsin, l->l_cred)) != 0)
                        return error;
 	}
 
@@ -686,7 +691,8 @@ in_pcbnotify(struct inpcbtable *table, struct in_addr faddr, u_int fport_arg,
     void (*notify)(struct inpcb *, int))
 {
 	struct inpcbhead *head;
-	struct inpcb *inp, *ninp;
+	struct inpcb_hdr *inph;
+	struct inpcb *inp;
 	u_int16_t fport = fport_arg, lport = lport_arg;
 	int nmatch;
 
@@ -695,10 +701,11 @@ in_pcbnotify(struct inpcbtable *table, struct in_addr faddr, u_int fport_arg,
 
 	nmatch = 0;
 	head = INPCBHASH_CONNECT(table, faddr, fport, laddr, lport);
-	for (inp = (struct inpcb *)LIST_FIRST(head); inp != NULL; inp = ninp) {
-		ninp = (struct inpcb *)LIST_NEXT(inp, inp_hash);
+	LIST_FOREACH(inph, head, inph_hash) {
+		inp = (struct inpcb *)inph;
 		if (inp->inp_af != AF_INET)
 			continue;
+
 		if (in_hosteq(inp->inp_faddr, faddr) &&
 		    inp->inp_fport == fport &&
 		    inp->inp_lport == lport &&
@@ -714,12 +721,12 @@ void
 in_pcbnotifyall(struct inpcbtable *table, struct in_addr faddr, int errno,
     void (*notify)(struct inpcb *, int))
 {
-	struct inpcb_hdr *inph, *ninph;
+	struct inpcb_hdr *inph;
 
 	if (in_nullhost(faddr) || notify == 0)
 		return;
 
-	TAILQ_FOREACH_SAFE(inph, &table->inpt_queue, inph_queue, ninph) {
+	TAILQ_FOREACH(inph, &table->inpt_queue, inph_queue) {
 		struct inpcb *inp = (struct inpcb *)inph;
 		if (inp->inp_af != AF_INET)
 			continue;
@@ -763,9 +770,9 @@ in_purgeifmcast(struct ip_moptions *imo, struct ifnet *ifp)
 void
 in_pcbpurgeif0(struct inpcbtable *table, struct ifnet *ifp)
 {
-	struct inpcb_hdr *inph, *ninph;
+	struct inpcb_hdr *inph;
 
-	TAILQ_FOREACH_SAFE(inph, &table->inpt_queue, inph_queue, ninph) {
+	TAILQ_FOREACH(inph, &table->inpt_queue, inph_queue) {
 		struct inpcb *inp = (struct inpcb *)inph;
 		bool need_unlock = false;
 
@@ -790,9 +797,9 @@ void
 in_pcbpurgeif(struct inpcbtable *table, struct ifnet *ifp)
 {
 	struct rtentry *rt;
-	struct inpcb_hdr *inph, *ninph;
+	struct inpcb_hdr *inph;
 
-	TAILQ_FOREACH_SAFE(inph, &table->inpt_queue, inph_queue, ninph) {
+	TAILQ_FOREACH(inph, &table->inpt_queue, inph_queue) {
 		struct inpcb *inp = (struct inpcb *)inph;
 		if (inp->inp_af != AF_INET)
 			continue;

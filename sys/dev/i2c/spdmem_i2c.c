@@ -1,4 +1,4 @@
-/* $NetBSD: spdmem_i2c.c,v 1.17 2018/10/20 03:23:05 macallan Exp $ */
+/* $NetBSD: spdmem_i2c.c,v 1.26 2022/03/30 00:06:50 pgoyette Exp $ */
 
 /*
  * Copyright (c) 2007 Nicolas Joly
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spdmem_i2c.c,v 1.17 2018/10/20 03:23:05 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spdmem_i2c.c,v 1.26 2022/03/30 00:06:50 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -107,16 +107,22 @@ spdmem_reset_page(struct spdmem_i2c_softc *sc)
 
 	reg = 0;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	rv = iic_acquire_bus(sc->sc_tag, 0);
+	if (rv)
+		return rv;
 
 	/*
 	 * Try to read byte 0 and 2. If it failed, it's not spdmem or a device
 	 * doesn't exist at the address.
 	 */
 	rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr, &reg, 1,
-	    &byte0, 1, I2C_F_POLL);
-	rv |= iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr, &reg, 1,
-	    &byte2, 1, I2C_F_POLL);
+	    &byte0, 1, 0);
+	if (rv != 0)
+		goto error;
+
+	reg = 2;
+	rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr, &reg, 1,
+	    &byte2, 1, 0);
 	if (rv != 0)
 		goto error;
 
@@ -143,7 +149,7 @@ spdmem_reset_page(struct spdmem_i2c_softc *sc)
 		 * I don't know whether our icc_exec()'s API is good or not.
 		 */
 		rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_page0,
-		    &reg, 1, &dummy, 1, I2C_F_POLL);
+		    &reg, 1, &dummy, 1, 0);
 		if (rv != 0) {
 			/*
 			 * The possibilities are:
@@ -153,7 +159,7 @@ spdmem_reset_page(struct spdmem_i2c_softc *sc)
 			 * Is there no way to distinguish them now?
 			 */
 			rv = iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-			    sc->sc_page0, &reg, 1, &dummy, 1, I2C_F_POLL);
+			    sc->sc_page0, &reg, 1, &dummy, 1, 0);
 			if (rv == 0) {
 				aprint_debug("Page 1 was selected. Page 0 is "
 				    "selected now.\n");
@@ -173,9 +179,9 @@ error:
 }
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "atmel,spd",	 0 },
-	{ "i2c-at34c02", 0 },
-	{ NULL,		 0 }
+	{ .compat = "atmel,spd" },
+	{ .compat = "i2c-at34c02" },
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -265,18 +271,20 @@ spdmem_i2c_read(struct spdmem_softc *softc, uint16_t addr, uint8_t *val)
 
 	reg = addr & 0xff;
 
-	iic_acquire_bus(sc->sc_tag, 0);
+	rv = iic_acquire_bus(sc->sc_tag, 0);
+	if (rv)
+		return rv;
 
 	if (addr & 0x100) {
 		rv = iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP, sc->sc_page1,
-		    &dummy, 1, &dummy, 1, I2C_F_POLL);
+		    &dummy, 1, &dummy, 1, 0);
 		rv |= iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr,
-		    &reg, 1, val, 1, I2C_F_POLL);
+		    &reg, 1, val, 1, 0);
 		rv |= iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-		    sc->sc_page0, &dummy, 1, &dummy, 1, I2C_F_POLL);
+		    sc->sc_page0, &dummy, 1, &dummy, 1, 0);
 	} else {
 		rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr,
-		    &reg, 1, val, 1, I2C_F_POLL);
+		    &reg, 1, val, 1, 0);
 	}
 
 	iic_release_bus(sc->sc_tag, 0);
@@ -284,7 +292,7 @@ spdmem_i2c_read(struct spdmem_softc *softc, uint16_t addr, uint8_t *val)
 	return rv;
 }
 
-MODULE(MODULE_CLASS_DRIVER, spdmem, "i2cexec");
+MODULE(MODULE_CLASS_DRIVER, spdmem, "iic");
 
 #ifdef _MODULE
 #include "ioconf.c"

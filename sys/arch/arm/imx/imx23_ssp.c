@@ -1,4 +1,4 @@
-/* $Id: imx23_ssp.c,v 1.4 2013/10/07 17:36:40 matt Exp $ */
+/* $Id: imx23_ssp.c,v 1.8 2021/10/21 13:21:54 andvar Exp $ */
 
 /*
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -326,13 +326,13 @@ issp_attach(device_t parent, device_t self, void *aux)
 	saa.saa_caps	= SMC_CAPS_DMA | SMC_CAPS_4BIT_MODE |
 	    SMC_CAPS_MULTI_SEG_DMA;
 
-	sc->sc_sdmmc = config_found(sc->sc_dev, &saa, NULL);
+	sc->sc_sdmmc = config_found(sc->sc_dev, &saa, NULL, CFARGS_NONE);
 	if (sc->sc_sdmmc == NULL) {
 		aprint_error_dev(sc->sc_dev, "unable to attach sdmmc\n");
 		return;
 	}
 
-	/* Device instance was succesfully attached. */
+	/* Device instance was successfully attached. */
 	if (aa->aa_addr == HW_SSP1_BASE)
 		ssp_attached |= SSP1_ATTACHED;
 	if (aa->aa_addr == HW_SSP2_BASE)
@@ -550,7 +550,7 @@ issp_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 		cmd->c_error = sc->sc_irq_error >> 8;
 	}
 
-	/* Check reponse from the card if such was requested. */
+	/* Check response from the card if such was requested. */
 	if (ISSET(cmd->c_flags, SCF_RSP_PRESENT)) {
 		cmd->c_resp[0] = SSP_RD(sc, HW_SSP_SDRESP0);
 		if (ISSET(cmd->c_flags, SCF_RSP_136)) {

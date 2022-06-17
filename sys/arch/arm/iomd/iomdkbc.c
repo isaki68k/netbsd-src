@@ -1,4 +1,4 @@
-/* $NetBSD: iomdkbc.c,v 1.5 2012/05/14 10:38:08 skrll Exp $ */
+/* $NetBSD: iomdkbc.c,v 1.7 2020/11/20 18:18:51 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2004 Ben Harris
@@ -28,11 +28,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: iomdkbc.c,v 1.5 2012/05/14 10:38:08 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: iomdkbc.c,v 1.7 2020/11/20 18:18:51 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <dev/pckbport/pckbportvar.h>
@@ -133,12 +133,8 @@ iomdkbc_attach(device_t parent, device_t self, void *aux)
 			/* Have an iomdkbc as console.  Assume it's this one.*/
 			t = &iomdkbc_cntag;
 		} else {
-			t = malloc(sizeof(struct iomdkbc_internal), M_DEVBUF,
-			    M_NOWAIT | M_ZERO);
-			if (t == NULL) {
-				aprint_error(": no memory");
-				return;
-			}
+			t = kmem_zalloc(sizeof(struct iomdkbc_internal),
+			    KM_SLEEP);
 			t->t_haveport[PCKBPORT_KBD_SLOT] = 1;
 			t->t_iot = ka->ka_iot;
 			t->t_ioh[PCKBPORT_KBD_SLOT] = ka->ka_ioh;
@@ -155,12 +151,8 @@ iomdkbc_attach(device_t parent, device_t self, void *aux)
 
 	if (strcmp(pa->pa_name, "opms") == 0) {
 		if (t == NULL) {
-			t = malloc(sizeof(struct iomdkbc_internal), M_DEVBUF,
-			    M_NOWAIT | M_ZERO);
-			if (t == NULL) {
-				aprint_error(": no memory");
-				return;
-			}
+			t = kmem_zalloc(sizeof(struct iomdkbc_internal),
+			    KM_SLEEP);
 		}
 		t->t_haveport[PCKBPORT_AUX_SLOT] = 1;
 		t->t_iot = pa->pa_iot;

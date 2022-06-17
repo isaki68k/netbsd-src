@@ -1,4 +1,4 @@
-/*	$NetBSD: uvisor.c,v 1.52 2019/09/14 15:19:52 maxv Exp $	*/
+/*	$NetBSD: uvisor.c,v 1.57 2021/08/07 16:19:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvisor.c,v 1.52 2019/09/14 15:19:52 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvisor.c,v 1.57 2021/08/07 16:19:17 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -71,7 +71,7 @@ int uvisordebug = 0;
 /* From the Linux driver */
 /*
  * UVISOR_REQUEST_BYTES_AVAILABLE asks the visor for the number of bytes that
- * are available to be transfered to the host for the specified endpoint.
+ * are available to be transferred to the host for the specified endpoint.
  * Currently this is not used, and always returns 0x0001
  */
 #define UVISOR_REQUEST_BYTES_AVAILABLE		0x01
@@ -152,7 +152,7 @@ static usbd_status uvisor_init(struct uvisor_softc *,
 static int uvisor_open(void *, int);
 static void uvisor_close(void *, int);
 
-struct ucom_methods uvisor_methods = {
+static const struct ucom_methods uvisor_methods = {
 	.ucom_open = uvisor_open,
 	.ucom_close = uvisor_close,
 };
@@ -200,7 +200,7 @@ uvisor_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
 
-	DPRINTFN(20,("uvisor: vendor=0x%x, product=0x%x\n",
+	DPRINTFN(20,("uvisor: vendor=%#x, product=%#x\n",
 		     uaa->uaa_vendor, uaa->uaa_product));
 
 	return uvisor_lookup(uaa->uaa_vendor, uaa->uaa_product) != NULL ?
@@ -326,9 +326,10 @@ uvisor_attach(device_t parent, device_t self, void *aux)
 				}
 			}
 			if (hasin == 1 && hasout == 1)
-				sc->sc_subdevs[i] = config_found_sm_loc(self,
-					"ucombus", NULL, &ucaa,
-					ucomprint, ucomsubmatch);
+				sc->sc_subdevs[i] =
+				    config_found(self, &ucaa, ucomprint,
+						 CFARGS(.submatch =
+						            ucomsubmatch));
 			else
 				aprint_error_dev(self,
 				    "no proper endpoints for port %d (%d,%d)\n",
@@ -358,10 +359,9 @@ uvisor_attach(device_t parent, device_t self, void *aux)
 				ucaa.ucaa_bulkin = port | UE_DIR_IN;
 				ucaa.ucaa_bulkout = port | UE_DIR_OUT;
 			}
-			sc->sc_subdevs[i] = config_found_sm_loc(self, "ucombus",
-				NULL, &ucaa, ucomprint, ucomsubmatch);
-
-
+			sc->sc_subdevs[i] =
+			    config_found(self, &ucaa, ucomprint,
+					 CFARGS(.submatch = ucomsubmatch));
 		}
 	}
 

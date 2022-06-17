@@ -1,4 +1,4 @@
-/* $NetBSD: gpiopps.c,v 1.2 2018/06/01 13:42:14 thorpej Exp $ */
+/* $NetBSD: gpiopps.c,v 1.4 2022/03/31 19:30:16 pgoyette Exp $ */
 
 /*
  * Copyright (c) 2016 Brad Spencer <brad@anduin.eldar.org>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gpiopps.c,v 1.2 2018/06/01 13:42:14 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gpiopps.c,v 1.4 2022/03/31 19:30:16 pgoyette Exp $");
 
 /*
  * GPIO interface to the pps subsystem for ntp support.
@@ -492,7 +492,7 @@ gpioppsioctl(dev_t dev, u_long cmd, void *data, int flags, struct lwp *l)
 	return (error);
 }
 
-MODULE(MODULE_CLASS_DRIVER, gpiopps, NULL);
+MODULE(MODULE_CLASS_DRIVER, gpiopps, "gpio");
 
 #ifdef _MODULE
 #include "ioconf.c"
@@ -509,29 +509,28 @@ gpiopps_modcmd(modcmd_t cmd, void *opaque)
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 #ifdef _MODULE
-		error = config_init_component(cfdriver_ioconf_gpiopps,
-		    cfattach_ioconf_gpiopps, cfdata_ioconf_gpiopps);
-		if (error) {
-			aprint_error("%s: unable to init component\n",
-			    gpiopps_cd.cd_name);
-			return (error);
-		}
-
 		error = devsw_attach("gpiopps", NULL, &bmaj,
 		    &gpiopps_cdevsw, &cmaj);
 		if (error) {
 			aprint_error("%s: unable to attach devsw\n",
 			    gpiopps_cd.cd_name);
-			config_fini_component(cfdriver_ioconf_gpiopps,
-			    cfattach_ioconf_gpiopps, cfdata_ioconf_gpiopps);
+			return error;
+		}
+		error = config_init_component(cfdriver_ioconf_gpiopps,
+		    cfattach_ioconf_gpiopps, cfdata_ioconf_gpiopps);
+		if (error) {
+			aprint_error("%s: unable to init component\n",
+			    gpiopps_cd.cd_name);
+			devsw_detach(NULL, &gpiopps_cdevsw);
+			return (error);
 		}
 #endif
 		return (error);
 	case MODULE_CMD_FINI:
 #ifdef _MODULE
-		devsw_detach(NULL, &gpiopps_cdevsw);
 		config_fini_component(cfdriver_ioconf_gpiopps,
 		    cfattach_ioconf_gpiopps, cfdata_ioconf_gpiopps);
+		devsw_detach(NULL, &gpiopps_cdevsw);
 #endif
 		return (0);
 	default:

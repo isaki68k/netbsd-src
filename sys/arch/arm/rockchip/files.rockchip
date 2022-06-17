@@ -1,10 +1,12 @@
-#	$NetBSD: files.rockchip,v 1.20 2019/08/05 15:22:59 tnn Exp $
+#	$NetBSD: files.rockchip,v 1.25 2021/11/12 22:02:08 jmcneill Exp $
 #
 # Configuration info for Rockchip family SoCs
 #
 #
 
 file	arch/arm/rockchip/rk_platform.c		soc_rockchip
+
+file	arch/arm/rockchip/rk3066_smp.c		soc_rk3288
 
 # Clock and reset unit (CRU)
 device	rkcru: rk_cru
@@ -14,6 +16,14 @@ file	arch/arm/rockchip/rk_cru_composite.c	rk_cru
 file	arch/arm/rockchip/rk_cru_gate.c		rk_cru
 file	arch/arm/rockchip/rk_cru_mux.c		rk_cru
 file	arch/arm/rockchip/rk_cru_pll.c		rk_cru
+
+ifdef arm
+
+# RK3288 clock and reset unit
+attach	rkcru at fdt with rk3288_cru
+file	arch/arm/rockchip/rk3288_cru.c		rk3288_cru & soc_rk3288
+
+else
 
 # RK3328 clock and reset unit
 attach	rkcru at fdt with rk3328_cru
@@ -25,12 +35,24 @@ file	arch/arm/rockchip/rk3399_cru.c		rk3399_cru & soc_rk3399
 attach	rkcru at fdt with rk3399_pmucru
 file	arch/arm/rockchip/rk3399_pmucru.c	rk3399_pmucru & soc_rk3399
 
+endif
+
 # IOMUX control
 device	rkiomux { }
+
+ifdef arm
+
+attach	rkiomux at fdt with rk3288_iomux
+file	arch/arm/rockchip/rk3288_iomux.c	rk3288_iomux & soc_rk3288
+
+else
+
 attach	rkiomux at fdt with rk3328_iomux
 file	arch/arm/rockchip/rk3328_iomux.c	rk3328_iomux & soc_rk3328
 attach	rkiomux at fdt with rk3399_iomux
 file	arch/arm/rockchip/rk3399_iomux.c	rk3399_iomux & soc_rk3399
+
+endif
 
 # GPIO
 device	rkgpio: gpiobus
@@ -53,6 +75,12 @@ attach	rkusb at fdt with rk_usb
 device	rkusbphy
 attach	rkusbphy at rkusb with rk_usbphy
 file	arch/arm/rockchip/rk_usb.c		rk_usb | rk_usbphy
+
+device	rk3288usb { }
+attach	rk3288usb at fdt with rk3288_usb
+device	rk3288usbphy
+attach	rk3288usbphy at rk3288usb with rk3288_usbphy
+file	arch/arm/rockchip/rk3288_usb.c		rk3288_usb | rk3288_usbphy
 
 # GMAC
 attach	awge at fdt with rk_gmac
@@ -83,7 +111,42 @@ device	rkpwm: pwm
 attach	rkpwm at fdt with rk_pwm
 file	arch/arm/rockchip/rk_pwm.c		rk_pwm
 
+# DRM master
+define	rkfbbus { }
+device	rkdrm: drmkms, ddc_read_edid, rkfbbus
+attach	rkdrm at fdt with rk_drm
+file	arch/arm/rockchip/rk_drm.c		rk_drm
+
+# DRM framebuffer console
+device	rkfb: rkfbbus, drmfb, wsemuldisplaydev
+attach	rkfb at rkfbbus with rk_fb
+file	arch/arm/rockchip/rk_fb.c		rk_fb
+
+# Visual Output Processor
+device	rkvop: drmkms
+attach	rkvop at fdt with rk_vop
+file	arch/arm/rockchip/rk_vop.c		rk_vop
+
+# HDMI TX (Designware based)
+attach	dwhdmi at fdt with rk_dwhdmi
+file	arch/arm/rockchip/rk_dwhdmi.c		rk_dwhdmi
+
+# DP/eDP (Analogix-based)
+attach	anxdp at fdt with rk_anxdp
+file	arch/arm/rockchip/rk_anxdp.c		rk_anxdp
+
+# I2S/PCM controller
+device	rki2s	
+attach  rki2s at fdt with rk_i2s
+file    arch/arm/rockchip/rk_i2s.c		rk_i2s
+
+# Crypto engine v1
+device	rkv1crypto
+attach	rkv1crypto at fdt with rk_v1crypto
+file	arch/arm/rockchip/rk_v1crypto.c		rk_v1crypto
+
 # SOC parameters
 defflag	opt_soc.h			SOC_ROCKCHIP
+defflag	opt_soc.h			SOC_RK3288: SOC_ROCKCHIP
 defflag	opt_soc.h			SOC_RK3328: SOC_ROCKCHIP
 defflag	opt_soc.h			SOC_RK3399: SOC_ROCKCHIP

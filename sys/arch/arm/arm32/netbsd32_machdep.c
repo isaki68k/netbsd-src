@@ -29,15 +29,15 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: netbsd32_machdep.c,v 1.8 2019/01/27 02:08:37 pgoyette Exp $");
+__KERNEL_RCSID(1, "$NetBSD: netbsd32_machdep.c,v 1.11 2020/06/20 07:10:36 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
-#include "opt_coredump.h"
 #endif
 
 #include <sys/param.h>
+
 #include <sys/core.h>
 #include <sys/exec.h>
 #include <sys/lwp.h>
@@ -102,21 +102,21 @@ netbsd32_vm_default_addr(struct proc *p, vaddr_t base, vsize_t sz,
 {
 	if (topdown)
 		return VM_DEFAULT_ADDRESS_TOPDOWN(base, sz);
-	else    
+	else
 		return VM_DEFAULT_ADDRESS_BOTTOMUP(base, sz);
 }
 
-void  
+void
 netbsd32_machdep_md_init(void)
-{ 
- 
+{
+
 	/* nothing to do */
 }
- 
+
 void
 netbsd32_machdep_md_fini(void)
 {
- 
+
 	/* nothing to do */
 }
 

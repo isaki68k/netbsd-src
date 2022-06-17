@@ -1,4 +1,4 @@
-/*	$NetBSD: lock.h,v 1.31 2017/09/17 00:01:08 christos Exp $	*/
+/*	$NetBSD: lock.h,v 1.34 2022/02/13 13:42:21 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2000 Ludd, University of Lule}, Sweden.
@@ -66,17 +66,7 @@ static __inline void __cpu_simple_lock_init(__cpu_simple_lock_t *);
 static __inline void
 __cpu_simple_lock_init(__cpu_simple_lock_t *__alp)
 {
-#ifdef _HARDKERNEL
-	__asm __volatile ("movl %0,%%r1;jsb Sunlock"
-		: /* No output */
-		: "g"(__alp)
-		: "r1","cc","memory");
-#else
-	__asm __volatile ("bbcci $0,%0,1f;1:"
-		: /* No output */
-		: "m"(*__alp)
-		: "cc");
-#endif
+	*__alp = __SIMPLELOCK_UNLOCKED;
 }
 
 static __inline int __cpu_simple_lock_try(__cpu_simple_lock_t *);
@@ -94,7 +84,7 @@ __cpu_simple_lock_try(__cpu_simple_lock_t *__alp)
 	__asm __volatile ("clrl %0;bbssi $0,%1,1f;incl %0;1:"
 		: "=&r"(ret)
 		: "m"(*__alp)
-		: "cc");
+		: "cc", "memory");
 #endif
 
 	return ret;
@@ -117,7 +107,7 @@ __cpu_simple_lock(__cpu_simple_lock_t *__alp)
 	__asm __volatile ("1:bbssi $0,%0,1b"
 		: /* No outputs */
 		: "m"(*__alp)
-		: "cc");
+		: "cc", "memory");
 #endif /* _HARDKERNEL && MULTIPROCESSOR */
 }
 
@@ -134,7 +124,7 @@ __cpu_simple_unlock(__cpu_simple_lock_t *__alp)
 	__asm __volatile ("bbcci $0,%0,1f;1:"
 		: /* No output */
 		: "m"(*__alp)
-		: "cc");
+		: "cc", "memory");
 #endif
 }
 
@@ -160,15 +150,4 @@ do {									\
 } while (/*CONSTCOND*/0)
 #endif /* MULTIPROCESSOR */
 
-static __inline void mb_read(void);
-static __inline void
-mb_read(void)
-{
-}
-
-static __inline void mb_write(void);
-static __inline void
-mb_write(void)
-{
-}
 #endif /* _VAX_LOCK_H_ */

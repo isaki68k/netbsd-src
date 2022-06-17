@@ -1,4 +1,4 @@
-/*	$NetBSD: vcprop_subr.c,v 1.5 2018/01/01 17:03:25 skrll Exp $	*/
+/*	$NetBSD: vcprop_subr.c,v 1.10 2021/03/08 13:53:08 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 2014 Michael Lorenz
@@ -28,10 +28,13 @@
 /*
  * Mailbox property interface wrapper functions
  */
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: vcprop_subr.c,v 1.10 2021/03/08 13:53:08 mlelstv Exp $");
 
 #include <sys/param.h>
-#include <sys/device.h>
 #include <sys/bus.h>
+#include <sys/device.h>
+#include <sys/endian.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -42,8 +45,6 @@
 #include <evbarm/rpi/vcio.h>
 #include <evbarm/rpi/vcpm.h>
 #include <evbarm/rpi/vcprop.h>
-
-#include <evbarm/rpi/rpi.h>
 
 #include <dev/wscons/wsconsio.h>
 
@@ -64,19 +65,21 @@ rpi_fb_set_video(int b)
 	} vb_setblank =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_setblank),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_setblank)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_blank = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_BLANK_SCREEN,
-				.vpt_len = VCPROPTAG_LEN(vb_setblank.vbt_blank),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_BLANK_SCREEN),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_setblank.vbt_blank)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.state = (b != 0) ? VCPROP_BLANK_OFF : VCPROP_BLANK_ON,
+			.state = htole32((b != 0) ?
+			    VCPROP_BLANK_OFF : VCPROP_BLANK_ON),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -84,8 +87,8 @@ rpi_fb_set_video(int b)
 	    sizeof(vb_setblank), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %d %08x %08x\n", __func__, b,
-	    vb_setblank.vbt_blank.state, error, res,
-	    vb_setblank.vbt_blank.tag.vpt_rcode);
+	    le32toh(vb_setblank.vbt_blank.state), error, res,
+	    le32toh(vb_setblank.vbt_blank.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -111,21 +114,22 @@ rpi_alloc_mem(uint32_t size, uint32_t align, uint32_t flags)
 	} vb_allocmem =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_allocmem),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_allocmem)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_am = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_ALLOCMEM,
-				.vpt_len = VCPROPTAG_LEN(vb_allocmem.vbt_am),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_ALLOCMEM),
+				.vpt_len =
+				    htole32(VCPROPTAG_LEN(vb_allocmem.vbt_am)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.size = size,
-			.align = align,
-			.flags = flags,
+			.size = htole32(size),
+			.align = htole32(align),
+			.flags = htole32(flags),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -133,8 +137,8 @@ rpi_alloc_mem(uint32_t size, uint32_t align, uint32_t flags)
 	    sizeof(vb_allocmem), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %08x %08x\n", __func__,
-	    vb_allocmem.vbt_am.size, error, res,
-	    vb_allocmem.vbt_am.tag.vpt_rcode);
+	    le32toh(vb_allocmem.vbt_am.size), error, res,
+	    le32toh(vb_allocmem.vbt_am.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -145,7 +149,7 @@ rpi_alloc_mem(uint32_t size, uint32_t align, uint32_t flags)
 	}
 
 	/* Return the handle from the VC */
-	return vb_allocmem.vbt_am.size;
+	return le32toh(vb_allocmem.vbt_am.size);
 }
 
 bus_addr_t
@@ -161,19 +165,20 @@ rpi_lock_mem(uint32_t handle)
 	} vb_lockmem =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_lockmem),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_lockmem)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_lm = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_LOCKMEM,
-				.vpt_len = VCPROPTAG_LEN(vb_lockmem.vbt_lm),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_LOCKMEM),
+				.vpt_len =
+				    htole32(VCPROPTAG_LEN(vb_lockmem.vbt_lm)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.handle = handle,
+			.handle = htole32(handle),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -181,8 +186,8 @@ rpi_lock_mem(uint32_t handle)
 	    sizeof(vb_lockmem), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %08x %08x\n", __func__,
-	    vb_lockmem.vbt_lm.handle, error, res,
-	    vb_lockmem.vbt_lm.tag.vpt_rcode);
+	    le32toh(vb_lockmem.vbt_lm.handle), error, res,
+	    le32toh(vb_lockmem.vbt_lm.tag.vpt_rcode));
 #endif
 	if (error)
 		return 0;
@@ -192,7 +197,7 @@ rpi_lock_mem(uint32_t handle)
 		return 0;
 	}
 
-	return vb_lockmem.vbt_lm.handle;
+	return le32toh(vb_lockmem.vbt_lm.handle);
 }
 
 int
@@ -208,19 +213,20 @@ rpi_unlock_mem(uint32_t handle)
 	} vb_unlockmem =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_unlockmem),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_unlockmem)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_lm = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_UNLOCKMEM,
-				.vpt_len = VCPROPTAG_LEN(vb_unlockmem.vbt_lm),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_UNLOCKMEM),
+				.vpt_len =
+				    htole32(VCPROPTAG_LEN(vb_unlockmem.vbt_lm)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.handle = handle,
+			.handle = htole32(handle),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -228,8 +234,8 @@ rpi_unlock_mem(uint32_t handle)
 	    sizeof(vb_unlockmem), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %08x %08x\n", __func__,
-	    vb_unlockmem.vbt_lm.handle, error, res,
-	    vb_unlockmem.vbt_lm.tag.vpt_rcode);
+	    le32toh(vb_unlockmem.vbt_lm.handle), error, res,
+	    le32toh(vb_unlockmem.vbt_lm.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -255,19 +261,20 @@ rpi_release_mem(uint32_t handle)
 	} vb_releasemem =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_releasemem),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_releasemem)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_lm = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_RELEASEMEM,
-				.vpt_len = VCPROPTAG_LEN(vb_releasemem.vbt_lm),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_RELEASEMEM),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_releasemem.vbt_lm)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.handle = handle,
+			.handle = htole32(handle),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -275,8 +282,8 @@ rpi_release_mem(uint32_t handle)
 	    sizeof(vb_releasemem), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %08x %08x\n", __func__,
-	    vb_releasemem.vbt_lm.handle, error, res,
-	    vb_releasemem.vbt_lm.tag.vpt_rcode);
+	    le32toh(vb_releasemem.vbt_lm.handle), error, res,
+	    le32toh(vb_releasemem.vbt_lm.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -302,22 +309,23 @@ rpi_fb_movecursor(int x, int y, int on)
 	} vb_cursorstate =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_cursorstate),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_cursorstate)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_cs = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_SET_CURSOR_STATE,
-				.vpt_len = VCPROPTAG_LEN(vb_cursorstate.vbt_cs),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_SET_CURSOR_STATE),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_cursorstate.vbt_cs)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.enable = (on != 0) ? 1 : 0,
-			.x = x,
-			.y = y,
-			.flags = 1,
+			.enable = htole32((on != 0) ? 1 : 0),
+			.x = htole32(x),
+			.y = htole32(y),
+			.flags = htole32(1),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -325,8 +333,8 @@ rpi_fb_movecursor(int x, int y, int on)
 	    sizeof(vb_cursorstate), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %08x %d %08x %08x\n", __func__,
-	    vb_cursorstate.vbt_cs.enable, error, res,
-	    vb_cursorstate.vbt_cs.tag.vpt_rcode);
+	    le32toh(vb_cursorstate.vbt_cs.enable), error, res,
+	    le32toh(vb_cursorstate.vbt_cs.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -353,24 +361,25 @@ rpi_fb_initcursor(bus_addr_t pixels, int hx, int hy)
 	} vb_cursorinfo =
 	{
 		.vb_hdr = {
-			.vpb_len = sizeof(vb_cursorinfo),
-			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+			.vpb_len = htole32(sizeof(vb_cursorinfo)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
 		},
 		.vbt_ci = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_SET_CURSOR_INFO,
-				.vpt_len = VCPROPTAG_LEN(vb_cursorinfo.vbt_ci),
-				.vpt_rcode = VCPROPTAG_REQUEST,
+				.vpt_tag = htole32(VCPROPTAG_SET_CURSOR_INFO),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_cursorinfo.vbt_ci)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
 			},
-			.width = 64,
-			.height = 64,
-			.format = 0,
-			.pixels = pixels,
-			.hotspot_x = hx,
-			.hotspot_y = hy,
+			.width = htole32(64),
+			.height = htole32(64),
+			.format = htole32(0),
+			.pixels = htole32(pixels),
+			.hotspot_x = htole32(hx),
+			.hotspot_y = htole32(hy),
 		},
 		.end = {
-			.vpt_tag = VCPROPTAG_NULL,
+			.vpt_tag = htole32(VCPROPTAG_NULL),
 		},
 	};
 
@@ -378,8 +387,8 @@ rpi_fb_initcursor(bus_addr_t pixels, int hx, int hy)
 	    sizeof(vb_cursorinfo), &res);
 #ifdef RPI_IOCTL_DEBUG
 	printf("%s: %d %d %08x %08x\n", __func__,
-	    vb_cursorinfo.vbt_ci.width, error, res,
-	    vb_cursorinfo.vbt_ci.tag.vpt_rcode);
+	    le32toh(vb_cursorinfo.vbt_ci.width), error, res,
+	    le32toh(vb_cursorinfo.vbt_ci.tag.vpt_rcode));
 #endif
 	if (error)
 		return error;
@@ -391,3 +400,290 @@ rpi_fb_initcursor(bus_addr_t pixels, int hx, int hy)
 
 	return 0;
 }
+
+int
+rpi_fb_get_pixelorder(uint32_t *orderp)
+{
+	int error;
+	uint32_t res;
+
+
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_fbpixelorder	vbt_po;
+		struct vcprop_tag end;
+	} vb_pixelorder =
+	{
+		.vb_hdr = {
+			.vpb_len = htole32(sizeof(vb_pixelorder)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
+		},
+		.vbt_po = {
+			.tag = {
+				.vpt_tag = htole32(VCPROPTAG_GET_FB_PIXEL_ORDER),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_pixelorder.vbt_po)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
+			},
+		},
+		.end = {
+			.vpt_tag = htole32(VCPROPTAG_NULL),
+		},
+	};
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb_pixelorder,
+	    sizeof(vb_pixelorder), &res);
+#ifdef RPI_IOCTL_DEBUG
+	printf("%s: %d %d %08x %08x\n", __func__,
+	    le32toh(vb_pixelorder.vbt_po.order), error, res,
+	    le32toh(vb_pixelorder.vbt_po.tag.vpt_rcode));
+#endif
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb_pixelorder.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb_pixelorder.vbt_po.tag)) {
+		return EIO;
+	}
+
+	*orderp = vb_pixelorder.vbt_po.order;
+
+	return 0;
+}
+
+int
+rpi_fb_set_pixelorder(uint32_t order)
+{
+	int error;
+	uint32_t res;
+
+
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_fbpixelorder	vbt_po;
+		struct vcprop_tag end;
+	} vb_pixelorder =
+	{
+		.vb_hdr = {
+			.vpb_len = htole32(sizeof(vb_pixelorder)),
+			.vpb_rcode = htole32(VCPROP_PROCESS_REQUEST),
+		},
+		.vbt_po = {
+			.tag = {
+				.vpt_tag = htole32(VCPROPTAG_SET_FB_PIXEL_ORDER),
+				.vpt_len = htole32(VCPROPTAG_LEN(
+				    vb_pixelorder.vbt_po)),
+				.vpt_rcode = htole32(VCPROPTAG_REQUEST),
+			},
+			.order = order
+		},
+		.end = {
+			.vpt_tag = htole32(VCPROPTAG_NULL),
+		},
+	};
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb_pixelorder,
+	    sizeof(vb_pixelorder), &res);
+#ifdef RPI_IOCTL_DEBUG
+	printf("%s: %d %d %08x %08x\n", __func__,
+	    le32toh(vb_pixelorder.vbt_po.order), error, res,
+	    le32toh(vb_pixelorder.vbt_po.tag.vpt_rcode));
+#endif
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb_pixelorder.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb_pixelorder.vbt_po.tag)) {
+		return EIO;
+	}
+
+	return 0;
+}
+
+int
+rpi_set_domain(uint32_t domain, uint32_t state)
+{
+	int error;
+	uint32_t tag, res;
+
+	tag = VCPROPTAG_SET_DOMAIN_STATE;
+	if (domain == VCPROP_DOMAIN_USB) {
+		/* use old interface */
+		tag = VCPROPTAG_SET_POWERSTATE;
+		domain = VCPROP_POWER_USB;
+	}
+
+	/*
+	 * might as well put it here since we need to re-init it every time
+	 * and it's not like this is going to be called very often anyway
+	 */
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_powerstate	vbt_power;
+		struct vcprop_tag end;
+	} vb_setpower =
+	{
+		.vb_hdr = {
+			.vpb_len = sizeof(vb_setpower),
+			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		},
+		.vbt_power = {
+			.tag = {
+				.vpt_tag = tag,
+				.vpt_len = VCPROPTAG_LEN(vb_setpower.vbt_power),
+				.vpt_rcode = VCPROPTAG_REQUEST,
+			},
+			.id = domain,
+			.state = state
+		},
+		.end = {
+			.vpt_tag = VCPROPTAG_NULL,
+		},
+	};
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb_setpower,
+	    sizeof(vb_setpower), &res);
+#ifdef RPI_IOCTL_DEBUG
+	printf("%s: %08x %08x %d %08x %08x %d %d %08x %08x\n", __func__,
+	    tag, domain, state,
+	    vb_setpower.vbt_power.tag.vpt_tag,
+	    vb_setpower.vbt_power.id,
+	    vb_setpower.vbt_power.state,
+	    error, res,
+	    vb_setpower.vbt_power.tag.vpt_rcode);
+#endif
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb_setpower.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb_setpower.vbt_power.tag)) {
+		return EIO;
+	}
+
+	return 0;
+}
+
+int
+rpi_get_domain(uint32_t domain, uint32_t *statep)
+{
+	int error;
+	uint32_t tag, res;
+
+	tag = VCPROPTAG_GET_DOMAIN_STATE;
+	if (domain == VCPROP_DOMAIN_USB) {
+		/* use old interface */
+		tag = VCPROPTAG_GET_POWERSTATE;
+		domain = VCPROP_POWER_USB;
+	}
+
+	/*
+	 * might as well put it here since we need to re-init it every time
+	 * and it's not like this is going to be called very often anyway
+	 */
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_powerstate	vbt_power;
+		struct vcprop_tag end;
+	} vb_setpower =
+	{
+		.vb_hdr = {
+			.vpb_len = sizeof(vb_setpower),
+			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		},
+		.vbt_power = {
+			.tag = {
+				.vpt_tag = tag,
+				.vpt_len = VCPROPTAG_LEN(vb_setpower.vbt_power),
+				.vpt_rcode = VCPROPTAG_REQUEST,
+			},
+			.id = domain,
+			.state = ~0
+		},
+		.end = {
+			.vpt_tag = VCPROPTAG_NULL,
+		},
+	};
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb_setpower,
+	    sizeof(vb_setpower), &res);
+#ifdef RPI_IOCTL_DEBUG
+	printf("%s: %08x %08x %d %08x %08x %d %d %08x %08x\n", __func__,
+	    tag, domain, *statep,
+	    vb_setpower.vbt_power.tag.vpt_tag,
+	    vb_setpower.vbt_power.id,
+	    vb_setpower.vbt_power.state,
+	    error, res,
+	    vb_setpower.vbt_power.tag.vpt_rcode);
+#endif
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb_setpower.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb_setpower.vbt_power.tag)) {
+		return EIO;
+	}
+
+	*statep = vb_setpower.vbt_power.state;
+
+	return 0;
+}
+
+int
+rpi_vchiq_init(uint32_t *channelbasep)
+{
+	int error;
+	uint32_t tag, res;
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_vchiqinit	vbt_vchiq;
+		struct vcprop_tag end;
+	} vb;
+
+	tag = VCPROPTAG_VCHIQ_INIT;
+
+	VCPROP_INIT_REQUEST(vb);
+	VCPROP_INIT_TAG(vb.vbt_vchiq, tag);
+	vb.vbt_vchiq.base = *channelbasep;
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb, sizeof(vb), &res);
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb.vbt_vchiq.tag)) {
+		return EIO;
+	}
+	*channelbasep = vb.vbt_vchiq.base;
+
+	return 0;
+}
+
+int
+rpi_notify_xhci_reset(uint32_t address)
+{
+	int error;
+	uint32_t tag, res;
+	struct __aligned(16) {
+		struct vcprop_buffer_hdr	vb_hdr;
+		struct vcprop_tag_notifyxhcireset	vbt_nhr;
+		struct vcprop_tag end;
+	} vb;
+
+	tag = VCPROPTAG_NOTIFY_XHCI_RESET;
+
+	VCPROP_INIT_REQUEST(vb);
+	VCPROP_INIT_TAG(vb.vbt_nhr, tag);
+	vb.vbt_nhr.deviceaddress = address;
+
+	error = bcmmbox_request(BCMMBOX_CHANARM2VC, &vb, sizeof(vb), &res);
+	if (error)
+		return error;
+
+	if (!vcprop_buffer_success_p(&vb.vb_hdr) ||
+	    !vcprop_tag_success_p(&vb.vbt_nhr.tag)) {
+		return EIO;
+	}
+
+	return 0;
+}
+

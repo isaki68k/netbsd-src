@@ -1,4 +1,4 @@
-/*	$NetBSD: brgphy.c,v 1.84 2019/04/11 08:50:20 msaitoh Exp $	*/
+/*	$NetBSD: brgphy.c,v 1.90 2020/05/25 19:48:38 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: brgphy.c,v 1.84 2019/04/11 08:50:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: brgphy.c,v 1.90 2020/05/25 19:48:38 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -96,9 +96,8 @@ struct brgphy_softc {
 	uint32_t sc_port_hwcfg;	/* port specific hw config */
 };
 
-CFATTACH_DECL3_NEW(brgphy, sizeof(struct brgphy_softc),
-    brgphymatch, brgphyattach, mii_phy_detach, mii_phy_activate, NULL, NULL,
-    DVF_DETACH_SHUTDOWN);
+CFATTACH_DECL_NEW(brgphy, sizeof(struct brgphy_softc),
+    brgphymatch, brgphyattach, mii_phy_detach, mii_phy_activate);
 
 static int	brgphy_service(struct mii_softc *, struct mii_data *, int);
 static void	brgphy_copper_status(struct mii_softc *);
@@ -119,7 +118,7 @@ static void	brgphy_crc_bug(struct mii_softc *);
 static void	brgphy_disable_early_dac(struct mii_softc *);
 static void	brgphy_jumbo_settings(struct mii_softc *);
 static void	brgphy_eth_wirespeed(struct mii_softc *);
-
+static void	brgphy_bcm54xx_clock_delay(struct mii_softc *);
 
 static const struct mii_phy_funcs brgphy_copper_funcs = {
 	brgphy_service, brgphy_copper_status, brgphy_reset,
@@ -178,6 +177,7 @@ static const struct mii_phydesc brgphys[] = {
 	MII_PHY_DESC(BROADCOM3, BCM5720C),
 	MII_PHY_DESC(BROADCOM3, BCM57765),
 	MII_PHY_DESC(BROADCOM3, BCM57780),
+	MII_PHY_DESC(BROADCOM4, BCM54213PE),
 	MII_PHY_DESC(BROADCOM4, BCM5725C),
 	MII_PHY_DESC(xxBROADCOM_ALT1, BCM5906),
 	MII_PHY_END,
@@ -216,7 +216,6 @@ brgphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_mpd_rev = MII_REV(ma->mii_id2);
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
 
 	if (device_is_a(parent, "bge"))
 		bsc->sc_isbge = true;
@@ -264,6 +263,8 @@ brgphyattach(device_t parent, device_t self, void *aux)
 	} else
 		sc->mii_funcs = &brgphy_copper_funcs;
 
+	mii_lock(mii);
+
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
@@ -271,8 +272,10 @@ brgphyattach(device_t parent, device_t self, void *aux)
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 
-	aprint_normal_dev(self, "");
+	mii_unlock(mii);
+
 	if (sc->mii_flags & MIIF_HAVEFIBER) {
+		mii_lock(mii);
 		sc->mii_flags |= MIIF_NOISOLATE | MIIF_NOLOOP;
 
 		/*
@@ -282,6 +285,7 @@ brgphyattach(device_t parent, device_t self, void *aux)
 		sc->mii_capabilities |= BMSR_ANEG;
 		sc->mii_capabilities &= ~BMSR_100T4;
 		sc->mii_extcapabilities |= EXTSR_1000XFDX;
+		mii_unlock(mii);
 
 		if (bsc->sc_isbnx) {
 			/*
@@ -293,14 +297,12 @@ brgphyattach(device_t parent, device_t self, void *aux)
 			    & BNX_PHY_2_5G_CAPABLE_FLAG) {
 				ADD(IFM_MAKEWORD(IFM_ETHER, IFM_2500_SX,
 					IFM_FDX, sc->mii_inst), 0);
-				aprint_normal("2500baseSX-FDX, ");
+				aprint_normal_dev(self, "2500baseSX-FDX\n");
 #undef ADD
 			}
 		}
 	}
 	mii_phy_add_media(sc);
-
-	aprint_normal("\n");
 }
 
 static int
@@ -308,6 +310,8 @@ brgphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg, speed, gig;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -456,6 +460,12 @@ setit:
 				break;
 			}
 			break;
+		case MII_OUI_BROADCOM4:
+			switch (sc->mii_mpd_model) {
+			case MII_MODEL_BROADCOM4_BCM54213PE:
+				brgphy_bcm54xx_clock_delay(sc);
+				break;
+			}
 		}
 	}
 
@@ -470,6 +480,8 @@ brgphy_copper_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, bmsr, auxsts, gtsr;
+
+	KASSERT(mii_locked(mii));
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
@@ -491,7 +503,7 @@ brgphy_copper_status(struct mii_softc *sc)
 
 	if (bmcr & BMCR_AUTOEN) {
 		/*
-		 * The media status bits are only valid of autonegotiation
+		 * The media status bits are only valid if autonegotiation
 		 * has completed (or it's disabled).
 		 */
 		if ((bmsr & BMSR_ACOMP) == 0) {
@@ -556,6 +568,8 @@ brgphy_fiber_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, bmsr, anar, anlpar, result;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -598,6 +612,8 @@ brgphy_5708s_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, bmsr;
+
+	KASSERT(mii_locked(mii));
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
@@ -668,6 +684,8 @@ brgphy_5709s_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, bmsr, auxsts;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -734,10 +752,12 @@ brgphy_5709s_status(struct mii_softc *sc)
 		mii->mii_media_active = ife->ifm_media;
 }
 
-int
+static int
 brgphy_mii_phy_auto(struct mii_softc *sc)
 {
 	uint16_t anar, ktcr = 0;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	sc->mii_ticks = 0;
 	brgphy_loop(sc);
@@ -766,11 +786,13 @@ brgphy_mii_phy_auto(struct mii_softc *sc)
 	return EJUSTRETURN;
 }
 
-void
+static void
 brgphy_loop(struct mii_softc *sc)
 {
 	uint16_t bmsr;
 	int i;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	PHY_WRITE(sc, MII_BMCR, BMCR_LOOP);
 	for (i = 0; i < 15000; i++) {
@@ -786,6 +808,8 @@ brgphy_reset(struct mii_softc *sc)
 {
 	struct brgphy_softc *bsc = device_private(sc->mii_dev);
 	uint16_t reg;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	mii_phy_reset(sc);
 	switch (sc->mii_mpd_oui) {
@@ -1064,7 +1088,7 @@ brgphy_bcm5411_dspcode(struct mii_softc *sc)
 		PHY_WRITE(sc, dspcode[i].reg, dspcode[i].val);
 }
 
-void
+static void
 brgphy_bcm5421_dspcode(struct mii_softc *sc)
 {
 	uint16_t data;
@@ -1083,7 +1107,7 @@ brgphy_bcm5421_dspcode(struct mii_softc *sc)
 	PHY_WRITE(sc, BRGPHY_MII_DSP_RW_PORT, data | 0x0200);
 }
 
-void
+static void
 brgphy_bcm54k2_dspcode(struct mii_softc *sc)
 {
 	static const struct {
@@ -1162,7 +1186,7 @@ brgphy_ber_bug(struct mii_softc *sc)
 }
 
 /* BCM5701 A0/B0 CRC bug workaround */
-void
+static void
 brgphy_crc_bug(struct mii_softc *sc)
 {
 	static const struct {
@@ -1223,4 +1247,31 @@ brgphy_eth_wirespeed(struct mii_softc *sc)
 	PHY_WRITE(sc, BRGPHY_MII_AUXCTL, 0x7007);
 	PHY_READ(sc, BRGPHY_MII_AUXCTL, &val);
 	PHY_WRITE(sc, BRGPHY_MII_AUXCTL, val | (1 << 15) | (1 << 4));
+}
+
+static void
+brgphy_bcm54xx_clock_delay(struct mii_softc *sc)
+{
+	uint16_t val;
+
+	PHY_WRITE(sc, BRGPHY_MII_AUXCTL, BRGPHY_AUXCTL_SHADOW_MISC |
+	    BRGPHY_AUXCTL_SHADOW_MISC << BRGPHY_AUXCTL_MISC_READ_SHIFT);
+	PHY_READ(sc, BRGPHY_MII_AUXCTL, &val);
+	val &= BRGPHY_AUXCTL_MISC_DATA_MASK;
+	if (sc->mii_flags & MIIF_RXID)
+		val |= BRGPHY_AUXCTL_MISC_RGMII_SKEW_EN;
+	else
+		val &= ~BRGPHY_AUXCTL_MISC_RGMII_SKEW_EN;
+	PHY_WRITE(sc, BRGPHY_MII_AUXCTL, BRGPHY_AUXCTL_MISC_WRITE_EN |
+	    BRGPHY_AUXCTL_SHADOW_MISC | val);
+
+	PHY_WRITE(sc, BRGPHY_MII_SHADOW_1C, BRGPHY_SHADOW_1C_CLK_CTRL);
+	PHY_READ(sc, BRGPHY_MII_SHADOW_1C, &val);
+	val &= BRGPHY_SHADOW_1C_DATA_MASK;
+	if (sc->mii_flags & MIIF_TXID)
+		val |= BRGPHY_SHADOW_1C_GTXCLK_EN;
+	else
+		val &= ~BRGPHY_SHADOW_1C_GTXCLK_EN;
+	PHY_WRITE(sc, BRGPHY_MII_SHADOW_1C, BRGPHY_SHADOW_1C_WRITE_EN |
+	    BRGPHY_SHADOW_1C_CLK_CTRL | val);
 }

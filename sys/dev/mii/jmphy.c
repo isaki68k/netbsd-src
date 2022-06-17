@@ -1,4 +1,4 @@
-/*	$NetBSD: jmphy.c,v 1.1 2019/10/30 12:06:26 msaitoh Exp $ */
+/*	$NetBSD: jmphy.c,v 1.4 2020/03/15 23:04:50 thorpej Exp $ */
 /*	$OpenBSD: jmphy.c,v 1.6 2015/03/14 03:38:48 jsg Exp $	*/
 /*-
  * Copyright (c) 2008, Pyun YongHyeon <yongari@FreeBSD.org>
@@ -103,6 +103,8 @@ jmphy_attach(device_t parent, device_t self, void *aux)
 
 	sc->mii_flags |= MIIF_NOISOLATE | MIIF_NOLOOP;
 
+	mii_lock(mii);
+
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
@@ -110,13 +112,9 @@ jmphy_attach(device_t parent, device_t self, void *aux)
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -125,11 +123,11 @@ jmphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, ssr;
 
+	KASSERT(mii_locked(mii));
+
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 		break;
@@ -145,9 +143,7 @@ jmphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -156,21 +152,15 @@ jmphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 
-		/*
-		 * Is the interface even up?
-		 */
+		/* Is the interface even up? */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			return 0;
 
-		/*
-		 * Only used for autonegotiation.
-		 */
+		/* Only used for autonegotiation. */
 		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO)
 			break;
 
@@ -205,6 +195,8 @@ jmphy_status(struct mii_softc *sc)
 {
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmcr, ssr, gtsr;
+
+	KASSERT(mii_locked(mii));
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
@@ -270,6 +262,8 @@ jmphy_reset(struct mii_softc *sc)
 	int i;
 	uint16_t val;
 
+	KASSERT(mii_locked(sc->mii_pdata));
+
 	/* Disable sleep mode. */
 	PHY_READ(sc, JMPHY_TMCTL, &val);
 	PHY_WRITE(sc, JMPHY_TMCTL, val & ~JMPHY_TMCTL_SLEEP_ENB);
@@ -314,6 +308,8 @@ static int
 jmphy_auto(struct mii_softc *sc, struct ifmedia_entry *ife)
 {
 	uint16_t anar, bmcr, gig;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	gig = 0;
 	PHY_READ(sc, MII_BMCR, &bmcr);

@@ -1,4 +1,4 @@
-#	$NetBSD: majors.i386,v 1.51 2019/01/28 02:28:58 dholland Exp $
+#	$NetBSD: majors.i386,v 1.55 2022/05/25 08:12:42 uwe Exp $
 #
 # Device majors for i386
 #
@@ -68,12 +68,12 @@ device-major	ucom		char 66			ucom
 device-major	sysmon		char 67			sysmon
 #device-major	obsolete	char 68			obsolete (vmegeneric)
 device-major	ld		char 69  block 19	ld
-device-major	urio		char 70			urio
+#device-major	obsolete	char 70			obsolete (urio)
 device-major	bktr		char 71			bktr
 
 device-major	cz		char 73			cz
 device-major	ses		char 74			ses
-device-major	uscanner	char 75			uscanner
+#device-major	obsolete	char 75			obsolete (uscanner)
 device-major	iop		char 76			iop
 device-major	altq		char 77			altq
 device-major	mlx		char 78			mlx
@@ -96,7 +96,7 @@ device-major	cgd		char 93  block 21	cgd
 #device-major	obsolete	char 95			obsolete (fwiso)
 device-major	dpt		char 96			dpt
 device-major	twe		char 97			twe
-device-major	nsmb		char 98			nsmb
+#device-major	obsolete	char 98			obsolete (nsmb)
 device-major	vmmon		char 99			vmmon
 device-major	vmnet		char 100		vmnet
 device-major	ksyms		char 101		ksyms
@@ -108,6 +108,9 @@ device-major	ct		char 106 block 23	ct
 device-major	mt		char 107 block 24	mt
 #device-major	obsolete	char 108 block 25	obsolete (vinum, pf)
 #device-major	obsolete	char 108		obsolete (opencrypto, bthub)
+
+# Reserve a major for VirtualBox Guest Additions
+device-major	vboxguest	char 109		vboxguest
 
 #
 # Device majors for Xen. These are assigned here so that:

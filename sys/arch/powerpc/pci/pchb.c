@@ -1,4 +1,4 @@
-/*	$NetBSD: pchb.c,v 1.9 2012/01/23 16:22:57 phx Exp $	*/
+/*	$NetBSD: pchb.c,v 1.12 2021/08/07 16:19:03 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pchb.c,v 1.9 2012/01/23 16:22:57 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pchb.c,v 1.12 2021/08/07 16:19:03 thorpej Exp $");
+
+#include "agp.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -49,8 +51,6 @@ __KERNEL_RCSID(0, "$NetBSD: pchb.c,v 1.9 2012/01/23 16:22:57 phx Exp $");
 #include <dev/ic/mpc105reg.h>
 #include <dev/ic/mpc106reg.h>
 #include <dev/ic/ibm82660reg.h>
-
-#include "agp.h"
 
 int	pchbmatch(device_t, cfdata_t, void *);
 void	pchbattach(device_t, device_t, void *);
@@ -285,7 +285,8 @@ pchbattach(device_t parent, device_t self, void *aux)
 	if (pci_get_capability(pa->pa_pc, pa->pa_tag, PCI_CAP_AGP,
 			       NULL, NULL) != 0) {
 		apa.apa_pci_args = *pa;
-		config_found_ia(self, "agpbus", &apa, agpbusprint);
+		config_found(self, &apa, agpbusprint,
+		    CFARGS(.iattr = "agpbus"));
 	}
 #endif /* NAGP */
 }

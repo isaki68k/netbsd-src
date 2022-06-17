@@ -1,4 +1,4 @@
-/*	$NetBSD: neptune.c,v 1.20 2014/03/26 08:17:59 christos Exp $	*/
+/*	$NetBSD: neptune.c,v 1.23 2021/08/07 16:19:07 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: neptune.c,v 1.20 2014/03/26 08:17:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: neptune.c,v 1.23 2021/08/07 16:19:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -108,9 +108,7 @@ neptune_attach(device_t parent, device_t self, void *aux)
 		panic("IO map for Neptune corruption??");
 #endif
 
-	sc->sc_bst = malloc(sizeof(struct x68k_bus_space), M_DEVBUF, M_NOWAIT);
-	if (sc->sc_bst == NULL)
-		panic("neptune_attach: can't allocate bus_space structure");
+	sc->sc_bst = malloc(sizeof(struct x68k_bus_space), M_DEVBUF, M_WAITOK);
 	*sc->sc_bst = neptune_bus;
 	sc->sc_bst->x68k_bus_device = self;
 
@@ -119,10 +117,11 @@ neptune_attach(device_t parent, device_t self, void *aux)
 	na.na_bst = sc->sc_bst;
 	na.na_intr = ia->ia_intr;
 
-	cf = config_search_ia(neptune_search, self, "neptune", &na);
+	cf = config_search(self, &na,
+	    CFARGS(.submatch = neptune_search));
 	if (cf) {
 		aprint_normal(": Neptune-X ISA bridge\n");
-		config_attach(self, cf, &na, neptune_print);
+		config_attach(self, cf, &na, neptune_print, CFARGS_NONE);
 	} else {
 		aprint_normal(": no device found.\n");
 		intio_map_free_region(parent, ia);

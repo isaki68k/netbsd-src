@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.110 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.132 2021/10/07 13:04:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -48,9 +48,6 @@
 #if defined(_KERNEL_OPT)
 #include "opt_xen.h"
 #include "opt_svs.h"
-#ifdef i386
-#include "opt_user_ldt.h"
-#endif
 #endif
 
 /*
@@ -76,6 +73,7 @@
 
 struct intrsource;
 struct pmap;
+struct kcpuset;
 
 #ifdef __x86_64__
 #define	i386tss	x86_64_tss
@@ -102,6 +100,12 @@ struct clockframe {
 	struct intrframe cf_if;
 };
 
+struct idt_vec {
+	void *iv_idt;
+	void *iv_idt_pentium;
+	char iv_allocmap[NIDT];
+};
+
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
  */
@@ -110,18 +114,6 @@ struct cpu_info {
 	struct cpu_data ci_data;	/* MI per-cpu data */
 	device_t ci_dev;		/* pointer to our device */
 	struct cpu_info *ci_self;	/* self-pointer */
-#ifdef XEN
-	volatile struct vcpu_info *ci_vcpu; /* for XEN */
-#endif
-
-	/*
-	 * Will be accessed by other CPUs.
-	 */
-	struct cpu_info *ci_next;	/* next cpu */
-	struct lwp *ci_curlwp;		/* current owner of the processor */
-	cpuid_t ci_cpuid;		/* our CPU ID */
-	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
-	uint32_t ci_initapicid;		/* our initial APIC ID */
 
 	/*
 	 * Private members.
@@ -136,16 +128,12 @@ struct cpu_info {
 	int ci_nintrhand;	/* number of H/W interrupt handlers */
 	uint64_t ci_scratch;
 	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
+	struct kcpuset *ci_tlb_cpuset;
+	struct idt_vec ci_idtvec;
 
-#ifndef XENPV
+	int ci_kfpu_spl;
+
 	struct intrsource *ci_isources[MAX_INTR_SOURCES];
-#endif
-#if defined(XEN)
-	struct intrsource *ci_xsources[NIPL];
-	uint32_t	ci_xmask[NIPL];
-	uint32_t	ci_xunmask[NIPL];
-	uint32_t	ci_xpending; /* XEN doesn't use the cmpxchg8 path */
-#endif
 	
 	volatile int	ci_mtx_count;	/* Negative count of spin mutexes */
 	volatile int	ci_mtx_oldspl;	/* Old SPL at this ci_idepth */
@@ -154,19 +142,18 @@ struct cpu_info {
 	struct {
 		uint32_t	ipending;
 		int		ilevel;
+		uint32_t	imasked;
 	} ci_istate __aligned(8);
 #define ci_ipending	ci_istate.ipending
 #define	ci_ilevel	ci_istate.ilevel
+#define	ci_imasked	ci_istate.imasked
 	int		ci_idepth;
 	void *		ci_intrstack;
 	uint32_t	ci_imask[NIPL];
 	uint32_t	ci_iunmask[NIPL];
 
-	uint32_t ci_flags;		/* flags; see below */
-	uint32_t ci_ipis;		/* interprocessor interrupts pending */
-
-	uint32_t	ci_signature;	 /* X86 cpuid type (cpuid.1.%eax) */
-	uint32_t	ci_vendor[4];	 /* vendor string */
+	uint32_t	ci_signature;	/* X86 cpuid type (cpuid.1.%eax) */
+	uint32_t	ci_vendor[4];	/* vendor string */
 	uint32_t	ci_max_cpuid;	/* cpuid.0:%eax */
 	uint32_t	ci_max_ext_cpuid; /* cpuid.80000000:%eax */
 	volatile uint32_t	ci_lapic_counter;
@@ -222,8 +209,32 @@ struct cpu_info {
 	uintptr_t	ci_suspend_cr4;
 	uintptr_t	ci_suspend_cr8;
 
-	/* The following must be in a single cache line. */
+	/*
+	 * The following must be in their own cache line, as they are
+	 * stored to regularly by remote CPUs; when they were mixed with
+	 * other fields we observed frequent cache misses.
+	 */
 	int		ci_want_resched __aligned(64);
+	uint32_t	ci_ipis; /* interprocessor interrupts pending */
+
+	/*
+	 * These are largely static, and will be frequently fetched by other
+	 * CPUs.  For that reason they get their own cache line, too.
+	 */
+	uint32_t 	ci_flags __aligned(64);/* general flags */
+	uint32_t 	ci_acpiid;	/* our ACPI/MADT ID */
+	uint32_t 	ci_initapicid;	/* our initial APIC ID */
+	uint32_t 	ci_vcpuid;	/* our CPU id for hypervisor */
+	cpuid_t		ci_cpuid;	/* our CPU ID */
+	struct cpu_info	*ci_next;	/* next cpu */
+
+	/*
+	 * This is stored frequently, and is fetched by remote CPUs.
+	 */
+	struct lwp	*ci_curlwp __aligned(64);/* general flags */
+	struct lwp	*ci_onproc;	/* current user LWP / kthread */
+
+	/* Here ends the cachline-aligned sections. */
 	int		ci_padout __aligned(64);
 
 #ifndef __HAVE_DIRECT_MAP
@@ -253,9 +264,14 @@ struct cpu_info {
 	vaddr_t		ci_svs_utls;
 #endif
 
-#ifdef XEN
-	u_long ci_evtmask[NR_EVENT_CHANNELS]; /* events allowed on this CPU */
+#ifndef XENPV
+	struct evcnt ci_ipi_events[X86_NIPI];
+#else
 	struct evcnt ci_ipi_events[XEN_NIPIS];
+#endif
+#ifdef XEN
+	volatile struct vcpu_info *ci_vcpu; /* for XEN */
+	u_long ci_evtmask[NR_EVENT_CHANNELS]; /* events allowed on this CPU */
 	evtchn_port_t ci_ipi_evtchn;
 #if defined(XENPV)
 #if defined(PAE) || defined(__x86_64__)
@@ -290,9 +306,6 @@ struct cpu_info {
 	 */
 	uint64_t	ci_xen_systime_ns_skew;
 
-	/* Xen periodic timer interrupt handle.  */
-	struct intrhand	*ci_xen_timer_intrhand;
-
 	/*
 	 * Clockframe for timer interrupt handler.
 	 * Saved at entry via event callback.
@@ -307,11 +320,16 @@ struct cpu_info {
 	struct evcnt	ci_xen_raw_systime_backwards_evcnt;
 	struct evcnt	ci_xen_systime_backwards_hardclock_evcnt;
 	struct evcnt	ci_xen_missed_hardclock_evcnt;
-#else   /* XEN */
-	struct evcnt ci_ipi_events[X86_NIPI];
 #endif	/* XEN */
 
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 };
+
+#if defined(XEN) && !defined(XENPV)
+	__CTASSERT(XEN_NIPIS <= X86_NIPI);
+#endif
 
 /*
  * Macros to handle (some) trapframe registers for common x86 code.
@@ -371,7 +389,6 @@ extern struct cpu_info *cpu_info_list;
 #if !defined(__GNUC__) || defined(_MODULE)
 /* For non-GCC and modules */
 struct cpu_info	*x86_curcpu(void);
-void	cpu_set_curpri(int);
 # ifdef __GNUC__
 lwp_t	*x86_curlwp(void) __attribute__ ((const));
 # else
@@ -383,11 +400,7 @@ lwp_t   *x86_curlwp(void);
 
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_flags & CPUF_PRIMARY)
 
-#define	X86_AST_GENERIC		0x01
-#define	X86_AST_PREEMPT		0x02
-
-#define aston(l, why)		((l)->l_md.md_astpending |= (why))
-#define	cpu_did_resched(l)	((l)->l_md.md_astpending &= ~X86_AST_PREEMPT)
+#define aston(l)		((l)->l_md.md_astpending = 1)
 
 void cpu_boot_secondary_processors(void);
 void cpu_init_idle_lwps(void);
@@ -481,17 +494,49 @@ void 	cpu_probe(struct cpu_info *);
 void	cpu_identify(struct cpu_info *);
 void	identify_hypervisor(void);
 
+/* identcpu_subr.c */
+uint64_t cpu_tsc_freq_cpuid(struct cpu_info *);
+void	cpu_dcp_cacheinfo(struct cpu_info *, uint32_t);
+
 typedef enum vm_guest {
 	VM_GUEST_NO = 0,
 	VM_GUEST_VM,
-	VM_GUEST_XEN,
+	VM_GUEST_XENPV,
+	VM_GUEST_XENPVH,
+	VM_GUEST_XENHVM,
 	VM_GUEST_XENPVHVM,
 	VM_GUEST_HV,
 	VM_GUEST_VMWARE,
 	VM_GUEST_KVM,
+	VM_GUEST_VIRTUALBOX,
 	VM_LAST
 } vm_guest_t;
 extern vm_guest_t vm_guest;
+
+static __inline bool __unused
+vm_guest_is_xenpv(void)
+{
+	switch(vm_guest) {
+	case VM_GUEST_XENPV:
+	case VM_GUEST_XENPVH:
+	case VM_GUEST_XENPVHVM:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static __inline bool __unused
+vm_guest_is_xenpvh_or_pvhvm(void)
+{
+	switch(vm_guest) {
+	case VM_GUEST_XENPVH:
+	case VM_GUEST_XENPVHVM:
+		return true;
+	default:
+		return false;
+	}
+}
 
 /* cpu_topology.c */
 void	x86_cpu_topology(struct cpu_info *);
@@ -510,6 +555,7 @@ void	lwp_trampoline(void);
 void	xen_startrtclock(void);
 void	xen_delay(unsigned int);
 void	xen_initclocks(void);
+void	xen_cpu_initclocks(void);
 void	xen_suspendclocks(struct cpu_info *);
 void	xen_resumeclocks(struct cpu_info *);
 #endif /* XEN */
@@ -524,16 +570,11 @@ extern void (*x86_delay)(unsigned int);
 
 /* cpu.c */
 void	cpu_probe_features(struct cpu_info *);
+int	x86_cpu_is_lcall(const void *);
 
 /* vm_machdep.c */
 void	cpu_proc_fork(struct proc *, struct proc *);
 paddr_t	kvtop(void *);
-
-#ifdef USER_LDT
-/* sys_machdep.h */
-int	x86_get_ldt(struct lwp *, void *, register_t *);
-int	x86_set_ldt(struct lwp *, void *, register_t *);
-#endif
 
 /* isa_machdep.c */
 void	isa_defaultirq(void);

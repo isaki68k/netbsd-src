@@ -1,4 +1,4 @@
-/*	$NetBSD: softintr.c,v 1.15 2013/12/02 18:36:11 joerg Exp $	*/
+/*	$NetBSD: softintr.c,v 1.18 2020/11/21 21:27:09 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,12 +30,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: softintr.c,v 1.15 2013/12/02 18:36:11 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: softintr.c,v 1.18 2020/11/21 21:27:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/syslog.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/cpu.h>
 #include <arm/cpufunc.h>
@@ -63,10 +63,7 @@ softintr_establish(int level, void (*fun)(void *), void *arg)
 {
 	struct softintr_handler *sh;
 
-	sh = malloc(sizeof(*sh), M_DEVBUF, M_NOWAIT);
-	if (sh == NULL)
-		return NULL;
-
+	sh = kmem_alloc(sizeof(*sh), KM_SLEEP);
 	sh->sh_fun = fun;
 	sh->sh_level = ipl_to_spl(level);
 	sh->sh_arg = arg;
@@ -88,15 +85,16 @@ softintr_disestablish(void *cookie)
 		SetCPSR(I32_bit, I32_bit & saved_cpsr);
 	} else {
 		SetCPSR(I32_bit, I32_bit & saved_cpsr);
-		free(sh, M_DEVBUF);
+		kmem_free(sh, sizeof(*sh));
 	}
 }
 
 void
 softintr_free(void *arg)
 {
+	struct softintr_handler *sh = arg;
 
-	free(arg, M_DEVBUF);
+	kmem_free(sh, sizeof(*sh));
 }
 
 void

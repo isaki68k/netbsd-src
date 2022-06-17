@@ -1,4 +1,4 @@
-/* 	$NetBSD: lock.h,v 1.21 2019/04/16 12:25:17 skrll Exp $	*/
+/* 	$NetBSD: lock.h,v 1.24 2022/02/13 14:06:51 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -85,10 +85,29 @@ __sync(void)
 static __inline void
 __cpu_simple_lock_init(__cpu_simple_lock_t *alp)
 {
+
 	alp->csl_lock[0] = alp->csl_lock[1] =
 	alp->csl_lock[2] = alp->csl_lock[3] =
 	    __SIMPLELOCK_RAW_UNLOCKED;
+}
+
+static __inline int
+__cpu_simple_lock_try(__cpu_simple_lock_t *alp)
+{
+	volatile unsigned long *__aptr = __SIMPLELOCK_ALIGN(alp);
+
+	if (__ldcw(__aptr) == __SIMPLELOCK_RAW_LOCKED)
+		return 0;
+
+	/*
+	 * __cpu_simple_lock_try must be a load-acquire operation, but
+	 * HPPA's LDCW does not appear to guarantee load-acquire
+	 * semantics, so we have to do LDCW and then an explicit SYNC
+	 * to make a load-acquire operation that pairs with a preceding
+	 * store-release in __cpu_simple_unlock.
+	 */
 	__sync();
+	return 1;
 }
 
 static __inline void
@@ -103,17 +122,9 @@ __cpu_simple_lock(__cpu_simple_lock_t *alp)
 	 * some work.
 	 */
 
-	while (__ldcw(__aptr) == __SIMPLELOCK_RAW_LOCKED)
+	while (!__cpu_simple_lock_try(alp))
 		while (*__aptr == __SIMPLELOCK_RAW_LOCKED)
 			;
-}
-
-static __inline int
-__cpu_simple_lock_try(__cpu_simple_lock_t *alp)
-{
-	volatile unsigned long *__aptr = __SIMPLELOCK_ALIGN(alp);
-
-	return (__ldcw(__aptr) != __SIMPLELOCK_RAW_LOCKED);
 }
 
 static __inline void
@@ -121,6 +132,10 @@ __cpu_simple_unlock(__cpu_simple_lock_t *alp)
 {
 	volatile unsigned long *__aptr = __SIMPLELOCK_ALIGN(alp);
 
+	/*
+	 * SYNC and then store makes a store-release that pairs with
+	 * the load-acquire in a subsequent __cpu_simple_lock_try.
+	 */
 	__sync();
 	*__aptr = __SIMPLELOCK_RAW_UNLOCKED;
 }
@@ -139,24 +154,6 @@ __cpu_simple_lock_clear(__cpu_simple_lock_t *alp)
 	volatile unsigned long *__aptr = __SIMPLELOCK_ALIGN(alp);
 
 	*__aptr = __SIMPLELOCK_RAW_UNLOCKED;
-}
-
-static __inline void
-mb_read(void)
-{
-	__sync();
-}
-
-static __inline void
-mb_write(void)
-{
-	__sync();
-}
-
-static __inline void
-mb_memory(void)
-{
-	__sync();
 }
 
 #endif /* _HPPA_LOCK_H_ */

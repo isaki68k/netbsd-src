@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.59 2017/05/18 16:34:56 christos Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.63 2022/01/22 15:10:32 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.59 2017/05/18 16:34:56 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.63 2022/01/22 15:10:32 skrll Exp $");
 
 #include "opt_cputype.h"
 
@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.59 2017/05/18 16:34:56 christos Exp $"
 #include <sys/mbuf.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -87,6 +88,14 @@ pmax_bus_dma_init(void)
 #endif
 }
 
+static size_t
+_bus_dmamap_mapsize(int const nsegments)
+{
+	KASSERT(nsegments > 0);
+	return sizeof(struct pmax_bus_dmamap) +
+	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
+}
+
 /*
  * Common function for DMA map creation.  May be called by bus-specific
  * DMA map creation functions.
@@ -97,7 +106,6 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 {
 	struct pmax_bus_dmamap *map;
 	void *mapstore;
-	size_t mapsize;
 
 	/*
 	 * Allocate and initialize the DMA map.  The end of the map
@@ -111,13 +119,10 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * The bus_dmamap_t includes one bus_dma_segment_t, hence
 	 * the (nsegments - 1).
 	 */
-	mapsize = sizeof(struct pmax_bus_dmamap) +
-	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
-	if ((mapstore = malloc(mapsize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mapstore = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return (ENOMEM);
 
-	memset(mapstore, 0, mapsize);
 	map = (struct pmax_bus_dmamap *)mapstore;
 	map->_dm_size = size;
 	map->_dm_segcnt = nsegments;
@@ -141,7 +146,7 @@ void
 _bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 {
 
-	free(map, M_DMAMAP);
+	kmem_free(map, _bus_dmamap_mapsize(map->_dm_segcnt));
 }
 
 /*
@@ -457,7 +462,7 @@ _bus_dmamap_sync_r3k(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		return;
 
 	/*
-	 * No cache invlidation is necessary if the DMA map covers
+	 * No cache invalidation is necessary if the DMA map covers
 	 * COHERENT DMA-safe memory (which is mapped un-cached).
 	 */
 	if (map->_dm_flags & PMAX_DMAMAP_COHERENT)
@@ -483,11 +488,11 @@ _bus_dmamap_sync_r3k(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		}
 
 		/*
-		 * Now at the first segment to sync; nail 
+		 * Now at the first segment to sync; nail
 		 * each segment until we have exhausted the
 		 * length.
 		 */
-		minlen = len < map->dm_segs[i].ds_len - offset ?  
+		minlen = len < map->dm_segs[i].ds_len - offset ?
 		    len : map->dm_segs[i].ds_len - offset;
 
 		addr = map->dm_segs[i].ds_addr;
@@ -661,7 +666,7 @@ _bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	return (_bus_dmamem_alloc_range_common(t, size, alignment, boundary,
 	    segs, nsegs, rsegs, flags,
 	    pmap_limits.avail_start /*low*/,
-	    pmap_limits.avail_end - PAGE_SIZE /*high*/));
+	    pmap_limits.avail_end - 1 /*high*/));
 }
 
 /*
@@ -731,6 +736,6 @@ _bus_dmamem_mmap(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs, off_t off,
 	rv = _bus_dmamem_mmap_common(t, segs, nsegs, off, prot, flags);
 	if (rv == (bus_addr_t)-1)
 		return (-1);
-	
+
 	return (mips_btop((char *)rv));
 }

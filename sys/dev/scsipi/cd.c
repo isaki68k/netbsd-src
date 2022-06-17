@@ -1,4 +1,4 @@
-/*	$NetBSD: cd.c,v 1.342 2018/09/03 16:29:33 riastradh Exp $	*/
+/*	$NetBSD: cd.c,v 1.353 2021/10/12 08:36:29 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001, 2003, 2004, 2005, 2008 The NetBSD Foundation,
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cd.c,v 1.342 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cd.c,v 1.353 2021/10/12 08:36:29 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -233,7 +233,7 @@ const struct cdevsw cd_cdevsw = {
 	.d_flag = D_DISK | D_MPSAFE
 };
 
-static struct dkdriver cddkdriver = {
+static const struct dkdriver cddkdriver = {
 	.d_open = cdopen,
 	.d_close = cdclose,
 	.d_strategy = cdstrategy,
@@ -401,8 +401,8 @@ cd_firstopen(device_t self, dev_t dev, int flag, int fmt)
         else
                 silent = 0;
 
-	/* make cdclose() loud again */
-	cd->flags &= ~CDF_EJECTED;
+	/* make cdclose() silent */
+	cd->flags |= CDF_EJECTED;
 
 	/* Check that it is still responding and ok. */
 	error = scsipi_test_unit_ready(periph,
@@ -411,7 +411,7 @@ cd_firstopen(device_t self, dev_t dev, int flag, int fmt)
 
 	/*
 	 * Start the pack spinning if necessary. Always allow the
-	 * raw parition to be opened, for raw IOCTLs. Data transfers
+	 * raw partition to be opened, for raw IOCTLs. Data transfers
 	 * will check for SDEV_MEDIA_LOADED.
 	 */
 	if (error == EIO) {
@@ -419,8 +419,11 @@ cd_firstopen(device_t self, dev_t dev, int flag, int fmt)
 		if (error == EINVAL)
 			error = EIO;
 	}
-	if (error)
+	if (error) {
+		if (part == RAW_PART)
+			goto out;
 		goto bad;
+	}
 
 	/* Lock the pack in. */
 	error = scsipi_prevent(periph, SPAMR_PREVENT_DT,
@@ -448,6 +451,9 @@ cd_firstopen(device_t self, dev_t dev, int flag, int fmt)
 		SC_DEBUG(periph, SCSIPI_DB3, ("Params loaded "));
 
 		cd_set_geometry(cd);
+
+		/* make cdclose() loud again */
+		cd->flags &= ~CDF_EJECTED;
 	}
 
 	periph->periph_flags |= PERIPH_OPEN;
@@ -519,7 +525,8 @@ cd_lastclose(device_t self)
 	struct scsipi_adapter *adapt = periph->periph_channel->chan_adapter;
 	int silent;
 
-	if (cd->flags & CDF_EJECTED)
+	if ((cd->flags & CDF_EJECTED) != 0 ||
+	    (periph->periph_flags & PERIPH_MEDIA_LOADED) == 0)
 		silent = XS_CTL_SILENT;
 	else
 		silent = 0;
@@ -543,7 +550,7 @@ cd_lastclose(device_t self)
 
 /*
  * close the device.. only called if we are the LAST
- * occurence of an open device
+ * occurrence of an open device
  */
 static int
 cdclose(dev_t dev, int flag, int fmt, struct lwp *l)
@@ -660,7 +667,7 @@ cd_make_bounce(struct cd_softc *cd, struct buf *bp, struct cdbounce **bouncep)
 	cd_iosize(dksc->sc_dev, &count);
 
 	bounce->head = skip * DEV_BSIZE;
-	bounce->lcount = count - bounce->head;
+	bounce->lcount = imin(count - bounce->head, bp->b_bcount);
 	bounce->rcount = bp->b_bcount - bounce->lcount;
 
 	error = cd_make_bounce_buffer(cd, bp, blkno, count, &lbp, bounce);
@@ -671,10 +678,10 @@ cd_make_bounce(struct cd_softc *cd, struct buf *bp, struct cdbounce **bouncep)
 	count = total - count;
 
 	if (count > 0) {
-		bounce->lbp->b_private = bounce;
 		error = cd_make_bounce_buffer(cd, bp, blkno, count, &rbp, bounce);
 		if (error) {
-			putiobuf(bounce->lbp);
+			free(lbp->b_data, M_DEVBUF);
+			putiobuf(lbp);
 			goto bad;
 		}
 	} else
@@ -751,7 +758,7 @@ bad:
 /*
  * Issue single I/O command
  *
- * Called from dk_start and implicitely from dk_strategy
+ * Called from dk_start and implicitly from dk_strategy
  */
 static int
 cd_diskstart(device_t dev, struct buf *bp)
@@ -935,7 +942,7 @@ cd_interpret_sense(struct scsipi_xfer *xs)
 	int retval = EJUSTRETURN;
 
 	/*
-	 * If it isn't a extended or extended/deferred error, let
+	 * If it isn't an extended or extended/deferred error, let
 	 * the generic code handle it.
 	 */
 	if (SSD_RCODE(sense->response_code) != SSD_RCODE_CURRENT &&
@@ -1023,7 +1030,7 @@ cdminphys(struct buf *bp)
 	 *
 	 * XXX Note that the SCSI-I spec says that 256-block transfers
 	 * are allowed in a 6-byte read/write, and are specified
-	 * by settng the "length" to 0.  However, we're conservative
+	 * by setting the "length" to 0.  However, we're conservative
 	 * here, allowing only 255-block transfers in case an
 	 * ancient device gets confused by length == 0.  A length of 0
 	 * in a 10-byte read/write actually means 0 blocks.
@@ -1085,7 +1092,7 @@ lba2msf(u_long lba, u_char *m, u_char *s, u_char *f)
 #endif /* XXX Not used */
 
 /*
- * Convert an hour:minute:second:frame address to a logical block adres. In
+ * Convert an hour:minute:second:frame address to a logical block address. In
  * theory the number of secs/minute and number of frames/second could be
  * configured differently in the device  as could the block offset but in
  * practice these values are rock solid and most drives don't even allow
@@ -1213,6 +1220,14 @@ cdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		return (EIO);
 
 	switch (cmd) {
+	case DIOCTUR: {
+		/* test unit ready */
+		error = scsipi_test_unit_ready(cd->sc_periph, XS_CTL_SILENT);
+		*((int*)addr) = (error == 0);
+		if (error == ENODEV || error == EIO || error == 0)
+			return 0;                       
+		return error;
+	}
 	case CDIOCPLAYTRACKS: {
 		/* PLAY_MSF command */
 		struct ioc_play_track *args = addr;
@@ -1363,7 +1378,7 @@ cdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		    XS_CTL_IGNORE_NOT_READY | XS_CTL_IGNORE_MEDIA_CHANGE));
 	case DIOCEJECT:
 		if (*(int *)addr == 0) {
-			int pmask = 1 << part;
+			int pmask = __BIT(part);
 			/*
 			 * Don't force eject: check that we are the only
 			 * partition open. If so, unlock it.
@@ -1447,15 +1462,18 @@ static void
 cd_label(device_t self, struct disklabel *lp)
 {
 	struct cd_softc *cd = device_private(self);
+	struct scsipi_periph *periph = cd->sc_periph;
 	struct cd_formatted_toc toc;
-	int lastsession;
+	int lastsession = 0;
 
 	strncpy(lp->d_typename, "optical media", 16);
 	lp->d_rpm = 300;
-	lp->d_flags |= D_REMOVABLE | D_SCSI_MMC;
+	lp->d_flags |= D_REMOVABLE;
 
-	if (cdreadmsaddr(cd, &toc, &lastsession) != 0)
-		lastsession = 0;
+	if ((periph->periph_flags & PERIPH_MEDIA_LOADED) != 0) {
+		lp->d_flags |= D_SCSI_MMC;
+		(void) cdreadmsaddr(cd, &toc, &lastsession);
+	}
 
 	lp->d_partitions[0].p_offset = 0;
 	lp->d_partitions[0].p_size = lp->d_secperunit;
@@ -2677,14 +2695,12 @@ mmc_getdiscinfo(struct scsipi_periph *periph,
 	struct scsipi_get_conf_feature   *gcf;
 	struct scsipi_read_discinfo       di_cmd;
 	struct scsipi_read_discinfo_data  di __aligned(2);
-	const uint32_t buffer_size = 1024;
-	uint32_t feat_tbl_len, pos;
+	const uint32_t buffer_size = 0x200; /* XXX RPZ USB3 SCSI size issue */
+	uint32_t pos;
 	u_long   last_lba = 0;
 	uint8_t  *buffer, *fpos;
 	int feature, last_feature, features_len, feature_cur, feature_len;
 	int lsb, msb, error, flags;
-
-	feat_tbl_len = buffer_size;
 
 	buffer = malloc(buffer_size, M_TEMP, M_WAITOK);
 
@@ -2730,12 +2746,12 @@ mmc_getdiscinfo(struct scsipi_periph *periph,
 		memset(&gc_cmd, 0, sizeof(gc_cmd));
 		gc_cmd.opcode = GET_CONFIGURATION;
 		_lto2b(last_feature, gc_cmd.start_at_feature);
-		_lto2b(feat_tbl_len, gc_cmd.data_len);
-		memset(gc, 0, feat_tbl_len);
+		_lto2b(buffer_size, gc_cmd.data_len);
+		memset(gc, 0, buffer_size);
 
 		error = scsipi_command(periph,
 			(void *)&gc_cmd, sizeof(gc_cmd),
-			(void *) gc,     feat_tbl_len,
+			(void *) gc,     buffer_size,
 			CDRETRIES, 30000, NULL, flags);
 		if (error) {
 			/* ieeek... break out of loop... i dunno what to do */
@@ -2743,7 +2759,7 @@ mmc_getdiscinfo(struct scsipi_periph *periph,
 		}
 
 		features_len = _4btol(gc->data_len);
-		if (features_len < 4 || features_len > feat_tbl_len)
+		if (features_len < 4 || features_len > buffer_size)
 			break;
 
 		pos  = 0;
@@ -3102,7 +3118,7 @@ mmc_gettrackinfo_dvdrom(struct scsipi_periph *periph,
 	toc_hdr = (struct scsipi_toc_header *) buffer;
 	if (_2btol(toc_hdr->length) > buffer_size - 2) {
 #ifdef DIAGNOSTIC
-		printf("incease buffersize in mmc_readtrackinfo_dvdrom\n");
+		printf("increase buffersize in mmc_readtrackinfo_dvdrom\n");
 #endif
 		error = ENOBUFS;
 		goto out;
@@ -3123,7 +3139,7 @@ mmc_gettrackinfo_dvdrom(struct scsipi_periph *periph,
 	toc     = (struct scsipi_toc_formatted *) (buffer + 4);
 
 	/* as in read disc info, all sessions are converted to tracks      */
-	/* track 1..  -> offsets, sizes can be (rougly) estimated (16 ECC) */
+	/* track 1..  -> offsets, sizes can be (roughly) estimated (16 ECC) */
 	/* last track -> we got the size from the lead-out                 */
 
 	tracknr      = 0;
@@ -3360,7 +3376,7 @@ mmc_do_close_or_finalise(struct scsipi_periph *periph, struct mmc_op *mmc_op)
 		    (void *)blob, sizeof(blob), flags, CDRETRIES, 20000);
 		if (error)
 			return error;
-		/* and use funtion 2 */
+		/* and use function 2 */
 		func = 2;
 		break;
 	case 0x11 : /* DVD-R (DL) */
@@ -3536,7 +3552,7 @@ mmc_setup_writeparams(struct scsipi_periph *periph,
 	if (error)
 		return error;
 
-	/* set page length for reasurance */
+	/* set page length for reassurance */
 	page5[1] = P5LEN;	/* page length */
 
 	/* write type packet/incremental */

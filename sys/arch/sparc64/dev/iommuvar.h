@@ -1,4 +1,4 @@
-/*	$NetBSD: iommuvar.h,v 1.23 2019/02/09 11:27:05 mrg Exp $	*/
+/*	$NetBSD: iommuvar.h,v 1.25 2021/07/24 21:31:36 andvar Exp $	*/
 
 /*
  * Copyright (c) 1999 Matthew R. Green
@@ -53,7 +53,7 @@ struct iommu_state {
 	int			is_tsbsize;	/* 0 = 8K, ... */
 	u_int			is_dvmabase;
 	u_int			is_dvmaend;
-	int64_t			is_cr;		/* IOMMU control regiter value */
+	int64_t			is_cr;		/* IOMMU control register value */
 	struct extent		*is_dvmamap;	/* DVMA map for this instance */
 	kmutex_t		is_lock;	/* lock for DVMA map */
 	int			is_flags;
@@ -72,8 +72,6 @@ struct iommu_state {
 /* interfaces for PCI/SBUS code */
 void	iommu_init(char *, struct iommu_state *, int, uint32_t);
 void	iommu_reset(struct iommu_state *);
-void    iommu_enter(struct strbuf_ctl *, vaddr_t, int64_t, int);
-void    iommu_remove(struct iommu_state *, vaddr_t, size_t);
 paddr_t iommu_extract(struct iommu_state *, vaddr_t);
 
 int	iommu_dvmamap_load(bus_dma_tag_t, bus_dmamap_t, void *, bus_size_t,

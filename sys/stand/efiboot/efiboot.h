@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.h,v 1.10 2019/04/21 22:30:41 thorpej Exp $	*/
+/*	$NetBSD: efiboot.h,v 1.19 2022/03/25 21:23:00 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -35,8 +35,6 @@
 #include <loadfile.h>
 #include <net.h>
 
-#include <prop/proplib.h>
-
 #include "efiboot_machdep.h"
 
 struct boot_command {
@@ -44,6 +42,11 @@ struct boot_command {
 	void (*c_fn)(char *);
 	const char *c_help;
 };
+
+int arch_prepare_boot(const char *, const char *, u_long *);
+void arch_cleanup_boot(void);
+size_t arch_alloc_size(void);
+void arch_set_virtual_address_map(EFI_MEMORY_DESCRIPTOR *, UINTN, UINTN, UINTN, UINT32);
 
 /* conf.c */
 extern struct fs_ops null_fs_ops;
@@ -53,17 +56,18 @@ extern struct fs_ops nfs_fs_ops;
 /* boot.c */
 void boot(void);
 void clearit(void);
-void print_banner(void);
 extern const struct boot_command commands[];
 void command_help(char *);
 int set_default_device(const char *);
 char *get_default_device(void);
+void set_default_fstype(int);
+int get_default_fstype(void);
 int set_initrd_path(const char *);
 char *get_initrd_path(void);
 int set_dtb_path(const char *);
 char *get_dtb_path(void);
-int set_efibootplist_path(const char *);
-char *get_efibootplist_path(void);
+int set_rndseed_path(const char *);
+char *get_rndseed_path(void);
 
 /* console.c */
 int ischar(void);
@@ -76,8 +80,8 @@ void efi_cleanup(void);
 void efi_exit(void);
 void efi_delay(int);
 void efi_reboot(void);
+void efi_progress(const char *, ...);
 extern int howto;
-extern prop_dictionary_t efibootplist;
 
 /* efichar.c */
 size_t ucs2len(const CHAR16 *);
@@ -85,7 +89,8 @@ int ucs2_to_utf8(const CHAR16 *, char **);
 int utf8_to_ucs2(const char *, CHAR16 **, size_t *);
 
 /* efidev.c */
-int efi_device_path_depth(EFI_DEVICE_PATH *dp, int);
+int efi_device_path_depth(EFI_DEVICE_PATH *, int);
+int efi_device_path_count(EFI_DEVICE_PATH *);
 int efi_device_path_ncmp(EFI_DEVICE_PATH *, EFI_DEVICE_PATH *, int);
 
 /* efinet.c */
@@ -104,9 +109,18 @@ extern struct netif_driver efinetif;
 void efi_pxe_probe(void);
 bool efi_pxe_match_booted_interface(const EFI_MAC_ADDRESS *, UINT32);
 
+/* efiwatchdog.c */
+void efi_set_watchdog(uint32_t, uint64_t);
+
+/* efigop.c */
+void efi_gop_probe(void);
+void efi_gop_show(void);
+void efi_gop_dump(void);
+void efi_gop_setmode(UINT32);
+
 /* exec.c */
+int load_file(const char *, u_long, bool, EFI_PHYSICAL_ADDRESS *, u_long *);
 int exec_netbsd(const char *, const char *);
-void load_efibootplist(bool);
 
 /* panic.c */
 __dead VOID Panic(IN CHAR16 *, ...);
@@ -117,3 +131,7 @@ char *gettrailer(char *);
 void docommand(char *);
 char awaitkey(int, int);
 __dead void bootprompt(void);
+
+/* userconf.c */
+void userconf_add(const char *);
+void userconf_foreach(void (*)(const char *));

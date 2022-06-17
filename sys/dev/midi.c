@@ -1,4 +1,4 @@
-/*	$NetBSD: midi.c,v 1.89 2019/05/08 13:40:17 isaki Exp $	*/
+/*	$NetBSD: midi.c,v 1.98 2022/06/04 03:31:10 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -31,11 +31,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.89 2019/05/08 13:40:17 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.98 2022/06/04 03:31:10 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "midi.h"
-#include "sequencer.h"
 #endif
 
 #include <sys/param.h>
@@ -420,7 +419,7 @@ static struct {
  * meaningless) outside of a System Exclusive message, anywhere a status byte
  * could appear. Second, it is allowed to be absent at the end of a System
  * Exclusive message (!) - any status byte at all (non-realtime) is allowed to
- * terminate the message. Both require accomodation in the interface to
+ * terminate the message. Both require accommodation in the interface to
  * midi_fst's caller. A stray 0xf7 should be ignored BUT should count as a
  * message received for purposes of Active Sense timeout; the case is
  * represented by a return of FST_COM with a length of zero (pos == end). A
@@ -676,11 +675,11 @@ midi_softint(void *cookie)
 
 	sc = cookie;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	pid = sc->async;
 	if (pid != 0 && (p = proc_find(pid)) != NULL)
 		psignal(p, SIGIO);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 static void
@@ -1643,7 +1642,7 @@ midiioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 
 	case FIOASYNC:
 		mutex_exit(sc->lock);
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if (*(int *)addr) {
 			if (sc->async) {
 				error = EBUSY;
@@ -1655,7 +1654,7 @@ midiioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		} else {
 			sc->async = 0;
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		mutex_enter(sc->lock);
 		break;
 
@@ -1743,7 +1742,7 @@ filt_midirdetach(struct knote *kn)
 	struct midi_softc *sc = kn->kn_hook;
 
 	mutex_enter(sc->lock);
-	SLIST_REMOVE(&sc->rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->rsel, kn);
 	mutex_exit(sc->lock);
 }
 
@@ -1764,7 +1763,7 @@ filt_midiread(struct knote *kn, long hint)
 }
 
 static const struct filterops midiread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_midirdetach,
 	.f_event = filt_midiread,
@@ -1776,7 +1775,7 @@ filt_midiwdetach(struct knote *kn)
 	struct midi_softc *sc = kn->kn_hook;
 
 	mutex_enter(sc->lock);
-	SLIST_REMOVE(&sc->wsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->wsel, kn);
 	mutex_exit(sc->lock);
 }
 
@@ -1812,7 +1811,7 @@ filt_midiwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops midiwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_midiwdetach,
 	.f_event = filt_midiwrite,
@@ -1823,36 +1822,37 @@ midikqfilter(dev_t dev, struct knote *kn)
 {
 	struct midi_softc *sc =
 	    device_lookup_private(&midi_cd, MIDIUNIT(dev));
-	struct klist *klist;
+	struct selinfo *sip;
+	int error = 0;
 
-	mutex_exit(sc->lock);
-	sc->refcnt++;
 	mutex_enter(sc->lock);
+	sc->refcnt++;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->rsel.sel_klist;
+		sip = &sc->rsel;
 		kn->kn_fop = &midiread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sc->wsel.sel_klist;
+		sip = &sc->wsel;
 		kn->kn_fop = &midiwrite_filtops;
 		break;
 
 	default:
-		return (EINVAL);
+		error = EINVAL;
+		goto out;
 	}
 
 	kn->kn_hook = sc;
 
-	mutex_enter(sc->lock);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(sip, kn);
+ out:
 	if (--sc->refcnt < 0)
 		cv_broadcast(&sc->detach_cv);
 	mutex_exit(sc->lock);
 
-	return (0);
+	return (error);
 }
 
 void
@@ -1894,51 +1894,8 @@ midi_attach_mi(const struct midi_hw_if *mhwp, void *hdlp, device_t dev)
 	arg.type = AUDIODEV_TYPE_MIDI;
 	arg.hwif = mhwp;
 	arg.hdl = hdlp;
-	return (config_found(dev, &arg, audioprint));
+	return (config_found(dev, &arg, audioprint,
+			     CFARGS(.iattr = "midibus")));
 }
 
 #endif /* NMIDI > 0 || NMIDIBUS > 0 */
-
-#ifdef _MODULE
-#include "ioconf.c"
-
-devmajor_t midi_bmajor = -1, midi_cmajor = -1;
-#endif
-
-MODULE(MODULE_CLASS_DRIVER, midi, "audio");
-
-static int
-midi_modcmd(modcmd_t cmd, void *arg)
-{
-	int error = 0;
-
-#ifdef _MODULE
-	switch (cmd) {
-	case MODULE_CMD_INIT:
-		error = devsw_attach(midi_cd.cd_name, NULL, &midi_bmajor,
-		    &midi_cdevsw, &midi_cmajor);
-		if (error)
-			break;
-
-		error = config_init_component(cfdriver_ioconf_midi,
-		    cfattach_ioconf_midi, cfdata_ioconf_midi);
-		if (error) {
-			devsw_detach(NULL, &midi_cdevsw);
-		}
-		break;
-	case MODULE_CMD_FINI:
-		devsw_detach(NULL, &midi_cdevsw);
-		error = config_fini_component(cfdriver_ioconf_midi,
-		   cfattach_ioconf_midi, cfdata_ioconf_midi);
-		if (error)
-			devsw_attach(midi_cd.cd_name, NULL, &midi_bmajor,
-			    &midi_cdevsw, &midi_cmajor);
-		break;
-	default:
-		error = ENOTTY;
-		break;
-	}
-#endif
-
-	return error;
-}

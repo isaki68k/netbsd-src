@@ -1,4 +1,4 @@
-/*	$NetBSD: trap_subr.S,v 1.80 2018/07/15 05:16:44 maxv Exp $	*/
+/*	$NetBSD: trap_subr.S,v 1.86 2022/05/18 13:56:32 andvar Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -37,7 +37,13 @@
  *
  *	#include <powerpc/powerpc/trap_subr.S>
  */
+
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
+#include "opt_ddb.h"
+#include "opt_kgdb.h"
+#include "opt_ppcarch.h"
+#endif
 
 /* LINTSTUB: include <sys/param.h> */
 /* LINTSTUB: include <powerpc/oea/bat.h> */
@@ -262,14 +268,20 @@ _C_LABEL(dsitrap):
 	rlwinm	%r31,%r31,3+(32-BAT_ADDR_SHIFT),BAT_ADDR_SHIFT-3,28
 					/* get segment * 8 */
 
+	/* Get address of this CPU's current battable */
+	GET_CPUINFO(%r30)
+	ldreg	%r30,CI_BATTABLE(%r30)
+
+	/* Add offset to the slot we care about. */
+	add	%r31,%r31,%r30
+
 	/* get batu */
-	addis	%r31,%r31,_C_LABEL(battable)@ha
-	ldreg	%r30,_C_LABEL(battable)@l(%r31)
+	ldreg	%r30,0(%r31)
 	mtcr	%r30
 	bf	30,1f			/* branch if supervisor valid is
 					   false */
 	/* get batl */
-	ldreg	%r31,_C_LABEL(battable)+SZREG@l(%r31)
+	ldreg	%r31,SZREG(%r31)
 /* We randomly use the highest two bat registers here */
 	mftb	%r28
 	mtcr	%r28
@@ -357,15 +369,21 @@ _C_LABEL(dsi601trap):
 	mfdar	%r31			/* get fault address */
 	rlwinm	%r31,%r31,12,20,28	/* get "segment" battable offset */
 
+	/* Get address of this CPU's current battable */
+	GET_CPUINFO(%r30)
+	ldreg	%r30,CI_BATTABLE(%r30)
+
+	/* Add offset to the slot we care about. */
+	add	%r31,%r31,%r30
+
 	/* get batl */
-	addis	%r31,%r31,_C_LABEL(battable)@ha
-	ldreg	%r30,_C_LABEL(battable)+SZREG@l(%r31)
+	ldreg	%r30,SZREG(%r31)
 	mtcr	%r30
 	bf	25,1f			/* branch if Valid is false,
 					   presently assumes supervisor only */
 
 	/* get batu */
-	ldreg	%r31,_C_LABEL(battable)@l(%r31)
+	ldreg	%r31,0(%r31)
 /* We randomly use the highest two bat registers here */
 	mfspr	%r28,SPR_RTCL_R
 	andi.	%r28,%r28,128
@@ -749,7 +767,7 @@ _C_LABEL(ddbsize) = .-_C_LABEL(ddblow)
 	streg	%r30,(savearea+CPUSAVE_SRR1)(%r31);	/* save SRR1 */	\
 	mfmsr	%r30;							\
 	ori	%r30,%r30,(PSL_DR|PSL_IR);	/* turn on relocation */ \
-	mtmsr	%r30;			/* stack can be accesed now */	\
+	mtmsr	%r30;			/* stack can be accessed now */	\
 	isync;								\
 	mfsprg1	%r31;			/* get saved SP */		\
 	stregu	%r31,-FRAMELEN(%r1);	/* save it in the callframe */	\
@@ -1061,7 +1079,7 @@ _C_LABEL(sctrapexit):
 	streg	%r30,(savearea+CPUSAVE_SRR1)(%r31);	/* save SRR1 */	\
 	mfmsr	%r30;							\
 	ori	%r30,%r30,(PSL_DR|PSL_IR);	/* turn on relocation */ \
-	mtmsr	%r30;			/* stack can be accesed now */	\
+	mtmsr	%r30;			/* stack can be accessed now */	\
 	isync;								\
 	mfsprg1	%r31;			/* get saved SP */		\
 	stregu	%r31,-FRAMELEN(%r1);	/* save it in the callframe */	\

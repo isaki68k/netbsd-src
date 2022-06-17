@@ -1,4 +1,4 @@
-/*	$NetBSD: grf.c,v 1.50 2019/06/29 16:41:18 tsutsui Exp $	*/
+/*	$NetBSD: grf.c,v 1.53 2021/08/07 16:18:46 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf.c,v 1.50 2019/06/29 16:41:18 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf.c,v 1.53 2021/08/07 16:18:46 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -147,11 +147,12 @@ grfbusattach(device_t parent, device_t self, void *aux)
 	grf_auxp.busprint       = grfbusprint;
 	grf_auxp.from_bus_match = 1;
 
-	if (self == NULL) /* Console init	*/
-		atari_config_found(cfdata_gbus, NULL, &grf_auxp, grfbusprint);
-	else {
+	if (self == NULL) { /* Console init	*/
+		atari_config_found(cfdata_gbus, NULL, &grf_auxp, grfbusprint,
+		    CFARGS_NONE);
+	} else {
 		printf("\n");
-		config_found(self, &grf_auxp, grfbusprint);
+		config_found(self, &grf_auxp, grfbusprint, CFARGS_NONE);
 	}
 }
 

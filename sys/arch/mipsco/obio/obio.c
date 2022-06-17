@@ -1,4 +1,4 @@
-/*	$NetBSD: obio.c,v 1.17 2011/06/06 17:13:06 matt Exp $	*/
+/*	$NetBSD: obio.c,v 1.19 2021/08/07 16:19:00 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.17 2011/06/06 17:13:06 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.19 2021/08/07 16:19:00 thorpej Exp $");
 
 #include "locators.h"
 
@@ -86,7 +86,8 @@ obio_attach(device_t parent, device_t self, void *aux)
 	ca->ca_dmatag = &obio_dmatag;
 
 	printf("\n");
-	config_search_ia(obio_search, self, "obio", ca);
+	config_search(self, ca,
+	    CFARGS(.search = obio_search));
 }
 
 static int
@@ -97,8 +98,8 @@ obio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	ca->ca_addr = cf->cf_addr;
 	ca->ca_name = cf->cf_name;
 
-	if (config_match(parent, cf, ca) != 0)
-		config_attach(parent, cf, ca, obio_print);
+	if (config_probe(parent, cf, ca))
+		config_attach(parent, cf, ca, obio_print, CFARGS_NONE);
 
 	return 0;
 }

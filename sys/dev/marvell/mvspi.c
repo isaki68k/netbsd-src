@@ -53,7 +53,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern uint32_t mvTclk;
 
 struct mvspi_softc {
-	struct device		sc_dev;
 	struct spi_controller	sc_spi;
 	void			*sc_ih;
 	bool			sc_interrupts;
@@ -150,7 +149,7 @@ mvspi_attach(struct device *parent, struct device *self, void *aux)
 	 */
 	memset(&sba, 0, sizeof(sba));
 	sba.sba_controller = &sc->sc_spi;
-	(void) config_found_ia(self, "spibus", &sba, spibus_print);
+	config_found(self, &sba, spibus_print, CFARGS_NONE);
 }
     
 int

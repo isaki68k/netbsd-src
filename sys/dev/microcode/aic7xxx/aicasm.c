@@ -1,7 +1,7 @@
-/*	$NetBSD: aicasm.c,v 1.9 2016/08/15 08:52:33 maxv Exp $	*/
+/*	$NetBSD: aicasm.c,v 1.13 2022/05/24 20:50:19 andvar Exp $	*/
 
 /*
- * Aic7xxx SCSI host adapter firmware asssembler
+ * Aic7xxx SCSI host adapter firmware assembler
  *
  * Copyright (c) 1997, 1998, 2000, 2001 Justin T. Gibbs.
  * Copyright (c) 2001, 2002 Adaptec Inc.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: aicasm.c,v 1.9 2016/08/15 08:52:33 maxv Exp $");
+__RCSID("$NetBSD: aicasm.c,v 1.13 2022/05/24 20:50:19 andvar Exp $");
 
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -179,7 +179,7 @@ main(int argc, char *argv[])
 			listfilename = optarg;
 			break;
 		case 'n':
-			/* Don't complain about the -nostdinc directrive */
+			/* Don't complain about the -nostdinc directive */
 			if (strcmp(optarg, "ostdinc")) {
 				fprintf(stderr, "%s: Unknown option -%c%s\n",
 					appname, ch, optarg);
@@ -258,7 +258,7 @@ main(int argc, char *argv[])
 	argv += optind;
 
 	if (argc != 1) {
-		fprintf(stderr, "%s: No input file specifiled\n", appname);
+		fprintf(stderr, "%s: No input file specified\n", appname);
 		usage();
 		/* NOTREACHED */
 	}
@@ -285,9 +285,9 @@ main(int argc, char *argv[])
 		/* Process outmost scope */
 		process_scope(SLIST_FIRST(&scope_stack));
 		/*
-		 * Decend the tree of scopes and insert/emit
+		 * Descend the tree of scopes and insert/emit
 		 * patches as appropriate.  We perform a depth first
-		 * tranversal, recursively handling each scope.
+		 * transversal, recursively handling each scope.
 		 */
 		/* start at the root scope */
 		dump_scope(SLIST_FIRST(&scope_stack));
@@ -366,7 +366,7 @@ output_code(void)
 " *\n"
 "%s */\n", versions);
 
-	fprintf(ofile, "static uint8_t seqprog[] = {\n");
+	fprintf(ofile, "static const uint8_t seqprog[] = {\n");
 	for (cur_instr = STAILQ_FIRST(&seq_program);
 	     cur_instr != NULL;
 	     cur_instr = STAILQ_NEXT(cur_instr, links)) {
@@ -419,7 +419,7 @@ output_code(void)
 	}
 
 	fprintf(ofile,
-"static struct patch {\n"
+"static const struct patch {\n"
 "	%spatch_func_t		*patch_func;\n"
 "	uint32_t		 begin		:10,\n"
 "				 skip_instr	:10,\n"
@@ -439,7 +439,7 @@ output_code(void)
 	fprintf(ofile, "\n};\n\n");
 
 	fprintf(ofile,
-"static struct cs {\n"
+"static const struct cs {\n"
 "	uint16_t	begin;\n"
 "	uint16_t	end;\n"
 "} critical_sections[] = {\n");
@@ -455,8 +455,10 @@ output_code(void)
 	fprintf(ofile, "\n};\n\n");
 
 	fprintf(ofile,
-"static const int num_critical_sections = sizeof(critical_sections)\n"
-"				       / sizeof(*critical_sections);\n");
+"#define NUM_CRITICAL_SECTIONS	\\\n"
+"    (sizeof(critical_sections) / sizeof(*critical_sections))\n");
+	fprintf(ofile,
+"static const int num_critical_sections = NUM_CRITICAL_SECTIONS;\n");
 
 	fprintf(stderr, "%s: %d instructions used\n", appname, instrcount);
 }
@@ -667,7 +669,7 @@ check_patch(patch_t **start_patch, int start_instr,
 				cur_patch = STAILQ_NEXT(cur_patch, links);
 		} else {
 			/* Accepted this patch.  Advance to the next
-			 * one and wait for our intruction pointer to
+			 * one and wait for our instruction pointer to
 			 * hit this point.
 			 */
 			cur_patch = STAILQ_NEXT(cur_patch, links);

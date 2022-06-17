@@ -1,7 +1,7 @@
-/* $NetBSD: sio_pic.c,v 1.43 2014/03/21 16:39:29 christos Exp $ */
+/* $NetBSD: sio_pic.c,v 1.53 2021/07/15 01:29:23 thorpej Exp $ */
 
 /*-
- * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2000, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -59,14 +59,15 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.43 2014/03/21 16:39:29 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.53 2021/07/15 01:29:23 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/cpu.h>
 #include <sys/syslog.h>
 
+#include <machine/alpha.h>
 #include <machine/intr.h>
 #include <sys/bus.h>
 
@@ -74,11 +75,17 @@ __KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.43 2014/03/21 16:39:29 christos Exp $"
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 
+#include <dev/pci/pciidereg.h>
+#include <dev/pci/pciidevar.h>
+
+#include <dev/ic/i8259reg.h>
+
 #include <dev/pci/cy82c693reg.h>
 #include <dev/pci/cy82c693var.h>
 
 #include <dev/isa/isareg.h>
 #include <dev/isa/isavar.h>
+#include <alpha/pci/sioreg.h>
 #include <alpha/pci/siovar.h>
 
 #include "sio.h"
@@ -97,9 +104,9 @@ __KERNEL_RCSID(0, "$NetBSD: sio_pic.c,v 1.43 2014/03/21 16:39:29 christos Exp $"
  * Private functions and variables.
  */
 
-bus_space_tag_t sio_iot;
-pci_chipset_tag_t sio_pc;
-bus_space_handle_t sio_ioh_icu1, sio_ioh_icu2;
+static bus_space_tag_t sio_iot;
+static pci_chipset_tag_t sio_pc;
+static bus_space_handle_t sio_ioh_icu1, sio_ioh_icu2;
 
 #define	ICU_LEN		16		/* number of ISA IRQs */
 
@@ -114,28 +121,27 @@ static struct alpha_shared_intr *sio_intr;
  * If prom console is broken, must remember the initial interrupt
  * settings and enforce them.  WHEE!
  */
-uint8_t initial_ocw1[2];
-uint8_t initial_elcr[2];
+static uint8_t initial_ocw1[2];
+static uint8_t initial_elcr[2];
 #endif
 
-void		sio_setirqstat(int, int, int);
+static void	sio_setirqstat(int, int, int);
 
-uint8_t	(*sio_read_elcr)(int);
-void		(*sio_write_elcr)(int, uint8_t);
+static uint8_t	(*sio_read_elcr)(int);
+static void	(*sio_write_elcr)(int, uint8_t);
 static void	specific_eoi(int);
 #ifdef BROKEN_PROM_CONSOLE
-void		sio_intr_shutdown(void *);
+static void	sio_intr_shutdown(void *);
 #endif
 
 /******************** i82378 SIO ELCR functions ********************/
 
-int		i82378_setup_elcr(void);
-uint8_t	i82378_read_elcr(int);
-void		i82378_write_elcr(int, uint8_t);
+static bus_space_handle_t sio_ioh_elcr;
 
-bus_space_handle_t sio_ioh_elcr;
+static uint8_t	i82378_read_elcr(int);
+static void	i82378_write_elcr(int, uint8_t);
 
-int
+static int
 i82378_setup_elcr(void)
 {
 	int rv;
@@ -146,7 +152,7 @@ i82378_setup_elcr(void)
 	 * fall-back in case nothing else matches.
 	 */
 
-	rv = bus_space_map(sio_iot, 0x4d0, 2, 0, &sio_ioh_elcr);
+	rv = bus_space_map(sio_iot, SIO_REG_ICU1ELC, 2, 0, &sio_ioh_elcr);
 
 	if (rv == 0) {
 		sio_read_elcr = i82378_read_elcr;
@@ -156,14 +162,14 @@ i82378_setup_elcr(void)
 	return (rv);
 }
 
-uint8_t
+static uint8_t
 i82378_read_elcr(int elcr)
 {
 
 	return (bus_space_read_1(sio_iot, sio_ioh_elcr, elcr));
 }
 
-void
+static void
 i82378_write_elcr(int elcr, uint8_t val)
 {
 
@@ -172,13 +178,12 @@ i82378_write_elcr(int elcr, uint8_t val)
 
 /******************** Cypress CY82C693 ELCR functions ********************/
 
-int		cy82c693_setup_elcr(void);
-uint8_t	cy82c693_read_elcr(int);
-void		cy82c693_write_elcr(int, uint8_t);
+static const struct cy82c693_handle *sio_cy82c693_handle;
 
-const struct cy82c693_handle *sio_cy82c693_handle;
+static uint8_t	cy82c693_read_elcr(int);
+static void	cy82c693_write_elcr(int, uint8_t);
 
-int
+static int
 cy82c693_setup_elcr(void)
 {
 	int device, maxndevs;
@@ -236,14 +241,14 @@ cy82c693_setup_elcr(void)
 	return (ENODEV);
 }
 
-uint8_t
+static uint8_t
 cy82c693_read_elcr(int elcr)
 {
 
 	return (cy82c693_read(sio_cy82c693_handle, CONFIG_ELCR1 + elcr));
 }
 
-void
+static void
 cy82c693_write_elcr(int elcr, uint8_t val)
 {
 
@@ -259,7 +264,7 @@ cy82c693_write_elcr(int elcr, uint8_t val)
  * they should panic.
  */
 
-int (*const sio_elcr_setup_funcs[])(void) = {
+static int (*const sio_elcr_setup_funcs[])(void) = {
 	cy82c693_setup_elcr,
 	i82378_setup_elcr,
 	NULL,
@@ -267,7 +272,18 @@ int (*const sio_elcr_setup_funcs[])(void) = {
 
 /******************** Shared SIO/Cypress functions ********************/
 
-void
+static inline void
+specific_eoi(int irq)
+{
+	if (irq > 7) {
+		bus_space_write_1(sio_iot, sio_ioh_icu2, PIC_OCW2,
+		    OCW2_EOI | OCW2_SL | (irq & 0x07));	/* XXX */
+	}
+	bus_space_write_1(sio_iot, sio_ioh_icu1, PIC_OCW2,
+	    OCW2_EOI | OCW2_SL | (irq > 7 ? 2 : irq));
+}
+
+static void
 sio_setirqstat(int irq, int enabled, int type)
 {
 	uint8_t ocw1[2], elcr[2];
@@ -281,8 +297,8 @@ sio_setirqstat(int irq, int enabled, int type)
 	icu = irq / 8;
 	bit = irq % 8;
 
-	ocw1[0] = bus_space_read_1(sio_iot, sio_ioh_icu1, 1);
-	ocw1[1] = bus_space_read_1(sio_iot, sio_ioh_icu2, 1);
+	ocw1[0] = bus_space_read_1(sio_iot, sio_ioh_icu1, PIC_OCW1);
+	ocw1[1] = bus_space_read_1(sio_iot, sio_ioh_icu2, PIC_OCW1);
 	elcr[0] = (*sio_read_elcr)(0);				/* XXX */
 	elcr[1] = (*sio_read_elcr)(1);				/* XXX */
 
@@ -318,7 +334,8 @@ sio_setirqstat(int irq, int enabled, int type)
 void
 sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 {
-	char *cp;
+	struct evcnt *ev;
+	const char *cp;
 	int i;
 
 	sio_iot = iot;
@@ -345,8 +362,7 @@ sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 	shutdownhook_establish(sio_intr_shutdown, 0);
 #endif
 
-#define PCI_SIO_IRQ_STR	8
-	sio_intr = alpha_shared_intr_alloc(ICU_LEN, PCI_SIO_IRQ_STR);
+	sio_intr = alpha_shared_intr_alloc(ICU_LEN);
 
 	/*
 	 * set up initial values for interrupt enables.
@@ -354,10 +370,10 @@ sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 	for (i = 0; i < ICU_LEN; i++) {
 		alpha_shared_intr_set_maxstrays(sio_intr, i, STRAY_MAX);
 
+		ev = alpha_shared_intr_evcnt(sio_intr, i);
 		cp = alpha_shared_intr_string(sio_intr, i);
-		snprintf(cp, PCI_SIO_IRQ_STR, "irq %d", i);
-		evcnt_attach_dynamic(alpha_shared_intr_evcnt(sio_intr, i),
-		    EVCNT_TYPE_INTR, NULL, "isa", cp);
+
+		evcnt_attach_dynamic(ev, EVCNT_TYPE_INTR, NULL, "isa", cp);
 
 		switch (i) {
 		case 0:
@@ -399,7 +415,7 @@ sio_intr_setup(pci_chipset_tag_t pc, bus_space_tag_t iot)
 }
 
 #ifdef BROKEN_PROM_CONSOLE
-void
+static void
 sio_intr_shutdown(void *arg)
 {
 	/*
@@ -433,37 +449,56 @@ sio_intr_evcnt(void *v, int irq)
 }
 
 void *
-sio_intr_establish(void *v, int irq, int type, int level, int (*fn)(void *), void *arg)
+sio_intr_establish(void *v, int irq, int type, int level, int flags,
+    int (*fn)(void *), void *arg)
 {
 	void *cookie;
 
 	if (irq > ICU_LEN || type == IST_NONE)
 		panic("sio_intr_establish: bogus irq or type");
 
-	cookie = alpha_shared_intr_establish(sio_intr, irq, type, level, fn,
-	    arg, "isa irq");
+	cookie = alpha_shared_intr_alloc_intrhand(sio_intr, irq, type, level,
+	    flags, fn, arg, "isa");
 
-	if (cookie != NULL &&
-	    alpha_shared_intr_firstactive(sio_intr, irq)) {
-		scb_set(0x800 + SCB_IDXTOVEC(irq), sio_iointr, NULL,
-		    level);
-		sio_setirqstat(irq, 1,
-		    alpha_shared_intr_get_sharetype(sio_intr, irq));
+	if (cookie == NULL)
+		return NULL;
+
+	mutex_enter(&cpu_lock);
+
+	if (! alpha_shared_intr_link(sio_intr, cookie, "isa")) {
+		mutex_exit(&cpu_lock);
+		alpha_shared_intr_free_intrhand(cookie);
+		return NULL;
 	}
 
-	return (cookie);
+	if (alpha_shared_intr_firstactive(sio_intr, irq)) {
+		scb_set(0x800 + SCB_IDXTOVEC(irq), sio_iointr, NULL);
+		sio_setirqstat(irq, 1,
+		    alpha_shared_intr_get_sharetype(sio_intr, irq));
+
+		/*
+		 * I've obsesrved stray ISA interrupts when interacting
+		 * with the serial console under Qemu.  Work around that
+		 * for now by suppressing stray interrupt reporting for
+		 * edge-triggered interrupts.
+		 */
+		if (alpha_is_qemu && type == IST_EDGE) {
+			alpha_shared_intr_set_maxstrays(sio_intr, irq, 0);
+		}
+	}
+
+	mutex_exit(&cpu_lock);
+
+	return cookie;
 }
 
 void
 sio_intr_disestablish(void *v, void *cookie)
 {
 	struct alpha_shared_intrhand *ih = cookie;
-	int s, ist, irq = ih->ih_num;
+	int ist, irq = ih->ih_num;
 
-	s = splhigh();
-
-	/* Remove it from the link. */
-	alpha_shared_intr_disestablish(sio_intr, cookie, "isa irq");
+	mutex_enter(&cpu_lock);
 
 	/*
 	 * Decide if we should disable the interrupt.  We must ensure
@@ -472,7 +507,7 @@ sio_intr_disestablish(void *v, void *cookie)
 	 *	- An initially-enabled interrupt is never disabled.
 	 *	- An initially-LT interrupt is never untyped.
 	 */
-	if (alpha_shared_intr_isactive(sio_intr, irq) == 0) {
+	if (alpha_shared_intr_firstactive(sio_intr, irq)) {
 		/*
 		 * IRQs 0, 1, 8, and 13 must always be edge-triggered
 		 * (see setup).
@@ -495,12 +530,121 @@ sio_intr_disestablish(void *v, void *cookie)
 		}
 		sio_setirqstat(irq, 0, ist);
 		alpha_shared_intr_set_dfltsharetype(sio_intr, irq, ist);
+		alpha_shared_intr_set_maxstrays(sio_intr, irq, STRAY_MAX);
 
 		/* Release our SCB vector. */
 		scb_free(0x800 + SCB_IDXTOVEC(irq));
 	}
 
-	splx(s);
+	/* Remove it from the link. */
+	alpha_shared_intr_unlink(sio_intr, cookie, "isa");
+
+	mutex_exit(&cpu_lock);
+
+	alpha_shared_intr_free_intrhand(cookie);
+}
+
+/* XXX All known Alpha systems with Intel i82378 have it at device 7. */
+#define	SIO_I82378_DEV		7
+
+int
+sio_pirq_intr_map(pci_chipset_tag_t pc, int pirq, pci_intr_handle_t *ihp)
+{
+	KASSERT(pirq >= 0 && pirq <= 3);
+	KASSERT(pc == sio_pc);
+
+	const pcireg_t rtctrl =
+	    pci_conf_read(sio_pc, pci_make_tag(sio_pc, 0, SIO_I82378_DEV, 0),
+			  SIO_PCIREG_PIRQ_RTCTRL);
+	const pcireg_t pirqreg = PIRQ_RTCTRL_PIRQx(rtctrl, pirq);
+
+	if (pirqreg & PIRQ_RTCTRL_NOT_ROUTED) {
+		/* not routed -> no mapping */
+		return 1;
+	}
+
+	const int irq = __SHIFTOUT(pirqreg, PIRQ_RTCTRL_IRQ);
+
+#if 0
+	printf("sio_pirq_intr_map: pirq %d -> ISA irq %d, rtctl = 0x%08x\n",
+	    pirq, irq, rtctrl);
+#endif
+
+	alpha_pci_intr_handle_init(ihp, irq, 0);
+	return 0;
+}
+
+const char *
+sio_pci_intr_string(pci_chipset_tag_t const pc, pci_intr_handle_t const ih,
+    char * const buf, size_t const len)
+{
+	const u_int irq = alpha_pci_intr_handle_get_irq(&ih);
+
+	return sio_intr_string(NULL /*XXX*/, irq, buf, len);
+}
+
+const struct evcnt *
+sio_pci_intr_evcnt(pci_chipset_tag_t const pc, pci_intr_handle_t const ih)
+{
+	const u_int irq = alpha_pci_intr_handle_get_irq(&ih);
+
+	return sio_intr_evcnt(NULL /*XXX*/, irq);
+}
+
+void *
+sio_pci_intr_establish(pci_chipset_tag_t const pc, pci_intr_handle_t ih,
+    int const level, int (*func)(void *), void *arg)
+{
+	const u_int irq = alpha_pci_intr_handle_get_irq(&ih);
+	const u_int flags = alpha_pci_intr_handle_get_flags(&ih);
+
+	return sio_intr_establish(NULL /*XXX*/, irq, IST_LEVEL, level, flags,
+	    func, arg);
+}
+
+void
+sio_pci_intr_disestablish(pci_chipset_tag_t const pc, void *cookie)
+{
+	sio_intr_disestablish(NULL /*XXX*/, cookie);
+}
+
+void *
+sio_pciide_compat_intr_establish(device_t const dev,
+    const struct pci_attach_args * const pa,
+    int const chan, int (*func)(void *), void *arg)
+{
+	pci_chipset_tag_t const pc = pa->pa_pc;
+	void *cookie;
+	int bus, irq;
+	char buf[64];
+	int flags = 0;	/* XXX How to pass MPSAFE? */
+
+	pci_decompose_tag(pc, pa->pa_tag, &bus, NULL, NULL);
+
+	/*
+	 * If this isn't PCI bus #0, all bets are off.
+	 */
+	if (bus != 0)
+		return NULL;
+	
+	irq = PCIIDE_COMPAT_IRQ(chan);
+	cookie = sio_intr_establish(NULL /*XXX*/, irq, IST_EDGE, IPL_BIO,
+	    flags, func, arg);
+	if (cookie == NULL)
+		return NULL;
+
+	aprint_normal_dev(dev, "%s channel interrupting at %s\n",
+	    PCIIDE_CHANNEL_NAME(chan),
+	    sio_intr_string(NULL /*XXX*/, irq, buf, sizeof(buf)));
+
+	return cookie;
+}
+
+void *
+sio_isa_intr_establish(void *v, int irq, int type, int level,
+    int (*fn)(void *), void *arg)
+{
+	return sio_intr_establish(v, irq, type, level, 0, fn, arg);
 }
 
 void
@@ -516,7 +660,7 @@ sio_iointr(void *arg, unsigned long vec)
 #endif
 
 	if (!alpha_shared_intr_dispatch(sio_intr, irq))
-		alpha_shared_intr_stray(sio_intr, irq, "isa irq");
+		alpha_shared_intr_stray(sio_intr, irq, "isa");
 	else
 		alpha_shared_intr_reset_strays(sio_intr, irq);
 
@@ -598,13 +742,4 @@ sio_intr_alloc(void *v, int mask, int type, int *irq)
 	*irq = bestirq;
 
 	return (0);
-}
-
-static void
-specific_eoi(int irq)
-{
-	if (irq > 7)
-		bus_space_write_1(sio_iot,
-		    sio_ioh_icu2, 0, 0x60 | (irq & 0x07));	/* XXX */
-	bus_space_write_1(sio_iot, sio_ioh_icu1, 0, 0x60 | (irq > 7 ? 2 : irq));
 }

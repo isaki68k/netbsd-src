@@ -1,4 +1,4 @@
-/* $NetBSD: virtio_mmiovar.h,v 1.3 2018/07/16 02:36:39 kre Exp $ */
+/* $NetBSD: virtio_mmiovar.h,v 1.5 2021/10/22 02:57:23 yamaguchi Exp $ */
 /*
  * Copyright (c) 2018 Jonathan A. Kollasch
  * All rights reserved.
@@ -39,11 +39,12 @@ struct virtio_mmio_softc {
 
 	void			*sc_ih;
 
-	int			(*sc_setup_interrupts)(struct virtio_mmio_softc *);
+	int			(*sc_alloc_interrupts)(struct virtio_mmio_softc *);
 	void			(*sc_free_interrupts)(struct virtio_mmio_softc *);
 
 };
 
+bool virtio_mmio_common_probe_present(struct virtio_mmio_softc *);
 void virtio_mmio_common_attach(struct virtio_mmio_softc *);
 int virtio_mmio_common_detach(struct virtio_mmio_softc *, int);
 int virtio_mmio_intr(void *);

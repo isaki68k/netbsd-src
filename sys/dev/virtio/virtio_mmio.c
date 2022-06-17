@@ -1,4 +1,4 @@
-/*	$NetBSD: virtio_mmio.c,v 1.2 2018/06/15 17:13:43 jakllsch Exp $	*/
+/*	$NetBSD: virtio_mmio.c,v 1.7 2021/10/22 02:57:23 yamaguchi Exp $	*/
 /*	$OpenBSD: virtio_mmio.c,v 1.2 2017/02/24 17:12:31 patrick Exp $	*/
 
 /*
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio_mmio.c,v 1.2 2018/06/15 17:13:43 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio_mmio.c,v 1.7 2021/10/22 02:57:23 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,43 +66,43 @@ __KERNEL_RCSID(0, "$NetBSD: virtio_mmio.c,v 1.2 2018/06/15 17:13:43 jakllsch Exp
 #define VIRTIO_MMIO_INT_CONFIG		(1 << 1)
 
 /*
- * XXX: Before being used on big endian arches, the access to config registers
- * XXX: needs to be reviewed/fixed. The non-device specific registers are
- * XXX: PCI-endian while the device specific registers are native endian.
+ * MMIO configuration space for virtio-mmio v1 is in guest byte order.
+ *
+ * XXX Note that aarch64eb pretends to be little endian. the MMIO registers
+ * are in little endian but the device config registers and data structures
+ * are in big endian; this is due to a bug in current Qemu.
  */
 
+#if defined(__aarch64__) && BYTE_ORDER == BIG_ENDIAN
+#	define READ_ENDIAN	LITTLE_ENDIAN
+#	define STRUCT_ENDIAN	BIG_ENDIAN
+#elif BYTE_ORDER == BIG_ENDIAN
+#	define READ_ENDIAN	BIG_ENDIAN
+#	define STRUCT_ENDIAN	BIG_ENDIAN
+#else
+#	define READ_ENDIAN	LITTLE_ENDIAN
+#	define STRUCT_ENDIAN	LITTLE_ENDIAN
+#endif
+
+
 static void	virtio_mmio_kick(struct virtio_softc *, uint16_t);
-static uint8_t	virtio_mmio_read_device_config_1(struct virtio_softc *, int);
-static uint16_t	virtio_mmio_read_device_config_2(struct virtio_softc *, int);
-static uint32_t	virtio_mmio_read_device_config_4(struct virtio_softc *, int);
-static uint64_t	virtio_mmio_read_device_config_8(struct virtio_softc *, int);
-static void	virtio_mmio_write_device_config_1(struct virtio_softc *, int, uint8_t);
-static void	virtio_mmio_write_device_config_2(struct virtio_softc *, int, uint16_t);
-static void	virtio_mmio_write_device_config_4(struct virtio_softc *, int, uint32_t);
-static void	virtio_mmio_write_device_config_8(struct virtio_softc *, int, uint64_t);
 static uint16_t	virtio_mmio_read_queue_size(struct virtio_softc *, uint16_t);
-static void	virtio_mmio_setup_queue(struct virtio_softc *, uint16_t, uint32_t);
+static void	virtio_mmio_setup_queue(struct virtio_softc *, uint16_t, uint64_t);
 static void	virtio_mmio_set_status(struct virtio_softc *, int);
-static uint32_t	virtio_mmio_negotiate_features(struct virtio_softc *, uint32_t);
-static int	virtio_mmio_setup_interrupts(struct virtio_softc *);
+static void	virtio_mmio_negotiate_features(struct virtio_softc *, uint64_t);
+static int	virtio_mmio_alloc_interrupts(struct virtio_softc *);
 static void	virtio_mmio_free_interrupts(struct virtio_softc *);
+static int	virtio_mmio_setup_interrupts(struct virtio_softc *, int);
 
 static const struct virtio_ops virtio_mmio_ops = {
 	.kick = virtio_mmio_kick,
-	.read_dev_cfg_1 = virtio_mmio_read_device_config_1,
-	.read_dev_cfg_2 = virtio_mmio_read_device_config_2,
-	.read_dev_cfg_4 = virtio_mmio_read_device_config_4,
-	.read_dev_cfg_8 = virtio_mmio_read_device_config_8,
-	.write_dev_cfg_1 = virtio_mmio_write_device_config_1,
-	.write_dev_cfg_2 = virtio_mmio_write_device_config_2,
-	.write_dev_cfg_4 = virtio_mmio_write_device_config_4,
-	.write_dev_cfg_8 = virtio_mmio_write_device_config_8,
 	.read_queue_size = virtio_mmio_read_queue_size,
 	.setup_queue = virtio_mmio_setup_queue,
 	.set_status = virtio_mmio_set_status,
 	.neg_features = virtio_mmio_negotiate_features,
-	.setup_interrupts = virtio_mmio_setup_interrupts,
+	.alloc_interrupts = virtio_mmio_alloc_interrupts,
 	.free_interrupts = virtio_mmio_free_interrupts,
+	.setup_interrupts = virtio_mmio_setup_interrupts,
 };
 
 static uint16_t
@@ -115,7 +115,7 @@ virtio_mmio_read_queue_size(struct virtio_softc *vsc, uint16_t idx)
 }
 
 static void
-virtio_mmio_setup_queue(struct virtio_softc *vsc, uint16_t idx, uint32_t addr)
+virtio_mmio_setup_queue(struct virtio_softc *vsc, uint16_t idx, uint64_t addr)
 {
 	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
 
@@ -124,7 +124,8 @@ virtio_mmio_setup_queue(struct virtio_softc *vsc, uint16_t idx, uint32_t addr)
 	    bus_space_read_4(sc->sc_iot, sc->sc_ioh, VIRTIO_MMIO_QUEUE_NUM_MAX));
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, VIRTIO_MMIO_QUEUE_ALIGN,
 	    VIRTIO_PAGE_SIZE);
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh, VIRTIO_MMIO_QUEUE_PFN, addr);
+	bus_space_write_4(sc->sc_iot, sc->sc_ioh, VIRTIO_MMIO_QUEUE_PFN,
+	    addr / VIRTIO_PAGE_SIZE);
 }
 
 static void
@@ -140,10 +141,21 @@ virtio_mmio_set_status(struct virtio_softc *vsc, int status)
 			  status|old);
 }
 
+bool
+virtio_mmio_common_probe_present(struct virtio_mmio_softc *sc)
+{
+	uint32_t magic;
+
+	magic = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+	    VIRTIO_MMIO_MAGIC_VALUE);
+	return (magic == VIRTIO_MMIO_MAGIC);
+}
+
 void
 virtio_mmio_common_attach(struct virtio_mmio_softc *sc)
 {
 	struct virtio_softc *vsc = &sc->sc_sc;
+	device_t self = vsc->sc_dev;
 	uint32_t id, magic, ver;
 
 	magic = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
@@ -167,11 +179,24 @@ virtio_mmio_common_attach(struct virtio_mmio_softc *sc)
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, VIRTIO_MMIO_GUEST_PAGE_SIZE,
 	    VIRTIO_PAGE_SIZE);
 
-	/* No device connected. */
+	/* no device connected. */
 	if (id == 0)
 		return;
 
+	virtio_print_device_type(self, id, ver);
 	vsc->sc_ops = &virtio_mmio_ops;
+	vsc->sc_bus_endian    = READ_ENDIAN;
+	vsc->sc_struct_endian = STRUCT_ENDIAN;
+
+	/* set up our device config tag */
+	vsc->sc_devcfg_iosize = sc->sc_iosize - VIRTIO_MMIO_CONFIG;
+	vsc->sc_devcfg_iot = sc->sc_iot;
+	if (bus_space_subregion(sc->sc_iot, sc->sc_ioh,
+			VIRTIO_MMIO_CONFIG, vsc->sc_devcfg_iosize,
+			&vsc->sc_devcfg_ioh)) {
+		aprint_error_dev(self, "can't map config i/o space\n");
+		return;
+	}
 
 	virtio_device_reset(vsc);
 	virtio_mmio_set_status(vsc, VIRTIO_CONFIG_DEVICE_STATUS_ACK);
@@ -208,8 +233,8 @@ virtio_mmio_common_detach(struct virtio_mmio_softc *sc, int flags)
 /*
  * Feature negotiation.
  */
-static uint32_t
-virtio_mmio_negotiate_features(struct virtio_softc *vsc, uint32_t
+static void
+virtio_mmio_negotiate_features(struct virtio_softc *vsc, uint64_t
     guest_features)
 {
 	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
@@ -224,88 +249,8 @@ virtio_mmio_negotiate_features(struct virtio_softc *vsc, uint32_t
 	    VIRTIO_MMIO_GUEST_FEATURES_SEL, 0);
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh,
 			  VIRTIO_MMIO_GUEST_FEATURES, r);
-	return r;
-}
 
-/*
- * Device configuration registers.
- */
-static uint8_t
-virtio_mmio_read_device_config_1(struct virtio_softc *vsc, int index)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	return bus_space_read_1(sc->sc_iot, sc->sc_ioh,
-				VIRTIO_MMIO_CONFIG + index);
-}
-
-static uint16_t
-virtio_mmio_read_device_config_2(struct virtio_softc *vsc, int index)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	return bus_space_read_2(sc->sc_iot, sc->sc_ioh,
-				VIRTIO_MMIO_CONFIG + index);
-}
-
-static uint32_t
-virtio_mmio_read_device_config_4(struct virtio_softc *vsc, int index)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	return bus_space_read_4(sc->sc_iot, sc->sc_ioh,
-				VIRTIO_MMIO_CONFIG + index);
-}
-
-static uint64_t
-virtio_mmio_read_device_config_8(struct virtio_softc *vsc, int index)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	uint64_t r;
-
-	r = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
-			     VIRTIO_MMIO_CONFIG + index + sizeof(uint32_t));
-	r <<= 32;
-	r += bus_space_read_4(sc->sc_iot, sc->sc_ioh,
-			      VIRTIO_MMIO_CONFIG + index);
-	return r;
-}
-
-static void
-virtio_mmio_write_device_config_1(struct virtio_softc *vsc,
-			     int index, uint8_t value)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-			  VIRTIO_MMIO_CONFIG + index, value);
-}
-
-static void
-virtio_mmio_write_device_config_2(struct virtio_softc *vsc,
-			     int index, uint16_t value)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	bus_space_write_2(sc->sc_iot, sc->sc_ioh,
-			  VIRTIO_MMIO_CONFIG + index, value);
-}
-
-static void
-virtio_mmio_write_device_config_4(struct virtio_softc *vsc,
-			     int index, uint32_t value)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh,
-			  VIRTIO_MMIO_CONFIG + index, value);
-}
-
-static void
-virtio_mmio_write_device_config_8(struct virtio_softc *vsc,
-			     int index, uint64_t value)
-{
-	struct virtio_mmio_softc *sc = (struct virtio_mmio_softc *)vsc;
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh,
-			  VIRTIO_MMIO_CONFIG + index,
-			  value & 0xffffffff);
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh,
-			  VIRTIO_MMIO_CONFIG + index + sizeof(uint32_t),
-			  value >> 32);
+	vsc->sc_active_features = r;
 }
 
 /*
@@ -346,11 +291,11 @@ virtio_mmio_kick(struct virtio_softc *vsc, uint16_t idx)
 }
 
 static int
-virtio_mmio_setup_interrupts(struct virtio_softc *vsc)
+virtio_mmio_alloc_interrupts(struct virtio_softc *vsc)
 {
 	struct virtio_mmio_softc * const sc = (struct virtio_mmio_softc *)vsc;
 
-	return sc->sc_setup_interrupts(sc);
+	return sc->sc_alloc_interrupts(sc);
 }
 
 static void
@@ -359,4 +304,12 @@ virtio_mmio_free_interrupts(struct virtio_softc *vsc)
 	struct virtio_mmio_softc * const sc = (struct virtio_mmio_softc *)vsc;
 
 	sc->sc_free_interrupts(sc);
+}
+
+static int
+virtio_mmio_setup_interrupts(struct virtio_softc *vsc __unused,
+    int reinit __unused)
+{
+
+	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cs_ofisa_machdep.c,v 1.12 2019/05/29 06:21:57 msaitoh Exp $	*/
+/*	$NetBSD: if_cs_ofisa_machdep.c,v 1.14 2020/11/22 03:57:19 thorpej Exp $	*/
 
 /*
  * Copyright 1998
@@ -38,14 +38,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa_machdep.c,v 1.12 2019/05/29 06:21:57 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa_machdep.c,v 1.14 2020/11/22 03:57:19 thorpej Exp $");
 
 #include "opt_compat_old_ofw.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/socket.h>
 #include <sys/bus.h>
 #include <sys/rndsource.h>
@@ -141,9 +141,7 @@ cs_ofisa_md_media_fixup(device_t parent, device_t self, void *aux, int *media,
 
 	if (1) {		/* XXX old firmware compat enabled */
 		if (media == NULL) {
-			media = malloc(2 * sizeof(int), M_TEMP, M_NOWAIT);
-			if (media == NULL)
-				return (NULL);
+			media = kmem_alloc(2 * sizeof(int), KM_SLEEP);
 			media[0] = IFM_ETHER | IFM_10_T;
 			media[1] = IFM_ETHER | IFM_10_T | IFM_FDX;
 			*nmediap = 2;

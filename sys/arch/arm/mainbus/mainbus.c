@@ -1,4 +1,4 @@
-/* $NetBSD: mainbus.c,v 1.21 2014/06/05 03:46:26 matt Exp $ */
+/* $NetBSD: mainbus.c,v 1.23 2021/08/07 16:18:44 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994,1995 Mark Brinicombe.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.21 2014/06/05 03:46:26 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.23 2021/08/07 16:18:44 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -149,8 +149,8 @@ mainbussearch(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		mb.mb_iot = &mainbus_bs_tag;
 
 		tryagain = 0;
-		if (config_match(parent, cf, &mb) > 0) {
-			config_attach(parent, cf, &mb, mainbusprint);
+		if (config_probe(parent, cf, &mb)) {
+			config_attach(parent, cf, &mb, mainbusprint, CFARGS_NONE);
 #ifdef MULTIPROCESSOR
 			tryagain = (cf->cf_fstate == FSTATE_STAR);
 #endif
@@ -172,7 +172,8 @@ mainbusattach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	config_search_ia(mainbussearch, self, "mainbus", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = mainbussearch));
 }
 
 /* End of mainbus.c */

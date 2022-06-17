@@ -1,4 +1,4 @@
-/*	$NetBSD: onfi.h,v 1.1 2011/02/26 18:07:31 ahoka Exp $	*/
+/*	$NetBSD: onfi.h,v 1.4 2022/06/03 12:10:51 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -117,7 +117,7 @@ struct onfi_parameter_page {
 	uint16_t param_features;  /* M: features supported */
 	uint16_t param_optional_cmds; /* M: optional commands */
 	uint16_t param_reserved_1;    /* R: reserved */
-	uint16_t param_extended_len;  /* O: extended parameter page lenght */
+	uint16_t param_extended_len;  /* O: extended parameter page length */
 	uint8_t param_num_param_pg;  /* O: number of parameter pages */
 	uint8_t param_reserved_2[17]; /* R: reserved */
 	/* Manufacturer information block */
@@ -140,9 +140,9 @@ struct onfi_parameter_page {
 	uint16_t param_lun_maxbad; /* M: maximum badblocks per LUN */
 	uint16_t param_block_endurance; /* M: block endurance */
 	uint8_t param_guaranteed_blocks; /* M: guaranteed valid blocks at
-					  begginning of target */
+					  beginning of target */
 	uint16_t param_guaranteed_endurance; /* M: block endurance of
-					      guranteed blocks */
+					      guaranteed blocks */
 	uint8_t param_programs_per_page; /* M: number of programs per page */
 	uint8_t param_partial_programming_attr; /* O: obsolete */
 	uint8_t param_ecc_correctable_bits;     /* M: number of bits

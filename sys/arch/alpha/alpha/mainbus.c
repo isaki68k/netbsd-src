@@ -1,4 +1,4 @@
-/* $NetBSD: mainbus.c,v 1.33 2012/02/06 02:14:12 matt Exp $ */
+/* $NetBSD: mainbus.c,v 1.37 2021/08/07 16:18:40 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,7 +29,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.33 2012/02/06 02:14:12 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.37 2021/08/07 16:18:40 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -37,6 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.33 2012/02/06 02:14:12 matt Exp $");
 #include <sys/reboot.h>
 #include <sys/conf.h>
 
+#include <machine/alpha.h>
 #include <machine/autoconf.h>
 #include <machine/rpb.h>
 #include <machine/cpuconf.h>
@@ -84,17 +85,26 @@ mbattach(device_t parent, device_t self, void *aux)
 
 		ma.ma_name = "cpu";
 		ma.ma_slot = i;
-		if (config_found(self, &ma, mbprint) != NULL)
+		if (config_found(self, &ma, mbprint, CFARGS_NONE) != NULL)
 			cpuattachcnt++;
 	}
 	if (ncpus != cpuattachcnt)
 		printf("WARNING: %d cpus in machine, %d attached\n",
 			ncpus, cpuattachcnt);
 
+	/* Patch-up any routines based on architecture features. */
+	alpha_patch(false);
+
+	if (alpha_is_qemu) {
+		ma.ma_name = "qemu";
+		ma.ma_slot = 0;			/* meaningless */
+		config_found(self, &ma, mbprint, CFARGS_NONE);
+	}
+
 	if (platform.iobus != NULL) {
 		ma.ma_name = platform.iobus;
 		ma.ma_slot = 0;			/* meaningless */
-		config_found(self, &ma, mbprint);
+		config_found(self, &ma, mbprint, CFARGS_NONE);
 	}
 }
 

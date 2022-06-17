@@ -1,4 +1,4 @@
-/*	$NetBSD: jiffies.h,v 1.12 2018/08/27 13:57:50 riastradh Exp $	*/
+/*	$NetBSD: jiffies.h,v 1.14 2022/03/18 23:32:49 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -35,8 +35,12 @@
 #include <sys/param.h>
 #include <sys/kernel.h>
 
-#define	jiffies		hardclock_ticks
-#define	jiffies_64	hardclock_ticks /* XXX */
+#include <asm/param.h>		/* HZ */
+
+#include <linux/math64.h>
+
+#define	jiffies		getticks()
+#define	jiffies_64	getticks() /* XXX */
 
 /* XXX Er, what?  */
 #define	MAX_JIFFY_OFFSET	((INT_MAX >> 1) - 1)
@@ -45,7 +49,7 @@ static inline uint64_t
 get_jiffies_64(void)
 {
 
-	return (uint64_t)(unsigned)hardclock_ticks;
+	return (uint64_t)(unsigned)getticks();
 }
 
 static inline uint64_t

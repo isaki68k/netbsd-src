@@ -1,4 +1,4 @@
-/* $NetBSD: xp.c,v 1.5 2019/06/30 05:04:48 tsutsui Exp $ */
+/* $NetBSD: xp.c,v 1.7 2022/06/10 21:42:23 tsutsui Exp $ */
 
 /*-
  * Copyright (c) 2016 Izumi Tsutsui.  All rights reserved.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.5 2019/06/30 05:04:48 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.7 2022/06/10 21:42:23 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,12 +66,12 @@ struct xp_softc {
 static int xp_match(device_t, cfdata_t, void *);
 static void xp_attach(device_t, device_t, void *);
 
-dev_type_open(xp_open);
-dev_type_close(xp_close);
-dev_type_read(xp_read);
-dev_type_write(xp_write);
-dev_type_ioctl(xp_ioctl);
-dev_type_mmap(xp_mmap);
+static dev_type_open(xp_open);
+static dev_type_close(xp_close);
+static dev_type_read(xp_read);
+static dev_type_write(xp_write);
+static dev_type_ioctl(xp_ioctl);
+static dev_type_mmap(xp_mmap);
 
 const struct cdevsw xp_cdevsw = {
 	.d_open     = xp_open,
@@ -133,7 +133,7 @@ xp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_tas      = XP_TAS_ADDR;
 }
 
-int
+static int
 xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 {
 	struct xp_softc *sc;
@@ -149,8 +149,8 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 	if (sc->sc_isopen)
 		return EBUSY;
 
-	if (flags & FWRITE) {
-		// exclusive if write
+	if ((flags & FWRITE) != 0) {
+		/* exclusive if write */
 		a = xp_acquire(DEVID_XPBUS, XP_ACQ_EXCL);
 		if (a == 0)
 			return EBUSY;
@@ -170,7 +170,7 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 xp_close(dev_t dev, int flags, int mode, struct lwp *l)
 {
 	struct xp_softc *sc;
@@ -188,7 +188,7 @@ xp_close(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-int
+static int
 xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 {
 	struct xp_softc *sc;
@@ -204,7 +204,7 @@ xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 
 	switch (cmd) {
 	case XPIOCDOWNLD:
-		if (!(sc->sc_flags & FWRITE)) {
+		if ((sc->sc_flags & FWRITE) == 0) {
 			return EACCES;
 		}
 		downld = addr;
@@ -237,7 +237,7 @@ xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 	panic("%s: cmd (%ld) is not handled", device_xname(sc->sc_dev), cmd);
 }
 
-paddr_t
+static paddr_t
 xp_mmap(dev_t dev, off_t offset, int prot)
 {
 	struct xp_softc *sc;
@@ -254,20 +254,20 @@ xp_mmap(dev_t dev, off_t offset, int prot)
 		pa = m68k_btop(m68k_trunc_page(sc->sc_shm_base) + offset);
 	}
 
-	if (prot & PROT_WRITE)
+	if ((prot & PROT_WRITE) != 0)
 		xp_set_shm_dirty();
 
 	return pa;
 }
 
-int
+static int
 xp_read(dev_t dev, struct uio *uio, int flags)
 {
 
 	return ENODEV;
 }
 
-int
+static int
 xp_write(dev_t dev, struct uio *uio, int flags)
 {
 

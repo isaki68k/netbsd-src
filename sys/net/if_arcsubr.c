@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arcsubr.c,v 1.80 2018/05/09 06:35:10 maxv Exp $	*/
+/*	$NetBSD: if_arcsubr.c,v 1.83 2021/06/16 00:21:19 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Ignatios Souvatzis
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arcsubr.c,v 1.80 2018/05/09 06:35:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arcsubr.c,v 1.83 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -358,7 +358,7 @@ arc_defrag(struct ifnet *ifp, struct mbuf *m)
 	if (m->m_len < ARC_HDRNEWLEN) {
 		m = m_pullup(m, ARC_HDRNEWLEN);
 		if (m == NULL) {
-			++ifp->if_ierrors;
+			if_statinc(ifp, if_ierrors);
 			return NULL;
 		}
 	}
@@ -378,7 +378,7 @@ arc_defrag(struct ifnet *ifp, struct mbuf *m)
 		if (m->m_len < ARC_HDRNEWLEN) {
 			m = m_pullup(m, ARC_HDRNEWLEN);
 			if (m == NULL) {
-				++ifp->if_ierrors;
+				if_statinc(ifp, if_ierrors);
 				return NULL;
 			}
 		}
@@ -524,11 +524,11 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 
 	ah = mtod(m, struct arc_header *);
 
-	ifp->if_ibytes += m->m_pkthdr.len;
+	if_statadd(ifp, if_ibytes, m->m_pkthdr.len);
 
 	if (arcbroadcastaddr == ah->arc_dhost) {
 		m->m_flags |= M_BCAST|M_MCAST;
-		ifp->if_imcasts++;
+		if_statinc(ifp, if_imcasts);
 	}
 
 	atype = ah->arc_type;
@@ -580,16 +580,7 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 		return;
 	}
 
-	IFQ_LOCK(inq);
-	if (IF_QFULL(inq)) {
-		IF_DROP(inq);
-		IFQ_UNLOCK(inq);
-		m_freem(m);
-	} else {
-		IF_ENQUEUE(inq, m);
-		IFQ_UNLOCK(inq);
-		schednetisr(isr);
-	}
+	IFQ_ENQUEUE_ISR(inq, m, isr);
 }
 
 /*
@@ -614,7 +605,6 @@ int
 arc_ifattach(struct ifnet *ifp, uint8_t lla)
 {
 	struct arccom *ac;
-	int rv;
 
 	ifp->if_type = IFT_ARCNET;
 	ifp->if_addrlen = 1;
@@ -636,9 +626,7 @@ arc_ifattach(struct ifnet *ifp, uint8_t lla)
 		log(LOG_ERR,"%s: link address 0 reserved for broadcasts.  Please change it and ifconfig %s down up\n",
 		   ifp->if_xname, ifp->if_xname);
 	}
-	rv = if_attach(ifp);
-	if (rv != 0)
-		return rv;
+	if_attach(ifp);
 
 	if_set_sadl(ifp, &lla, sizeof(lla), true);
 

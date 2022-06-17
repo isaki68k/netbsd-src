@@ -1,4 +1,4 @@
-/*	$NetBSD: qvaux.c,v 1.2 2016/07/07 06:55:39 msaitoh Exp $	*/
+/*	$NetBSD: qvaux.c,v 1.4 2021/08/07 16:19:07 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -314,7 +314,7 @@ qvaux_attach(device_t parent, device_t self, void *aux)
 
         daa.daa_line = 0;
         daa.daa_flags = 0;
-        config_found(self, &daa, qvaux_print);
+        config_found(self, &daa, qvaux_print, CFARGS_NONE);
 #endif
 #if NQVMS > 0
         /* XXX set line parameters */
@@ -326,7 +326,7 @@ qvaux_attach(device_t parent, device_t self, void *aux)
 
         daa.daa_line = 1;
         daa.daa_flags = 0;
-        config_found(self, &daa, qvaux_print);
+        config_found(self, &daa, qvaux_print, CFARGS_NONE);
 #endif
 	
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.22 2019/01/07 22:00:30 jdolecek Exp $	*/
+/*	$NetBSD: param.h,v 1.24 2021/07/19 10:28:58 christos Exp $	*/
 
 /*
  * Copyright (c) 1994,1995 Mark Brinicombe.

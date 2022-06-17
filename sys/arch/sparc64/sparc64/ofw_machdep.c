@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_machdep.c,v 1.46 2016/07/07 06:55:38 msaitoh Exp $	*/
+/*	$NetBSD: ofw_machdep.c,v 1.51 2022/05/14 07:11:23 hgutch Exp $	*/
 
 /*
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -34,7 +34,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_machdep.c,v 1.46 2016/07/07 06:55:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_machdep.c,v 1.51 2022/05/14 07:11:23 hgutch Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -339,8 +339,6 @@ prom_map_phys(paddr_t paddr, off_t size, vaddr_t vaddr, int mode)
 		cell_t vaddr;
 		cell_t phys_hi;
 		cell_t phys_lo;
-		cell_t status;
-		cell_t retaddr;
 	} args;
 
 	if (mmuh == -1 && ((mmuh = get_mmu_handle()) == -1)) {
@@ -349,7 +347,7 @@ prom_map_phys(paddr_t paddr, off_t size, vaddr_t vaddr, int mode)
 	}
 	args.name = ADR2CELL(&"call-method");
 	args.nargs = 7;
-	args.nreturns = 1;
+	args.nreturns = 0;
 	args.method = ADR2CELL(&"map");
 	args.ihandle = HDL2CELL(mmuh);
 	args.mode = mode;
@@ -360,9 +358,7 @@ prom_map_phys(paddr_t paddr, off_t size, vaddr_t vaddr, int mode)
 
 	if (openfirmware(&args) == -1)
 		return -1;
-	if (args.status)
-		return -1;
-	return (int)args.retaddr;
+	return 0;
 }
 
 
@@ -646,6 +642,80 @@ prom_has_stop_other(void)
 	return OF_test("SUNW,stop-cpu-by-cpuid") == 0;
 }
 #endif
+
+uint64_t
+prom_set_sun4v_api_version(uint64_t api_group, uint64_t major,
+    uint64_t minor, uint64_t *supported_minor)
+{
+	static struct {
+		cell_t  name;
+		cell_t  nargs;
+		cell_t  nreturns;
+		cell_t  api_group;
+		cell_t  major;
+		cell_t  minor;
+		cell_t	status;
+		cell_t	supported_minor;
+	} args;
+
+	args.name = ADR2CELL("SUNW,set-sun4v-api-version");
+	args.nargs = 3;
+	args.nreturns = 2;
+	args.api_group = api_group;
+	args.major = major;
+	args.minor = minor;
+	args.status = -1;
+	args.supported_minor = -1;
+
+	openfirmware(&args);
+
+	*supported_minor = args.supported_minor;
+	return (uint64_t)args.status;
+}
+#if 1
+uint64_t
+prom_get_sun4v_api_version(uint64_t api_group, uint64_t* major, uint64_t* minor)
+{
+	static struct {
+		cell_t  name;
+		cell_t  nargs;
+		cell_t  nreturns;
+		cell_t  api_group;
+		cell_t	status;
+		cell_t  major;
+		cell_t  minor;
+	} args;
+
+	args.name = ADR2CELL("SUNW,get-sun4v-api-version");
+	args.nargs = 1;
+	args.nreturns = 3;
+	args.api_group = api_group;
+	args.status = -1;
+	args.major = -1;
+	args.minor = -1;
+
+	openfirmware(&args);
+
+	*major = args.major;
+	*minor = args.minor;
+	return (uint64_t)args.status;
+}
+#endif
+void
+prom_sun4v_soft_state_supported(void)
+{
+	static struct {
+		cell_t  name;
+		cell_t  nargs;
+		cell_t  nreturns;
+	} args;
+
+	args.name = ADR2CELL("SUNW,soft-state-supported");
+	args.nargs = 0;
+	args.nreturns = 0;
+
+	openfirmware(&args);
+}
 
 #ifdef DEBUG
 int ofmapintrdebug = 0;

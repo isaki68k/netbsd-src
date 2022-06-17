@@ -1,4 +1,4 @@
-/*	$NetBSD: if_enetvar.h,v 1.5 2019/09/13 07:55:06 msaitoh Exp $	*/
+/*	$NetBSD: if_enetvar.h,v 1.7 2020/01/15 01:09:56 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -58,8 +58,10 @@ struct enet_softc {
 	int sc_unit;
 	int sc_imxtype;
 	int sc_rgmii;
-	unsigned int sc_pllclock;
+	int sc_phyid;
+	unsigned int sc_clock;
 
+	struct clk *sc_clk_ipg;
 	struct clk *sc_clk_enet;
 	struct clk *sc_clk_enet_ref;
 

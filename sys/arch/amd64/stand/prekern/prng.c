@@ -1,7 +1,7 @@
-/*	$NetBSD: prng.c,v 1.2 2017/11/26 11:08:34 maxv Exp $	*/
+/*	$NetBSD: prng.c,v 1.5 2021/05/04 21:13:38 khorben Exp $	*/
 
 /*
- * Copyright (c) 2017 The NetBSD Foundation, Inc. All rights reserved.
+ * Copyright (c) 2017-2020 The NetBSD Foundation, Inc. All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Maxime Villard.
@@ -84,6 +84,7 @@ prng_get_entropy_file(SHA512_CTX *ctx)
 	uint8_t digest[SHA1_DIGEST_LENGTH];
 	rndsave_t *rndsave;
 	SHA1_CTX sig;
+	size_t count = 0;
 
 	biml =
 	    (struct btinfo_modulelist *)prng_lookup_bootinfo(BTINFO_MODULELIST);
@@ -98,7 +99,9 @@ prng_get_entropy_file(SHA512_CTX *ctx)
 			continue;
 		}
 		if (bi->len != sizeof(rndsave_t)) {
-			fatal("rndsave_t size mismatch");
+			print_state(STATE_WARNING,
+					"size mismatch in entropy file");
+			continue;
 		}
 		rndsave = (rndsave_t *)(vaddr_t)bi->base;
 
@@ -109,11 +112,16 @@ prng_get_entropy_file(SHA512_CTX *ctx)
 		SHA1Update(&sig, rndsave->data, sizeof(rndsave->data));
 		SHA1Final(digest, &sig);
 		if (memcmp(digest, rndsave->digest, sizeof(digest))) {
-			fatal("bad SHA1 checksum");
+			print_state(STATE_WARNING,
+					"bad SHA1 checksum in entropy file");
+			continue;
 		}
 
 		SHA512_Update(ctx, rndsave->data, sizeof(rndsave->data));
+		count++;
 	}
+	if (count == 0)
+		print_state(STATE_WARNING, "No entropy file could be loaded");
 }
 
 /*
@@ -148,6 +156,7 @@ prng_get_entropy_data(SHA512_CTX *ctx)
 void
 prng_init(void)
 {
+	extern int cpuid_level;
 	uint8_t digest[SHA512_DIGEST_LENGTH];
 	SHA512_CTX ctx;
 	u_int descs[4];
@@ -155,10 +164,16 @@ prng_init(void)
 	memset(&rng, 0, sizeof(rng));
 
 	/* detect cpu features */
-	cpuid(0x07, 0x00, descs);
-	has_rdseed = (descs[1] & CPUID_SEF_RDSEED) != 0;
-	cpuid(0x01, 0x00, descs);
-	has_rdrand = (descs[2] & CPUID2_RDRAND) != 0;
+	if (cpuid_level >= 0x07) {
+		cpuid(0x07, 0x00, descs);
+		has_rdseed = (descs[1] & CPUID_SEF_RDSEED) != 0;
+	}
+	if (cpuid_level >= 0x01) {
+		cpuid(0x01, 0x00, descs);
+		has_rdrand = (descs[2] & CPUID2_RDRAND) != 0;
+	}
+	if (!has_rdseed && !has_rdrand)
+		print_state(STATE_WARNING, "No CPU entropy feature detected");
 
 	SHA512_Init(&ctx);
 	prng_get_entropy_file(&ctx);

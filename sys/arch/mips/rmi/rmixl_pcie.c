@@ -1,4 +1,4 @@
-/*	$NetBSD: rmixl_pcie.c,v 1.12 2015/10/02 05:22:51 msaitoh Exp $	*/
+/*	$NetBSD: rmixl_pcie.c,v 1.16 2021/08/07 16:18:59 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rmixl_pcie.c,v 1.12 2015/10/02 05:22:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rmixl_pcie.c,v 1.16 2021/08/07 16:18:59 thorpej Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -396,7 +396,7 @@ rmixl_pcie_attach(device_t parent, device_t self, void *aux)
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY |
 		PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
 
-	(void) config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARGS_NONE);
 }
 
 /*
@@ -566,9 +566,7 @@ rmixl_pcie_intcfg(struct rmixl_pcie_softc *sc)
 		 * allocate per-cpu, per-pin interrupt event counters
 		 */
 		size = ncpu * PCI_INTERRUPT_PIN_MAX * sizeof(rmixl_pcie_evcnt_t);
-		ev = malloc(size, M_DEVBUF, M_NOWAIT);
-		if (ev == NULL)
-			panic("%s: cannot malloc evcnts\n", __func__);
+		ev = malloc(size, M_DEVBUF, M_WAITOK);
 		sc->sc_evcnts[link] = ev;
 		for (int pin=PCI_INTERRUPT_PIN_A; pin <= PCI_INTERRUPT_PIN_MAX; pin++) {
 			for (int cpu=0; cpu < ncpu; cpu++) {
@@ -673,7 +671,7 @@ rmixl_pcie_init(struct rmixl_pcie_softc *sc)
 {
 	pci_chipset_tag_t pc = &sc->sc_pci_chipset;
 #if NPCI > 0 && defined(PCI_NETBSD_CONFIGURE)
-	struct extent *ioext, *memext;
+	struct pciconf_resources *pcires;
 #endif
 
 	pc->pc_conf_v = (void *)sc;
@@ -698,24 +696,19 @@ rmixl_pcie_init(struct rmixl_pcie_softc *sc)
 	 */
 	struct rmixl_config *rcp = &rmixl_configuration;
 
-	aprint_normal("%s: configuring PCI bus\n",
-		device_xname(sc->sc_dev));
+	aprint_normal_dev(sc->sc_dev, "configuring PCI bus\n");
 
-	ioext  = extent_create("pciio",
-		rcp->rc_pci_io_pbase,
-		rcp->rc_pci_io_pbase + rcp->rc_pci_io_size - 1,
-		NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
 
-	memext = extent_create("pcimem",
-		rcp->rc_pci_mem_pbase,
-		rcp->rc_pci_mem_pbase + rcp->rc_pci_mem_size - 1,
-		NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    rcp->rc_pci_io_pbase, rcp->rc_pci_io_size);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    rcp->rc_pci_mem_pbase, rcp->rc_pci_mem_size);
 
-	pci_configure_bus(pc, ioext, memext, NULL, 0,
+	pci_configure_bus(pc, pcires, 0,
 	    mips_cache_info.mci_dcache_align);
 
-	extent_destroy(ioext);
-	extent_destroy(memext);
+	pciconf_resource_fini(pcires);
 #endif
 }
 
@@ -1344,14 +1337,7 @@ rmixl_pcie_lip_add_1(rmixl_pcie_softc_t *sc, u_int link, int irq, int ipl)
 	 * allocate and initialize link intr struct
 	 * with one or more dispatch handles
 	 */
-	lip_new = malloc(size, M_DEVBUF, M_NOWAIT);
-	if (lip_new == NULL) {
-#ifdef DIAGNOSTIC
-		printf("%s: cannot malloc\n", __func__);
-#endif
-		return NULL;
-	}
-
+	lip_new = malloc(size, M_DEVBUF, M_WAITOK);
 	if (lip_old == NULL) {
 		/* initialize the link interrupt struct */
 		lip_new->sc = sc;

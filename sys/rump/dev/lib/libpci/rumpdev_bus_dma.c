@@ -1,4 +1,4 @@
-/*	$NetBSD: rumpdev_bus_dma.c,v 1.8 2019/01/27 02:08:48 pgoyette Exp $	*/
+/*	$NetBSD: rumpdev_bus_dma.c,v 1.11 2022/02/13 19:20:41 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 Antti Kantee
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rumpdev_bus_dma.c,v 1.8 2019/01/27 02:08:48 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rumpdev_bus_dma.c,v 1.11 2022/02/13 19:20:41 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -80,11 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: rumpdev_bus_dma.c,v 1.8 2019/01/27 02:08:48 pgoyette
 #include <sys/bus.h>
 #include <sys/intr.h>
 
-#include <uvm/uvm.h>
-
 #include "pci_user.h"
-
-#define	EIEIO	membar_sync()
 
 int	_bus_dmamap_load_buffer (bus_dma_tag_t, bus_dmamap_t, void *,
 	    bus_size_t, struct vmspace *, int, paddr_t *, int *, int);
@@ -194,7 +190,7 @@ _bus_dmamap_load_buffer(bus_dma_tag_t t, bus_dmamap_t map,
 		sgsize = PAGE_SIZE - ((u_long)vaddr & PGOFSET);
 		if (buflen < sgsize)
 			sgsize = buflen;
-		sgsize = min(sgsize, map->dm_maxsegsz);
+		sgsize = MIN(sgsize, map->dm_maxsegsz);
 
 		/*
 		 * Make sure we don't cross any boundaries.

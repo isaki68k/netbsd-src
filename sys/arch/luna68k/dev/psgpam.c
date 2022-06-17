@@ -1,6 +1,32 @@
-// vi:set ts=8:
+/*	$NetBSD: psgpam.c,v 1.2 2022/06/11 14:45:37 tsutsui Exp $	*/
+
+/*
+ * Copyright (c) 2018 Yosuke Sugahara. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD$");
+__KERNEL_RCSID(0, "$NetBSD: psgpam.c,v 1.2 2022/06/11 14:45:37 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -15,44 +41,45 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <machine/autoconf.h>
 
-#include <luna68k/dev/psgpamvar.h>
 #include <luna68k/dev/xpbusvar.h>
+#include <luna68k/dev/psgpam_enc.h>
+#include <luna68k/dev/xpcmd.h>
+#include <luna68k/dev/xplx/xplxdefs.h>
+
 #include <luna68k/luna68k/isr.h>
 
-#include <ioconf.h>
+#include "ioconf.h"
 
-#include "psgpam_enc.h"
-#include "xpcmd.h"
-#include "xplx/xplxdefs.h"
+/*
+ * Debug level:
+ * 0: No debug logs
+ * 1: action changes like open/close/set_format...
+ * 2: + normal operations like read/write/ioctl...
+ * 3: + TRACEs except interrupt
+ * 4: + TRACEs including interrupt
+ */
+/* Note AUDIO_DEBUG should be sync'ed with src/sys/dev/audio/audio.c */
+/* #define AUDIO_DEBUG	1 */
 
-#define PSGPAM_USE_TRIGGER
-
-// デバッグレベルは
-// 1: open/close/set_param等
-// 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: 割り込み以外のTRACEも含む
-// 4: 割り込み内のTRACEも含む
-#define AUDIO_DEBUG	0
-
-#ifdef AUDIO_DEBUG
-#define DPRINTF(n, fmt...)	do {	\
-	if (audiodebug >= (n)) {	\
-		if (cpu_intr_p()) {	\
-			audio_mlog_printf(fmt);	\
-		} else {	\
-			audio_mlog_flush();	\
-			printf(fmt);		\
-		}	\
-	}				\
+#if defined(AUDIO_DEBUG)
+#define DPRINTF(n, fmt...)	do {					\
+	if (psgpamdebug >= (n)) {					\
+		if (cpu_intr_p()) {					\
+			audio_mlog_printf(fmt);				\
+		} else {						\
+			audio_mlog_flush();				\
+			printf(fmt);					\
+		}							\
+	}								\
 } while (0)
 
 /* XXX Parasitic to audio.c... */
 extern void audio_mlog_flush(void);
 extern void audio_mlog_printf(const char *, ...);
 
-static int	audiodebug = AUDIO_DEBUG;
+static int	psgpamdebug = AUDIO_DEBUG;
 #else
-#define DPRINTF(n, fmt...)	do { } while (0)
+#define DPRINTF(n, fmt...)	__nothing
 #endif
 
 struct psgpam_softc {
@@ -70,8 +97,8 @@ struct psgpam_softc {
 
 	int      sc_started;
 	int      sc_outcount;
-	int      sc_xp_state;	//
-	uint16_t sc_xp_addr;	// XP buffer addr
+	int      sc_xp_state;
+	uint16_t sc_xp_addr;	/* XP buffer addr */
 
 	int      sc_xp_enc;
 	int      sc_xp_rept;
@@ -100,15 +127,10 @@ static int  psgpam_open(void *, int);
 static void psgpam_close(void *);
 static int  psgpam_query_format(void *, audio_format_query_t *);
 static int  psgpam_set_format(void *, int,
-	const audio_params_t *, const audio_params_t *,
-	audio_filter_reg_t *, audio_filter_reg_t *);
-
-#if defined(PSGPAM_USE_TRIGGER)
-static int  psgpam_trigger_output(void *, void *, void *, int, void (*)(void *), void *, const audio_params_t *);
-#else
-static int  psgpam_start_output(void *, void *, int, void (*)(void *), void *);
-#endif
-
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
+static int  psgpam_trigger_output(void *, void *, void *, int,
+    void (*)(void *), void *, const audio_params_t *);
 static int  psgpam_halt_output(void *);
 static int  psgpam_getdev(void *, struct audio_device *);
 static int  psgpam_set_port(void *, mixer_ctrl_t *);
@@ -116,13 +138,14 @@ static int  psgpam_get_port(void *, mixer_ctrl_t *);
 static int  psgpam_query_devinfo(void *, mixer_devinfo_t *);
 static int  psgpam_get_props(void *);
 static void psgpam_get_locks(void *, kmutex_t **, kmutex_t **);
-static int  psgpam_round_blocksize(void *, int, int,
-  const audio_params_t *);
+static int  psgpam_round_blocksize(void *, int, int, const audio_params_t *);
 static size_t psgpam_round_buffersize(void *, int, size_t);
 
 static int  psgpam_intr(void *);
 
+#if defined(AUDIO_DEBUG)
 static int  psgpam_sysctl_debug(SYSCTLFN_PROTO);
+#endif
 static int  psgpam_sysctl_enc(SYSCTLFN_PROTO);
 static int  psgpam_sysctl_dynamic(SYSCTLFN_PROTO);
 
@@ -136,11 +159,7 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.close			= psgpam_close,
 	.query_format		= psgpam_query_format,
 	.set_format		= psgpam_set_format,
-#if defined(PSGPAM_USE_TRIGGER)
 	.trigger_output		= psgpam_trigger_output,
-#else
-	.start_output		= psgpam_start_output,
-#endif
 	.halt_output		= psgpam_halt_output,
 	.getdev			= psgpam_getdev,
 	.set_port		= psgpam_set_port,
@@ -150,10 +169,6 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.get_locks		= psgpam_get_locks,
 	.round_blocksize        = psgpam_round_blocksize,
 	.round_buffersize	= psgpam_round_buffersize,
-#if 0
-	.allocm			= psgpam_allocm,
-	.freem			= psgpam_freem,
-#endif
 };
 
 static struct audio_device psgpam_device = {
@@ -173,80 +188,16 @@ static struct audio_format psgpam_format = {
 	.frequency	= { 0 },	/* filled by query_format */
 };
 
-/* private functions */
-
-static void
-psgpam_xp_query(struct psgpam_softc *sc)
-{
-	u_int a;
-	int r;
-
-	if (!sc->sc_isopen) {
-		a = xp_acquire(DEVID_PAM, 0);
-		if (a == 0) {
-			sc->sc_xp_cycle_clk = 65535;
-			sc->sc_xp_rept_clk = 255;
-			sc->sc_xp_rept_max = 0;
-			DPRINTF(1, "XPLX BUSY!\n");
-			return;
-		}
-		xp_ensure_firmware();
-	}
-
-	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
-	r = xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
-	if (r != XPLX_R_OK) {
-		sc->sc_xp_cycle_clk = 65535;
-		sc->sc_xp_rept_clk = 255;
-		sc->sc_xp_rept_max = 0;
-		DPRINTF(1, "XPLX QUERY FAIL: %d\n", r);
-	} else {
-		sc->sc_xp_cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
-		sc->sc_xp_rept_clk = xp_readmem8(PAM_REPT_CLK);
-		sc->sc_xp_rept_max = xp_readmem8(PAM_REPT_MAX);
-		DPRINTF(1, "xp cycle_clk=%d rept_clk=%d rept_max=%d\n",
-			sc->sc_xp_cycle_clk,
-			sc->sc_xp_rept_clk,
-			sc->sc_xp_rept_max);
-	}
-	if (!sc->sc_isopen) {
-		xp_release(DEVID_PAM);
-	}
-}
-
-static void
-psgpam_xp_start(struct psgpam_softc *sc)
-{
-	DPRINTF(3, "XP PAM starting..");
-	if (xp_readmem8(PAM_RUN) != 0) {
-		DPRINTF(1, "XP PAM already started???\n");
-	}
-
-	psgpam_xp_query(sc);
-
-	sc->sc_xp_rept = (XP_CPU_FREQ / sc->sc_sample_rate
-		- sc->sc_xp_cycle_clk) / sc->sc_xp_rept_clk;
-	if (sc->sc_xp_rept < 0)
-		sc->sc_xp_rept = 0;
-	if (sc->sc_xp_rept > sc->sc_xp_rept_max)
-		sc->sc_xp_rept = sc->sc_xp_rept_max;
-	xp_writemem8(PAM_REPT, sc->sc_xp_rept);
-	DPRINTF(3, "ENC=%d REPT=%d\n", sc->sc_xp_enc, sc->sc_xp_rept);
-
-	xp_intr5_enable();
-	xp_cmd_nowait(DEVID_PAM, PAM_CMD_START);
-
-	DPRINTF(3, "XP PAM started\n");
-}
-
-/* MI MD API */
-
 static int
 psgpam_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct xpbus_attach_args *xa = aux;
 
 	if (psgpam_matched)
+		return 0;
+
+	/* Only the first generation LUNA has YM2149 at XP */
+	if (machtype != LUNA_I)
 		return 0;
 
 	if (strcmp(xa->xa_name, psgpam_cd.cd_name))
@@ -289,6 +240,7 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 		CTL_HW,
 		CTL_CREATE, CTL_EOL);
 	if (node != NULL) {
+#if defined(AUDIO_DEBUG)
 		sysctl_createv(NULL, 0, NULL, NULL,
 			CTLFLAG_READWRITE,
 			CTLTYPE_INT, "debug",
@@ -296,6 +248,7 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 			psgpam_sysctl_debug, 0, (void *)sc, 0,
 			CTL_HW, node->sysctl_num,
 			CTL_CREATE, CTL_EOL);
+#endif
 		sysctl_createv(NULL, 0, NULL, NULL,
 			CTLFLAG_READWRITE,
 			CTLTYPE_INT, "enc",
@@ -312,24 +265,92 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 			CTL_CREATE, CTL_EOL);
 	}
 
-
 	audio_attach_mi(&psgpam_hw_if, sc, sc->sc_dev);
 }
+
+/* private functions */
+
+static void
+psgpam_xp_query(struct psgpam_softc *sc)
+{
+	u_int a;
+	int r;
+
+	if (!sc->sc_isopen) {
+		a = xp_acquire(DEVID_PAM, 0);
+		if (a == 0) {
+			sc->sc_xp_cycle_clk = 65535;
+			sc->sc_xp_rept_clk = 255;
+			sc->sc_xp_rept_max = 0;
+			DPRINTF(1, "XPLX BUSY!\n");
+			return;
+		}
+		xp_ensure_firmware();
+	}
+
+	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
+	r = xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
+	if (r != XPLX_R_OK) {
+		sc->sc_xp_cycle_clk = 65535;
+		sc->sc_xp_rept_clk = 255;
+		sc->sc_xp_rept_max = 0;
+		DPRINTF(1, "XPLX QUERY FAIL: %d\n", r);
+	} else {
+		sc->sc_xp_cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
+		sc->sc_xp_rept_clk = xp_readmem8(PAM_REPT_CLK);
+		sc->sc_xp_rept_max = xp_readmem8(PAM_REPT_MAX);
+		DPRINTF(1, "xp cycle_clk=%d rept_clk=%d rept_max=%d\n",
+		    sc->sc_xp_cycle_clk,
+		    sc->sc_xp_rept_clk,
+		    sc->sc_xp_rept_max);
+	}
+	if (!sc->sc_isopen) {
+		xp_release(DEVID_PAM);
+	}
+}
+
+static void
+psgpam_xp_start(struct psgpam_softc *sc)
+{
+
+	DPRINTF(3, "XP PAM starting..");
+	if (xp_readmem8(PAM_RUN) != 0) {
+		DPRINTF(1, "XP PAM already started???\n");
+	}
+
+	psgpam_xp_query(sc);
+
+	sc->sc_xp_rept = (XP_CPU_FREQ / sc->sc_sample_rate
+	    - sc->sc_xp_cycle_clk) / sc->sc_xp_rept_clk;
+	if (sc->sc_xp_rept < 0)
+		sc->sc_xp_rept = 0;
+	if (sc->sc_xp_rept > sc->sc_xp_rept_max)
+		sc->sc_xp_rept = sc->sc_xp_rept_max;
+	xp_writemem8(PAM_REPT, sc->sc_xp_rept);
+	DPRINTF(3, "ENC=%d REPT=%d\n", sc->sc_xp_enc, sc->sc_xp_rept);
+
+	xp_intr5_enable();
+	xp_cmd_nowait(DEVID_PAM, PAM_CMD_START);
+
+	DPRINTF(3, "XP PAM started\n");
+}
+
+/* MI MD API */
 
 static int
 psgpam_open(void *hdl, int flags)
 {
 	struct psgpam_softc *sc;
+	u_int a;
 
 	DPRINTF(1, "%s: flags=0x%x\n", __func__, flags);
 	sc = hdl;
 
-	u_int a;
 	a = xp_acquire(DEVID_PAM, 0);
 	if (a == 0)
 		return EBUSY;
 
-	// firmware transfer
+	/* firmware transfer */
 	xp_ensure_firmware();
 
 	sc->sc_xp_state = 0;
@@ -389,11 +410,11 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 		break;
 	}
 
-	// convert xp's max to AUFMT's max
+	/* convert xp's max to AUFMT's max */
 	rept_max = sc->sc_xp_rept_max + 1;
 
 	if (rept_max <= AUFMT_MAX_FREQUENCIES) {
-		// all choice
+		/* all choice */
 		for (i = 0; i < rept_max; i++) {
 			clk = sc->sc_xp_cycle_clk + i * sc->sc_xp_rept_clk;
 			freq = XP_CPU_FREQ / clk;
@@ -413,17 +434,19 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 		for (; i < XP_FREQ_MAXCOUNT; i++)
 			f[i] = 0;
 
-		// keep: first, last
-		// remove: any unusable freq
+		/*
+		 * keep: first, last
+		 * remove: any unusable freq
+		 */
 		for (i = 1; i < rept_max - 1; i++) {
-			if ((4000 <= f[i] && f[i] < 6000
-			 && f[i - 1] < 6000 && f[i + 1] > 4000)
-			||  (6000 <= f[i] && f[i] < 8000
-			 && f[i - 1] < 8000 && f[i + 1] > 6000)
-			||  (8000 <= f[i] && f[i] < 12000
-			 && f[i - 1] < 12000 && f[i + 1] > 8000)
-			||  (12000 <= f[i] && f[i] < 16000
-			 && f[i - 1] < 16000 && f[i + 1] > 12000)) {
+			if (( 4000 <= f[i] && f[i] <  6000 &&
+			     f[i - 1] <  6000 && f[i + 1] >  4000) ||
+			    ( 6000 <= f[i]    && f[i] < 8000 &&
+			     f[i - 1] <  8000 && f[i + 1] >  6000) ||
+			    ( 8000 <= f[i] && f[i] < 12000 &&
+			     f[i - 1] < 12000 && f[i + 1] >  8000) ||
+			    (12000 <= f[i] && f[i] < 16000 &&
+			     f[i - 1] < 16000 && f[i + 1] > 12000)) {
 				f[i] = 0;
 			}
 		}
@@ -446,10 +469,10 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 
 static int
 psgpam_set_format(void *hdl, int setmode,
-	const audio_params_t *play, const audio_params_t *rec,
-	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	// open 前に呼ばれる。
+	/* called before open */
 
 	struct psgpam_softc *sc;
 
@@ -460,7 +483,7 @@ psgpam_set_format(void *hdl, int setmode,
 
 	sc->sc_sample_rate = play->sample_rate;
 
-	// set filter
+	/* set filter */
 	switch (sc->sc_xp_enc) {
 	case PAM_ENC_PAM2A:
 		if (sc->sc_dynamic) {
@@ -501,75 +524,6 @@ psgpam_set_format(void *hdl, int setmode,
 	return 0;
 }
 
-#if !defined(PSGPAM_USE_TRIGGER)
-static int
-psgpam_start_output(void *hdl, void *block, int blksize,
-	void (*intr)(void *), void *intrarg)
-{
-	int markoffset;
-	uint32_t marker;
-	void *dp;
-
-	struct psgpam_softc *sc;
-
-	sc = hdl;
-
-	DPRINTF(2, "%s block=%p blksize=%d\n", __func__, block, blksize);
-
-	sc->sc_outcount++;
-
-	sc->sc_intr = intr;
-	sc->sc_arg = intrarg;
-
-	markoffset = blksize - sc->sc_stride;
-
-	if (sc->sc_xp_state == 0) {
-		marker = XP_ATN_STAT;
-		sc->sc_xp_addr = PAM_BUF;
-
-		if (sc->sc_started == 0) {
-			// if first transfer, interrupt at middle of buffer.
-			markoffset = blksize >> 1;
-		}
-	} else {
-		marker = XP_ATN_RELOAD;
-	}
-
-	// marking
-	if (sc->sc_stride == 2) {
-		uint16_t *markptr = (uint16_t*)((uint8_t*)block + markoffset);
-		*markptr |= marker;
-	} else {
-		// stride == 4
-		uint32_t *markptr = (uint32_t*)((uint8_t*)block + markoffset);
-		*markptr |= marker;
-	}
-
-	// transfer
-	dp = xp_shmptr(sc->sc_xp_addr);
-	memcpy(dp, block, blksize);
-
-	DPRINTF(2, "check: %04X %02X\n",
-		sc->sc_xp_addr + markoffset,
-		xp_readmem16le(sc->sc_xp_addr + markoffset));
-
-	sc->sc_xp_addr += blksize;
-
-	// invert state
-	sc->sc_xp_state = ~sc->sc_xp_state;
-
-	// play start
-	if (sc->sc_started == 0) {
-		// 先にフラグを立てておく
-		sc->sc_started = 1;
-		psgpam_xp_start(sc);
-	}
-
-	return 0;
-}
-#endif /* !PSGPAM_USE_TRIGGER */
-
-/* XXX: currentry trigger only but call from start in future. */
 /* marking block */
 static void
 psgpam_mark_blk(struct psgpam_softc *sc, int blk_id)
@@ -585,27 +539,25 @@ psgpam_mark_blk(struct psgpam_softc *sc, int blk_id)
 		marker = XP_ATN_STAT;
 	}
 
-	// marking
+	/* marking */
 	uint8_t *start = sc->sc_start_ptr;
 	if (sc->sc_stride == 2) {
 		uint16_t *markptr = (uint16_t*)(start + markoffset);
 		markptr -= 1;
 		*markptr |= marker;
 	} else {
-		// stride == 4
+		/* stride == 4 */
 		uint32_t *markptr = (uint32_t*)(start + markoffset);
 		markptr -= 1;
 		*markptr |= marker;
 	}
 }
 
-#if defined(PSGPAM_USE_TRIGGER)
 static int
 psgpam_trigger_output(void *hdl, void *start, void *end, int blksize,
-	void (*intr)(void *), void *intrarg, const audio_params_t *param)
+    void (*intr)(void *), void *intrarg, const audio_params_t *param)
 {
 	void *dp;
-
 	struct psgpam_softc *sc;
 
 	sc = hdl;
@@ -627,24 +579,23 @@ psgpam_trigger_output(void *hdl, void *start, void *end, int blksize,
 	psgpam_mark_blk(sc, 0);
 	psgpam_mark_blk(sc, 1);
 
-	// transfer
+	/* transfer */
 	dp = xp_shmptr(sc->sc_xp_addr);
 	memcpy(dp, start, blksize * 2);
 
-	// (preincrement variable in intr)
+	/* (preincrement variable in intr) */
 	sc->sc_cur_blk_id = 1;
 	sc->sc_xp_addr += blksize;
 
-	// play start
+	/* play start */
 	if (sc->sc_started == 0) {
-		// 先にフラグを立てておく
+		/* set flag first */
 		sc->sc_started = 1;
 		psgpam_xp_start(sc);
 	}
 
 	return 0;
 }
-#endif
 
 static int
 psgpam_halt_output(void *hdl)
@@ -666,6 +617,7 @@ psgpam_halt_output(void *hdl)
 static int
 psgpam_getdev(void *hdl, struct audio_device *ret)
 {
+
 	*ret = psgpam_device;
 	return 0;
 }
@@ -673,6 +625,7 @@ psgpam_getdev(void *hdl, struct audio_device *ret)
 static int
 psgpam_set_port(void *hdl, mixer_ctrl_t *mc)
 {
+
 	DPRINTF(2, "%s\n", __func__);
 	return 0;
 }
@@ -680,6 +633,7 @@ psgpam_set_port(void *hdl, mixer_ctrl_t *mc)
 static int
 psgpam_get_port(void *hdl, mixer_ctrl_t *mc)
 {
+
 	DPRINTF(2, "%s\n", __func__);
 	return 0;
 }
@@ -699,6 +653,7 @@ psgpam_query_devinfo(void *hdl, mixer_devinfo_t *di)
 static int
 psgpam_get_props(void *hdl)
 {
+
 	return AUDIO_PROP_PLAYBACK;
 }
 
@@ -713,8 +668,9 @@ psgpam_get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 
 static int
 psgpam_round_blocksize(void *hdl, int bs, int mode,
-  const audio_params_t *param)
+    const audio_params_t *param)
 {
+
 #if 0
 	if (bs < 16384) {
 		return (16384 / bs) * bs;
@@ -729,6 +685,7 @@ psgpam_round_blocksize(void *hdl, int bs, int mode,
 static size_t
 psgpam_round_buffersize(void *hdl, int direction, size_t bufsize)
 {
+
 	if (bufsize > 28 * 1024) {
 		bufsize = 28 * 1024;
 	}
@@ -743,7 +700,6 @@ psgpam_intr(void *hdl)
 	xp_intr5_acknowledge();
 	DPRINTF(4, "psgpam intr\n");
 
-#if defined(PSGPAM_USE_TRIGGER)
 	sc->sc_cur_blk_id++;
 	sc->sc_xp_addr += sc->sc_blksize;
 	if (sc->sc_cur_blk_id == sc->sc_blkcount) {
@@ -752,16 +708,8 @@ psgpam_intr(void *hdl)
 	}
 	psgpam_mark_blk(sc, sc->sc_cur_blk_id);
 	memcpy(xp_shmptr(sc->sc_xp_addr),
-		sc->sc_start_ptr + sc->sc_cur_blk_id * sc->sc_blksize,
-		sc->sc_blksize);
-#else
-	if (sc->sc_outcount <= 0) {
-		DPRINTF(4, "loop detected");
-		psgpam_halt_output(sc);
-		return 1;
-	}
-	sc->sc_outcount--;
-#endif
+	    sc->sc_start_ptr + sc->sc_cur_blk_id * sc->sc_blksize,
+	    sc->sc_blksize);
 
 	mutex_spin_enter(&sc->sc_intr_lock);
 
@@ -777,6 +725,7 @@ psgpam_intr(void *hdl)
 	return 1;
 }
 
+#if defined(AUDIO_DEBUG)
 /* sysctl */
 static int
 psgpam_sysctl_debug(SYSCTLFN_ARGS)
@@ -786,7 +735,7 @@ psgpam_sysctl_debug(SYSCTLFN_ARGS)
 
 	node = *rnode;
 
-	t = audiodebug;
+	t = psgpamdebug;
 	node.sysctl_data = &t;
 
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
@@ -798,9 +747,10 @@ psgpam_sysctl_debug(SYSCTLFN_ARGS)
 		return EINVAL;
 	if (t > 4)
 		return EINVAL;
-	audiodebug = t;
+	psgpamdebug = t;
 	return 0;
 }
+#endif
 
 /* sysctl */
 static int

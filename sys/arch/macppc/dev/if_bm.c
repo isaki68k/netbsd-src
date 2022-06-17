@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bm.c,v 1.60 2019/05/28 07:41:47 msaitoh Exp $	*/
+/*	$NetBSD: if_bm.c,v 1.64 2021/03/05 07:15:53 rin Exp $	*/
 
 /*-
  * Copyright (C) 1998, 1999, 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.60 2019/05/28 07:41:47 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.64 2021/03/05 07:15:53 rin Exp $");
 
 #include "opt_inet.h"
 
@@ -178,6 +178,7 @@ bmac_attach(device_t parent, device_t self, void *aux)
 	struct ifnet *ifp = &sc->sc_if;
 	struct mii_data *mii = &sc->sc_mii;
 	u_char laddr[6];
+	char intr_xname[INTRDEVNAMEBUF];
 
 	callout_init(&sc->sc_tick_ch, 0);
 
@@ -217,20 +218,20 @@ bmac_attach(device_t parent, device_t self, void *aux)
 	sc->sc_txcmd = dbdma_alloc(BMAC_TXBUFS * sizeof(dbdma_command_t), NULL);
 	sc->sc_rxcmd = dbdma_alloc((BMAC_RXBUFS + 1) * sizeof(dbdma_command_t),
 	    NULL);
-	sc->sc_txbuf = malloc(BMAC_BUFLEN * BMAC_TXBUFS, M_DEVBUF, M_NOWAIT);
-	sc->sc_rxbuf = malloc(BMAC_BUFLEN * BMAC_RXBUFS, M_DEVBUF, M_NOWAIT);
-	if (sc->sc_txbuf == NULL || sc->sc_rxbuf == NULL ||
-	    sc->sc_txcmd == NULL || sc->sc_rxcmd == NULL) {
-		aprint_error("cannot allocate memory\n");
-		return;
-	}
+	sc->sc_txbuf = malloc(BMAC_BUFLEN * BMAC_TXBUFS, M_DEVBUF, M_WAITOK);
+	sc->sc_rxbuf = malloc(BMAC_BUFLEN * BMAC_RXBUFS, M_DEVBUF, M_WAITOK);
 
 	aprint_normal(" irq %d,%d: address %s\n",
 	    ca->ca_intr[0], ca->ca_intr[2],
 	    ether_sprintf(laddr));
 
-	intr_establish(ca->ca_intr[0], IST_EDGE, IPL_NET, bmac_intr, sc);
-	intr_establish(ca->ca_intr[2], IST_EDGE, IPL_NET, bmac_rint, sc);
+	snprintf(intr_xname, sizeof(intr_xname), "%s tx", device_xname(self));
+	intr_establish_xname(ca->ca_intr[0], IST_EDGE, IPL_NET, bmac_intr, sc,
+	    intr_xname);
+
+	snprintf(intr_xname, sizeof(intr_xname), "%s rx", device_xname(self));
+	intr_establish_xname(ca->ca_intr[2], IST_EDGE, IPL_NET, bmac_rint, sc,
+	    intr_xname);
 
 	memcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 	ifp->if_softc = sc;
@@ -441,7 +442,7 @@ bmac_intr(void *v)
 	if (stat & IntFrameSent) {
 		sc->sc_if.if_flags &= ~IFF_OACTIVE;
 		sc->sc_if.if_timer = 0;
-		sc->sc_if.if_opackets++;
+		if_statinc(&sc->sc_if, if_opackets);
 		if_schedule_deferred_start(&sc->sc_if);
 	}
 
@@ -495,7 +496,7 @@ bmac_rint(void *v)
 
 		m = bmac_get(sc, data, datalen);
 		if (m == NULL) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
@@ -581,7 +582,7 @@ bmac_start(struct ifnet *ifp)
 
 		/* 5 seconds to watch for failing to transmit */
 		ifp->if_timer = 5;
-		ifp->if_opackets++;		/* # of pkts */
+		if_statinc(ifp, if_opackets);		/* # of pkts */
 
 		bmac_transmit_packet(sc, sc->sc_txbuf, tlen);
 	}
@@ -685,7 +686,7 @@ bmac_watchdog(struct ifnet *ifp)
 	bmac_reset_bits(sc, TXCFG, TxMACEnable);
 
 	printf("%s: device timeout\n", ifp->if_xname);
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	bmac_reset(sc);
 }

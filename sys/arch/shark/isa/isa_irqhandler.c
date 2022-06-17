@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_irqhandler.c,v 1.27 2014/09/21 15:48:29 christos Exp $	*/
+/*	$NetBSD: isa_irqhandler.c,v 1.29 2020/11/22 03:57:19 thorpej Exp $	*/
 
 /*
  * Copyright 1997
@@ -75,12 +75,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_irqhandler.c,v 1.27 2014/09/21 15:48:29 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_irqhandler.c,v 1.29 2020/11/22 03:57:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/syslog.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/intr.h>
 
 #include <arm/locore.h>
@@ -311,17 +311,14 @@ intr_claim(int irq, int level, int (*ih_func)(void *), void *ih_arg, const char 
 {
 	irqhandler_t *ih;
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!ih)
-		panic("intr_claim(): Cannot malloc handler memory");
-
+	ih = kmem_zalloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_level = level;
 	ih->ih_func = ih_func;
 	ih->ih_arg = ih_arg;
 	ih->ih_flags = 0;
 
 	if (irq_claim(irq, ih, group, name) != 0) {
-		free(ih, M_DEVBUF);
+		kmem_free(ih, sizeof(*ih));
 		return(NULL);
 	}
 
@@ -334,7 +331,7 @@ intr_release(void *arg)
 	irqhandler_t *ih = (irqhandler_t *)arg;
 
 	if (irq_release(ih->ih_num, ih) == 0) {
-		free(ih, M_DEVBUF);
+		kmem_free(ih, sizeof(*ih));
 		return(0);
 	}
 	return(1);

@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci_mv.c,v 1.7 2018/04/09 16:21:10 jakllsch Exp $	*/
+/*	$NetBSD: ehci_mv.c,v 1.10 2021/08/07 16:19:13 thorpej Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci_mv.c,v 1.7 2018/04/09 16:21:10 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci_mv.c,v 1.10 2021/08/07 16:19:13 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -246,7 +246,8 @@ mvusb_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Attach usb device. */
-	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint);
+	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint,
+	    CFARGS_NONE);
 }
 
 static void
@@ -324,7 +325,7 @@ mvusb_init(struct mvusb_softc *sc, enum marvell_tags *tags)
 		reg &= ~(1 << 21);
 		/* bits[27:26]=0 (EDGE_DET_SEL=0) */
 		reg &= ~(3 << 26);
-		/* bits[31:30]=3 (RXDATA_BLOCK_LENGHT=3) */
+		/* bits[31:30]=3 (RXDATA_BLOCK_LENGTH=3) */
 		reg |= (3 << 30);
 		/* bits[7:4]=1 (SQ_THRESH=1) */
 		reg &= ~(0xf << 4);

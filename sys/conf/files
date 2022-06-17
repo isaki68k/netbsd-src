@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1240 2019/09/22 22:59:38 christos Exp $
+#	$NetBSD: files,v 1.1298 2022/06/05 13:35:52 rjs Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -18,6 +18,7 @@ devclass bus
 # (note, these are case-sensitive)
 #
 defparam opt_param.h		MAXUSERS
+defparam opt_param.h		MSGBUFSIZE
 defflag				INSECURE
 defflag				KTRACE
 defflag				MBUFTRACE
@@ -25,15 +26,20 @@ defflag	opt_ptrace.h		PTRACE PTRACE_HOOKS
 defflag				COREDUMP
 defflag	opt_modular.h		MODULAR
 defflag	opt_modular.h		MODULAR_DEFAULT_AUTOLOAD
+defflag	opt_modular.h		MODULAR_DEFAULT_VERBOSE
 defflag				KEYLOCK
 defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
-defflag opt_diagnostic.h	_DIAGNOSTIC
 defflag				GPROF
 defflag				KASAN
 defflag opt_kasan.h		KASAN_PANIC
-defflag				KLEAK
+defflag				KCSAN
+defflag opt_kcsan.h		KCSAN_PANIC
+defflag				KMSAN
+defflag opt_kmsan.h		KMSAN_PANIC
 defflag				KCOV
 defflag opt_pool.h		POOL_QUARANTINE
+defflag opt_pool.h		POOL_NOCACHE
+defflag				FAULT
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -85,8 +91,6 @@ defflag	opt_ntp.h		PPS_SYNC PPS_DEBUG NTP
 defflag	opt_ptm.h		NO_DEV_PTM COMPAT_BSDPTY
 
 defparam opt_kmempages.h	NKMEMPAGES NKMEMPAGES_MIN NKMEMPAGES_MAX
-
-defflag	opt_revcache.h		NAMECACHE_ENTER_REVERSE
 
 defflag	opt_exec.h		DEBUG_EXEC
 
@@ -158,12 +162,22 @@ defflag	opt_compat_netbsd.h	COMPAT_11: COMPAT_12, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_10: COMPAT_11, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_09: COMPAT_10, COMPAT_NETBSD
 defflag				COMPAT_OSSAUDIO
-defflag				COMPAT_43
+defflag				COMPAT_43: COMPAT_60
 defflag				COMPAT_FREEBSD: COMPAT_09, COMPAT_43
 defflag				COMPAT_LINUX: COMPAT_NETBSD, COMPAT_43
 defflag				COMPAT_SUNOS: COMPAT_09, COMPAT_43
 defflag				COMPAT_ULTRIX: COMPAT_50
+
+# mips64 and aarch64 have COMPAT_NETBSD32 but cannot have EXEC_AOUT; all
+# other users of COMPAT_NETBSD32 need EXEC_AOUT
+ifdef mips
 defflag				COMPAT_NETBSD32
+elifdef aarch64
+defflag				COMPAT_NETBSD32
+else
+defflag				COMPAT_NETBSD32	: EXEC_AOUT
+endif
+
 defflag				COMPAT_SYSV
 defflag				SYSV_IPC	: SYSVSHM, SYSVSEM, SYSVMSG
 defflag				COMPAT_NETBSD32_SYSVIPC : SYSV_IPC,
@@ -187,11 +201,12 @@ defflag	opt_machdep.h		MACHDEP
 # use it.
 
 # Individual crypto transforms
-include "crypto/arc4/files.arc4"
+include "crypto/adiantum/files.adiantum"
+include "crypto/aes/files.aes"
+include "crypto/chacha/files.chacha"
 include "crypto/des/files.des"
 include "crypto/blowfish/files.blowfish"
 include "crypto/cast128/files.cast128"
-include "crypto/rijndael/files.rijndael"
 include "crypto/skipjack/files.skipjack"
 include "crypto/camellia/files.camellia"
 # General-purpose crypto processing framework.
@@ -202,6 +217,12 @@ include "crypto/nist_hash_drbg/files.nist_hash_drbg"
 
 # ChaCha-based fast PRNG
 include "crypto/cprng_fast/files.cprng_fast"
+
+# BLAKE2s, a cryptographic hash function optimized for 8- to 32-bit
+include "crypto/blake2/files.blake2s"
+
+# Various cryptography functions
+include "crypto/sodium/files.sodium"
 
 #
 # Kernel history/tracing. Old UVMHIST depends upon this.
@@ -216,6 +237,7 @@ file	kern/kern_history.c		kernhist
 #
 # top level usb debug defines
 defflag	opt_usb.h			USB_DEBUG: KERNHIST
+defflag	opt_usb.h			USBHIST_PRINT
 defparam opt_usb.h			USBHIST_SIZE
 
 #
@@ -251,7 +273,6 @@ include "netinet/files.netinet"
 include "netinet6/files.netinet6"
 include "netipsec/files.netipsec"
 include "netmpls/files.netmpls"
-include "netsmb/files.netsmb"
 
 include "net/npf/files.npf"
 include "netinet/files.ipfilter"
@@ -265,17 +286,23 @@ obsolete defflag		IPX		# obsolete
 obsolete defparam opt_md.h	MEMORY_RBFLAGS	# superseded by
 						# MEMORY_DISK_RBFLAGS
 
-defflag	opt_bridge_ipf.h	BRIDGE_IPF	# bridge(4) use inet_pfil_hooks
 defflag	opt_ppp.h		PPP_DEFLATE PPP_BSDCOMP PPP_FILTER
 						# Include deflate or bsd
 						# compression, enable pppd
 						# packet filtering support
 defflag opt_pppoe.h		PPPOE_SERVER PPPOE_DEBUG
+defparam opt_pppoe.h		PPPOE_DEQUEUE_MAXLEN
+
+defflag opt_sppp.h		SPPP_IFDOWN_RECONNECT
+defparam opt_sppp.h		SPPP_KEEPALIVE_INTERVAL
+				SPPP_NORECV_TIME
+				SPPP_ALIVE_INTERVAL
 
 # networking options
 #
 defflag				GATEWAY
 defparam opt_nmbclusters.h	NMBCLUSTERS
+	 			NMBCLUSTERS_MAX
 defparam			SB_MAX
 
 # file system options
@@ -353,6 +380,7 @@ define 	pckbport	{[slot = -1]}
 define	pckbport_machdep_cnattach
 define	firmload
 define	ipmibus		{ }
+define	smbios
 
 # speaker devices, attaches to audio or pcppi drivers
 device	spkr: wsbelldev
@@ -393,9 +421,17 @@ file	dev/ic/nslm7x.c			lm			needs-flag
 device	spdmem
 file	dev/ic/spdmem.c			spdmem
 
+# Microchip MCP23x08 / MCP23x17 general purpose input/output
+device	mcpgpio: gpiobus
+file	dev/ic/mcp23xxxgpio.c		mcpgpio
+
 # SSD1306 or SH1106 OLED/PLED display (attaches via I2C or SPI)
 device	ssdfb:	wsemuldisplaydev
 file	dev/ic/ssdfb.c	ssdfb
+
+# Sparkfun Serial motor controller (attaches via I2C or SPI)
+device  scmd
+file	dev/ic/scmd.c	scmd
 
 # Generic HID support (used by USB, bluetooth and i2c)
 include "dev/hid/files.hid"
@@ -436,17 +472,13 @@ include "dev/splash/files.splash"
 # videomode support
 include "dev/videomode/files.videomode"
 
-# net device attributes - we have generic code for arc(net), ether(net),
-# fddi, and token ring.
+# net device attributes
 #
 define	arcnet
 define	ether
-define	fddi
-define	hippi
 define	ieee1394
-define	token
 define	sppp
-define	wlan
+define	wlan: aes
 define	crypto
 
 # TPM
@@ -749,10 +781,14 @@ file	dev/ic/hme.c			hme
 device	gem: arp, ether, ifnet, mii
 file	dev/ic/gem.c			gem
 
-# Synopsis Designware GMAC core, as found on allwinner a20
+# Synopsys DesignWare GMAC core, as found on allwinner a20
 # and other SoCs
 device	awge: arp, ether, ifnet, mii
 file	dev/ic/dwc_gmac.c		awge
+
+# Synopsys DesignWare Ethernet Quality-of-Service controller
+device	eqos: arp, ether, ifnet, mii
+file	dev/ic/dwc_eqos.c		eqos
 
 # 8390-family Ethernet controllers
 #
@@ -770,11 +806,6 @@ file	dev/ic/dp83905.c		dp83905
 define	mx98905
 file	dev/ic/mx98905.c		mx98905
 
-# TROPIC Token-Ring controller
-#
-device	tr: arp, token, ifnet
-file	dev/ic/tropic.c			tr
-
 # NCR 5380 SCSI Bus Controller
 #
 define	ncr5380sbc
@@ -786,12 +817,6 @@ device	nca: scsi, ncr5380sbc
 define	sunscpal
 file	dev/ic/sunscpal.c		sunscpal
 device	ssc: scsi, sunscpal
-
-# DEC FDDI Chipset
-#
-define	pdq
-file	dev/ic/pdq.c			pdq
-file	dev/ic/pdq_ifsubr.c		pdq
 
 # Cyclades Cyclom-8/16/32
 #
@@ -923,11 +948,6 @@ file	dev/ic/clmpcc.c			clmpcc			needs-flag
 device	ug: sysmon_envsys
 file	dev/ic/ug.c			ug			needs-flag
 
-# Essential Communications Corp. HIPPI Interface
-#
-device	esh: hippi, ifnet
-file	dev/ic/rrunner.c		esh			needs-flag
-
 # SMC 90c26, SMC 90C56 (and 90C66 if in compat mode) chip driver
 #
 device	bah: ifnet, arcnet, arp
@@ -1027,18 +1047,9 @@ file	dev/ic/wdc.c			(ata_dma | ata_udma | ata_piobm | atabus) & atabus & wdc_com
 device	njata: ata, ata_piobm, wdc_common
 file	dev/ic/ninjaata32.c		njata
 
-# CHIPS and Technologies 82C7[12][01] Universal Peripheral Controller
-#
-device	upc { [offset = -1] }
-attach	wdc at upc with wdc_upc
-attach	com at upc with com_upc
-attach	lpt at upc with lpt_upc
-file	dev/ic/upc.c			upc
-file	dev/ic/wdc_upc.c		wdc_upc
-file	dev/ic/com_upc.c		com_upc
-file	dev/ic/lpt_upc.c		lpt_upc
-
 # AHCI-compatible SATA controllers
+defflag	opt_ahcisata.h	AHCISATA_EXTRA_DELAY
+defparam opt_ahcisata.h	AHCISATA_EXTRA_DELAY_MS
 define ahcisata_core
 file dev/ic/ahcisata_core.c ahcisata_core
 device ahcisata: ata, ata_dma, ata_udma, sata, sata_fis, sata_pmp, ahcisata_core
@@ -1347,6 +1358,10 @@ file	dev/ic/pl061.c			plgpio
 device	plmmc: sdmmcbus
 file	dev/ic/pl181.c			plmmc
 
+# Intel GPIO
+device	igpio: gpiobus
+file	dev/ic/igpio.c			igpio
+
 # Myson MTD803 3-in-1 Fast Ethernet Controller
 device	mtd: arp, ether, ifnet, mii
 file	dev/ic/mtd803.c			mtd
@@ -1387,7 +1402,7 @@ file	dev/ic/bwi.c			bwi
 
 # DM9000 Ethernet controllers
 #
-device	dme: arp, ether, ifnet
+device	dme: arp, ether, ifnet, mii
 file	dev/ic/dm9000.c			dme
 
 # NVM Express Controller
@@ -1399,7 +1414,7 @@ attach	ld at nvme with ld_nvme
 file	dev/ic/ld_nvme.c		ld_nvme
 
 # Broadcom FullMAC 802.11 driver
-device	bwfm: arp, ifnet, wlan
+device	bwfm: arp, ifnet, wlan, firmload
 file	dev/ic/bwfm.c			bwfm
 
 # QEMU Firmware Configuration (fw_cfg) device
@@ -1415,7 +1430,7 @@ file	dev/ic/amdccp.c			amdccp
 defpseudodev vnd:	disk
 defflag opt_vnd.h	VND_COMPRESSION
 defpseudo ccd:		disk
-defpseudodev cgd:	disk, des, blowfish, cast128
+defpseudodev cgd:	disk, des, blowfish, cast128, aes, adiantum
 defpseudodev md:	disk
 defpseudodev fss:	disk
 
@@ -1433,6 +1448,7 @@ defpseudo pppoe:	ifnet, ether, sppp
 defpseudo tun:		ifnet
 defpseudo vlan:		ifnet, ether
 defpseudo bridge:	ifnet, ether
+defpseudo vether:	ifnet, ether
 defpseudo bpfilter:	ifnet, bpf_filter
 defpseudo strip:	ifnet
 defpseudo gre:		ifnet
@@ -1446,6 +1462,8 @@ defpseudo carp:		ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
 defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
+defpseudo wg:		ifnet, blake2s, libsodium
+defpseudo lagg:		ifnet, ether
 
 defpseudo sequencer
 defpseudo clockctl
@@ -1493,8 +1511,20 @@ device	ipmi: sysmon_envsys, sysmon_wdog
 attach	ipmi at ipmibus
 
 # Designware HDMI TX
-device	dwhdmi: edid, videomode, drmkms, drmkms_i2c
+device	dwhdmi: edid, videomode, drmkms, drmkms_i2c, ddc_read_edid
 file	dev/ic/dw_hdmi.c		dwhdmi
+file	dev/ic/dw_hdmi_phy.c		dwhdmi
+
+# Analogix DisplayPort
+device	anxdp: edid, videomode, drmkms, drmkms_i2c
+file	dev/ic/anx_dp.c			anxdp
+
+# Broadcom GENET v5 ethernet
+device	genet: arp, ether, ifnet, mii
+file	dev/ic/bcmgenet.c		genet
+
+# VMware Tools driver
+include "dev/vmt/files.vmt"
 
 #
 # File systems
@@ -1511,7 +1541,6 @@ include "fs/ntfs/files.ntfs"
 include "fs/ptyfs/files.ptyfs"
 include "fs/puffs/files.puffs"
 include "fs/udf/files.udf"
-include "fs/smbfs/files.smbfs"
 include "fs/sysvbfs/files.sysvbfs"
 include "fs/tmpfs/files.tmpfs"
 include "fs/union/files.union"
@@ -1546,12 +1575,6 @@ include "net/files.net"
 # Game adapter (joystick)
 device	joy
 file	dev/ic/joy.c			joy needs-flag
-
-# process monitor for make(1)
-# normally built as module
-defpseudo filemon
-file	dev/filemon/filemon.c		filemon
-file	dev/filemon/filemon_wrapper.c	filemon
 
 #
 # General Purpose Input/Output framework
@@ -1592,12 +1615,12 @@ include "dev/altmem/files.altmem"
 include "dev/flash/files.flash"
 
 #
-# NAND subsytem
+# NAND subsystem
 #
 include "dev/nand/files.nand"
 
 #
-# NOR subsytem
+# NOR subsystem
 #
 include "dev/nor/files.nor"
 
@@ -1621,6 +1644,13 @@ include "dev/clk/files.clk"
 #
 include "dev/ofw/files.ofw"
 include "dev/fdt/files.fdt"
+
+
+## ACPI -- this should be dev/acpi/files.acpi, but that currently has
+# some MD parts.  Having this here allows conditionals on NACPICA in
+# acpica.h, at least.
+#
+include "dev/acpi/acpica/files.acpica"
 
 #
 # Name value library

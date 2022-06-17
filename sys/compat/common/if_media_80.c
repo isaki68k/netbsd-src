@@ -1,4 +1,4 @@
-/*	$NetBSD: if_media_80.c,v 1.2 2019/09/26 01:28:27 christos Exp $	*/
+/*	$NetBSD: if_media_80.c,v 1.4 2021/09/07 11:43:02 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -141,7 +141,8 @@ compat_ifmediareq_post(struct ifreq *ifr, u_long cmd)
 		 * there is no problem to trust ifm_count.
 		 */
 		minwords = ifmr->ifm_count;
-		kptr = malloc(minwords * sizeof(*kptr), M_TEMP, M_WAITOK);
+		kptr = malloc(minwords * sizeof(*kptr), M_TEMP,
+		    M_WAITOK|M_ZERO);
 		if (kptr == NULL)
 			return ENOMEM;
 
@@ -177,10 +178,8 @@ void
 ifmedia_80_init(void)
 {
 
-	MODULE_HOOK_SET(ifmedia_80_pre_hook, "ifmedia80",
-	    compat_ifmediareq_pre);
-	MODULE_HOOK_SET(ifmedia_80_post_hook, "ifmedia80",
-	    compat_ifmediareq_post);
+	MODULE_HOOK_SET(ifmedia_80_pre_hook, compat_ifmediareq_pre);
+	MODULE_HOOK_SET(ifmedia_80_post_hook, compat_ifmediareq_post);
 }
 
 void

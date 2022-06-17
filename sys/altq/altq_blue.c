@@ -1,4 +1,4 @@
-/*	$NetBSD: altq_blue.c,v 1.24 2016/04/20 08:58:48 knakahara Exp $	*/
+/*	$NetBSD: altq_blue.c,v 1.26 2021/09/21 14:30:15 christos Exp $	*/
 /*	$KAME: altq_blue.c,v 1.15 2005/04/13 03:44:24 suz Exp $	*/
 
 /*
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: altq_blue.c,v 1.24 2016/04/20 08:58:48 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: altq_blue.c,v 1.26 2021/09/21 14:30:15 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altq.h"
@@ -105,7 +105,7 @@ __KERNEL_RCSID(0, "$NetBSD: altq_blue.c,v 1.24 2016/04/20 08:58:48 knakahara Exp
 /* fixed-point uses 12-bit decimal places */
 #define	FP_SHIFT	12	/* fixed-point shift */
 
-#define	BLUE_LIMIT	200	/* default max queue lenght */
+#define	BLUE_LIMIT	200	/* default max queue length */
 #define	BLUE_STATS		/* collect statistics */
 
 /* blue_list keeps all blue_state_t's allocated. */
@@ -163,15 +163,10 @@ blueioctl(dev_t dev, ioctlcmd_t cmd, void *addr, int flag,
 	case BLUE_GETSTATS:
 		break;
 	default:
-#if (__FreeBSD_version > 400000)
-		if ((error = suser(p)) != 0)
-			return (error);
-#else
 		if ((error = kauth_authorize_network(l->l_cred,
 		    KAUTH_NETWORK_ALTQ, KAUTH_REQ_NETWORK_ALTQ_BLUE, NULL,
 		    NULL, NULL)) != 0)
 			return (error);
-#endif
 		break;
 	}
 

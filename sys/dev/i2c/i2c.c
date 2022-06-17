@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.69 2019/03/26 09:20:38 mlelstv Exp $	*/
+/*	$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -37,10 +37,23 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_i2c.h"
-#endif
+
+#include "opt_fdt.h"
+#ifdef FDT
+#define	I2C_USE_FDT
+#endif /* FDT */
+
+#if defined(__aarch64__) || defined(__amd64__)
+#include "acpica.h"
+#if NACPICA > 0
+#define	I2C_USE_ACPI
+#endif /* NACPICA > 0 */
+#endif /* __aarch64__ || __amd64__ */
+
+#endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.69 2019/03/26 09:20:38 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -57,6 +70,14 @@ __KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.69 2019/03/26 09:20:38 mlelstv Exp $");
 #include <sys/once.h>
 #include <sys/mutex.h>
 
+#ifdef I2C_USE_ACPI
+#include <dev/acpi/acpivar.h>
+#endif /* I2C_USE_ACPI */
+
+#ifdef I2C_USE_FDT
+#include <dev/fdt/fdtvar.h>
+#endif /* I2C_USE_FDT */
+
 #include <dev/i2c/i2cvar.h>
 
 #include "ioconf.h"
@@ -69,7 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.69 2019/03/26 09:20:38 mlelstv Exp $");
 struct iic_softc {
 	device_t sc_dev;
 	i2c_tag_t sc_tag;
-	int sc_type;
 	device_t sc_devices[I2C_MAX_ADDR + 1];
 };
 
@@ -208,31 +228,32 @@ iic_probe_smbus_receive_byte(struct iic_softc *sc,
 }
 
 static bool
-iic_indirect_driver_is_whitelisted(struct iic_softc *sc, cfdata_t cf)
+iic_indirect_driver_is_permitted(struct iic_softc *sc, cfdata_t cf)
 {
 	prop_object_iterator_t iter;
-	prop_array_t whitelist;
+	prop_array_t permitlist;
 	prop_string_t pstr;
 	prop_type_t ptype;
 	bool rv = false;
 
-	whitelist = prop_dictionary_get(device_properties(sc->sc_dev),
-					I2C_PROP_INDIRECT_DEVICE_WHITELIST);
-	if (whitelist == NULL) {
-		/* No whitelist -> everything allowed */
+	permitlist = prop_dictionary_get(device_properties(sc->sc_dev),
+					 I2C_PROP_INDIRECT_DEVICE_PERMITLIST);
+	if (permitlist == NULL) {
+		/* No permitlist -> everything allowed */
 		return (true);
 	}
 
-	if ((ptype = prop_object_type(whitelist)) != PROP_TYPE_ARRAY) {
+	if ((ptype = prop_object_type(permitlist)) != PROP_TYPE_ARRAY) {
 		aprint_error_dev(sc->sc_dev,
 		    "invalid property type (%d) for '%s'; must be array (%d)\n",
-		    ptype, I2C_PROP_INDIRECT_DEVICE_WHITELIST, PROP_TYPE_ARRAY);
+		    ptype, I2C_PROP_INDIRECT_DEVICE_PERMITLIST,
+		    PROP_TYPE_ARRAY);
 		return (false);
 	}
 
-	iter = prop_array_iterator(whitelist);
+	iter = prop_array_iterator(permitlist);
 	while ((pstr = prop_object_iterator_next(iter)) != NULL) {
-		if (prop_string_equals_cstring(pstr, cf->cf_name)) {
+		if (prop_string_equals_string(pstr, cf->cf_name)) {
 			rv = true;
 			break;
 		}
@@ -254,9 +275,9 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 
 	/*
 	 * Before we do any more work, consult the allowed-driver
-	 * white-list for this bus (if any).
+	 * permit-list for this bus (if any).
 	 */
-	if (iic_indirect_driver_is_whitelisted(sc, cf) == false)
+	if (iic_indirect_driver_is_permitted(sc, cf) == false)
 		return (0);
 
 	/* default to "quick write". */
@@ -266,26 +287,25 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 				   I2C_PROP_INDIRECT_PROBE_STRATEGY);
 	if (pstr == NULL) {
 		/* Use the default. */
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_QUICK_WRITE)) {
 		probe_func = iic_probe_smbus_quick_write;
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_RECEIVE_BYTE)) {
 		probe_func = iic_probe_smbus_receive_byte;
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_NONE)) {
 		probe_func = iic_probe_none;
 	} else {
 		aprint_error_dev(sc->sc_dev,
 			"unknown probe strategy '%s'; defaulting to '%s'\n",
-			prop_string_cstring_nocopy(pstr),
+			prop_string_value(pstr),
 			I2C_PROBE_STRATEGY_QUICK_WRITE);
 
 		/* Use the default. */
 	}
 
 	ia.ia_tag = sc->sc_tag;
-	ia.ia_type = sc->sc_type;
 
 	ia.ia_name = NULL;
 	ia.ia_ncompat = 0;
@@ -344,7 +364,7 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		 * us from having to poke at the bus to see if anything
 		 * is there.
 		 */
-		match_result = config_match(parent, cf, &ia);
+		match_result = config_probe(parent, cf, &ia);/*XXX*/
 		if (match_result <= 0)
 			continue;
 
@@ -355,11 +375,11 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		 * to see if it looks like something is really there.
 		 */
 		if (match_result == I2C_MATCH_ADDRESS_ONLY &&
-		    (error = (*probe_func)(sc, &ia, I2C_F_POLL)) != 0)
+		    (error = (*probe_func)(sc, &ia, 0)) != 0)
 			continue;
 
 		sc->sc_devices[ia.ia_addr] =
-		    config_attach(parent, cf, &ia, iic_print);
+		    config_attach(parent, cf, &ia, iic_print, CFARGS_NONE);
 	}
 
 	return 0;
@@ -381,7 +401,9 @@ iic_child_detach(device_t parent, device_t child)
 static int
 iic_rescan(device_t self, const char *ifattr, const int *locators)
 {
-	config_search_ia(iic_search, self, ifattr, NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = iic_search,
+		   .locators = locators));
 	return 0;
 }
 
@@ -402,14 +424,13 @@ iic_attach(device_t parent, device_t self, void *aux)
 	char *buf;
 	i2c_tag_t ic;
 	int rv;
-	bool indirect_config;
+	bool no_indirect_config = false;
 
 	aprint_naive("\n");
 	aprint_normal(": I2C bus\n");
 
 	sc->sc_dev = self;
 	sc->sc_tag = iba->iba_tag;
-	sc->sc_type = iba->iba_type;
 	ic = sc->sc_tag;
 	ic->ic_devname = device_xname(self);
 
@@ -427,12 +448,11 @@ iic_attach(device_t parent, device_t self, void *aux)
 
 	if (iba->iba_child_devices) {
 		child_devices = iba->iba_child_devices;
-		indirect_config = false;
+		no_indirect_config = true;
 	} else {
 		props = device_properties(parent);
-		if (!prop_dictionary_get_bool(props, "i2c-indirect-config",
-		    &indirect_config))
-			indirect_config = true;
+		prop_dictionary_get_bool(props, "i2c-no-indirect-config",
+		    &no_indirect_config);
 		child_devices = prop_dictionary_get(props, "i2c-child-devices");
 	}
 
@@ -442,8 +462,10 @@ iic_attach(device_t parent, device_t self, void *aux)
 		prop_data_t cdata;
 		uint32_t addr;
 		uint64_t cookie;
+		uint32_t cookietype;
 		const char *name;
 		struct i2c_attach_args ia;
+		devhandle_t devhandle;
 		int loc[IICCF_NLOCS];
 
 		memset(loc, 0, sizeof loc);
@@ -451,7 +473,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 		for (i = 0; i < count; i++) {
 			dev = prop_array_get(child_devices, i);
 			if (!dev) continue;
- 			if (!prop_dictionary_get_cstring_nocopy(
+ 			if (!prop_dictionary_get_string(
 			    dev, "name", &name)) {
 				/* "name" property is optional. */
 				name = NULL;
@@ -460,21 +482,39 @@ iic_attach(device_t parent, device_t self, void *aux)
 				continue;
 			if (!prop_dictionary_get_uint64(dev, "cookie", &cookie))
 				cookie = 0;
+			if (!prop_dictionary_get_uint32(dev, "cookietype",
+			    &cookietype))
+				cookietype = I2C_COOKIE_NONE;
 			loc[IICCF_ADDR] = addr;
 
 			memset(&ia, 0, sizeof ia);
 			ia.ia_addr = addr;
-			ia.ia_type = sc->sc_type;
 			ia.ia_tag = ic;
 			ia.ia_name = name;
 			ia.ia_cookie = cookie;
+			ia.ia_cookietype = cookietype;
 			ia.ia_prop = dev;
+
+			devhandle = devhandle_invalid();
+#ifdef I2C_USE_FDT
+			if (cookietype == I2C_COOKIE_OF) {
+				devhandle = devhandle_from_of(devhandle,
+							      (int)cookie);
+			}
+#endif /* I2C_USE_FDT */
+#ifdef I2C_USE_ACPI
+			if (cookietype == I2C_COOKIE_ACPI) {
+				devhandle =
+				    devhandle_from_acpi(devhandle,
+							(ACPI_HANDLE)cookie);
+			}
+#endif /* I2C_USE_ACPI */
 
 			buf = NULL;
 			cdata = prop_dictionary_get(dev, "compatible");
 			if (cdata)
 				iic_fill_compat(&ia,
-				    prop_data_data_nocopy(cdata),
+				    prop_data_value(cdata),
 				    prop_data_size(cdata), &buf);
 
 			if (name == NULL && cdata == NULL) {
@@ -488,9 +528,10 @@ iic_attach(device_t parent, device_t self, void *aux)
 					    "address @ 0x%02x\n", addr);
 				} else if (sc->sc_devices[addr] == NULL) {
 					sc->sc_devices[addr] =
-					    config_found_sm_loc(self, "iic",
-					        loc, &ia, iic_print_direct,
-						NULL);
+					    config_found(self, &ia,
+					    iic_print_direct,
+					    CFARGS(.locators = loc,
+						   .devhandle = devhandle));
 				}
 			}
 
@@ -499,7 +540,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 			if (buf)
 				free(buf, M_TEMP);
 		}
-	} else if (indirect_config) {
+	} else if (!no_indirect_config) {
 		/*
 		 * Attach all i2c devices described in the kernel
 		 * configuration file.
@@ -691,13 +732,12 @@ iic_fill_compat(struct i2c_attach_args *ia, const char *compat, size_t len,
  */
 int
 iic_compatible_match(const struct i2c_attach_args *ia,
-		     const struct device_compatible_entry *compats,
-		     const struct device_compatible_entry **matching_entryp)
+		     const struct device_compatible_entry *compats)
 {
 	int match_result;
 
 	match_result = device_compatible_match(ia->ia_compat, ia->ia_ncompat,
-					       compats, matching_entryp);
+					       compats);
 	if (match_result) {
 		match_result =
 		    MIN(I2C_MATCH_DIRECT_COMPATIBLE + match_result - 1,
@@ -708,9 +748,22 @@ iic_compatible_match(const struct i2c_attach_args *ia,
 }
 
 /*
+ * iic_compatible_lookup --
+ *	Look the compatible entry that matches one of the driver's
+ *	"compatible" strings.  The first match is returned.
+ */
+const struct device_compatible_entry *
+iic_compatible_lookup(const struct i2c_attach_args *ia,
+		      const struct device_compatible_entry *compats)
+{
+	return device_compatible_lookup(ia->ia_compat, ia->ia_ncompat,
+					compats);
+}
+
+/*
  * iic_use_direct_match --
  *	Helper for direct-config of i2c.  Returns true if this is
- *	a direct-config situation, along with with match result.
+ *	a direct-config situation, along with match result.
  *	Returns false if the driver should use indirect-config
  *	matching logic.
  */
@@ -719,8 +772,6 @@ iic_use_direct_match(const struct i2c_attach_args *ia, const cfdata_t cf,
 		     const struct device_compatible_entry *compats,
 		     int *match_resultp)
 {
-	int res;
-
 	KASSERT(match_resultp != NULL);
 
 	if (ia->ia_name != NULL &&
@@ -730,11 +781,8 @@ iic_use_direct_match(const struct i2c_attach_args *ia, const cfdata_t cf,
 	}
 
 	if (ia->ia_ncompat > 0 && ia->ia_compat != NULL) {
-		res = iic_compatible_match(ia, compats, NULL);
-		if (res) {
-			*match_resultp = res;
-			return true;
-		}
+		*match_resultp = iic_compatible_match(ia, compats);
+		return true;
 	}
 
 	return false;
@@ -852,7 +900,7 @@ CFATTACH_DECL3_NEW(iic, sizeof(struct iic_softc),
     iic_match, iic_attach, iic_detach, NULL, iic_rescan, iic_child_detach,
     DVF_DETACH_SHUTDOWN);
 
-MODULE(MODULE_CLASS_DRIVER, iic, "i2cexec,i2c_bitbang");
+MODULE(MODULE_CLASS_DRIVER, iic, "i2cexec,i2c_bitbang,i2c_subr");
 
 #ifdef _MODULE
 #include "ioconf.c"
@@ -894,7 +942,7 @@ iic_modcmd(modcmd_t cmd, void *opaque)
 		if (error) {
 			aprint_error("%s: unable to init component\n",
 			    iic_cd.cd_name);
-			(void)devsw_detach(NULL, &iic_cdevsw);
+			devsw_detach(NULL, &iic_cdevsw);
 		}
 		mutex_exit(&iic_mtx);
 #endif
@@ -912,10 +960,7 @@ iic_modcmd(modcmd_t cmd, void *opaque)
 			mutex_exit(&iic_mtx);
 			break;
 		}
-		error = devsw_detach(NULL, &iic_cdevsw);
-		if (error != 0)
-			config_init_component(cfdriver_ioconf_iic,
-			    cfattach_ioconf_iic, cfdata_ioconf_iic);
+		devsw_detach(NULL, &iic_cdevsw);
 #endif
 		mutex_exit(&iic_mtx);
 		break;

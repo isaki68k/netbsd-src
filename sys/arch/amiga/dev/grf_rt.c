@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_rt.c,v 1.58 2014/10/18 08:33:24 snj Exp $ */
+/*	$NetBSD: grf_rt.c,v 1.62 2022/05/03 20:52:30 andvar Exp $ */
 
 /*
  * Copyright (c) 1993 Markus Wild
@@ -33,7 +33,7 @@
 #include "opt_amigacons.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_rt.c,v 1.58 2014/10/18 08:33:24 snj Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_rt.c,v 1.62 2022/05/03 20:52:30 andvar Exp $");
 
 #include "grfrt.h"
 #include "ite.h"
@@ -47,6 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: grf_rt.c,v 1.58 2014/10/18 08:33:24 snj Exp $");
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <machine/cpu.h>
 #include <amiga/amiga/device.h>
 #include <amiga/dev/zbusvar.h>
@@ -79,7 +80,7 @@ int retina_inited;
  * manufactured by MS MacroSystem GmbH from within NetBSD for the Amiga.
  *
  * Thanks to MacroSystem for providing me with the necessary information
- * to create theese routines. The sparse documentation of this code
+ * to create these routines. The sparse documentation of this code
  * results from the agreements between MS and me.
  */
 
@@ -881,7 +882,7 @@ grfrtattach(device_t parent, device_t self, void *aux)
 	/*
 	 * attach grf
 	 */
-	amiga_config_found(cfdata, gp->g_device, gp, grfrtprint);
+	amiga_config_found(cfdata, gp->g_device, gp, grfrtprint, CFARGS_NONE);
 }
 
 int

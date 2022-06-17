@@ -1,4 +1,4 @@
-/*	$NetBSD: coda_psdev.c,v 1.58 2017/10/25 08:12:38 maya Exp $	*/
+/*	$NetBSD: coda_psdev.c,v 1.62 2022/05/03 20:52:31 andvar Exp $	*/
 
 /*
  *
@@ -54,7 +54,7 @@
 /* These routines are the device entry points for Venus. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: coda_psdev.c,v 1.58 2017/10/25 08:12:38 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: coda_psdev.c,v 1.62 2022/05/03 20:52:31 andvar Exp $");
 
 extern int coda_nc_initialized;    /* Set if cache has been initialized */
 
@@ -313,7 +313,7 @@ vc_nb_write(dev_t dev, struct uio *uiop, int flag)
 
     vcp = &coda_mnttbl[minor(dev)].mi_vcomm;
 
-    /* Peek at the opcode, unique without transfering the data. */
+    /* Peek at the opcode, unique without transferring the data. */
     uiop->uio_rw = UIO_WRITE;
     error = uiomove(tbuf, sizeof(int) * 2, uiop);
     if (error) {
@@ -469,7 +469,7 @@ filt_vc_nb_detach(struct knote *kn)
 {
 	struct vcomm *vcp = kn->kn_hook;
 
-	SLIST_REMOVE(&vcp->vc_selproc.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&vcp->vc_selproc, kn);
 }
 
 static int
@@ -487,7 +487,7 @@ filt_vc_nb_read(struct knote *kn, long hint)
 }
 
 static const struct filterops vc_nb_read_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_vc_nb_detach,
 	.f_event = filt_vc_nb_read,
@@ -497,7 +497,6 @@ int
 vc_nb_kqfilter(dev_t dev, struct knote *kn)
 {
 	struct vcomm *vcp;
-	struct klist *klist;
 
 	ENTRY;
 
@@ -508,7 +507,6 @@ vc_nb_kqfilter(dev_t dev, struct knote *kn)
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &vcp->vc_selproc.sel_klist;
 		kn->kn_fop = &vc_nb_read_filtops;
 		break;
 
@@ -518,7 +516,7 @@ vc_nb_kqfilter(dev_t dev, struct knote *kn)
 
 	kn->kn_hook = vcp;
 
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&vcp->vc_selproc, kn);
 
 	return (0);
 }
@@ -760,7 +758,7 @@ vcoda_modcmd(modcmd_t cmd, void *arg)
 				if (VC_OPEN(vcp))
 					return EBUSY;
 			}
-			return devsw_detach(NULL, &vcoda_cdevsw);
+			devsw_detach(NULL, &vcoda_cdevsw);
 		}
 #endif
 		break;

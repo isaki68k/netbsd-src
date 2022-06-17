@@ -1,4 +1,4 @@
-/*	$NetBSD: if_agrether.c,v 1.10 2017/12/06 04:37:00 ozaki-r Exp $	*/
+/*	$NetBSD: if_agrether.c,v 1.12 2021/11/30 01:17:02 yamaguchi Exp $	*/
 
 /*-
  * Copyright (c)2005 YAMAMOTO Takashi,
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_agrether.c,v 1.10 2017/12/06 04:37:00 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_agrether.c,v 1.12 2021/11/30 01:17:02 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/callout.h>
@@ -38,12 +38,12 @@ __KERNEL_RCSID(0, "$NetBSD: if_agrether.c,v 1.10 2017/12/06 04:37:00 ozaki-r Exp
 #include <net/if_dl.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/ether_slowprotocols.h>
 
 #include <net/agr/if_agrvar_impl.h>
 #include <net/agr/if_agrethervar.h>
 #include <net/agr/if_agrsubr.h>
 
-#include <net/agr/ieee8023_slowprotocols.h>
 #include <net/agr/ieee8023_tlv.h>
 #include <net/agr/ieee8023ad.h>
 #include <net/agr/ieee8023ad_lacp.h>
@@ -91,10 +91,7 @@ agrether_ctor(struct agr_softc *sc, struct ifnet *ifp_port)
 	struct ethercom *ec = (void *)ifp;
 	struct agrether_private *priv;
 
-	priv = malloc(sizeof(*priv), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (!priv)
-		return ENOMEM;
-
+	priv = malloc(sizeof(*priv), M_DEVBUF, M_WAITOK | M_ZERO);
 	agr_mc_init(sc, &priv->aep_multiaddrs);
 
 	sc->sc_iftprivate = priv;

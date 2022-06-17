@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.12 2019/10/19 18:04:26 jmcneill Exp $ */
+/* $NetBSD: param.h,v 1.16 2021/05/31 14:38:57 simonb Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -36,6 +36,7 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_cputypes.h"
+#include "opt_param.h"
 #endif
 
 /*
@@ -59,9 +60,13 @@
 #  ifdef __AARCH64EB__
 #   define	_MACHINE_ARCH	aarch64eb
 #   define	MACHINE_ARCH	"aarch64eb"
+#   define	_MACHINE32_ARCH	earmv7hfeb
+#   define	MACHINE32_ARCH	"earmv7hfeb"
 #  else
 #   define	_MACHINE_ARCH	aarch64
 #   define	MACHINE_ARCH	"aarch64"
+#   define	_MACHINE32_ARCH	earmv7hf
+#   define	MACHINE32_ARCH	"earmv7hf"
 #  endif /* __AARCH64EB__ */
 # endif /* MACHINE_ARCH */
 #else
@@ -69,14 +74,20 @@
 # undef MACHINE
 # undef _MACHINE_ARCH
 # undef MACHINE_ARCH
+# undef _MACHINE32_ARCH
+# undef MACHINE32_ARCH
 # define	_MACHINE	aarch64
 # define	MACHINE		"aarch64"
 # ifdef __AARCH64EB__
 #  define	_MACHINE_ARCH	aarch64eb
 #  define	MACHINE_ARCH	"aarch64eb"
+#  define	_MACHINE32_ARCH	earmv7hfeb
+#  define	MACHINE32_ARCH	"earmv7hfeb"
 # else
 #  define	_MACHINE_ARCH	aarch64
 #  define	MACHINE_ARCH	"aarch64"
+#  define	_MACHINE32_ARCH	earmv7hf
+#  define	MACHINE32_ARCH	"earmv7hf"
 # endif /* __AARCH64EB__ */
 #endif /* !_KERNEL */
 
@@ -121,6 +132,12 @@
 
 #define MCLBYTES		(1 << MCLSHIFT)	/* size of a m_buf cluster */
 
+#ifndef NFS_RSIZE
+#define NFS_RSIZE		32768	/* Default NFS read data size */
+#endif
+#ifndef NFS_WSIZE
+#define NFS_WSIZE		32768	/* Default NFS write data size */
+#endif
 
 #ifndef MSGBUFSIZE
 #define MSGBUFSIZE		65536	/* default message buffer size */
@@ -154,8 +171,6 @@ void delay(unsigned int);
 /* compatibility for arm */
 #define arm_btop(x)		aarch64_btop(x)
 #define arm_ptob(x)		aarch64_ptob(x)
-#define arm_trunc_page(x)	aarch64_trunc_page(x)
-#define arm_round_page(x)	aarch64_round_page(x)
 
 #elif defined(__arm__)
 

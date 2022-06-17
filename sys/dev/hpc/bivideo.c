@@ -1,4 +1,4 @@
-/*	$NetBSD: bivideo.c,v 1.34 2017/06/13 19:13:55 spz Exp $	*/
+/*	$NetBSD: bivideo.c,v 1.37 2022/05/28 10:36:23 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999-2001
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bivideo.c,v 1.34 2017/06/13 19:13:55 spz Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bivideo.c,v 1.37 2022/05/28 10:36:23 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_hpcfb.h"
@@ -195,7 +195,7 @@ bivideoattach(device_t parent, device_t self, void *aux)
 	ha.ha_ndspconf = 1;
 	ha.ha_dspconflist = &sc->sc_dspconf;
 
-	config_found(self, &ha, hpcfbprint);
+	config_found(self, &ha, hpcfbprint, CFARGS_NONE);
 }
 
 int
@@ -610,7 +610,7 @@ bivideo_ioctl(void *v, u_long cmd, void *data, int flag, struct lwp *l)
 	case HPCFBIO_GOP:
 	case HPCFBIO_SOP:
 		/*
-		 * curently not implemented...
+		 * currently not implemented...
 		 */
 		return (EINVAL);
 	}

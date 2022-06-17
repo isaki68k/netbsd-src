@@ -1,4 +1,4 @@
-/*	$NetBSD: lua.c,v 1.24 2017/12/26 12:43:59 martin Exp $ */
+/*	$NetBSD: lua.c,v 1.28 2022/03/31 19:30:17 pgoyette Exp $ */
 
 /*
  * Copyright (c) 2011 - 2017 by Marc Balmer <mbalmer@NetBSD.org>.
@@ -74,8 +74,10 @@ static bool	lua_bytecode_on = false;
 static int	lua_verbose;
 static int	lua_max_instr;
 
-static LIST_HEAD(, lua_state)	lua_states;
-static LIST_HEAD(, lua_module)	lua_modules;
+static LIST_HEAD(, lua_state)	lua_states =
+    LIST_HEAD_INITIALIZER(lua_states);
+static LIST_HEAD(, lua_module)	lua_modules =
+    LIST_HEAD_INITIALIZER(lua_modules);
 
 static int lua_match(device_t, cfdata_t, void *);
 static void lua_attach(device_t, device_t, void *);
@@ -284,7 +286,7 @@ luaioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	struct lua_state *s;
 	struct lua_module *m;
 	kauth_cred_t cred;
-	struct nameidata nd;
+	struct vnode *vp;
 	struct pathbuf *pb;
 	struct vattr va;
 	struct lua_loadstate ls;
@@ -414,8 +416,8 @@ luaioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 				pb = pathbuf_create(load->path);
 				if (pb == NULL)
 					return ENOMEM;
-				NDINIT(&nd, LOOKUP, FOLLOW | NOCHROOT, pb);
-				error = vn_open(&nd, FREAD, 0);
+				error = vn_open(NULL, pb, NOCHROOT, FREAD, 0,
+				    &vp, NULL, NULL);
 				pathbuf_destroy(pb);
 				if (error) {
 					if (lua_verbose)
@@ -424,11 +426,11 @@ luaioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 						    error);
 					return error;
 				}
-				error = VOP_GETATTR(nd.ni_vp, &va,
+				error = VOP_GETATTR(vp, &va,
 				    kauth_cred_get());
 				if (error) {
-					VOP_UNLOCK(nd.ni_vp);
-					vn_close(nd.ni_vp, FREAD,
+					VOP_UNLOCK(vp);
+					vn_close(vp, FREAD,
 					    kauth_cred_get());
 					if (lua_verbose)
 						device_printf(sc->sc_dev,
@@ -437,19 +439,19 @@ luaioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 					return error;
 				}
 				if (va.va_type != VREG) {
-					VOP_UNLOCK(nd.ni_vp);
-					vn_close(nd.ni_vp, FREAD,
+					VOP_UNLOCK(vp);
+					vn_close(vp, FREAD,
 					    kauth_cred_get());
 					return EINVAL;
 				}
-				ls.vp = nd.ni_vp;
+				ls.vp = vp;
 				ls.off = 0L;
 				ls.size = va.va_size;
-				VOP_UNLOCK(nd.ni_vp);
+				VOP_UNLOCK(vp);
 				klua_lock(s->K);
 				error = lua_load(s->K->L, lua_reader, &ls,
 				    strrchr(load->path, '/') + 1, "bt");
-				vn_close(nd.ni_vp, FREAD, cred);
+				vn_close(vp, FREAD, cred);
 				switch (error) {
 				case 0:	/* no error */
 					break;
@@ -547,14 +549,18 @@ lua_require(lua_State *L)
 
 typedef struct {
 	size_t size;
-} __packed alloc_header_t;
+} alloc_header_t;
 
 static void *
 lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
 	void *nptr = NULL;
 
-	const size_t hdr_size = sizeof(alloc_header_t);
+	/*
+	 * Make sure that buffers allocated by lua_alloc() are aligned to
+	 * 8-byte boundaries as done by kmem_alloc(9).
+	 */
+	const size_t hdr_size = roundup(sizeof(alloc_header_t), 8);
 	alloc_header_t *hdr = (alloc_header_t *) ((char *) ptr - hdr_size);
 
 	if (nsize == 0) { /* freeing */
@@ -719,7 +725,7 @@ kluaL_newstate(const char *name, const char *desc, int ipl)
 void
 klua_close(klua_State *K)
 {
-	struct lua_state *s;
+	struct lua_state *s, *ns;
 	struct lua_softc *sc;
 	struct lua_module *m;
 	int error = 0;
@@ -743,7 +749,7 @@ klua_close(klua_State *K)
 	if (error)
 		return;		/* Nothing we can do... */
 
-	LIST_FOREACH(s, &lua_states, lua_next)
+	LIST_FOREACH_SAFE(s, &lua_states, lua_next, ns)
 		if (s->K == K) {
 			LIST_REMOVE(s, lua_next);
 			LIST_FOREACH(m, &s->lua_modules, mod_next)
@@ -854,14 +860,25 @@ lua_modcmd(modcmd_t cmd, void *opaque)
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 #ifdef _MODULE
-		error = config_cfdriver_attach(&lua_cd);
-		if (error)
+		error = devsw_attach(lua_cd.cd_name, NULL, &bmajor,
+		    &lua_cdevsw, &cmajor);
+		if (error) {
+			aprint_error("%s: unable to register devsw\n",
+			    lua_cd.cd_name);
 			return error;
+		}
+
+		error = config_cfdriver_attach(&lua_cd);
+		if (error) {
+			devsw_detach(NULL, &lua_cdevsw);
+			return error;
+		}
 
 		error = config_cfattach_attach(lua_cd.cd_name,
 		    &lua_ca);
 		if (error) {
 			config_cfdriver_detach(&lua_cd);
+			devsw_detach(NULL, &lua_cdevsw);
 			aprint_error("%s: unable to register cfattach\n",
 			    lua_cd.cd_name);
 			return error;
@@ -871,17 +888,9 @@ lua_modcmd(modcmd_t cmd, void *opaque)
 			config_cfattach_detach(lua_cd.cd_name,
 			    &lua_ca);
 			config_cfdriver_detach(&lua_cd);
+			devsw_detach(NULL, &lua_cdevsw);
 			aprint_error("%s: unable to register cfdata\n",
 			    lua_cd.cd_name);
-			return error;
-		}
-		error = devsw_attach(lua_cd.cd_name, NULL, &bmajor,
-		    &lua_cdevsw, &cmajor);
-		if (error) {
-			aprint_error("%s: unable to register devsw\n",
-			    lua_cd.cd_name);
-			config_cfattach_detach(lua_cd.cd_name, &lua_ca);
-			config_cfdriver_detach(&lua_cd);
 			return error;
 		}
 		config_attach_pseudo(lua_cfdata);

@@ -1,4 +1,4 @@
-/*	$NetBSD: sysvbfs.c,v 1.17 2018/05/28 21:04:37 chs Exp $	*/
+/*	$NetBSD: sysvbfs.c,v 1.19 2021/06/29 22:34:07 dholland Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysvbfs.c,v 1.17 2018/05/28 21:04:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysvbfs.c,v 1.19 2021/06/29 22:34:07 dholland Exp $");
 
 #include <sys/resource.h>
 #include <sys/param.h>
@@ -49,12 +49,14 @@ int (**sysvbfs_vnodeop_p)(void *);	/* filled by getnewvnode (vnode.h) */
 
 const struct vnodeopv_entry_desc sysvbfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, sysvbfs_lookup },		/* lookup */
 	{ &vop_create_desc, sysvbfs_create },		/* create */
 	{ &vop_mknod_desc, genfs_eopnotsupp },		/* mknod */
 	{ &vop_open_desc, sysvbfs_open },		/* open */
 	{ &vop_close_desc, sysvbfs_close },		/* close */
 	{ &vop_access_desc, sysvbfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, sysvbfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, sysvbfs_setattr },		/* setattr */
 	{ &vop_read_desc, sysvbfs_read },		/* read */

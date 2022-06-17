@@ -1,4 +1,4 @@
-/*	$NetBSD: plumvideo.c,v 1.41 2012/10/27 17:17:53 chs Exp $ */
+/*	$NetBSD: plumvideo.c,v 1.44 2022/04/16 17:35:57 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999-2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plumvideo.c,v 1.41 2012/10/27 17:17:53 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plumvideo.c,v 1.44 2022/04/16 17:35:57 andvar Exp $");
 
 #undef PLUMVIDEODEBUG
 
@@ -228,7 +228,7 @@ plumvideo_attach(device_t parent, device_t self, void *aux)
 	ha.ha_ndspconf = 1;
 	ha.ha_dspconflist = &sc->sc_dspconf;
 
-	config_found(self, &ha, hpcfbprint);
+	config_found(self, &ha, hpcfbprint, CFARGS_NONE);
 #if NBIVIDEO > 0
 	/* bivideo is no longer need */
 	bivideo_dont_attach = 1;
@@ -356,7 +356,7 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 	chip->vc_fbdepth = bpp;
 
 	/*
-	 * Get display size from WindowsCE setted.
+	 * Get display size from WindowsCE set.
 	 */
 	chip->vc_fbwidth = width = bootinfo->fb_width = 
 	    plum_conf_read(regt, regh, PLUM_VIDEO_PLHPX_REG) + 1;

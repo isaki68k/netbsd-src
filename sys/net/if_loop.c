@@ -1,4 +1,4 @@
-/*	$NetBSD: if_loop.c,v 1.107 2019/04/26 08:38:25 pgoyette Exp $	*/
+/*	$NetBSD: if_loop.c,v 1.113 2021/06/16 00:21:19 riastradh Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.107 2019/04/26 08:38:25 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.113 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -175,7 +175,6 @@ static int
 loop_clone_create(struct if_clone *ifc, int unit)
 {
 	struct ifnet *ifp;
-	int rv;
 
 	ifp = if_alloc(IFT_LOOP);
 
@@ -183,9 +182,8 @@ loop_clone_create(struct if_clone *ifc, int unit)
 
 	ifp->if_mtu = LOMTU;
 	ifp->if_flags = IFF_LOOPBACK | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef NET_MPSAFE
-	ifp->if_extflags |= IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = loioctl;
 	ifp->if_output = looutput;
@@ -199,11 +197,8 @@ loop_clone_create(struct if_clone *ifc, int unit)
 	IFQ_SET_READY(&ifp->if_snd);
 	if (unit == 0)
 		lo0ifp = ifp;
-	rv = if_attach(ifp);
-	if (rv != 0) {
-		if_free(ifp);
-		return rv;
-	}
+	if_initialize(ifp);
+	ifp->if_link_state = LINK_STATE_UP;
 	if_alloc_sadl(ifp);
 	bpf_attach(ifp, DLT_NULL, sizeof(u_int));
 #ifdef MBUFTRACE
@@ -215,6 +210,7 @@ loop_clone_create(struct if_clone *ifc, int unit)
 #endif
 
 	ifp->if_flags |= IFF_RUNNING;
+	if_register(ifp);
 
 	return (0);
 }
@@ -270,8 +266,8 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	}
 
 	pktlen = m->m_pkthdr.len;
-	ifp->if_opackets++;
-	ifp->if_obytes += pktlen;
+
+	if_statadd2(ifp, if_opackets, 1, if_obytes, pktlen);
 
 #ifdef ALTQ
 	/*
@@ -321,8 +317,13 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		KASSERT((csum_flags & ~(M_CSUM_IPv4|M_CSUM_UDPv4)) == 0);
 		if (csum_flags != 0 && IN_LOOPBACK_NEED_CHECKSUM(csum_flags)) {
 			in_undefer_cksum(m, 0, csum_flags);
+			m->m_pkthdr.csum_flags = 0;
+		} else {
+			/*
+			 * Do nothing. Pass M_CSUM_IPv4 and M_CSUM_UDPv4 as
+			 * they are to tell those are calculated and good.
+			 */
 		}
-		m->m_pkthdr.csum_flags = 0;
 		pktq = ip_pktq;
 		break;
 #endif
@@ -333,8 +334,13 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		if (csum_flags != 0 &&
 		    IN6_LOOPBACK_NEED_CHECKSUM(csum_flags)) {
 			in6_undefer_cksum(m, 0, csum_flags);
+			m->m_pkthdr.csum_flags = 0;
+		} else {
+			/*
+			 * Do nothing. Pass M_CSUM_UDPv6 as
+			 * they are to tell those are calculated and good.
+			 */
 		}
-		m->m_pkthdr.csum_flags = 0;
 		m->m_flags |= M_LOOP;
 		pktq = ip6_pktq;
 		break;
@@ -358,8 +364,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		error = 0;
 
 		if (__predict_true(pktq_enqueue(pktq, m, 0))) {
-			ifp->if_ipackets++;
-			ifp->if_ibytes += pktlen;
+			if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 		} else {
 			m_freem(m);
 			error = ENOBUFS;
@@ -374,8 +379,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		error = ENOBUFS;
 		goto out;
 	}
-	ifp->if_ipackets++;
-	ifp->if_ibytes += m->m_pkthdr.len;
+	if_statadd2(ifp, if_ipackets, 1, if_ibytes, m->m_pkthdr.len);
 	IF_ENQUEUE(ifq, m);
 	schednetisr(isr);
 	splx(s);
@@ -435,8 +439,7 @@ lostart(struct ifnet *ifp)
 				splx(s);
 				return;
 			}
-			ifp->if_ipackets++;
-			ifp->if_ibytes += pktlen;
+			if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 			splx(s);
 			continue;
 		}
@@ -448,8 +451,7 @@ lostart(struct ifnet *ifp)
 		}
 		IF_ENQUEUE(ifq, m);
 		schednetisr(isr);
-		ifp->if_ipackets++;
-		ifp->if_ibytes += pktlen;
+		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 		splx(s);
 	}
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.285 2019/10/14 16:27:03 maxv Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.302 2022/04/09 23:52:22 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.285 2019/10/14 16:27:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.302 2022/04/09 23:52:22 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -165,6 +165,11 @@ static struct mbuf *so_pendfree = NULL;
 int somaxkva = SOMAXKVA;
 static int socurkva;
 static kcondvar_t socurkva_cv;
+
+#ifndef SOFIXEDBUF
+#define SOFIXEDBUF true
+#endif
+bool sofixedbuf = SOFIXEDBUF;
 
 static kauth_listener_t socket_listener;
 
@@ -386,7 +391,7 @@ socket_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	enum kauth_network_req req;
 
 	result = KAUTH_RESULT_DEFER;
-	req = (enum kauth_network_req)arg0;
+	req = (enum kauth_network_req)(uintptr_t)arg0;
 
 	if ((action != KAUTH_NETWORK_SOCKET) &&
 	    (action != KAUTH_NETWORK_BIND))
@@ -526,6 +531,7 @@ socreate(int dom, struct socket **aso, int type, int proto, struct lwp *l,
 #endif
 	uid = kauth_cred_geteuid(l->l_cred);
 	so->so_uidinfo = uid_find(uid);
+	so->so_egid = kauth_cred_getegid(l->l_cred);
 	so->so_cpid = l->l_proc->p_pid;
 
 	/*
@@ -533,6 +539,10 @@ socreate(int dom, struct socket **aso, int type, int proto, struct lwp *l,
 	 * the lock with another socket, e.g. socketpair(2) case.
 	 */
 	if (lockso) {
+		/*
+		 * lockso->so_lock should be stable at this point, so
+		 * no need for atomic_load_*.
+		 */
 		lock = lockso->so_lock;
 		so->so_lock = lock;
 		mutex_obj_hold(lock);
@@ -1333,7 +1343,7 @@ dontblock:
 				m = m->m_next;
 			} else {
 				sbfree(&so->so_rcv, m);
-				/* XXX XXX XXX: should set mbuf_removed? */
+				mbuf_removed = 1;
 				if (paddr) {
 					*paddr = m;
 					so->so_rcv.sb_mb = m->m_next;
@@ -1342,8 +1352,7 @@ dontblock:
 				} else {
 					m = so->so_rcv.sb_mb = m_free(m);
 				}
-				/* XXX XXX XXX: isn't there an sbsync()
-				 * missing here? */
+				sbsync(&so->so_rcv, nextrecord);
 			}
 		}
 	}
@@ -1362,7 +1371,8 @@ dontblock:
 			if (flags & MSG_PEEK) {
 				if (controlp != NULL) {
 					*controlp = m_copym(m, 0, m->m_len, M_DONTWAIT);
-					controlp = &(*controlp)->m_next;
+					controlp = (*controlp == NULL ? NULL :
+					    &(*controlp)->m_next);
 				}
 				m = m->m_next;
 			} else {
@@ -1557,6 +1567,8 @@ dontblock:
 				if (offset == so->so_oobmark)
 					break;
 			}
+		} else {
+			so->so_state &= ~SS_POLLRDBAND;
 		}
 		if (flags & MSG_EOR)
 			break;
@@ -1795,7 +1807,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_snd.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_snd.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		case SO_RCVBUF:
@@ -1803,7 +1816,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		/*
@@ -1989,6 +2003,7 @@ sogetopt1(struct socket *so, struct sockopt *sopt)
 		optval = (opt == SO_SNDTIMEO ?
 		     so->so_snd.sb_timeo : so->so_rcv.sb_timeo);
 
+		memset(&tv, 0, sizeof(tv));
 		tv.tv_sec = optval / hz;
 		tv.tv_usec = (optval % hz) * tick;
 
@@ -2036,13 +2051,15 @@ sogetopt(struct socket *so, struct sockopt *sopt)
 static int
 sockopt_alloc(struct sockopt *sopt, size_t len, km_flag_t kmflag)
 {
+	void *data;
 
 	KASSERT(sopt->sopt_size == 0);
 
 	if (len > sizeof(sopt->sopt_buf)) {
-		sopt->sopt_data = kmem_zalloc(len, kmflag);
-		if (sopt->sopt_data == NULL)
+		data = kmem_zalloc(len, kmflag);
+		if (data == NULL)
 			return ENOMEM;
+		sopt->sopt_data = data;
 	} else
 		sopt->sopt_data = sopt->sopt_buf;
 
@@ -2201,6 +2218,7 @@ void
 sohasoutofband(struct socket *so)
 {
 
+	so->so_state |= SS_POLLRDBAND;
 	fownsignal(so->so_pgid, SIGURG, POLL_PRI, POLLPRI|POLLRDBAND, so);
 	selnotify(&so->so_rcv.sb_sel, POLLPRI | POLLRDBAND, NOTE_SUBMIT);
 }
@@ -2212,8 +2230,7 @@ filt_sordetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	SLIST_REMOVE(&so->so_rcv.sb_sel.sel_klist, kn, knote, kn_selnext);
-	if (SLIST_EMPTY(&so->so_rcv.sb_sel.sel_klist))
+	if (selremove_knote(&so->so_rcv.sb_sel, kn))
 		so->so_rcv.sb_flags &= ~SB_KNOTE;
 	sounlock(so);
 }
@@ -2230,7 +2247,7 @@ filt_soread(struct knote *kn, long hint)
 		solock(so);
 	kn->kn_data = so->so_rcv.sb_cc;
 	if (so->so_state & SS_CANTRCVMORE) {
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		kn->kn_fflags = so->so_error;
 		rv = 1;
 	} else if (so->so_error || so->so_rerror)
@@ -2251,8 +2268,7 @@ filt_sowdetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	SLIST_REMOVE(&so->so_snd.sb_sel.sel_klist, kn, knote, kn_selnext);
-	if (SLIST_EMPTY(&so->so_snd.sb_sel.sel_klist))
+	if (selremove_knote(&so->so_snd.sb_sel, kn))
 		so->so_snd.sb_flags &= ~SB_KNOTE;
 	sounlock(so);
 }
@@ -2269,7 +2285,7 @@ filt_sowrite(struct knote *kn, long hint)
 		solock(so);
 	kn->kn_data = sbspace(&so->so_snd);
 	if (so->so_state & SS_CANTSENDMORE) {
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		kn->kn_fflags = so->so_error;
 		rv = 1;
 	} else if (so->so_error)
@@ -2281,6 +2297,22 @@ filt_sowrite(struct knote *kn, long hint)
 		rv = (kn->kn_data >= kn->kn_sdata);
 	else
 		rv = (kn->kn_data >= so->so_snd.sb_lowat);
+	if (hint != NOTE_SUBMIT)
+		sounlock(so);
+	return rv;
+}
+
+static int
+filt_soempty(struct knote *kn, long hint)
+{
+	struct socket *so;
+	int rv;
+
+	so = ((file_t *)kn->kn_obj)->f_socket;
+	if (hint != NOTE_SUBMIT)
+		solock(so);
+	rv = (kn->kn_data = sbused(&so->so_snd)) == 0 ||
+	     (so->so_options & SO_ACCEPTCONN) != 0;
 	if (hint != NOTE_SUBMIT)
 		sounlock(so);
 	return rv;
@@ -2309,24 +2341,31 @@ filt_solisten(struct knote *kn, long hint)
 }
 
 static const struct filterops solisten_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sordetach,
 	.f_event = filt_solisten,
 };
 
 static const struct filterops soread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sordetach,
 	.f_event = filt_soread,
 };
 
 static const struct filterops sowrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sowdetach,
 	.f_event = filt_sowrite,
+};
+
+static const struct filterops soempty_filtops = {
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
+	.f_attach = NULL,
+	.f_detach = filt_sowdetach,
+	.f_event = filt_soempty,
 };
 
 int
@@ -2349,11 +2388,15 @@ soo_kqfilter(struct file *fp, struct knote *kn)
 		kn->kn_fop = &sowrite_filtops;
 		sb = &so->so_snd;
 		break;
+	case EVFILT_EMPTY:
+		kn->kn_fop = &soempty_filtops;
+		sb = &so->so_snd;
+		break;
 	default:
 		sounlock(so);
 		return EINVAL;
 	}
-	SLIST_INSERT_HEAD(&sb->sb_sel.sel_klist, kn, kn_selnext);
+	selrecord_knote(&sb->sb_sel, kn);
 	sb->sb_flags |= SB_KNOTE;
 	sounlock(so);
 	return 0;
@@ -2375,7 +2418,7 @@ sodopoll(struct socket *so, int events)
 			revents |= events & (POLLOUT | POLLWRNORM);
 
 	if (events & (POLLPRI | POLLRDBAND))
-		if (so->so_oobmark || (so->so_state & SS_RCVATMARK))
+		if (so->so_state & SS_POLLRDBAND)
 			revents |= events & (POLLPRI | POLLRDBAND);
 
 	return revents;
@@ -2419,6 +2462,7 @@ sbsavetimestamp(int opt, struct mbuf **mp)
 	struct timeval tv;
 	int error;
 
+	memset(&tv, 0, sizeof(tv));
 	microtime(&tv);
 
 	MODULE_HOOK_CALL(uipc_socket_50_sbts_hook, (opt, &mp), enosys(), error);
@@ -2531,6 +2575,13 @@ sysctl_kern_socket_setup(void)
 		                    "used for socket buffers"),
 		       sysctl_kern_somaxkva, 0, NULL, 0,
 		       CTL_KERN, KERN_SOMAXKVA, CTL_EOL);
+
+	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "sofixedbuf",
+		       SYSCTL_DESCR("Prevent scaling of fixed socket buffers"),
+		       NULL, 0, &sofixedbuf, 0,
+		       CTL_KERN, KERN_SOFIXEDBUF, CTL_EOL);
 
 	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,

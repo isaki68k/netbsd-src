@@ -1,4 +1,4 @@
-/*      $NetBSD: sv.c,v 1.57 2019/10/28 18:38:43 joerg Exp $ */
+/*      $NetBSD: sv.c,v 1.61 2021/08/07 16:19:14 thorpej Exp $ */
 /*      $OpenBSD: sv.c,v 1.2 1998/07/13 01:50:15 csapuntz Exp $ */
 
 /*
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sv.c,v 1.57 2019/10/28 18:38:43 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sv.c,v 1.61 2021/08/07 16:19:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -449,7 +449,7 @@ sv_attach(device_t parent, device_t self, void *aux)
 	arg.type = AUDIODEV_TYPE_OPL;
 	arg.hwif = 0;
 	arg.hdl = 0;
-	(void)config_found(self, &arg, audioprint);
+	(void)config_found(self, &arg, audioprint, CFARGS_NONE);
 
 	sc->sc_pa = *pa;	/* for deferred setup */
 	config_defer(self, sv_defer);
@@ -679,7 +679,10 @@ sv_round_blocksize(void *addr, int blk, int mode,
     const audio_params_t *param)
 {
 
-	return blk & -32;	/* keep good alignment */
+	blk = blk & -32;	/* keep good alignment */
+	if (blk < 32)
+		blk = 32;
+	return blk;
 }
 
 static int
@@ -1233,6 +1236,7 @@ sv_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 			}
 		}
 
+		mutex_spin_exit(&sc->sc_intr_lock);
 		return error;
 	}
 

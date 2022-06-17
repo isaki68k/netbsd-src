@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_cl.c,v 1.50 2015/11/16 21:25:34 phx Exp $ */
+/*	$NetBSD: grf_cl.c,v 1.55 2022/03/28 12:38:57 riastradh Exp $ */
 
 /*
  * Copyright (c) 1997 Klaus Burkert
@@ -36,7 +36,7 @@
 #include "opt_amigacons.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.50 2015/11/16 21:25:34 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.55 2022/03/28 12:38:57 riastradh Exp $");
 
 #include "grfcl.h"
 #include "ite.h"
@@ -78,6 +78,7 @@ __KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.50 2015/11/16 21:25:34 phx Exp $");
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/malloc.h>
 
 #include <machine/cpu.h>
@@ -455,7 +456,8 @@ grfclattach(device_t parent, device_t self, void *aux)
 	/*
 	 * attach grf (once)
 	 */
-	if (amiga_config_found(cfdata, gp->g_device, gp, grfclprint)) {
+	if (amiga_config_found(cfdata, gp->g_device, gp, grfclprint,
+			       CFARGS_NONE)) {
 		attachflag = 1;
 		printf("grfcl: %dMB ", cl_fbsize / 0x100000);
 		switch (cltype) {
@@ -1157,7 +1159,7 @@ cl_getcmap(struct grf_softc *gfp, struct grf_colormap *cmap)
  */
 
 /*
- * The source for the above comment is somewhat unknow to me.
+ * The source for the above comment is somewhat unknown to me.
  * The Spectrum, Piccolo and PiccoloSD64 have the analog Red and Blue
  * lines swapped. In 24BPP this provides RGB instead of BGR as it would
  * be native to the chipset. This requires special programming for the
@@ -2123,7 +2125,7 @@ cl_wsioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		return cl_get_fbinfo(gp, data);
 	}
 
-	/* handle this command hw-independant in grf(4) */
+	/* handle this command hw-independent in grf(4) */
 	return grf_wsioctl(v, vs, cmd, data, flag, l);
 }
 

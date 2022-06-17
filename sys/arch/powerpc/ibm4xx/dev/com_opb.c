@@ -1,4 +1,4 @@
-/* $NetBSD: com_opb.c,v 1.22 2018/12/08 17:46:12 thorpej Exp $ */
+/* $NetBSD: com_opb.c,v 1.25 2021/02/27 20:43:58 rin Exp $ */
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -61,7 +61,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com_opb.c,v 1.22 2018/12/08 17:46:12 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com_opb.c,v 1.25 2021/02/27 20:43:58 rin Exp $");
+
+#include "com.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -76,7 +78,6 @@ __KERNEL_RCSID(0, "$NetBSD: com_opb.c,v 1.22 2018/12/08 17:46:12 thorpej Exp $")
 #include <powerpc/ibm4xx/dev/opbvar.h>
 #include <powerpc/ibm4xx/dev/comopbvar.h>
 
-#include "com.h"
 #if (NCOM > 0)
 #include <dev/ic/comreg.h>
 #include <dev/ic/comvar.h>
@@ -132,7 +133,8 @@ com_opb_attach(device_t parent, device_t self, void *aux)
 
 	com_attach_subr(sc);
 
-	intr_establish(oaa->opb_irq, IST_LEVEL, IPL_SERIAL, comintr, sc);
+	intr_establish_xname(oaa->opb_irq, IST_LEVEL, IPL_SERIAL, comintr, sc,
+	    device_xname(self));
 }
 
 /*
@@ -143,9 +145,6 @@ void
 com_opb_cnattach(int com_freq, int conaddr, int conspeed, int conmode)
 {
 	static int attached = 0;
-#if (NCOM > 0)
-	struct com_regs	regs;
-#endif
 
 	if (attached)
 		return;
@@ -153,12 +152,8 @@ com_opb_cnattach(int com_freq, int conaddr, int conspeed, int conmode)
 
 #if (NCOM > 0)
 	/* We *know* the com-console attaches to opb */
-	regs.cr_iot = opb_get_bus_space_tag();
-	regs.cr_iobase = conaddr;
-	regs.cr_nports = COM_NPORTS;
-	/* regs.ioh is initialized by comcnattach */
-
-	if (comcnattach1(&regs, conspeed, com_freq, COM_TYPE_NORMAL, conmode))
+	if (comcnattach(opb_get_bus_space_tag(), conaddr, conspeed, com_freq,
+	    COM_TYPE_NORMAL, conmode))
 		panic("can't init serial console @%x", conaddr);
 	else
 		return;

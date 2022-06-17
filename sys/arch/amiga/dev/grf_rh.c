@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_rh.c,v 1.57 2014/01/22 00:25:16 christos Exp $ */
+/*	$NetBSD: grf_rh.c,v 1.62 2022/05/03 20:52:30 andvar Exp $ */
 
 /*
  * Copyright (c) 1994 Markus Wild
@@ -34,7 +34,7 @@
 #include "opt_retina.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_rh.c,v 1.57 2014/01/22 00:25:16 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_rh.c,v 1.62 2022/05/03 20:52:30 andvar Exp $");
 
 #include "grfrh.h"
 #include "ite.h"
@@ -50,6 +50,7 @@ __KERNEL_RCSID(0, "$NetBSD: grf_rh.c,v 1.57 2014/01/22 00:25:16 christos Exp $")
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/malloc.h>
 #include <machine/cpu.h>
 #include <amiga/amiga/device.h>
@@ -105,7 +106,7 @@ extern unsigned char kernel_font_8x11[];
  * for the Amiga.
  *
  * Thanks to MacroSystem for providing me with the necessary information
- * to create theese routines. The sparse documentation of this code
+ * to create these routines. The sparse documentation of this code
  * results from the agreements between MS and me.
  */
 
@@ -1221,7 +1222,7 @@ unsigned char RZ3StdPalette[16*3] = {
  * Make sure your maximum width (MW) and height (MH) are even multiples of
  * the fonts' width and height.
  *
- * You may use definitons created by the old DefineMonitor, but you'll get
+ * You may use definitions created by the old DefineMonitor, but you'll get
  * better results with the new DefineMonitor supplied along with the Retin Z3.
 */
 
@@ -1617,7 +1618,7 @@ grfrhattach(device_t parent, device_t self, void *aux)
 	/*
 	 * attach grf
 	 */
-	amiga_config_found(cfdata, gp->g_device, gp, grfrhprint);
+	amiga_config_found(cfdata, gp->g_device, gp, grfrhprint, CFARGS_NONE);
 }
 
 int

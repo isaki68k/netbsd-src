@@ -1,9 +1,9 @@
-/*	$NetBSD: gayle_pcmcia.c,v 1.31 2015/02/08 09:55:25 jandberg Exp $ */
+/*	$NetBSD: gayle_pcmcia.c,v 1.34 2021/08/07 16:18:41 thorpej Exp $ */
 
 /* public domain */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gayle_pcmcia.c,v 1.31 2015/02/08 09:55:25 jandberg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gayle_pcmcia.c,v 1.34 2021/08/07 16:18:41 thorpej Exp $");
 
 /* PCMCIA front-end driver for A1200's and A600's. */
 
@@ -131,7 +131,7 @@ pccard_attach(device_t parent, device_t self, void *aux)
 	pmap_update(vm_map_pmap(kernel_map));
 
 	/* override the one-byte access methods for I/O space */
-	pcmio_bs_methods = amiga_bus_stride_1;
+	pcmio_bs_methods = amiga_bus_stride_1swap;
 	pcmio_bs_methods.bsr1 = pcmio_bsr1;
 	pcmio_bs_methods.bsw1 = pcmio_bsw1;
 	pcmio_bs_methods.bsrm1 = pcmio_bsrm1;
@@ -173,7 +173,8 @@ pccard_attach(device_t parent, device_t self, void *aux)
 	paa.paa_busname = "pcmcia";
 	paa.pct = &chip_functions;
 	paa.pch = &sc->devs[0];
-	sc->devs[0].card = config_found(self, &paa, simple_devprint);
+	sc->devs[0].card = config_found(self, &paa, simple_devprint,
+	    CFARGS_NONE);
 	if (sc->devs[0].card == NULL) {
 		printf("attach failed, config_found() returned NULL\n");
 		pmap_remove(kernel_map->pmap, pcmcia_base,

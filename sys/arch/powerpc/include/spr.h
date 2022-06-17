@@ -1,4 +1,4 @@
-/*	$NetBSD: spr.h,v 1.52 2018/04/19 21:50:07 christos Exp $	*/
+/*	$NetBSD: spr.h,v 1.56 2022/05/07 09:02:19 rin Exp $	*/
 
 /*
  * Copyright (c) 2001, The NetBSD Foundation, Inc.
@@ -29,6 +29,10 @@
 #define	_POWERPC_SPR_H_
 
 #if !defined(_LOCORE) && defined(_KERNEL)
+
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <powerpc/oea/cpufeat.h>
 
@@ -68,8 +72,8 @@ mfspr64(int reg)
 } )
 #endif /* PPC_OEA64_BRIDGE || _ARCH_PPC64 */
 
-static __inline uint64_t
-mfspr32(int reg)
+static __inline __always_inline uint64_t
+mfspr32(const int reg)
 {
 	register_t val;
 
@@ -77,8 +81,8 @@ mfspr32(int reg)
 	return val;
 }
 
-static __inline void
-mtspr32(int reg, uint32_t val)
+static __inline __always_inline void
+mtspr32(const int reg, uint32_t val)
 {
 
 	__asm volatile("mtspr %0,%1" : : "K"(reg), "r"(val));

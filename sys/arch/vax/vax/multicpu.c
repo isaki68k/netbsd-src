@@ -1,4 +1,4 @@
-/*	$NetBSD: multicpu.c,v 1.34 2017/05/22 16:53:05 ragge Exp $	*/
+/*	$NetBSD: multicpu.c,v 1.37 2022/03/03 06:28:26 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2000 Ludd, University of Lule}, Sweden. All rights reserved.
@@ -29,14 +29,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: multicpu.c,v 1.34 2017/05/22 16:53:05 ragge Exp $");
+__KERNEL_RCSID(0, "$NetBSD: multicpu.c,v 1.37 2022/03/03 06:28:26 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/xcall.h>
 #include <sys/ipi.h>
@@ -68,7 +68,7 @@ cpu_boot_secondary_processors(void)
 	while ((q = SIMPLEQ_FIRST(&cpuq))) {
 		SIMPLEQ_REMOVE_HEAD(&cpuq, cq_q);
 		(*mp_dep_call->cpu_startslave)(q->cq_ci);
-		free(q, M_TEMP);
+		kmem_free(q, sizeof(*q));
 	}
 }
 
@@ -86,11 +86,8 @@ cpu_slavesetup(device_t self, int slotid)
 
 	KASSERT(device_private(self) == NULL);
 
-	ci = malloc(sizeof(*ci), M_DEVBUF, M_ZERO|M_NOWAIT);
-	if (ci == NULL)
-		panic("cpu_slavesetup1");
-
-	self->dv_private = ci;
+	ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
+	device_set_private(self, ci);
 	ci->ci_dev = self;
 	ci->ci_slotid = slotid;
 	ci->ci_cpuid = device_unit(self);
@@ -107,10 +104,7 @@ cpu_slavesetup(device_t self, int slotid)
 	ci->ci_istack = istackbase + PAGE_SIZE;
 	SIMPLEQ_INSERT_TAIL(&cpus, ci, ci_next);
 
-	cq = malloc(sizeof(*cq), M_TEMP, M_NOWAIT|M_ZERO);
-	if (cq == NULL)
-		panic("cpu_slavesetup3");
-
+	cq = kmem_zalloc(sizeof(*cq), KM_SLEEP);
 	cq->cq_ci = ci;
 	cq->cq_dev = ci->ci_dev;
 	SIMPLEQ_INSERT_TAIL(&cpuq, cq, cq_q);

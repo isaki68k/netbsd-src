@@ -1,4 +1,4 @@
-/*	$NetBSD: pceb.c,v 1.6 2011/07/01 16:56:52 dyoung Exp $	*/
+/*	$NetBSD: pceb.c,v 1.8 2021/08/07 16:19:03 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pceb.c,v 1.6 2011/07/01 16:56:52 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pceb.c,v 1.8 2021/08/07 16:19:03 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -137,7 +137,8 @@ pceb_callback(device_t self)
 #if NEISA > 0
 	ea.ea_eba.eba_dmat = &eisa_bus_dma_tag;
 #endif
-	config_found_ia(self, "eisabus", &ea.ea_eba, eisabusprint);
+	config_found(self, &ea.ea_eba, eisabusprint,
+	    CFARGS(.iattr = "eisabus"));
 
 	/*
 	 * Attach the ISA bus behind this bridge.
@@ -148,5 +149,6 @@ pceb_callback(device_t self)
 #if NISA > 0
 	ea.ea_iba.iba_dmat = &isa_bus_dma_tag;
 #endif
-	config_found_ia(self, "isabus", &ea.ea_iba, isabusprint);
+	config_found(self, &ea.ea_iba, isabusprint,
+	    CFARGS(.iattr = "isabus"));
 }

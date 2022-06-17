@@ -1,4 +1,4 @@
-/* $NetBSD: alpha_cpu.h,v 1.50 2012/02/06 02:14:13 matt Exp $ */
+/* $NetBSD: alpha_cpu.h,v 1.55 2021/11/02 11:26:03 ryo Exp $ */
 
 /*
  * Copyright (c) 1996 Carnegie-Mellon University.
@@ -44,6 +44,7 @@
  *	Virtual Memory Management
  *	Kernel Entry Vectors
  *	MMCSR Fault Type Codes
+ *	AESR Fault Code bits
  *	Translation Buffer Invalidation
  *
  * and miscellaneous PALcode operations.
@@ -94,16 +95,34 @@ struct alpha_pcb {
  * Processor Status Register [OSF/1 PALcode Specific]
  *
  * Includes user/kernel mode bit, interrupt priority levels, etc.
+ *
+ * Processor Status Summary
+ * ---------------------------------------------------------------------------
+ * PS<mode>	PS<IPL>		Mode		Use
+ * ---------------------------------------------------------------------------
+ * 1		0		User		User software
+ * 0		0		Kernel		System software
+ * 0		1		Kernel		System software
+ * 0		2		Kernel		System software
+ * 0		3		Kernel		Low priority device interrupts
+ * 0		4		Kernel		High priority device interrupts
+ * 0		5		Kernel		Clock, inter-proc interrupts
+ * 0		6		Kernel		Real-time device interrupts
+ * 0		6		Kernel		Correctable error reporting
+ * 0		7		Kernel		Machine checks
  */
 
 #define	ALPHA_PSL_USERMODE	0x0008		/* set -> user mode */
 #define	ALPHA_PSL_IPL_MASK	0x0007		/* interrupt level mask */
 
 #define	ALPHA_PSL_IPL_0		0x0000		/* all interrupts enabled */
-#define	ALPHA_PSL_IPL_SOFT	0x0001		/* software ints disabled */
-#define	ALPHA_PSL_IPL_IO	0x0004		/* I/O dev ints disabled */
+#define	ALPHA_PSL_IPL_SOFT_LO	0x0001		/* low pri soft ints disabled */
+#define	ALPHA_PSL_IPL_SOFT_HI	0x0002		/* hi pri soft ints disabled */
+#define	ALPHA_PSL_IPL_IO_LO	0x0003		/* low pri dev ints disabled */
+#define	ALPHA_PSL_IPL_IO_HI	0x0004		/* hi pri dev ints disabled */
 #define	ALPHA_PSL_IPL_CLOCK	0x0005		/* clock ints disabled */
 #define	ALPHA_PSL_IPL_HIGH	0x0006		/* all but mchecks disabled */
+#define	ALPHA_PSL_IPL_MCHECK	0x0007		/* machine checks disabled */
 
 #define	ALPHA_PSL_MUST_BE_ZERO	0xfffffffffffffff0
 
@@ -247,6 +266,18 @@ typedef unsigned long alpha_pt_entry_t;
 #define	ALPHA_KENTRY_SYS	5
 
 /*
+ * Arithmetic Exception Summary Register.  [OSF/1 PALcode Specific]
+ */
+
+#define	ALPHA_AESR_SWC		__BIT(0)	/* software completion */
+#define	ALPHA_AESR_INV		__BIT(1)	/* invalid operation */
+#define	ALPHA_AESR_DZE		__BIT(2)	/* division by zero */
+#define	ALPHA_AESR_OVF		__BIT(3)	/* overflow */
+#define	ALPHA_AESR_UNF		__BIT(4)	/* underflow */
+#define	ALPHA_AESR_INE		__BIT(5)	/* inexact result */
+#define	ALPHA_AESR_IOV		__BIT(6)	/* integer overflow */
+
+/*
  * MMCSR Fault Type Codes.  [OSF/1 PALcode Specific]
  */
 
@@ -296,7 +327,7 @@ typedef unsigned long alpha_pt_entry_t;
 				 ALPHA_AMASK_PAT|ALPHA_AMASK_PMI)
 
 #define	ALPHA_AMASK_BITS						\
-    "\20\17PMI\12PAT\11MVI\3CIX\2FIX\1BWX"
+    "\20\15PMI\12PAT\11MVI\3CIX\2FIX\1BWX"
 
 /*
  * Chip family IDs returned by implver instruction
@@ -360,6 +391,7 @@ void		alpha_pal_halt(void) __attribute__((__noreturn__));
 unsigned long	_alpha_pal_swpipl(unsigned long);	/* for profiling */
 void		alpha_pal_wrent(void *, unsigned long);
 void		alpha_pal_wrvptptr(unsigned long);
+unsigned long	alpha_pal_wtint(unsigned long);
 
 #define	alpha_pal_draina() __asm volatile("call_pal %0 # PAL_draina"	\
 				: : "i" (PAL_draina) : "memory")
@@ -421,7 +453,7 @@ alpha_pal_rdusp(void)
 	return (v0);
 }
 
-static __inline unsigned long
+static __inline __always_inline unsigned long
 alpha_pal_rdval(void)
 {
 	register unsigned long v0 __asm("$0");

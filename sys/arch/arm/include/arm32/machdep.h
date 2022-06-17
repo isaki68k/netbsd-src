@@ -1,7 +1,13 @@
-/* $NetBSD: machdep.h,v 1.29 2019/07/16 14:41:43 skrll Exp $ */
+/* $NetBSD: machdep.h,v 1.36 2022/04/02 11:16:07 skrll Exp $ */
 
 #ifndef _ARM32_MACHDEP_H_
 #define _ARM32_MACHDEP_H_
+
+#ifdef _KERNEL
+
+#define INIT_ARM_STACK_SHIFT	12
+#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
+#define INIT_ARM_TOTAL_STACK	(INIT_ARM_STACK_SIZE * MAXCPUS)
 
 /* Define various stack sizes in pages */
 #ifndef IRQ_STACK_SIZE
@@ -48,12 +54,7 @@ struct bootmem_info {
 extern struct bootmem_info bootmem_info;
 
 extern char *booted_kernel;
-
-extern volatile uint32_t arm_cpu_hatched;
-extern volatile uint32_t arm_cpu_mbox;
-extern u_int arm_cpu_max;
 extern u_long kern_vtopdiff;
-
 
 /* misc prototypes used by the many arm machdeps */
 void cortex_pmc_ccnt_init(void);
@@ -72,6 +73,9 @@ void dumpsys(void);
 vaddr_t initarm(void *);
 struct pmap_devmap;
 struct boot_physmem;
+
+void cpu_startup_hook(void);
+void cpu_startup_default(void);
 
 static inline paddr_t
 aarch32_kern_vtophys(vaddr_t va)
@@ -105,4 +109,32 @@ void set_spl_masks(void);
 #ifdef DIAGNOSTIC
 void dump_spl_masks(void);
 #endif
-#endif
+
+/* cpu_onfault */
+int cpu_set_onfault(struct faultbuf *) __returns_twice;
+void cpu_jump_onfault(struct trapframe *, const struct faultbuf *, int);
+
+static inline void
+cpu_unset_onfault(void)
+{
+	curpcb->pcb_onfault = NULL;
+}
+
+static inline void
+cpu_enable_onfault(struct faultbuf *fb)
+{
+	curpcb->pcb_onfault = fb;
+}
+
+static inline struct faultbuf *
+cpu_disable_onfault(void)
+{
+	struct faultbuf * const fb = curpcb->pcb_onfault;
+	if (fb != NULL)
+		curpcb->pcb_onfault = NULL;
+	return fb;
+}
+
+#endif	/* _KERNEL */
+
+#endif	/* _ARM32_MACHDEP_H_ */

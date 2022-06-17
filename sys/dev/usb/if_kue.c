@@ -1,4 +1,4 @@
-/*	$NetBSD: if_kue.c,v 1.100 2019/08/20 06:37:06 mrg Exp $	*/
+/*	$NetBSD: if_kue.c,v 1.118 2022/03/03 05:56:28 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_kue.c,v 1.100 2019/08/20 06:37:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_kue.c,v 1.118 2022/03/03 05:56:28 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -131,7 +131,7 @@ static const struct usb_devno kue_devs[] = {
 	{ USB_VENDOR_ABOCOM, USB_PRODUCT_ABOCOM_URE450 },
 	{ USB_VENDOR_ADS, USB_PRODUCT_ADS_UBS10BT },
 	{ USB_VENDOR_ADS, USB_PRODUCT_ADS_UBS10BTX },
-	{ USB_VENDOR_ACTIONTEC, USB_PRODUCT_ACTIONTEC_KL5KUSB101 },
+	{ USB_VENDOR_ACTIONTEC, USB_PRODUCT_ACTIONTEC_AR9287 },
 	{ USB_VENDOR_ALLIEDTELESYN, USB_PRODUCT_ALLIEDTELESYN_AT_USB10 },
 	{ USB_VENDOR_AOX, USB_PRODUCT_AOX_USB101 },
 	{ USB_VENDOR_ASANTE, USB_PRODUCT_ASANTE_EA },
@@ -164,27 +164,26 @@ static const struct usb_devno kue_devs[] = {
 };
 #define kue_lookup(v, p) (usb_lookup(kue_devs, v, p))
 
-int kue_match(device_t, cfdata_t, void *);
-void kue_attach(device_t, device_t, void *);
-int kue_detach(device_t, int);
+static int kue_match(device_t, cfdata_t, void *);
+static void kue_attach(device_t, device_t, void *);
+static int kue_detach(device_t, int);
 
 CFATTACH_DECL_NEW(kue, sizeof(struct kue_softc), kue_match, kue_attach,
     kue_detach, usbnet_activate);
 
-static void kue_rx_loop(struct usbnet *, struct usbnet_chain *, uint32_t);
-static unsigned kue_tx_prepare(struct usbnet *, struct mbuf *,
-			       struct usbnet_chain *);
-static int kue_ioctl_cb(struct ifnet *, u_long, void *);
-static int kue_init(struct ifnet *);
+static void kue_uno_rx_loop(struct usbnet *, struct usbnet_chain *, uint32_t);
+static unsigned kue_uno_tx_prepare(struct usbnet *, struct mbuf *,
+				   struct usbnet_chain *);
+static void kue_uno_mcast(struct ifnet *);
+static int kue_uno_init(struct ifnet *);
 
-static struct usbnet_ops kue_ops = {
-	.uno_ioctl = kue_ioctl_cb,
-	.uno_tx_prepare = kue_tx_prepare,
-	.uno_rx_loop = kue_rx_loop,
-	.uno_init = kue_init,
+static const struct usbnet_ops kue_ops = {
+	.uno_mcast = kue_uno_mcast,
+	.uno_tx_prepare = kue_uno_tx_prepare,
+	.uno_rx_loop = kue_uno_rx_loop,
+	.uno_init = kue_uno_init,
 };
 
-static void kue_setiff(struct usbnet *);
 static void kue_reset(struct usbnet *);
 
 static usbd_status kue_ctl(struct usbnet *, int, uint8_t,
@@ -319,11 +318,11 @@ kue_load_fw(struct usbnet *un)
 }
 
 static void
-kue_setiff(struct usbnet *un)
+kue_uno_mcast(struct ifnet *ifp)
 {
+	struct usbnet *		un = ifp->if_softc;
 	struct ethercom *	ec = usbnet_ec(un);
 	struct kue_softc *	sc = usbnet_softc(un);
-	struct ifnet * const	ifp = usbnet_ifp(un);
 	struct ether_multi	*enm;
 	struct ether_multistep	step;
 	int			i;
@@ -337,8 +336,10 @@ kue_setiff(struct usbnet *un)
 		sc->kue_rxfilt &= ~KUE_RXFILT_PROMISC;
 
 	if (ifp->if_flags & IFF_PROMISC) {
+		ETHER_LOCK(ec);
 allmulti:
-		ifp->if_flags |= IFF_ALLMULTI;
+		ec->ec_flags |= ETHER_F_ALLMULTI;
+		ETHER_UNLOCK(ec);
 		sc->kue_rxfilt |= KUE_RXFILT_ALLMULTI|KUE_RXFILT_PROMISC;
 		sc->kue_rxfilt &= ~KUE_RXFILT_MULTICAST;
 		kue_setword(un, KUE_CMD_SET_PKT_FILTER, sc->kue_rxfilt);
@@ -354,7 +355,6 @@ allmulti:
 		if (i == KUE_MCFILTCNT(sc) ||
 		    memcmp(enm->enm_addrlo, enm->enm_addrhi,
 		    ETHER_ADDR_LEN) != 0) {
-			ETHER_UNLOCK(ec);
 			goto allmulti;
 		}
 
@@ -362,9 +362,8 @@ allmulti:
 		ETHER_NEXT_MULTI(step, enm);
 		i++;
 	}
+	ec->ec_flags &= ~ETHER_F_ALLMULTI;
 	ETHER_UNLOCK(ec);
-
-	ifp->if_flags &= ~IFF_ALLMULTI;
 
 	sc->kue_rxfilt |= KUE_RXFILT_MULTICAST;
 	kue_ctl(un, KUE_CTL_WRITE, KUE_CMD_SET_MCAST_FILTERS,
@@ -395,7 +394,7 @@ kue_reset(struct usbnet *un)
 /*
  * Probe for a KLSI chip.
  */
-int
+static int
 kue_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -410,7 +409,7 @@ kue_match(device_t parent, cfdata_t match, void *aux)
  * Attach the interface. Allocate softc structures, do
  * setup and ethernet/BPF attach.
  */
-void
+static void
 kue_attach(device_t parent, device_t self, void *aux)
 {
 	struct kue_softc *sc = device_private(self);
@@ -495,7 +494,7 @@ kue_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* First level attach, so kue_ctl() works. */
-	usbnet_attach(un, "kuedet");
+	usbnet_attach(un);
 
 	/* Read ethernet descriptor */
 	err = kue_ctl(un, KUE_CTL_READ, KUE_CMD_GET_ETHER_DESCRIPTOR,
@@ -504,7 +503,7 @@ kue_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self, "could not read Ethernet descriptor\n");
 		return;
 	}
-	memcpy(un->un_eaddr, sc->kue_desc.kue_macaddr, sizeof un->un_eaddr);
+	memcpy(un->un_eaddr, sc->kue_desc.kue_macaddr, sizeof(un->un_eaddr));
 
 	sc->kue_mcfilters = kmem_alloc(KUE_MCFILTCNT(sc) * ETHER_ADDR_LEN,
 	    KM_SLEEP);
@@ -513,7 +512,7 @@ kue_attach(device_t parent, device_t self, void *aux)
 	    0, NULL);
 }
 
-int
+static int
 kue_detach(device_t self, int flags)
 {
 	struct kue_softc *sc = device_private(self);
@@ -532,7 +531,7 @@ kue_detach(device_t self, int flags)
  * the higher level protocols.
  */
 static void
-kue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
+kue_uno_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 {
 	struct ifnet		*ifp = usbnet_ifp(un);
 	uint8_t			*buf = c->unc_buf;
@@ -551,7 +550,7 @@ kue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 
 	if (pktlen < ETHER_MIN_LEN - ETHER_CRC_LEN ||
 	    pktlen > MCLBYTES - ETHER_ALIGN) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -561,7 +560,7 @@ kue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 }
 
 static unsigned
-kue_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
+kue_uno_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
 {
 	unsigned		total_len, pkt_len;
 
@@ -592,19 +591,13 @@ kue_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
 }
 
 static int
-kue_init_locked(struct ifnet *ifp)
+kue_uno_init(struct ifnet *ifp)
 {
 	struct usbnet * const	un = ifp->if_softc;
 	struct kue_softc	*sc = usbnet_softc(un);
 	uint8_t			eaddr[ETHER_ADDR_LEN];
 
 	DPRINTFN(5,("%s: %s: enter\n", device_xname(un->un_dev),__func__));
-
-	if (usbnet_isdying(un))
-		return EIO;
-
-	/* Cancel pending I/O */
-	usbnet_stop(un, ifp, 1);
 
 	memcpy(eaddr, CLLADDR(ifp->if_sadl), sizeof(eaddr));
 	/* Set MAC address */
@@ -621,40 +614,6 @@ kue_init_locked(struct ifnet *ifp)
 	kue_setword(un, KUE_CMD_SET_SOFS, 1);
 #endif
 	kue_setword(un, KUE_CMD_SET_URB_SIZE, 64);
-
-	/* Load the multicast filter. */
-	kue_setiff(un);
-
-	return usbnet_init_rx_tx(un);
-}
-
-static int
-kue_init(struct ifnet *ifp)
-{
-	struct usbnet * const	un = ifp->if_softc;
-	int rv;
-
-	usbnet_lock(un);
-	rv = kue_init_locked(ifp);
-	usbnet_unlock(un);
-
-	return rv;
-}
-
-static int
-kue_ioctl_cb(struct ifnet *ifp, u_long cmd, void *data)
-{
-	struct usbnet * const	un = ifp->if_softc;
-
-	switch (cmd) {
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		//kue_init(ifp);
-		kue_setiff(un);
-		break;
-	default:
-		break;
-	}
 
 	return 0;
 }

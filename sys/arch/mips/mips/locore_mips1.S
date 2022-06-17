@@ -1,4 +1,4 @@
-/*	$NetBSD: locore_mips1.S,v 1.93 2017/06/08 05:46:57 skrll Exp $	*/
+/*	$NetBSD: locore_mips1.S,v 1.98 2022/03/13 22:18:56 andvar Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -57,7 +57,7 @@
 #include <mips/asm.h>
 #include <mips/cpuregs.h>
 
-RCSID("$NetBSD: locore_mips1.S,v 1.93 2017/06/08 05:46:57 skrll Exp $")
+RCSID("$NetBSD: locore_mips1.S,v 1.98 2022/03/13 22:18:56 andvar Exp $")
 
 #include "assym.h"
 
@@ -73,6 +73,9 @@ RCSID("$NetBSD: locore_mips1.S,v 1.93 2017/06/08 05:46:57 skrll Exp $")
 #define	_MFC0	mfc0
 #define	_MTC0	mtc0
 
+#if defined(__mips_n32) || defined(__mips_n64)
+#error MIPS1 does not support N32/N64.
+#endif
 
 #define MIPSX(name)	__CONCAT(mips1_,name)
 
@@ -1083,7 +1086,7 @@ END(MIPSX(tlb_mod_exception))
 #endif
 
 /*
- * Mark where code entreed from exception hander jumptable
+ * Mark where code entered from exception handler jumptable
  * ends, for stack traceback code.
  */
 
@@ -1526,7 +1529,7 @@ END(MIPSX(lwp_trampoline))
  * void mipsN_cpu_switch_resume(struct lwp *newlwp)
  *
  * Wiredown the USPACE of newproc with TLB entry#0 and #1.  Check
- * if target USPACE is already refered by any TLB entry before
+ * if target USPACE is already referred by any TLB entry before
  * doing that, and make sure TBIS(them) in the case.
  */
 LEAF_NOPROFILE(MIPSX(cpu_switch_resume))

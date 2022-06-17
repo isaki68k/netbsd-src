@@ -1,4 +1,4 @@
-/* $NetBSD: sun50i_h6_r_ccu.c,v 1.1 2018/05/02 11:02:21 jmcneill Exp $ */
+/* $NetBSD: sun50i_h6_r_ccu.c,v 1.3 2021/11/10 17:38:11 jakllsch Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sun50i_h6_r_ccu.c,v 1.1 2018/05/02 11:02:21 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sun50i_h6_r_ccu.c,v 1.3 2021/11/10 17:38:11 jakllsch Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -49,9 +49,9 @@ __KERNEL_RCSID(1, "$NetBSD: sun50i_h6_r_ccu.c,v 1.1 2018/05/02 11:02:21 jmcneill
 static int sun50i_h6_r_ccu_match(device_t, cfdata_t, void *);
 static void sun50i_h6_r_ccu_attach(device_t, device_t, void *);
 
-static const char * const compatible[] = {
-	"allwinner,sun50i-h6-r-ccu",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun50i-h6-r-ccu" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sunxi_h6_r_ccu, sizeof(struct sunxi_ccu_softc),
@@ -63,6 +63,7 @@ static struct sunxi_ccu_reset sun50i_h6_r_ccu_resets[] = {
 	SUNXI_CCU_RESET(H6_R_RST_APB1_PWM, 0x13c, 16),
 	SUNXI_CCU_RESET(H6_R_RST_APB2_UART, 0x18c, 16),
 	SUNXI_CCU_RESET(H6_R_RST_APB2_I2C, 0x19c, 16),
+	SUNXI_CCU_RESET(H6_R_RST_APB2_RSB, 0x1bc, 16),
 	SUNXI_CCU_RESET(H6_R_RST_APB1_IR, 0x1cc, 16),
 	SUNXI_CCU_RESET(H6_R_RST_APB1_W1, 0x1ec, 16),
 };
@@ -102,6 +103,7 @@ static struct sunxi_ccu_clk sun50i_h6_r_ccu_clks[] = {
 	SUNXI_CCU_GATE(H6_R_CLK_APB1_PWM, "apb1-pwm", "apb1", 0x13c, 0),
 	SUNXI_CCU_GATE(H6_R_CLK_APB2_UART, "apb2-uart", "apb2", 0x18c, 0),
 	SUNXI_CCU_GATE(H6_R_CLK_APB2_I2C, "apb2-i2c", "apb2", 0x19c, 0),
+	SUNXI_CCU_GATE(H6_R_CLK_APB2_RSB, "apb2-rsb", "apb2", 0x1bc, 0),
 	SUNXI_CCU_GATE(H6_R_CLK_APB1_IR, "apb1-ir", "apb1", 0x1cc, 0),
 	SUNXI_CCU_GATE(H6_R_CLK_APB1_W1, "apb1-w1", "apb1", 0x1ec, 0),
 
@@ -127,7 +129,7 @@ sun50i_h6_r_ccu_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

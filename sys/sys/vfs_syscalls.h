@@ -1,4 +1,4 @@
-/*     $NetBSD: vfs_syscalls.h,v 1.26 2019/09/26 01:34:16 christos Exp $        */
+/*     $NetBSD: vfs_syscalls.h,v 1.29 2021/11/07 13:47:49 christos Exp $        */
 
 /*
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -80,9 +80,12 @@ int	do_sys_mkdir(const char *, mode_t, enum uio_seg);
 int	do_sys_symlink(const char *, const char *, enum uio_seg);
 int	do_sys_quotactl(const char *, const struct quotactl_args *);
 void	do_sys_sync(struct lwp *);
+int	do_sys_chdir(struct lwp *, const char *, enum uio_seg, register_t *);
+int	do_sys_fchdir(struct lwp *, int, register_t *);
+int	vfs_syncwait(void);
 
 int	chdir_lookup(const char *, int, struct vnode **, struct lwp *);
-void	change_root(struct cwdinfo *, struct vnode *, struct lwp *);
+void	change_root(struct vnode *);
 
 extern const char *const mountcompatnames[];
 extern const u_int nmountcompatnames;

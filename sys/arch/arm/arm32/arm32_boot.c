@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.33 2019/03/16 10:05:40 skrll Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.44 2021/10/31 16:23:47 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.33 2019/03/16 10:05:40 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.44 2021/10/31 16:23:47 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
@@ -131,11 +131,13 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.33 2019/03/16 10:05:40 skrll Exp $"
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/reboot.h>
-#include <sys/cpu.h>
-#include <sys/intr.h>
+
+#include <sys/asan.h>
 #include <sys/atomic.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/intr.h>
+#include <sys/reboot.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -156,10 +158,6 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.33 2019/03/16 10:05:40 skrll Exp $"
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
 #define VPRINTF(...)	__nothing
-#endif
-
-#ifdef MULTIPROCESSOR
-static kmutex_t cpu_hatch_lock;
 #endif
 
 vaddr_t
@@ -193,10 +191,9 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	memset(tf, 0, sizeof(*tf));
 	lwp_settrapframe(l, tf);
 
-#if defined(__ARMEB__)
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
  	tf->tf_spsr = PSR_USR32_MODE;
+#ifdef _ARM_ARCH_BE8
+	tf->tf_spsr |= PSR_E_BIT;
 #endif
 
 	VPRINTF("bootstrap done.\n");
@@ -241,6 +238,12 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	VPRINTF("undefined ");
 	undefined_init();
 
+#ifdef FPU_VFP
+	/* vfp_detect uses an undefined handler */
+	VPRINTF("vfp ");
+	vfp_detect(curcpu());
+#endif
+
 	/* Load memory into UVM. */
 	VPRINTF("page ");
 	uvm_md_init();
@@ -264,15 +267,21 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 			continue;
 		}
 		VPRINTF("\n");
+
+		/*
+		 * This assumes the bp list is sorted in ascending
+		 * order.
+		 */
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+		for (size_t j = 0; j < nbp && start < end; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
 			VPRINTF("   bp %2zu start %08lx  end %08lx\n",
 			    j, ptoa(bp_start), ptoa(bp_end));
+
 			KASSERT(bp_start < bp_end);
-			if (start > bp_end || segend < bp_start)
+			if (start >= bp_end || segend < bp_start)
 				continue;
 
 			if (start < bp_start)
@@ -284,20 +293,27 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 				}
 				vm_freelist = bp[j].bp_freelist;
 
-				uvm_page_physload(start, segend, start, segend,
-				    vm_freelist);
 				VPRINTF("         start %08lx  end %08lx"
 				    "... loading in freelist %d\n", ptoa(start),
 				    ptoa(segend), vm_freelist);
+
+				uvm_page_physload(start, segend, start, segend,
+				    vm_freelist);
+
 				start = segend;
 				segend = end;
 			}
 		}
 	}
 
-	/* Boot strap pmap telling it where the managed kernel virtual memory is */
+	/*
+	 * Bootstrap pmap telling it where the managed kernel virtual memory
+	 * is.
+	 */
 	VPRINTF("pmap ");
 	pmap_bootstrap(kvm_base, kvm_base + kvm_size);
+
+	kasan_init();
 
 #ifdef __HAVE_MEMORY_DISK__
 	md_root_setconf(memory_disk, sizeof memory_disk);
@@ -323,8 +339,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 #endif
 
 #ifdef MULTIPROCESSOR
-	mutex_init(&cpu_hatch_lock, MUTEX_DEFAULT, IPL_NONE);
-
 	/*
 	 * Ensure BP cache is flushed to memory so that APs start cache
 	 * coherency with correct view.
@@ -354,21 +368,7 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 	splhigh();
 
 	VPRINTF("%s(%s): ", __func__, cpu_name(ci));
-	ci->ci_ctrl = armreg_sctlr_read();
-	uint32_t mpidr = armreg_mpidr_read();
-	ci->ci_mpidr = mpidr;
-	if (mpidr & MPIDR_MT) {
-		ci->ci_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
-	} else {
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-	}
-
-	ci->ci_arm_cpuid = cpu_idnum();
-	ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
-	ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
+	/* mpidr/midr filled in by cpu_init_secondary_processor */
 
 	/*
 	 * Make sure we have the right vector page.
@@ -411,16 +411,6 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 	}
 #endif
 
-	mutex_enter(&cpu_hatch_lock);
-
-	aprint_naive("%s", device_xname(ci->ci_dev));
-	aprint_normal("%s", device_xname(ci->ci_dev));
-	identify_arm_cpu(ci->ci_dev, ci);
-	VPRINTF(" vfp");
-	vfp_attach(ci);
-
-	mutex_exit(&cpu_hatch_lock);
-
 	VPRINTF(" md(%p)", md_cpu_init);
 	if (md_cpu_init != NULL)
 		(*md_cpu_init)(ci);
@@ -432,10 +422,6 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 	intr_cpu_init(ci);
 
 	VPRINTF(" done!\n");
-
-	/* Notify cpu_boot_secondary_processors that we're done */
-	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuindex));
-	membar_producer();
-	__asm __volatile("sev; sev; sev");
+	cpu_clr_mbox(cpuindex);
 }
 #endif /* MULTIPROCESSOR */

@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $	*/
+/*	$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -121,6 +121,8 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $");
 #include <sys/intr.h>
 #include <sys/module_hook.h>
 #include <sys/compat_stub.h>
+#include <sys/msan.h>
+#include <sys/hook.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -148,8 +150,6 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $");
 #endif
 
 #include "ether.h"
-#include "fddi.h"
-#include "token.h"
 
 #include "bridge.h"
 #if NBRIDGE > 0
@@ -167,6 +167,20 @@ MALLOC_DEFINE(M_IFADDR, "ifaddr", "interface address");
 MALLOC_DEFINE(M_IFMADDR, "ether_multi", "link-level multicast address");
 
 /*
+ * XXX reusing (ifp)->if_snd->ifq_lock rather than having another spin mutex
+ * for each ifnet.  It doesn't matter because:
+ * - if IFEF_MPSAFE is enabled, if_snd isn't used and lock contentions on
+ *   ifq_lock don't happen
+ * - if IFEF_MPSAFE is disabled, there is no lock contention on ifq_lock
+ *   because if_snd, if_link_state_change and if_link_state_change_process
+ *   are all called with KERNEL_LOCK
+ */
+#define IF_LINK_STATE_CHANGE_LOCK(ifp)		\
+	mutex_enter((ifp)->if_snd.ifq_lock)
+#define IF_LINK_STATE_CHANGE_UNLOCK(ifp)	\
+	mutex_exit((ifp)->if_snd.ifq_lock)
+
+/*
  * Global list of interfaces.
  */
 /* DEPRECATED. Remove it once kvm(3) users disappeared */
@@ -181,6 +195,7 @@ static uint64_t			index_gen;
 kmutex_t			ifnet_mtx __cacheline_aligned;
 static struct psref_class	*ifnet_psref_class __read_mostly;
 static pserialize_t		ifnet_psz;
+static struct workqueue		*ifnet_link_state_wq __read_mostly;
 
 static kmutex_t			if_clone_mtx;
 
@@ -212,7 +227,7 @@ static int ifconf(u_long, void *);
 static int if_transmit(struct ifnet *, struct mbuf *);
 static int if_clone_create(const char *);
 static int if_clone_destroy(const char *);
-static void if_link_state_change_si(void *);
+static void if_link_state_change_work(struct work *, void *);
 static void if_up_locked(struct ifnet *);
 static void _if_down(struct ifnet *);
 static void if_down_deactivated(struct ifnet *);
@@ -259,7 +274,7 @@ if_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	enum kauth_network_req req;
 
 	result = KAUTH_RESULT_DEFER;
-	req = (enum kauth_network_req)arg1;
+	req = (enum kauth_network_req)(uintptr_t)arg1;
 
 	if (action != KAUTH_NETWORK_INTERFACE)
 		return result;
@@ -299,6 +314,7 @@ ifinit(void)
 void
 ifinit1(void)
 {
+	int error __diagused;
 
 #ifdef NET_MPSAFE
 	printf("NET_MPSAFE enabled\n");
@@ -311,6 +327,10 @@ ifinit1(void)
 	ifnet_psz = pserialize_create();
 	ifnet_psref_class = psref_class_create("ifnet", IPL_SOFTNET);
 	ifa_psref_class = psref_class_create("ifa", IPL_SOFTNET);
+	error = workqueue_create(&ifnet_link_state_wq, "iflnkst",
+	    if_link_state_change_work, NULL, PRI_SOFTNET, IPL_NET,
+	    WQ_MPSAFE);
+	KASSERT(error == 0);
 	PSLIST_INIT(&ifnet_pslist);
 
 	if_indexlim = 8;
@@ -318,7 +338,7 @@ ifinit1(void)
 	if_pfil = pfil_head_create(PFIL_TYPE_IFNET, NULL);
 	KASSERT(if_pfil != NULL);
 
-#if NETHER > 0 || NFDDI > 0 || defined(NETATALK) || NTOKEN > 0 || defined(WLAN)
+#if NETHER > 0 || defined(NETATALK) || defined(WLAN)
 	etherinit();
 #endif
 }
@@ -607,8 +627,13 @@ static void
 if_getindex(ifnet_t *ifp)
 {
 	bool hitlimit = false;
+	char xnamebuf[HOOKNAMSIZ];
 
 	ifp->if_index_gen = index_gen++;
+	snprintf(xnamebuf, sizeof(xnamebuf),
+	    "%s-lshk", ifp->if_xname);
+	ifp->if_linkstate_hooks = simplehook_create(IPL_NET,
+	    xnamebuf);
 
 	ifp->if_index = if_index;
 	if (ifindex2ifnet == NULL) {
@@ -678,10 +703,9 @@ skip:
  *     ether_ifattach(ifp, enaddr);
  *     if_register(ifp);
  */
-int
+void
 if_initialize(ifnet_t *ifp)
 {
-	int rv = 0;
 
 	KASSERT(if_indexlim > 0);
 	TAILQ_INIT(&ifp->if_addrlist);
@@ -698,6 +722,7 @@ if_initialize(ifnet_t *ifp)
 
 	ifp->if_link_state = LINK_STATE_UNKNOWN;
 	ifp->if_link_queue = -1; /* all bits set, see link_state_change() */
+	ifp->if_link_scheduled = false;
 
 	ifp->if_capenable = 0;
 	ifp->if_csum_flags_tx = 0;
@@ -718,38 +743,16 @@ if_initialize(ifnet_t *ifp)
 
 	IF_AFDATA_LOCK_INIT(ifp);
 
-	if (if_is_link_state_changeable(ifp)) {
-		u_int flags = SOFTINT_NET;
-		flags |= if_is_mpsafe(ifp) ? SOFTINT_MPSAFE : 0;
-		ifp->if_link_si = softint_establish(flags,
-		    if_link_state_change_si, ifp);
-		if (ifp->if_link_si == NULL) {
-			rv = ENOMEM;
-			goto fail;
-		}
-	}
-
 	PSLIST_ENTRY_INIT(ifp, if_pslist_entry);
 	PSLIST_INIT(&ifp->if_addr_pslist);
 	psref_target_init(&ifp->if_psref, ifnet_psref_class);
 	ifp->if_ioctl_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 	LIST_INIT(&ifp->if_multiaddrs);
+	if_stats_init(ifp);
 
 	IFNET_GLOBAL_LOCK();
 	if_getindex(ifp);
 	IFNET_GLOBAL_UNLOCK();
-
-	return 0;
-
-fail:
-	IF_AFDATA_LOCK_DESTROY(ifp);
-
-	pfil_run_ifhooks(if_pfil, PFIL_IFNET_DETACH, ifp);
-	(void)pfil_head_destroy(ifp->if_pfil);
-
-	IFQ_LOCK_DESTROY(&ifp->if_snd);
-
-	return rv;
 }
 
 /*
@@ -759,11 +762,13 @@ void
 if_register(ifnet_t *ifp)
 {
 	/*
-	 * If the driver has not supplied its own if_ioctl, then
-	 * supply the default.
+	 * If the driver has not supplied its own if_ioctl or if_stop,
+	 * then supply the default.
 	 */
 	if (ifp->if_ioctl == NULL)
 		ifp->if_ioctl = ifioctl_common;
+	if (ifp->if_stop == NULL)
+		ifp->if_stop = if_nullstop;
 
 	sysctl_sndq_setup(&ifp->if_sysctl_log, ifp->if_xname, &ifp->if_snd);
 
@@ -817,7 +822,7 @@ if_percpuq_softint(void *arg)
 	struct mbuf *m;
 
 	while ((m = if_percpuq_dequeue(ipq)) != NULL) {
-		ifp->if_ipackets++;
+		if_statinc(ifp, if_ipackets);
 		bpf_mtap(ifp, m, BPF_D_IN);
 
 		ifp->_if_input(ifp, m);
@@ -1111,7 +1116,7 @@ if_input(struct ifnet *ifp, struct mbuf *m)
 	KASSERT(ifp->if_percpuq == NULL);
 	KASSERT(!cpu_intr_p());
 
-	ifp->if_ipackets++;
+	if_statinc(ifp, if_ipackets);
 	bpf_mtap(ifp, m, BPF_D_IN);
 
 	ifp->_if_input(ifp, m);
@@ -1125,19 +1130,13 @@ if_input(struct ifnet *ifp, struct mbuf *m)
  * migrate softint-based if_input without much changes. If you don't
  * want to enable it, use if_initialize instead.
  */
-int
+void
 if_attach(ifnet_t *ifp)
 {
-	int rv;
 
-	rv = if_initialize(ifp);
-	if (rv != 0)
-		return rv;
-
+	if_initialize(ifp);
 	ifp->if_percpuq = if_percpuq_create(ifp);
 	if_register(ifp);
-
-	return 0;
 }
 
 void
@@ -1320,7 +1319,22 @@ if_detach(struct ifnet *ifp)
 	s = splnet();
 
 	sysctl_teardown(&ifp->if_sysctl_log);
+
 	IFNET_LOCK(ifp);
+
+	/*
+	 * Unset all queued link states and pretend a
+	 * link state change is scheduled.
+	 * This stops any more link state changes occurring for this
+	 * interface while it's being detached so it's safe
+	 * to drain the workqueue.
+	 */
+	IF_LINK_STATE_CHANGE_LOCK(ifp);
+	ifp->if_link_queue = -1; /* all bits set, see link_state_change() */
+	ifp->if_link_scheduled = true;
+	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+	workqueue_wait(ifnet_link_state_wq, &ifp->if_link_work);
+
 	if_deactivate(ifp);
 	IFNET_UNLOCK(ifp);
 
@@ -1482,11 +1496,6 @@ restart:
 
 	IF_AFDATA_LOCK_DESTROY(ifp);
 
-	if (if_is_link_state_changeable(ifp)) {
-		softint_disestablish(ifp->if_link_si);
-		ifp->if_link_si = NULL;
-	}
-
 	/*
 	 * remove packets that came from ifp, from software interrupt queues.
 	 */
@@ -1522,6 +1531,9 @@ restart:
 	mutex_obj_free(ifp->if_ioctl_lock);
 	ifp->if_ioctl_lock = NULL;
 	mutex_obj_free(ifp->if_snd.ifq_lock);
+	if_stats_fini(ifp);
+	KASSERT(!simplehook_has_hooks(ifp->if_linkstate_hooks));
+	simplehook_destroy(ifp->if_linkstate_hooks);
 
 	splx(s);
 
@@ -1610,7 +1622,7 @@ if_clone_destroy(const char *name)
 	struct ifnet *ifp;
 	struct psref psref;
 	int error;
-	int (*if_ioctl)(struct ifnet *, u_long, void *);
+	int (*if_ioctlfn)(struct ifnet *, u_long, void *);
 
 	KASSERT(mutex_owned(&if_clone_mtx));
 
@@ -1627,7 +1639,7 @@ if_clone_destroy(const char *name)
 
 	/* We have to disable ioctls here */
 	IFNET_LOCK(ifp);
-	if_ioctl = ifp->if_ioctl;
+	if_ioctlfn = ifp->if_ioctl;
 	ifp->if_ioctl = if_nullioctl;
 	IFNET_UNLOCK(ifp);
 
@@ -1642,7 +1654,7 @@ if_clone_destroy(const char *name)
 	if (error != 0) {
 		/* We have to restore if_ioctl on error */
 		IFNET_LOCK(ifp);
-		ifp->if_ioctl = if_ioctl;
+		ifp->if_ioctl = if_ioctlfn;
 		IFNET_UNLOCK(ifp);
 	}
 
@@ -1807,9 +1819,15 @@ ifafree(struct ifaddr *ifa)
 	KASSERT(ifa != NULL);
 	KASSERTMSG(ifa->ifa_refcnt > 0, "ifa_refcnt=%d", ifa->ifa_refcnt);
 
-	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) == 0) {
-		free(ifa, M_IFADDR);
-	}
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_release();
+#endif
+	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) != 0)
+		return;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_acquire();
+#endif
+	free(ifa, M_IFADDR);
 }
 
 bool
@@ -2072,7 +2090,7 @@ ifa_ifwithnet_psref(const struct sockaddr *addr, struct psref *psref)
 }
 
 /*
- * Find the interface of the addresss.
+ * Find the interface of the address.
  */
 struct ifaddr *
 ifa_ifwithladdr(const struct sockaddr *addr)
@@ -2197,10 +2215,10 @@ link_rtrequest(int cmd, struct rtentry *rt, const struct rt_addrinfo *info)
 	struct ifnet *ifp;
 	struct psref psref;
 
-	if (cmd != RTM_ADD || (ifa = rt->rt_ifa) == NULL ||
-	    (ifp = ifa->ifa_ifp) == NULL || (dst = rt_getkey(rt)) == NULL ||
-	    ISSET(info->rti_flags, RTF_DONTCHANGEIFA))
+	if (cmd != RTM_ADD || ISSET(info->rti_flags, RTF_DONTCHANGEIFA))
 		return;
+	ifp = rt->rt_ifa->ifa_ifp;
+	dst = rt_getkey(rt);
 	if ((ifa = ifaof_ifpforaddr_psref(dst, ifp, &psref)) != NULL) {
 		rt_replace_ifa(rt, ifa);
 		if (ifa->ifa_rtrequest && ifa->ifa_rtrequest != link_rtrequest)
@@ -2244,20 +2262,6 @@ link_rtrequest(int cmd, struct rtentry *rt, const struct rt_addrinfo *info)
 	}
 
 /*
- * XXX reusing (ifp)->if_snd->ifq_lock rather than having another spin mutex
- * for each ifnet.  It doesn't matter because:
- * - if IFEF_MPSAFE is enabled, if_snd isn't used and lock contentions on
- *   ifq_lock don't happen
- * - if IFEF_MPSAFE is disabled, there is no lock contention on ifq_lock
- *   because if_snd, if_link_state_change and if_link_state_change_softint
- *   are all called with KERNEL_LOCK
- */
-#define IF_LINK_STATE_CHANGE_LOCK(ifp)		\
-	mutex_enter((ifp)->if_snd.ifq_lock)
-#define IF_LINK_STATE_CHANGE_UNLOCK(ifp)	\
-	mutex_exit((ifp)->if_snd.ifq_lock)
-
-/*
  * Handle a change in the interface link state and
  * queue notifications.
  */
@@ -2265,10 +2269,6 @@ void
 if_link_state_change(struct ifnet *ifp, int link_state)
 {
 	int idx;
-
-	KASSERTMSG(if_is_link_state_changeable(ifp),
-	    "%s: IFEF_NO_LINK_STATE_CHANGE must not be set, but if_extflags=0x%x",
-	    ifp->if_xname, ifp->if_extflags);
 
 	/* Ensure change is to a valid state */
 	switch (link_state) {
@@ -2289,14 +2289,22 @@ if_link_state_change(struct ifnet *ifp, int link_state)
 	/* Find the last unset event in the queue. */
 	LQ_FIND_UNSET(ifp->if_link_queue, idx);
 
-	/*
-	 * Ensure link_state doesn't match the last event in the queue.
-	 * ifp->if_link_state is not checked and set here because
-	 * that would present an inconsistent picture to the system.
-	 */
-	if (idx != 0 &&
-	    LQ_ITEM(ifp->if_link_queue, idx - 1) == (uint8_t)link_state)
-		goto out;
+	if (idx == 0) {
+		/*
+		 * There is no queue of link state changes.
+		 * As we have the lock we can safely compare against the
+		 * current link state and return if the same.
+		 * Otherwise, if scheduled is true then the interface is being
+		 * detached and the queue is being drained so we need
+		 * to avoid queuing more work.
+		 */
+		 if (ifp->if_link_state == link_state || ifp->if_link_scheduled)
+			goto out;
+	} else {
+		/* Ensure link_state doesn't match the last queued state. */
+		if (LQ_ITEM(ifp->if_link_queue, idx - 1) == (uint8_t)link_state)
+			goto out;
+	}
 
 	/* Handle queue overflow. */
 	if (idx == LQ_MAX(ifp->if_link_queue)) {
@@ -2325,7 +2333,11 @@ if_link_state_change(struct ifnet *ifp, int link_state)
 	} else
 		LQ_STORE(ifp->if_link_queue, idx, (uint8_t)link_state);
 
-	softint_schedule(ifp->if_link_si);
+	if (ifp->if_link_scheduled)
+		goto out;
+
+	ifp->if_link_scheduled = true;
+	workqueue_enqueue(ifnet_link_state_wq, &ifp->if_link_work, NULL);
 
 out:
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
@@ -2334,8 +2346,8 @@ out:
 /*
  * Handle interface link state change notifications.
  */
-void
-if_link_state_change_softint(struct ifnet *ifp, int link_state)
+static void
+if_link_state_change_process(struct ifnet *ifp, int link_state)
 {
 	struct domain *dp;
 	int s = splnet();
@@ -2389,10 +2401,7 @@ if_link_state_change_softint(struct ifnet *ifp, int link_state)
 	/* Notify that the link state has changed. */
 	rt_ifmsg(ifp);
 
-#if NCARP > 0
-	if (ifp->if_carp)
-		carp_carpdev_state(ifp);
-#endif
+	simplehook_dohooks(ifp->if_linkstate_hooks);
 
 	DOMAIN_FOREACH(dp) {
 		if (dp->dom_if_link_state_change != NULL)
@@ -2406,32 +2415,78 @@ if_link_state_change_softint(struct ifnet *ifp, int link_state)
  * Process the interface link state change queue.
  */
 static void
-if_link_state_change_si(void *arg)
+if_link_state_change_work(struct work *work, void *arg)
 {
-	struct ifnet *ifp = arg;
+	struct ifnet *ifp = container_of(work, struct ifnet, if_link_work);
 	int s;
 	uint8_t state;
-	bool schedule;
 
-	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	s = splnet();
 
-	/* Pop a link state change from the queue and process it. */
+	/* Pop a link state change from the queue and process it.
+	 * If there is nothing to process then if_detach() has been called.
+	 * We keep if_link_scheduled = true so the queue can safely drain
+	 * without more work being queued. */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
 	LQ_POP(ifp->if_link_queue, state);
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+	if (state == LINK_STATE_UNSET)
+		goto out;
 
-	if_link_state_change_softint(ifp, state);
+	if_link_state_change_process(ifp, state);
 
 	/* If there is a link state change to come, schedule it. */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
-	schedule = (LQ_ITEM(ifp->if_link_queue, 0) != LINK_STATE_UNSET);
+	if (LQ_ITEM(ifp->if_link_queue, 0) != LINK_STATE_UNSET) {
+		ifp->if_link_scheduled = true;
+		workqueue_enqueue(ifnet_link_state_wq, &ifp->if_link_work, NULL);
+	} else
+		ifp->if_link_scheduled = false;
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
-	if (schedule)
-		softint_schedule(ifp->if_link_si);
+
+out:
+	splx(s);
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+}
+
+void *
+if_linkstate_change_establish(struct ifnet *ifp, void (*fn)(void *), void *arg)
+{
+	khook_t *hk;
+
+	hk = simplehook_establish(ifp->if_linkstate_hooks, fn, arg);
+
+	return (void *)hk;
+}
+
+void
+if_linkstate_change_disestablish(struct ifnet *ifp, void *vhook, kmutex_t *lock)
+{
+
+	simplehook_disestablish(ifp->if_linkstate_hooks, vhook, lock);
+}
+
+/*
+ * Used to mark addresses on an interface as DETATCHED or TENTATIVE
+ * and thus start Duplicate Address Detection without changing the
+ * real link state.
+ */
+void
+if_domain_link_state_change(struct ifnet *ifp, int link_state)
+{
+	struct domain *dp;
+	int s = splnet();
+
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
+
+	DOMAIN_FOREACH(dp) {
+		if (dp->dom_if_link_state_change != NULL)
+			dp->dom_if_link_state_change(ifp, link_state);
+	}
 
 	splx(s);
-	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 /*
@@ -2679,6 +2734,73 @@ ifpromisc(struct ifnet *ifp, int pswitch)
 }
 
 /*
+ * if_ioctl(ifp, cmd, data)
+ *
+ *	Apply an ioctl command to the interface.  Returns 0 on success,
+ *	nonzero errno(3) number on failure.
+ *
+ *	For SIOCADDMULTI/SIOCDELMULTI, caller need not hold locks -- it
+ *	is the driver's responsibility to take any internal locks.
+ *	(Kernel logic should generally invoke these only through
+ *	if_mcast_op.)
+ *
+ *	For all other ioctls, caller must hold ifp->if_ioctl_lock,
+ *	a.k.a. IFNET_LOCK.  May sleep.
+ */
+int
+if_ioctl(struct ifnet *ifp, u_long cmd, void *data)
+{
+
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+	}
+
+	return (*ifp->if_ioctl)(ifp, cmd, data);
+}
+
+/*
+ * if_init(ifp)
+ *
+ *	Prepare the hardware underlying ifp to process packets
+ *	according to its current configuration.  Returns 0 on success,
+ *	nonzero errno(3) number on failure.
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
+int
+if_init(struct ifnet *ifp)
+{
+
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
+	return (*ifp->if_init)(ifp);
+}
+
+/*
+ * if_stop(ifp, disable)
+ *
+ *	Stop the hardware underlying ifp from processing packets.
+ *
+ *	If disable is true, ... XXX(?)
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
+void
+if_stop(struct ifnet *ifp, int disable)
+{
+
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
+	(*ifp->if_stop)(ifp, disable);
+}
+
+/*
  * Map interface name to
  * interface structure pointer.
  */
@@ -2913,17 +3035,6 @@ if_tunnel_ro_init_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 	tro->tr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 }
 
-percpu_t *
-if_tunnel_alloc_ro_percpu(void)
-{
-	percpu_t *ro_percpu;
-
-	ro_percpu = percpu_alloc(sizeof(struct tunnel_ro));
-	percpu_foreach(ro_percpu, if_tunnel_ro_init_pc, NULL);
-
-	return ro_percpu;
-}
-
 static void
 if_tunnel_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 {
@@ -2935,11 +3046,18 @@ if_tunnel_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 	mutex_obj_free(tro->tr_lock);
 }
 
+percpu_t *
+if_tunnel_alloc_ro_percpu(void)
+{
+
+	return percpu_create(sizeof(struct tunnel_ro),
+	    if_tunnel_ro_init_pc, if_tunnel_ro_fini_pc, NULL);
+}
+
 void
 if_tunnel_free_ro_percpu(percpu_t *ro_percpu)
 {
 
-	percpu_foreach(ro_percpu, if_tunnel_ro_fini_pc, NULL);
 	percpu_free(ro_percpu, sizeof(struct tunnel_ro));
 }
 
@@ -2960,6 +3078,22 @@ void if_tunnel_ro_percpu_rtcache_free(percpu_t *ro_percpu)
 	percpu_foreach(ro_percpu, if_tunnel_rtcache_free_pc, NULL);
 }
 
+void
+if_export_if_data(ifnet_t * const ifp, struct if_data *ifi, bool zero_stats)
+{
+
+	/* Collet the volatile stats first; this zeros *ifi. */
+	if_stats_to_if_data(ifp, ifi, zero_stats);
+
+	ifi->ifi_type = ifp->if_type;
+	ifi->ifi_addrlen = ifp->if_addrlen;
+	ifi->ifi_hdrlen = ifp->if_hdrlen;
+	ifi->ifi_link_state = ifp->if_link_state;
+	ifi->ifi_mtu = ifp->if_mtu;
+	ifi->ifi_metric = ifp->if_metric;
+	ifi->ifi_baudrate = ifp->if_baudrate;
+	ifi->ifi_lastchange = ifp->if_lastchange;
+}
 
 /* common */
 int
@@ -2970,6 +3104,8 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 	struct ifcapreq *ifcr;
 	struct ifdatareq *ifdr;
 	unsigned short flags;
+	char *descr;
+	int error;
 
 	switch (cmd) {
 	case SIOCSIFCAP:
@@ -3082,7 +3218,7 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 
 	case SIOCGIFDATA:
 		ifdr = data;
-		ifdr->ifdr_data = ifp->if_data;
+		if_export_if_data(ifp, &ifdr->ifdr_data, false);
 		break;
 
 	case SIOCGIFINDEX:
@@ -3092,20 +3228,7 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 
 	case SIOCZIFDATA:
 		ifdr = data;
-		ifdr->ifdr_data = ifp->if_data;
-		/*
-		 * Assumes that the volatile counters that can be
-		 * zero'ed are at the end of if_data.
-		 */
-		memset(&ifp->if_data.ifi_ipackets, 0, sizeof(ifp->if_data) -
-		    offsetof(struct if_data, ifi_ipackets));
-		/*
-		 * The memset() clears to the bottm of if_data. In the area,
-		 * if_lastchange is included. Please be careful if new entry
-		 * will be added into if_data or rewite this.
-		 *
-		 * And also, update if_lastchnage.
-		 */
+		if_export_if_data(ifp, &ifdr->ifdr_data, true);
 		getnanotime(&ifp->if_lastchange);
 		break;
 	case SIOCSIFMTU:
@@ -3113,66 +3236,55 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		if (ifp->if_mtu == ifr->ifr_mtu)
 			break;
 		ifp->if_mtu = ifr->ifr_mtu;
-		/*
-		 * If the link MTU changed, do network layer specific procedure.
-		 */
-#ifdef INET6
-		KERNEL_LOCK_UNLESS_NET_MPSAFE();
-		if (in6_present)
-			nd6_setmtu(ifp);
-		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
-#endif
 		return ENETRESET;
 	case SIOCSIFDESCR:
-		{
-			char *descrbuf;
+		error = kauth_authorize_network(kauth_cred_get(),
+		    KAUTH_NETWORK_INTERFACE,
+		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
+		    NULL);
+		if (error)
+			return error;
 
- 			ifr = data;
+		ifr = data;
 
- 			if (ifr->ifr_buflen > IFDESCRSIZE)
-				return ENAMETOOLONG;
+		if (ifr->ifr_buflen > IFDESCRSIZE)
+			return ENAMETOOLONG;
 
- 			if (ifr->ifr_buf == NULL || ifr->ifr_buflen == 0) {
-				/* unset description */
-				descrbuf = NULL;
-			} else {
-				int error;
-
- 				descrbuf = kmem_zalloc(IFDESCRSIZE, KM_SLEEP);
-				/* copy (IFDESCRSIZE - 1) bytes to ensure terminating nul */
-				error = copyin(ifr->ifr_buf, descrbuf, IFDESCRSIZE - 1);
-				if (error) {
-					kmem_free(descrbuf, IFDESCRSIZE);
-					return error;
-				}
+		if (ifr->ifr_buf == NULL || ifr->ifr_buflen == 0) {
+			/* unset description */
+			descr = NULL;
+		} else {
+			descr = kmem_zalloc(IFDESCRSIZE, KM_SLEEP);
+			/*
+			 * copy (IFDESCRSIZE - 1) bytes to ensure
+			 * terminating nul
+			 */
+			error = copyin(ifr->ifr_buf, descr, IFDESCRSIZE - 1);
+			if (error) {
+				kmem_free(descr, IFDESCRSIZE);
+				return error;
 			}
-
- 			if (ifp->if_description != NULL)
-				kmem_free(ifp->if_description, IFDESCRSIZE);
-
- 			ifp->if_description = descrbuf;
 		}
+
+		if (ifp->if_description != NULL)
+			kmem_free(ifp->if_description, IFDESCRSIZE);
+
+		ifp->if_description = descr;
 		break;
 
  	case SIOCGIFDESCR:
-		{
-			char *descr;
+		ifr = data;
+		descr = ifp->if_description;
 
- 			ifr = data;
-			descr = ifp->if_description;
+		if (descr == NULL)
+			return ENOMSG;
 
- 			if (descr == NULL)
-				return ENOMSG;
+		if (ifr->ifr_buflen < IFDESCRSIZE)
+			return EINVAL;
 
- 			if (ifr->ifr_buflen < IFDESCRSIZE)
-				return EINVAL;
-			else {
-				int error;
-				error = copyout(descr, ifr->ifr_buf, IFDESCRSIZE);
-				if (error)
-					return error;
-			}
-		}
+		error = copyout(descr, ifr->ifr_buf, IFDESCRSIZE);
+		if (error)
+			return error;
  		break;
 
 	default:
@@ -3195,10 +3307,13 @@ ifaddrpref_ioctl(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 
 	switch (cmd) {
 	case SIOCSIFADDRPREF:
-		if (kauth_authorize_network(curlwp->l_cred, KAUTH_NETWORK_INTERFACE,
-		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, (void *)cmd,
-		    NULL) != 0)
-			return EPERM;
+		error = kauth_authorize_network(kauth_cred_get(),
+		    KAUTH_NETWORK_INTERFACE,
+		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
+		    NULL);
+		if (error)
+			return error;
+		break;
 	case SIOCGIFADDRPREF:
 		break;
 	default:
@@ -3309,7 +3424,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 			error = kauth_authorize_network(l->l_cred,
 			    KAUTH_NETWORK_INTERFACE,
 			    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp,
-			    (void *)cmd, NULL);
+			    KAUTH_ARG(cmd), NULL);
 			if (ifp != NULL)
 				if_put(ifp, &psref);
 			if (error != 0) {
@@ -3374,7 +3489,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 			error = kauth_authorize_network(l->l_cred,
 			    KAUTH_NETWORK_INTERFACE,
 			    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp,
-			    (void *)cmd, NULL);
+			    KAUTH_ARG(cmd), NULL);
 			if (error != 0)
 				goto out;
 		}
@@ -3385,7 +3500,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 	KERNEL_LOCK_UNLESS_IFP_MPSAFE(ifp);
 	IFNET_LOCK(ifp);
 
-	error = (*ifp->if_ioctl)(ifp, cmd, data);
+	error = if_ioctl(ifp, cmd, data);
 	if (error != ENOTTY)
 		;
 	else if (so->so_proto == NULL)
@@ -3466,11 +3581,14 @@ ifconf(u_long cmd, void *data)
 	int bound;
 	struct psref psref;
 
-	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
+		if (ifc->ifc_len < 0)
+			return EINVAL;
+
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
 	}
+	memset(&ifr, 0, sizeof(ifr));
 
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
@@ -3593,9 +3711,11 @@ if_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto out;
 	}
 
-	ifp->if_obytes += pktlen;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_obytes, pktlen);
 	if (mcast)
-		ifp->if_omcasts++;
+		if_statinc_ref(nsr, if_omcasts);
+	IF_STAT_PUTREF(ifp);
 
 	if ((ifp->if_flags & IFF_OACTIVE) == 0)
 		if_start_lock(ifp);
@@ -3609,6 +3729,8 @@ int
 if_transmit_lock(struct ifnet *ifp, struct mbuf *m)
 {
 	int error;
+
+	kmsan_check_mbuf(m);
 
 #ifdef ALTQ
 	KERNEL_LOCK(1, NULL);
@@ -3662,7 +3784,7 @@ ifq_enqueue2(struct ifnet *ifp, struct ifqueue *ifq, struct mbuf *m)
 	} else
 		IFQ_ENQUEUE(&ifp->if_snd, m, error);
 	if (error != 0) {
-		++ifp->if_oerrors;
+		if_statinc(ifp, if_oerrors);
 		return error;
 	}
 	return 0;
@@ -3677,8 +3799,8 @@ if_addr_init(ifnet_t *ifp, struct ifaddr *ifa, const bool src)
 	if (ifp->if_initaddr != NULL)
 		rc = (*ifp->if_initaddr)(ifp, ifa, src);
 	else if (src ||
-	         (rc = (*ifp->if_ioctl)(ifp, SIOCSIFDSTADDR, ifa)) == ENOTTY)
-		rc = (*ifp->if_ioctl)(ifp, SIOCINITIFADDR, ifa);
+	         (rc = if_ioctl(ifp, SIOCSIFDSTADDR, ifa)) == ENOTTY)
+		rc = if_ioctl(ifp, SIOCINITIFADDR, ifa);
 
 	return rc;
 }
@@ -3702,7 +3824,7 @@ if_do_dad(struct ifnet *ifp)
 		/*
 		 * Our DAD routine requires the interface up and running.
 		 * However, some interfaces can be up before the RUNNING
-		 * status.  Additionaly, users may try to assign addresses
+		 * status.  Additionally, users may try to assign addresses
 		 * before the interface becomes up (or running).
 		 * We simply skip DAD in such a case as a work around.
 		 * XXX: we should rather mark "tentative" on such addresses,
@@ -3716,6 +3838,15 @@ if_do_dad(struct ifnet *ifp)
 	}
 }
 
+/*
+ * if_flags_set(ifp, flags)
+ *
+ *	Ask ifp to change ifp->if_flags to flags, as if with the
+ *	SIOCSIFFLAGS ioctl command.
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
 int
 if_flags_set(ifnet_t *ifp, const u_short flags)
 {
@@ -3745,7 +3876,7 @@ if_flags_set(ifnet_t *ifp, const u_short flags)
 		memset(&ifr, 0, sizeof(ifr));
 
 		ifr.ifr_flags = flags & ~IFF_CANTCHANGE;
-		rc = (*ifp->if_ioctl)(ifp, SIOCSIFFLAGS, &ifr);
+		rc = if_ioctl(ifp, SIOCSIFFLAGS, &ifr);
 
 		if (rc != 0 && cantflags != 0)
 			ifp->if_flags ^= cantflags;
@@ -3754,18 +3885,33 @@ if_flags_set(ifnet_t *ifp, const u_short flags)
 	return rc;
 }
 
+/*
+ * if_mcast_op(ifp, cmd, sa)
+ *
+ *	Apply a multicast command, SIOCADDMULTI/SIOCDELMULTI, to the
+ *	interface.  Returns 0 on success, nonzero errno(3) number on
+ *	failure.
+ *
+ *	May sleep.
+ *
+ *	Use this, not if_ioctl, for the multicast commands.
+ */
 int
 if_mcast_op(ifnet_t *ifp, const unsigned long cmd, const struct sockaddr *sa)
 {
 	int rc;
 	struct ifreq ifr;
 
-	if (ifp->if_mcastop != NULL)
-		rc = (*ifp->if_mcastop)(ifp, cmd, sa);
-	else {
-		ifreq_setaddr(cmd, &ifr, sa);
-		rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		panic("invalid ifnet multicast command: 0x%lx", cmd);
 	}
+
+	ifreq_setaddr(cmd, &ifr, sa);
+	rc = if_ioctl(ifp, cmd, &ifr);
 
 	return rc;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.235 2019/09/25 09:53:38 ozaki-r Exp $	*/
+/*	$NetBSD: in.c,v 1.242 2021/09/21 15:05:41 christos Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.235 2019/09/25 09:53:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.242 2021/09/21 15:05:41 christos Exp $");
 
 #include "arp.h"
 
@@ -145,7 +145,6 @@ __KERNEL_RCSID(0, "$NetBSD: in.c,v 1.235 2019/09/25 09:53:38 ozaki-r Exp $");
 #endif
 
 static u_int	in_mask2len(struct in_addr *);
-static void	in_len2mask(struct in_addr *, u_int);
 static int	in_lifaddr_ioctl(struct socket *, u_long, void *,
 	struct ifnet *);
 
@@ -380,7 +379,7 @@ in_mask2len(struct in_addr *mask)
 	return x * NBBY + y;
 }
 
-static void
+void
 in_len2mask(struct in_addr *mask, u_int len)
 {
 	u_int i;
@@ -425,6 +424,24 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		if (ifp == NULL)
 			return EINVAL;
 		return ifaddrpref_ioctl(so, cmd, data, ifp);
+#if NARP > 0
+	case SIOCGNBRINFO:
+	{
+		struct in_nbrinfo *nbi = (struct in_nbrinfo *)data;
+		struct llentry *ln;
+		struct in_addr nb_addr = nbi->addr; /* make local for safety */
+
+		ln = arplookup(ifp, &nb_addr, NULL, 0);
+		if (ln == NULL)
+			return EINVAL;
+		nbi->state = ln->ln_state;
+		nbi->asked = ln->ln_asked;
+		nbi->expire = ln->ln_expire ?
+		    time_mono_to_wall(ln->ln_expire) : 0;
+		LLE_RUNLOCK(ln);
+		return 0;
+	}
+#endif
 	}
 
 	bound = curlwp_bind();
@@ -504,7 +521,8 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 			goto out;
 		}
 
-		if (kauth_authorize_network(curlwp->l_cred, KAUTH_NETWORK_INTERFACE,
+		if (kauth_authorize_network(kauth_cred_get(),
+		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, (void *)cmd,
 		    NULL) != 0) {
 			error = EPERM;
@@ -548,7 +566,8 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		break;
 
 	case SIOCSIFBRDADDR:
-		if (kauth_authorize_network(curlwp->l_cred, KAUTH_NETWORK_INTERFACE,
+		if (kauth_authorize_network(kauth_cred_get(),
+		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, (void *)cmd,
 		    NULL) != 0) {
 			error = EPERM;
@@ -1219,10 +1238,15 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 
 	ia->ia_ifa.ifa_metric = ifp->if_metric;
 	if (ifp->if_flags & IFF_BROADCAST) {
-		ia->ia_broadaddr.sin_addr.s_addr =
-			ia->ia_subnet | ~ia->ia_subnetmask;
-		ia->ia_netbroadcast.s_addr =
-			ia->ia_net | ~ia->ia_netmask;
+		if (ia->ia_subnetmask == IN_RFC3021_MASK) {
+			ia->ia_broadaddr.sin_addr.s_addr = INADDR_BROADCAST;
+			ia->ia_netbroadcast.s_addr = INADDR_BROADCAST;
+		} else {
+			ia->ia_broadaddr.sin_addr.s_addr =
+				ia->ia_subnet | ~ia->ia_subnetmask;
+			ia->ia_netbroadcast.s_addr =
+				ia->ia_net | ~ia->ia_netmask;
+		}
 	} else if (ifp->if_flags & IFF_LOOPBACK) {
 		ia->ia_dstaddr = ia->ia_addr;
 		flags |= RTF_HOST;
@@ -1426,8 +1450,10 @@ in_broadcast(struct in_addr in, struct ifnet *ifp)
 		     in_hosteq(in, ia->ia_netbroadcast) ||
 		     (hostzeroisbroadcast &&
 		      /*
-		       * Check for old-style (host 0) broadcast.
+		       * Check for old-style (host 0) broadcast, but
+		       * taking into account that RFC 3021 obsoletes it.
 		       */
+		      ia->ia_subnetmask != IN_RFC3021_MASK &&
 		      (in.s_addr == ia->ia_subnet ||
 		       in.s_addr == ia->ia_net)))) {
 			pserialize_read_exit(s);
@@ -1555,14 +1581,15 @@ void
 in_if_link_state_change(struct ifnet *ifp, int link_state)
 {
 
-	switch (link_state) {
-	case LINK_STATE_DOWN:
+	/*
+	 * Treat LINK_STATE_UNKNOWN as UP.
+	 * LINK_STATE_UNKNOWN transitions to LINK_STATE_DOWN when
+	 * if_link_state_change() transitions to LINK_STATE_UP.
+	 */
+	if (link_state == LINK_STATE_DOWN)
 		in_if_link_down(ifp);
-		break;
-	case LINK_STATE_UP:
+	else
 		in_if_link_up(ifp);
-		break;
-	}
 }
 
 /*
@@ -1953,11 +1980,6 @@ in_lltable_new(struct in_addr addr4, u_int flags)
 	if (lle == NULL)		/* NB: caller generates msg */
 		return NULL;
 
-	/*
-	 * For IPv4 this will trigger "arpresolve" to generate
-	 * an ARP request.
-	 */
-	lle->la_expire = time_uptime; /* mark expired */
 	lle->r_l3addr.addr4 = addr4;
 	lle->lle_refcnt = 1;
 	lle->lle_free = in_lltable_destroy_lle;

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_casreg.h,v 1.1 2010/01/07 09:19:55 jdc Exp $ */
+/*	$NetBSD: if_casreg.h,v 1.6 2022/05/28 10:36:23 andvar Exp $ */
 /*	$OpenBSD: if_casreg.h,v 1.10 2008/05/31 22:49:03 kettenis Exp $	*/
 
 /*
@@ -55,6 +55,7 @@
 #define	CAS_BIF_CONFIG		0x0008  /* BIF config reg */
 #define	CAS_BIF_DIAG		0x000c
 #define	CAS_RESET		0x1010  /* Software reset register */
+#define	CAS_SATURN_PCFG		0x106c	/* internal MACPHY pin configuration */
 
 /* Bits in CAS_SEB register */
 #define	CAS_SEB_ARB		0x000000002	/* Arbitration status */
@@ -113,6 +114,18 @@
 #define	CAS_RESET_RX		0x000000002	/* Reset RX half */
 #define	CAS_RESET_RSTOUT	0x000000004	/* Force PCI RSTOUT# */
 #define	CAS_RESET_BLOCK_PCS	0x00000008	/* Block PCS reset */
+
+/* CAS_SATURN_PCFG register bits */
+#define	CAS_SATURN_PCFG_TLA	0x00000001	/* PHY activity LED */
+#define	CAS_SATURN_PCFG_FLA	0x00000002	/* PHY 10MBit/sec LED */
+#define	CAS_SATURN_PCFG_CLA	0x00000004	/* PHY 100MBit/sec LED */
+#define	CAS_SATURN_PCFG_LLA	0x00000008	/* PHY 1000MBit/sec LED */
+#define	CAS_SATURN_PCFG_RLA	0x00000010	/* PHY full-duplex LED */
+#define	CAS_SATURN_PCFG_PDS	0x00000020	/* PHY debug mode */
+#define	CAS_SATURN_PCFG_MTP	0x00000080	/* test point select */
+#define	CAS_SATURN_PCFG_GMO	0x00000100	/* GMII observe */
+#define	CAS_SATURN_PCFG_FSI	0x00000200	/* freeze GMII/SERDES */
+#define	CAS_SATURN_PCFG_LAD	0x00000800	/* MAC LED control active low */
 
 /* TX DMA registers */
 #define	CAS_TX_CONFIG		0x2004
@@ -241,7 +254,7 @@
 #define	CAS_RX_PAGE_SIZE_SZ	0x00000003	/* Page size */
 #define	CAS_RX_PAGE_SIZE_COUNT	0x00007800	/* MTU buffers per page */
 #define	CAS_RX_PAGE_SIZE_STRIDE	0x18000000	/* MTU buffer separation */
-#define	CAS_RX_PAGE_SIZE_FBOFF	0xc0000000	/* Firts byte offset */
+#define	CAS_RX_PAGE_SIZE_FBOFF	0xc0000000	/* First byte offset */
 
 #define	CAS_RX_PAGE_SIZE_COUNT_SHIFT	11
 #define	CAS_RX_PAGE_SIZE_STRIDE_SHIFT	27
@@ -326,7 +339,7 @@
 #define	CAS_MAC_RX_CRC_ERR_CNT	0x61c4
 #define	CAS_MAC_RX_CODE_VIOL	0x61c8
 #define	CAS_MAC_RANDOM_SEED	0x61cc
-#define	CAS_MAC_MAC_STATE	0x61d0		/* MAC sstate machine reg */
+#define	CAS_MAC_MAC_STATE	0x61d0		/* MAC state machine reg */
 
 /* CAS_MAC_SEND_PAUSE_CMD register bits */
 #define	CAS_MAC_PAUSE_CMD_TIME	0x0000ffff
@@ -435,8 +448,8 @@
 #define	CAS_MIF_CONFIG_POLL_ENA	0x00000002	/* poll enable */
 #define	CAS_MIF_CONFIG_BB_ENA	0x00000004	/* bit bang enable */
 #define	CAS_MIF_CONFIG_REG_ADR	0x000000f8	/* poll register address */
-#define	CAS_MIF_CONFIG_MDI0	0x00000100	/* MDIO_0 Data/MDIO_0 atached */
-#define	CAS_MIF_CONFIG_MDI1	0x00000200	/* MDIO_1 Data/MDIO_1 atached */
+#define	CAS_MIF_CONFIG_MDI0	0x00000100	/* MDIO_0 Data/MDIO_0 attached */
+#define	CAS_MIF_CONFIG_MDI1	0x00000200	/* MDIO_1 Data/MDIO_1 attached */
 #define	CAS_MIF_CONFIG_PHY_ADR	0x00007c00	/* poll PHY address */
 /* MDI0 is onboard transceiver MID1 is external, PHYAD for both is 0 */
 
@@ -522,7 +535,7 @@
 
 /* CAS_MII_DATAPATH_MODE reg */
 #define	CAS_MII_DATAPATH_SERIAL	0x00000001	/* Serial link */
-#define	CAS_MII_DATAPATH_SERDES	0x00000002	/* Use PCS via 10bit interfac */
+#define	CAS_MII_DATAPATH_SERDES	0x00000002	/* Use PCS via 10bit interface */
 #define	CAS_MII_DATAPATH_MII	0x00000004	/* Use {G}MII, not PCS */
 #define	CAS_MII_DATAPATH_MIIOUT	0x00000008	/* enable serial output on GMII */
 
@@ -573,7 +586,7 @@ struct cas_desc {
 
 /* Completion ring */
 struct cas_comp {
-	u_int64_t	cc_word[4];
+	uint64_t	cc_word[4];
 };
 
 #define	CAS_RC0_TYPE		0xc000000000000000ULL

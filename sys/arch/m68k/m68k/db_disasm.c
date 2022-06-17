@@ -1,4 +1,4 @@
-/*	$NetBSD: db_disasm.c,v 1.44 2019/10/26 17:50:18 christos Exp $	*/
+/*	$NetBSD: db_disasm.c,v 1.46 2021/07/24 21:31:33 andvar Exp $	*/
 
 /*
  * Copyright (c) 1994 Christian E. Hopps
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.44 2019/10/26 17:50:18 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.46 2021/07/24 21:31:33 andvar Exp $");
 
 #include <sys/param.h>
 #ifdef _KERNEL
@@ -72,8 +72,9 @@ __KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.44 2019/10/26 17:50:18 christos Exp 
 
 #include <machine/db_machdep.h>
 
-#include <ddb/db_sym.h>
+#include <ddb/db_interface.h>
 #include <ddb/db_output.h>
+#include <ddb/db_sym.h>
 #include <m68k/m68k/db_disasm.h>
 
 static void	get_modregstr(dis_buffer_t *, int, int, int, int);
@@ -175,7 +176,7 @@ static const char hexdigits[] = "0123456789abcdef";
 #endif
 
 /*
- * Disassemble intruction at location ``loc''.
+ * Disassemble instruction at location ``loc''.
  * Returns location of next instruction.
  */
 

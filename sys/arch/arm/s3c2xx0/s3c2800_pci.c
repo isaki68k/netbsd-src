@@ -1,4 +1,4 @@
-/*	$NetBSD: s3c2800_pci.c,v 1.26 2018/11/26 12:21:51 jmcneill Exp $	*/
+/*	$NetBSD: s3c2800_pci.c,v 1.33 2022/05/23 19:52:34 andvar Exp $	*/
 
 /*
  * Copyright (c) 2002 Fujitsu Component Limited
@@ -100,7 +100,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.26 2018/11/26 12:21:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.33 2022/05/23 19:52:34 andvar Exp $");
 
 #include "opt_pci.h"
 #include "pci.h"
@@ -109,8 +109,7 @@ __KERNEL_RCSID(0, "$NetBSD: s3c2800_pci.c,v 1.26 2018/11/26 12:21:51 jmcneill Ex
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/extent.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -233,7 +232,7 @@ sspci_attach(device_t parent, device_t self, void *aux)
 	bus_dma_tag_t pci_dma_tag;
 	const char *error_on;	/* for panic message */
 #if defined(PCI_NETBSD_CONFIGURE)
-	struct extent *ioext, *memext;
+	struct pciconf_resources *pcires;
 	struct pcibus_attach_args pci_pba;
 #endif
 
@@ -295,20 +294,19 @@ sspci_attach(device_t parent, device_t self, void *aux)
 	}
 
 #if defined(PCI_NETBSD_CONFIGURE)
-	ioext = extent_create("pciio", 0x100, S3C2800_PCI_IOSPACE_SIZE - 0x100,
-	    NULL, 0, EX_NOWAIT);
+	pcires = pciconf_resource_init();
 
-	memext = extent_create("pcimem", 0, S3C2800_PCI_MEMSPACE_SIZE,
-	    NULL, 0, EX_NOWAIT);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+	    0x100, S3C2800_PCI_IOSPACE_SIZE - 0x100);
+	pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+	    0, S3C2800_PCI_MEMSPACE_SIZE);
 
 	sspci_chipset.pc_conf_v = (void *) sc;
 	sspci_chipset.pc_intr_v = (void *) sc;
 
-	pci_configure_bus(&sspci_chipset, ioext, memext, NULL, 0,
-	    arm_dcache_align);
+	pci_configure_bus(&sspci_chipset, pcires, 0, arm_dcache_align);
 
-	extent_destroy(memext);
-	extent_destroy(ioext);
+	pciconf_resource_fini(pcires);
 #endif				/* PCI_NETBSD_CONFIGURE */
 
 	/* initialize bus space tag */
@@ -332,7 +330,7 @@ sspci_attach(device_t parent, device_t self, void *aux)
 	pci_pba.pba_bus = 0;
 	pci_pba.pba_bridgetag = NULL;
 
-	config_found_ia(self, "pcibus", &pci_pba, pcibusprint);
+	config_found(self, &pci_pba, pcibusprint, CFARGS_NONE);
 
 	return;
 
@@ -355,7 +353,7 @@ sspci_bs_map(void *t, bus_addr_t bpa, bus_size_t size, int flag,
 	    t, bpa, size, flag);
 #endif
 
-	/* Round the allocation to page boundries */
+	/* Round the allocation to page boundaries */
 	startpa = trunc_page(bpa);
 	endpa = round_page(bpa + size);
 
@@ -519,10 +517,7 @@ s3c2800_pci_intr_establish(void *pcv, pci_intr_handle_t ih, int level,
 	    "func=%p, arg=%p, xname=%s)\n", pcv, ih, level, func, arg, xname);
 #endif
 
-	handler = malloc(sizeof *handler, M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
-	if (handler == NULL)
-		panic("sspci_intr_establish: can't malloc handler info");
-
+	handler = kmem_alloc(sizeof *handler, KM_SLEEP);
 	handler->func = func;
 	handler->arg = arg;
 	handler->level = level;

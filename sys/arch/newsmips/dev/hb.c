@@ -1,13 +1,13 @@
-/*	$NetBSD: hb.c,v 1.19 2011/02/20 07:56:31 matt Exp $	*/
+/*	$NetBSD: hb.c,v 1.23 2021/08/07 16:19:01 thorpej Exp $	*/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hb.c,v 1.19 2011/02/20 07:56:31 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hb.c,v 1.23 2021/08/07 16:19:01 thorpej Exp $");
 
 #define __INTR_PRIVATE
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/intr.h>
 
 #include <machine/autoconf.h>
@@ -53,7 +53,8 @@ hb_attach(device_t parent, device_t self, void *aux)
 		LIST_INIT(&ip->intr_q);
 	}
 
-	config_search_ia(hb_search, self, "hb", &ha);
+	config_search(self, &ha,
+	    CFARGS(.search = hb_search));
 }
 
 static int
@@ -65,8 +66,8 @@ hb_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	ha->ha_addr = cf->cf_addr;
 	ha->ha_level = cf->cf_level;
 
-	if (config_match(parent, cf, ha) > 0)
-		config_attach(parent, cf, ha, hb_print);
+	if (config_probe(parent, cf, ha))
+		config_attach(parent, cf, ha, hb_print, CFARGS_NONE);
 
 	return 0;
 }
@@ -99,10 +100,7 @@ hb_intr_establish(int level, int mask, int priority, int (*func)(void *),
 
 	ip = &hbintr_tab[level];
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		panic("%s: malloc failed", __func__);
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = func;
 	ih->ih_arg = arg;
 	ih->ih_level = level;

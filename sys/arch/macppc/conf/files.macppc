@@ -1,4 +1,4 @@
-#	$NetBSD: files.macppc,v 1.112 2019/11/01 17:51:56 macallan Exp $
+#	$NetBSD: files.macppc,v 1.123 2021/09/10 23:32:17 macallan Exp $
 #
 # macppc-specific configuration info
 
@@ -93,6 +93,7 @@ include "dev/isa/files.isa"
 include "dev/pci/files.pci"
 include "dev/pci/files.agp"
 file arch/macppc/pci/pci_machdep.c		pci
+file dev/ofw/ofw_pci_subr.c			pci
 file arch/macppc/pci/agp_machdep.c		agp
 file arch/powerpc/pci/pciconf_indirect.c	pci
 file arch/powerpc/pci/pci_machdep_common.c	pci
@@ -175,8 +176,11 @@ device zstty: tty
 attach zstty at zsc
 file dev/ic/z8530tty.c				zstty needs-flag
 
-define smu {}
-device smu: smu, obio
+define fancontrol
+file arch/macppc/dev/fancontrol.c		fancontrol
+defflag	opt_fancontrol.h	FANCONTROL_DEBUG
+
+device smu { } : sysmon_envsys, fancontrol
 attach smu at mainbus
 file arch/macppc/dev/smu.c			smu needs-flag
 defflag	opt_smu.h	SMU_DEBUG
@@ -284,14 +288,16 @@ defflag opt_macppc.h	PB3400_CARDBUS_HACK UMAX_E100_HACK
 file arch/macppc/macppc/rbus_machdep.c		cardbus
 
 # Keywest I2C
-device ki2c: i2cbus, ki2c
+device ki2c: i2cbus
 attach ki2c at obio, uni_n
 file arch/macppc/dev/ki2c.c			ki2c
+defflag opt_ki2c.h	KI2C_DEBUG
 
 # snapper audio
-device snapper: audiobus
+device snapper: audiobus, onewirebus, onewire, onewire_bitbang
 attach snapper at obio
 file arch/macppc/dev/snapper.c			snapper
+defflag opt_snapper.h	SNAPPER_DEBUG
 
 include "arch/powerpc/conf/majors.powerpc"
 
@@ -317,4 +323,22 @@ file arch/macppc/dev/platinumfb.c			platinumfb
 device	psoc: sysmon_envsys
 attach	psoc at iic
 file	arch/macppc/dev/psoc.c				psoc
+defflag opt_psoc.h PSOC_DEBUG
+
+# 'lmu-micro' found in late PowerBooks
+device	lmu: sysmon_envsys
+attach	lmu at iic
+file	arch/macppc/dev/lmu.c				lmu
+defflag opt_lmu.h LMU_DEBUG
+
+# Apple Fan Control Unit found in some G5
+device	fcu: sysmon_envsys, fancontrol
+attach	fcu at iic
+file	arch/macppc/dev/fcu.c				fcu	needs-flag
+
+# fan control bits found in obio's space on some G5
+device 	obiofan: sysmon_envsys
+attach 	obiofan at obio
+file 	arch/macppc/dev/obiofan.c			obiofan
+defflag opt_obiofan.h OBIOFAN_DEBUG
 

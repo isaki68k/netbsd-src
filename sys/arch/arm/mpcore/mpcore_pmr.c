@@ -1,4 +1,4 @@
-/*	$NetBSD: mpcore_pmr.c,v 1.3 2011/07/28 02:07:42 uebayasi Exp $ */
+/*	$NetBSD: mpcore_pmr.c,v 1.5 2021/08/07 16:18:44 thorpej Exp $ */
 
 /*
  * Copyright (c) 2010, 2011 Genetec Corporation.  All rights reserved.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpcore_pmr.c,v 1.3 2011/07/28 02:07:42 uebayasi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpcore_pmr.c,v 1.5 2021/08/07 16:18:44 thorpej Exp $");
 
 #include "locators.h"
 
@@ -98,7 +98,8 @@ pmr_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	config_search_ia(pmr_search, self, "mpcorepmr", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = pmr_search));
 }
 
 static int
@@ -111,8 +112,8 @@ pmr_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	pa.pa_ioh = sc->sc_ioh;
 	pa.pa_irq = cf->cf_loc[MPCOREPMRCF_IRQ];
 
-	if (config_match(parent, cf, &pa) > 0)
-		config_attach(parent, cf, &pa, NULL);
+	if (config_probe(parent, cf, &pa))
+		config_attach(parent, cf, &pa, NULL, CFARGS_NONE);
 
 	return 0;
 }

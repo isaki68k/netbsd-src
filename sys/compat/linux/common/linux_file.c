@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_file.c,v 1.116 2019/06/18 22:34:25 kamil Exp $	*/
+/*	$NetBSD: linux_file.c,v 1.122 2021/11/25 03:08:04 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 2008 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_file.c,v 1.116 2019/06/18 22:34:25 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_file.c,v 1.122 2021/11/25 03:08:04 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -69,7 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: linux_file.c,v 1.116 2019/06/18 22:34:25 kamil Exp $
 #include <compat/linux/linux_syscallargs.h>
 
 static int bsd_to_linux_ioflags(int);
-#ifndef __amd64__
+#if !defined(__aarch64__) && !defined(__amd64__)
 static void bsd_to_linux_stat(struct stat *, struct linux_stat *);
 #endif
 
@@ -136,6 +136,24 @@ bsd_to_linux_ioflags(int bflags)
 	return res;
 }
 
+static inline off_t
+linux_hilo_to_off_t(unsigned long hi, unsigned long lo)
+{
+#ifdef _LP64
+	/*
+	 * Linux discards the "hi" portion on LP64 platforms; even though
+	 * glibc puts of the upper 32-bits of the offset into the "hi"
+	 * argument regardless, the "lo" argument has all the bits in
+	 * this case.
+	 */
+	(void) hi; 
+	return (off_t)lo;
+#else
+	return (((off_t)hi) << 32) | lo;
+#endif /* _LP64 */
+}
+
+#if !defined(__aarch64__)
 /*
  * creat(2) is an obsolete function, but it's present as a Linux
  * system call, so let's deal with it.
@@ -160,6 +178,7 @@ linux_sys_creat(struct lwp *l, const struct linux_sys_creat_args *uap, register_
 
 	return sys_open(l, &oa, retval);
 }
+#endif
 
 static void
 linux_open_ctty(struct lwp *l, int flags, int fd)
@@ -392,10 +411,10 @@ linux_sys_fcntl(struct lwp *l, const struct linux_sys_fcntl_args *uap, register_
 			goto not_tty;
 
 		/* set tty pg_id appropriately */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if (cmd == LINUX_F_GETOWN) {
 			retval[0] = tp->t_pgrp ? tp->t_pgrp->pg_id : NO_PGID;
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return 0;
 		}
 		if ((long)arg <= 0) {
@@ -403,18 +422,18 @@ linux_sys_fcntl(struct lwp *l, const struct linux_sys_fcntl_args *uap, register_
 		} else {
 			struct proc *p1 = proc_find((long)arg);
 			if (p1 == NULL) {
-				mutex_exit(proc_lock);
+				mutex_exit(&proc_lock);
 				return (ESRCH);
 			}
 			pgid = (long)p1->p_pgrp->pg_id;
 		}
 		pgrp = pgrp_find(pgid);
 		if (pgrp == NULL || pgrp->pg_session != p->p_session) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return EPERM;
 		}
 		tp->t_pgrp = pgrp;
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return 0;
 
 	case LINUX_F_DUPFD_CLOEXEC:
@@ -432,7 +451,7 @@ linux_sys_fcntl(struct lwp *l, const struct linux_sys_fcntl_args *uap, register_
 	return sys_fcntl(l, &fca, retval);
 }
 
-#if !defined(__amd64__)
+#if !defined(__aarch64__) && !defined(__amd64__)
 /*
  * Convert a NetBSD stat structure to a Linux stat structure.
  * Only the order of the fields and the padding in the structure
@@ -445,6 +464,7 @@ static void
 bsd_to_linux_stat(struct stat *bsp, struct linux_stat *lsp)
 {
 
+	memset(lsp, 0, sizeof(*lsp));
 	lsp->lst_dev     = linux_fakedev(bsp->st_dev, 0);
 	lsp->lst_ino     = bsp->st_ino;
 	lsp->lst_mode    = (linux_mode_t)bsp->st_mode;
@@ -530,7 +550,7 @@ linux_sys_lstat(struct lwp *l, const struct linux_sys_lstat_args *uap, register_
 
 	return linux_stat1((const void *)uap, retval, NOFOLLOW);
 }
-#endif /* !__amd64__ */
+#endif /* !__aarch64__ && !__amd64__ */
 
 /*
  * The following syscalls are mostly here because of the alternate path check.
@@ -784,6 +804,56 @@ linux_sys_pwrite(struct lwp *l, const struct linux_sys_pwrite_args *uap, registe
 	return sys_pwrite(l, &pra, retval);
 }
 
+/*
+ * preadv(2)
+ */
+int
+linux_sys_preadv(struct lwp *l, const struct linux_sys_preadv_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(int) fd;
+		syscallarg(const struct iovec *) iovp;
+		syscallarg(int) iovcnt;
+		syscallarg(unsigned long) off_lo;
+		syscallarg(unsigned long) off_hi;
+	} */
+	struct sys_preadv_args ua;
+
+	SCARG(&ua, fd) = SCARG(uap, fd);
+	SCARG(&ua, iovp) = SCARG(uap, iovp);
+	SCARG(&ua, iovcnt) = SCARG(uap, iovcnt);
+	SCARG(&ua, PAD) = 0;
+	SCARG(&ua, offset) = linux_hilo_to_off_t(SCARG(uap, off_hi),
+						 SCARG(uap, off_lo));
+	return sys_preadv(l, &ua, retval);
+}
+
+/*
+ * pwritev(2)
+ */
+int
+linux_sys_pwritev(struct lwp *l, const struct linux_sys_pwritev_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(int) fd;
+		syscallarg(const struct iovec *) iovp;
+		syscallarg(int) iovcnt;
+		syscallarg(unsigned long) off_lo;
+		syscallarg(unsigned long) off_hi;
+	} */
+	struct sys_pwritev_args ua;
+
+	SCARG(&ua, fd) = SCARG(uap, fd);
+	SCARG(&ua, iovp) = (const void *)SCARG(uap, iovp);
+	SCARG(&ua, iovcnt) = SCARG(uap, iovcnt);
+	SCARG(&ua, PAD) = 0;
+	SCARG(&ua, offset) = linux_hilo_to_off_t(SCARG(uap, off_hi),
+						 SCARG(uap, off_lo));
+	return sys_pwritev(l, &ua, retval);
+}
+
 int
 linux_sys_dup3(struct lwp *l, const struct linux_sys_dup3_args *uap,
     register_t *retval)
@@ -844,3 +914,11 @@ LINUX_NOT_SUPPORTED(linux_sys_flistxattr)
 LINUX_NOT_SUPPORTED(linux_sys_removexattr)
 LINUX_NOT_SUPPORTED(linux_sys_lremovexattr)
 LINUX_NOT_SUPPORTED(linux_sys_fremovexattr)
+
+/*
+ * For now just return EOPNOTSUPP, this makes glibc posix_fallocate()
+ * to fallback to emulation.
+ * XXX Right now no filesystem actually implements fallocate support,
+ * so no need for mapping.
+ */
+LINUX_NOT_SUPPORTED(linux_sys_fallocate)

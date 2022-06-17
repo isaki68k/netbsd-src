@@ -1,4 +1,4 @@
-/*	$NetBSD: glxsb.c,v 1.14 2016/07/14 10:19:05 msaitoh Exp $	*/
+/*	$NetBSD: glxsb.c,v 1.19 2022/05/22 11:39:26 riastradh Exp $	*/
 /* $OpenBSD: glxsb.c,v 1.7 2007/02/12 14:31:45 tom Exp $ */
 
 /*
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: glxsb.c,v 1.14 2016/07/14 10:19:05 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: glxsb.c,v 1.19 2022/05/22 11:39:26 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,7 +44,6 @@ __KERNEL_RCSID(0, "$NetBSD: glxsb.c,v 1.14 2016/07/14 10:19:05 msaitoh Exp $");
 #include <dev/pci/pcidevs.h>
 
 #include <opencrypto/cryptodev.h>
-#include <crypto/rijndael/rijndael.h>
 
 #define SB_GLD_MSR_CAP		0x58002000	/* RO - Capabilities */
 #define SB_GLD_MSR_CONFIG	0x58002001	/* RW - Master Config */
@@ -149,7 +148,6 @@ struct glxsb_dma_map {
 };
 struct glxsb_session {
 	uint32_t	ses_key[4];
-	uint8_t		ses_iv[SB_AES_BLOCK_SIZE];
 	int		ses_klen;
 	int		ses_used;
 };
@@ -182,7 +180,7 @@ CFATTACH_DECL_NEW(glxsb, sizeof(struct glxsb_softc),
 int glxsb_crypto_setup(struct glxsb_softc *);
 int glxsb_crypto_newsession(void *, uint32_t *, struct cryptoini *);
 int glxsb_crypto_process(void *, struct cryptop *, int);
-int glxsb_crypto_freesession(void *, uint64_t);
+void glxsb_crypto_freesession(void *, uint64_t);
 static __inline void glxsb_aes(struct glxsb_softc *, uint32_t, uint32_t,
     uint32_t, void *, int, void *);
 
@@ -316,8 +314,7 @@ glxsb_crypto_newsession(void *aux, uint32_t *sidp, struct cryptoini *cri)
 	struct glxsb_session *ses = NULL;
 	int sesn;
 
-	if (sc == NULL || sidp == NULL || cri == NULL ||
-	    cri->cri_next != NULL || cri->cri_alg != CRYPTO_AES_CBC ||
+	if (cri->cri_next != NULL || cri->cri_alg != CRYPTO_AES_CBC ||
 	    cri->cri_klen != 128)
 		return (EINVAL);
 
@@ -346,7 +343,6 @@ glxsb_crypto_newsession(void *aux, uint32_t *sidp, struct cryptoini *cri)
 	memset(ses, 0, sizeof(*ses));
 	ses->ses_used = 1;
 
-	cprng_fast(ses->ses_iv, sizeof(ses->ses_iv));
 	ses->ses_klen = cri->cri_klen;
 
 	/* Copy the key (Geode LX wants the primary key only) */
@@ -356,20 +352,18 @@ glxsb_crypto_newsession(void *aux, uint32_t *sidp, struct cryptoini *cri)
 	return (0);
 }
 
-int
+void
 glxsb_crypto_freesession(void *aux, uint64_t tid)
 {
 	struct glxsb_softc *sc = aux;
 	int sesn;
 	uint32_t sid = ((uint32_t)tid) & 0xffffffff;
 
-	if (sc == NULL)
-		return (EINVAL);
 	sesn = GLXSB_SESSION(sid);
-	if (sesn >= sc->sc_nsessions)
-		return (EINVAL);
+	KASSERTMSG(sesn < sc->sc_nsessions, "sesn=%d nsessions=%d",
+	    sesn, sc->sc_nsessions);
+
 	memset(&sc->sc_sessions[sesn], 0, sizeof(sc->sc_sessions[sesn]));
-	return (0);
 }
 
 /*
@@ -450,7 +444,7 @@ glxsb_crypto_process(void *aux, struct cryptop *crp, int hint)
 	struct cryptodesc *crd;
 	char *op_src, *op_dst;
 	uint32_t op_psrc, op_pdst;
-	uint8_t op_iv[SB_AES_BLOCK_SIZE], *piv;
+	uint8_t op_iv[SB_AES_BLOCK_SIZE];
 	int sesn, err = 0;
 	int len, tlen, xlen;
 	int offset;
@@ -497,7 +491,7 @@ glxsb_crypto_process(void *aux, struct cryptop *crp, int hint)
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(op_iv, crd->crd_iv, sizeof(op_iv));
 		else
-			memcpy(op_iv, ses->ses_iv, sizeof(op_iv));
+			cprng_fast(op_iv, sizeof(op_iv));
 
 		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0) {
 			if (crp->crp_flags & CRYPTO_F_IMBUF)
@@ -530,7 +524,6 @@ glxsb_crypto_process(void *aux, struct cryptop *crp, int hint)
 
 	offset = 0;
 	tlen = crd->crd_len;
-	piv = op_iv;
 
 	/* Process the data in GLXSB_MAX_AES_LEN chunks */
 	while (tlen > 0) {
@@ -566,25 +559,13 @@ glxsb_crypto_process(void *aux, struct cryptop *crp, int hint)
 		offset += len;
 		tlen -= len;
 
-		if (tlen <= 0) {	/* Ideally, just == 0 */
-			/* Finished - put the IV in session IV */
-			piv = ses->ses_iv;
-		}
-
-		/*
-		 * Copy out last block for use as next iteration/session IV.
-		 *
-		 * piv is set to op_iv[] before the loop starts, but is
-		 * set to ses->ses_iv if we're going to exit the loop this
-		 * time.
-		 */
 		if (crd->crd_flags & CRD_F_ENCRYPT) {
-			memcpy(piv, op_dst + len - sizeof(op_iv),
+			memcpy(op_iv, op_dst + len - sizeof(op_iv),
 			    sizeof(op_iv));
 		} else {
 			/* Decryption, only need this if another iteration */
 			if (tlen > 0) {
-				memcpy(piv, op_src + len - sizeof(op_iv),
+				memcpy(op_iv, op_src + len - sizeof(op_iv),
 				    sizeof(op_iv));
 			}
 		}
@@ -597,7 +578,7 @@ out:
 	crp->crp_etype = err;
 	crypto_done(crp);
 	splx(s);
-	return (err);
+	return 0;
 }
 
 int

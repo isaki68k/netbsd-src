@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.82 2019/02/08 08:47:35 mrg Exp $	*/
+/*	$NetBSD: fd.c,v 1.87 2022/05/20 19:34:22 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -72,7 +72,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.82 2019/02/08 08:47:35 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.87 2022/05/20 19:34:22 andvar Exp $");
 
 #include "opt_ddb.h"
 
@@ -88,7 +88,7 @@ __KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.82 2019/02/08 08:47:35 mrg Exp $");
 #include <sys/fdio.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
@@ -340,7 +340,7 @@ static void	fdconf(struct fdc_softc *);
 /*
  * The Floppy Control Register on the sun3x, not to be confused with the
  * Floppy ControllER Registers that this driver mostly insterfaces with,
- * controls some of the auxillary functions of the floppy drive.  These
+ * controls some of the auxiliary functions of the floppy drive.  These
  * include asserting the floppy eject and terminal data count (or TC) pins
  * of the floppy drive and controller chip respectively.
  *
@@ -494,7 +494,7 @@ fdcattach(device_t parent, device_t self, void *aux)
 	for (fa.fa_drive = 0; fa.fa_drive < 4; fa.fa_drive++) {
 		fa.fa_deftype = NULL;		/* unknown */
 	fa.fa_deftype = &fd_types[0];		/* XXX */
-		(void)config_found(self, (void *)&fa, fdprint);
+		(void)config_found(self, (void *)&fa, fdprint, CFARGS_NONE);
 	}
 }
 
@@ -1733,11 +1733,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 			return EINVAL;
 		}
 
-		fd_formb = malloc(sizeof(struct ne7_fd_formb),
-		    M_TEMP, M_NOWAIT);
-		if (fd_formb == 0)
-			return ENOMEM;
-
+		fd_formb = kmem_alloc(sizeof(*fd_formb), KM_SLEEP);
 		fd_formb->head = form_cmd->head;
 		fd_formb->cyl = form_cmd->cylinder;
 		fd_formb->transfer_rate = fd->sc_type->rate;
@@ -1761,7 +1757,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		}
 
 		error = fdformat(dev, fd_formb, l->l_proc);
-		free(fd_formb, M_TEMP);
+		kmem_free(fd_formb, sizeof(*fd_formb));
 		return error;
 
 	case FDIOCGETOPTS:		/* get drive options */
@@ -1988,7 +1984,7 @@ fd_read_md_image(size_t *sizep, void **addrp)
 
 	dev = makedev(cdevsw_lookup_major(&fd_cdevsw), 0);	/* XXX */
 
-	addr = malloc(FDMICROROOTSIZE, M_DEVBUF, M_WAITOK);
+	addr = kmem_alloc(FDMICROROOTSIZE, KM_SLEEP);
 	*addrp = addr;
 
 	if (fdopen(dev, 0, S_IFCHR, NULL))

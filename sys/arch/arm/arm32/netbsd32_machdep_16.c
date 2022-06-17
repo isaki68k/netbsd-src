@@ -29,15 +29,15 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: netbsd32_machdep_16.c,v 1.2 2019/01/27 02:08:37 pgoyette Exp $");
+__KERNEL_RCSID(1, "$NetBSD: netbsd32_machdep_16.c,v 1.5 2020/06/20 07:10:36 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
-#include "opt_coredump.h"
 #endif
 
 #include <sys/param.h>
+
 #include <sys/core.h>
 #include <sys/exec.h>
 #include <sys/lwp.h>
@@ -75,11 +75,11 @@ static struct syscall_package compat_arm32_netbsd32_16_syscalls[] = {
 void
 netbsd32_machdep_md_16_init(void)
 {
- 
+
 	(void)syscall_establish(&emul_netbsd32,
 	    compat_arm32_netbsd32_16_syscalls);
 }
-   
+
 void
 netbsd32_machdep_md_16_fini(void)
 {

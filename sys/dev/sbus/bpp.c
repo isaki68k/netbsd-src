@@ -1,4 +1,4 @@
-/*	$NetBSD: bpp.c,v 1.43 2018/09/03 16:29:33 riastradh Exp $ */
+/*	$NetBSD: bpp.c,v 1.47 2021/09/26 01:16:09 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bpp.c,v 1.43 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bpp.c,v 1.47 2021/09/26 01:16:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/ioctl.h>
@@ -212,7 +212,7 @@ bppattach(device_t parent, device_t self, void *aux)
 
 	/* Allocate buffer XXX - should actually use dmamap_uio() */
 	dsc->sc_bufsz = 1024;
-	dsc->sc_buf = malloc(dsc->sc_bufsz, M_DEVBUF, M_NOWAIT);
+	dsc->sc_buf = malloc(dsc->sc_bufsz, M_DEVBUF, M_WAITOK);
 
 	/* XXX read default state */
 	{
@@ -301,9 +301,9 @@ bppclose(dev_t dev, int flags, int mode, struct lwp *l)
 	irq &= ~BPP_ALLEN;
 	bus_space_write_2(lsi->sc_bustag, lsi->sc_regs, L64854_REG_ICR, irq);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	sc->sc_asyncproc = NULL;
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	sc->sc_flags = 0;
 	return 0;
 }
@@ -458,7 +458,7 @@ bppioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		splx(s);
 		break;
 	case FIOASYNC:
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if (*(int *)data) {
 			if (sc->sc_asyncproc != NULL)
 				error = EBUSY;
@@ -466,7 +466,7 @@ bppioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 				sc->sc_asyncproc = p;
 		} else
 			sc->sc_asyncproc = NULL;
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		break;
 	default:
 		break;
@@ -509,7 +509,7 @@ filt_bpprdetach(struct knote *kn)
 	int s;
 
 	s = splbpp();
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	splx(s);
 }
 
@@ -521,7 +521,7 @@ filt_bppread(struct knote *kn, long hint)
 }
 
 static const struct filterops bppread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_bpprdetach,
 	.f_event = filt_bppread,
@@ -534,7 +534,7 @@ filt_bppwdetach(struct knote *kn)
 	int s;
 
 	s = splbpp();
-	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_wsel, kn);
 	splx(s);
 }
 
@@ -551,7 +551,7 @@ filt_bpfwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops bppwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_bppwdetach,
 	.f_event = filt_bpfwrite,
@@ -561,19 +561,19 @@ int
 bppkqfilter(dev_t dev, struct knote *kn)
 {
 	struct bpp_softc *sc;
-	struct klist *klist;
+	struct selinfo *sip;
 	int s;
 
 	sc = device_lookup_private(&bpp_cd, BPPUNIT(dev));
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
+		sip = &sc->sc_rsel;
 		kn->kn_fop = &bppread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sc->sc_wsel.sel_klist;
+		sip = &sc->sc_wsel;
 		kn->kn_fop = &bppwrite_filtops;
 		break;
 
@@ -584,7 +584,7 @@ bppkqfilter(dev_t dev, struct knote *kn)
 	kn->kn_hook = sc;
 
 	s = splbpp();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(sip, kn);
 	splx(s);
 
 	return 0;
@@ -629,8 +629,8 @@ bppsoftintr(void *cookie)
 {
 	struct bpp_softc *sc = cookie;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (sc->sc_asyncproc)
 		psignal(sc->sc_asyncproc, SIGIO);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }

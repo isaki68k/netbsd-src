@@ -1,4 +1,4 @@
-/*	$NetBSD: aarch32_syscall.c,v 1.3 2019/04/12 09:29:26 ryo Exp $	*/
+/*	$NetBSD: aarch32_syscall.c,v 1.6 2021/11/25 03:08:04 ryo Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aarch32_syscall.c,v 1.3 2019/04/12 09:29:26 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aarch32_syscall.c,v 1.6 2021/11/25 03:08:04 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/ktrace.h>
@@ -71,8 +71,28 @@ EMULNAME(syscall)(struct trapframe *tf)
 
 	curcpu()->ci_data.cpu_nsyscall++;
 
-	uint32_t code = tf->tf_esr & 0xffff;	/* XXX: 16-23bits are omitted */
 	thumbmode = (tf->tf_spsr & SPSR_A32_T) ? true : false;
+#ifdef SYSCALL_CODE_REG
+	/*
+	 * mov.w r<SYSCALL_CODE_REG>, #<syscall_no>
+	 * svc #<SYSCALL_CODE_REG_SVC>
+	 */
+#ifdef SYSCALL_CODE_REG_SVC
+	if ((tf->tf_esr & 0xffff) != SYSCALL_CODE_REG_SVC) {
+		error = EINVAL;
+		goto bad;
+	}
+#endif
+	uint32_t code = tf->tf_reg[SYSCALL_CODE_REG];
+#if (SYSCALL_CODE_REG == 0)
+	int regstart = 1;		/* args start from r1 */
+	int nargs_reg = NARGREG - 1;	/* number of argument in registers */
+#else
+	int regstart = 0;		/* args start from r0 */
+	int nargs_reg = NARGREG;	/* number of argument in registers */
+#endif
+#else /* SYSCALL_CODE_REG */
+	uint32_t code = tf->tf_esr & 0xffff;	/* XXX: 16-23bits are omitted */
 	if (thumbmode) {
 		if (code != 255) {
 			do_trapsignal(l, SIGILL, ILL_ILLTRP,
@@ -83,17 +103,36 @@ EMULNAME(syscall)(struct trapframe *tf)
 		code = tf->tf_reg[0];
 		tf->tf_reg[0] = tf->tf_reg[12];	/* orig $r0 is saved to $ip */
 	}
-
-	int nargs_reg = NARGREG;	/* number of argument in registers */
 	int regstart = 0;		/* args start from r0 */
+	int nargs_reg = NARGREG;	/* number of argument in registers */
+#endif /* SYSCALL_CODE_REG */
 
+#ifdef SYSCALL_CODE_REMAP
+	code = SYSCALL_CODE_REMAP(code);
+#endif
 
 	code %= EMULNAMEU(SYS_NSYSENT);
 	callp = p->p_emul->e_sysent + code;
+#ifndef SYSCALL_NO_INDIRECT
 	if (__predict_false(callp->sy_flags & SYCALL_INDIRECT)) {
-		nargs_reg -= 1;
-		regstart = 1;	/* args start from r1 */
-		code = tf->tf_reg[0] % EMULNAMEU(SYS_NSYSENT);
+		int off = 1;
+#ifdef NETBSD32_SYS_netbsd32____syscall /* XXX ugly: apply only for NETBSD32 */
+		/*
+		 * For __syscall(2), 1st argument is quad_t, which is
+		 * stored in r0 and r1.
+		 */
+		if (code == NETBSD32_SYS_netbsd32____syscall)
+			off = 2;
+#endif
+		nargs_reg -= off;
+		regstart = off;	/* args start from r1 or r2 */
+#ifdef __AARCH64EB__
+		if (off == 2)
+			code = tf->tf_reg[1];
+		else
+#endif
+			code = tf->tf_reg[0];
+		code %= EMULNAMEU(SYS_NSYSENT);
 		callp = p->p_emul->e_sysent + code;
 
 		/* don't allow nested syscall */
@@ -102,6 +141,7 @@ EMULNAME(syscall)(struct trapframe *tf)
 			goto bad;
 		}
 	}
+#endif /* SYSCALL_NO_INDIRECT */
 
 	/* number of argument to fetch from sp */
 	KASSERT(callp->sy_narg <= EMULNAMEU(SYS_MAXSYSARGS));
@@ -118,8 +158,8 @@ EMULNAME(syscall)(struct trapframe *tf)
 			goto bad;
 	}
 
-	rval[0] = rval[1] = 0;
-
+	rval[0] = 0;
+	rval[1] = tf->tf_reg[1];
 #if 0
 	error = sy_invoke(callp, l, args32buf.a32, rval, code);
 #else
@@ -136,7 +176,8 @@ EMULNAME(syscall)(struct trapframe *tf)
 	do_trace = p->p_trace_enabled &&
 	    ((callp->sy_flags & SYCALL_INDIRECT) == 0);
 	if (__predict_false(do_trace ||
-	    KDTRACE_ENTRY(callp->sy_entry) || KDTRACE_ENTRY(callp->sy_return))) {
+	    KDTRACE_ENTRY(callp->sy_entry) ||
+	    KDTRACE_ENTRY(callp->sy_return))) {
 		/* build 64bit args for trace_enter()/trace_exit() */
 		int nargs = callp->sy_narg;
 		for (i = 0; i < nargs; i++)
@@ -155,7 +196,9 @@ EMULNAME(syscall)(struct trapframe *tf)
 
 	if (__predict_true(error == 0)) {
 		tf->tf_reg[0] = rval[0];
+#ifndef SYSCALL_NO_RVAL1
 		tf->tf_reg[1] = rval[1];
+#endif
 		tf->tf_spsr &= ~NZCV_C;
 	} else {
 		switch (error) {
@@ -174,6 +217,8 @@ EMULNAME(syscall)(struct trapframe *tf)
 #ifndef __HAVE_MINIMAL_EMUL
 			if (p->p_emul->e_errno)
 				error = p->p_emul->e_errno[error];
+#elif defined(SYSCALL_EMUL_ERRNO)
+			error = SYSCALL_EMUL_ERRNO(error);
 #endif
 			tf->tf_reg[0] = error;
 			tf->tf_spsr |= NZCV_C;

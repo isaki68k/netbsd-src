@@ -1,4 +1,4 @@
-/*	$NetBSD: vrgiu.c,v 1.42 2012/10/27 17:17:56 chs Exp $	*/
+/*	$NetBSD: vrgiu.c,v 1.47 2021/08/07 16:18:54 thorpej Exp $	*/
 /*-
  * Copyright (c) 1999-2001
  *         Shin Takemura and PocketBSD Project. All rights reserved.
@@ -34,12 +34,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vrgiu.c,v 1.42 2012/10/27 17:17:56 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vrgiu.c,v 1.47 2021/08/07 16:18:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/queue.h>
 #include <sys/reboot.h>
 
@@ -268,7 +268,8 @@ vrgiu_attach(device_t parent, device_t self, void *aux)
 	haa.haa_sc = sc;
 	haa.haa_getchip = vrgiu_getchip;
 	haa.haa_iot = sc->sc_iot;
-	while (config_found(self, &haa, vrgiu_print)) ;
+	while (config_found(self, &haa, vrgiu_print,
+	    CFARGS(.iattr = "hpcioif")));
 	/*
 	 * GIU-ISA bridge
 	 */
@@ -289,7 +290,8 @@ vrgiu_callback(device_t self)
 	haa.haa_sc = sc;
 	haa.haa_getchip = vrgiu_getchip;
 	haa.haa_iot = sc->sc_iot;
-	config_found(self, &haa, vrgiu_print);
+	config_found(self, &haa, vrgiu_print,
+	    CFARGS(.iattr = "vrisabif"));
 }
 
 int
@@ -534,9 +536,7 @@ vrgiu_intr_establish(
 
 	s = splhigh();
 
-	if (!(ih = malloc(sizeof(struct vrgiu_intr_entry), M_DEVBUF, M_NOWAIT)))
-		panic ("vrgiu_intr_establish: no memory.");
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	DPRINTF(DEBUG_INTR, ("%s: port %d ", device_xname(sc->sc_dev), port));
 	ih->ih_port = port;
 	ih->ih_fun = ih_fun;
@@ -627,7 +627,7 @@ vrgiu_intr_disestablish(hpcio_chip_t hc, void *arg)
 	TAILQ_FOREACH(ih, &sc->sc_intr_head[port], ih_link) {
 		if (ih == ihe) {
 			TAILQ_REMOVE(&sc->sc_intr_head[port], ih, ih_link);
-			free(ih, M_DEVBUF);
+			kmem_free(ih, sizeof(*ih));
 			if (TAILQ_EMPTY(&sc->sc_intr_head[port])) {
 				/* Disable interrupt */
 #ifdef WINCE_DEFAULT_SETTING

@@ -1,4 +1,4 @@
-/*	$NetBSD: rmixl_obio.c,v 1.5 2011/07/10 23:13:22 matt Exp $	*/
+/*	$NetBSD: rmixl_obio.c,v 1.9 2022/01/22 15:10:31 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rmixl_obio.c,v 1.5 2011/07/10 23:13:22 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rmixl_obio.c,v 1.9 2022/01/22 15:10:31 skrll Exp $");
 
 #include "locators.h"
 #include "pci.h"
@@ -117,8 +117,8 @@ obio_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach on-board devices as specified in the kernel config file.
 	 */
-	config_search_ia(obio_search, self, "obio", NULL);
-
+	config_search(self, NULL,
+	    CFARGS(.search = obio_search));
 }
 
 static int
@@ -159,8 +159,8 @@ obio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	obio.obio_32bit_dmat = sc->sc_32bit_dmat;
 	obio.obio_64bit_dmat = sc->sc_64bit_dmat;
 
-	if (config_match(parent, cf, &obio) > 0)
-		config_attach(parent, cf, &obio, obio_print);
+	if (config_probe(parent, cf, &obio))
+		config_attach(parent, cf, &obio, obio_print, CFARGS_NONE);
 
 	return 0;
 }
@@ -192,7 +192,7 @@ obio_bus_init(struct obio_softc *sc)
 	/* dma space for addr < 4GB */
 	if (rcp->rc_32bit_dmat == NULL) {
 		error = bus_dmatag_subregion(rcp->rc_64bit_dmat,
-		    0, (bus_addr_t)1 << 32, &rcp->rc_32bit_dmat, 0);
+		    0, __MASK(32), &rcp->rc_32bit_dmat, 0);
 		if (error)
 			panic("%s: failed to create 32bit dma tag: %d",
 			    __func__, error);
@@ -201,7 +201,7 @@ obio_bus_init(struct obio_softc *sc)
 	/* dma space for addr < 512MB */
 	if (rcp->rc_29bit_dmat == NULL) {
 		error = bus_dmatag_subregion(rcp->rc_32bit_dmat,
-		    0, (bus_addr_t)1 << 29, &rcp->rc_29bit_dmat, 0);
+		    0, __MASK(29), &rcp->rc_29bit_dmat, 0);
 		if (error)
 			panic("%s: failed to create 29bit dma tag: %d",
 			    __func__, error);
@@ -242,8 +242,8 @@ rmixl_addr_error_init(void)
 	r |= ~(__BITS(19,16) | __BITS(10,9) | __BITS(7,5));
 	RMIXL_IOREG_WRITE(RMIXL_ADDR_ERR_DEVICE_MASK, r);
 
-	/* 
-	 * enable the address error interrupts 
+	/*
+	 * enable the address error interrupts
 	 * "upgrade" cache and CPU errors to A1
 	 */
 #define _ADDR_ERR_DEVSTAT_A1	(__BIT(8) | __BIT(1) | __BIT(0))
@@ -268,8 +268,8 @@ rmixl_addr_error_init(void)
 	r = RMIXL_IOREG_READ(RMIXL_ADDR_ERR_AERR1_CLEAR);
 	RMIXL_IOREG_WRITE(RMIXL_ADDR_ERR_AERR1_CLEAR, r);
 
-	/* 
-	 * enable the double bit error interrupts 
+	/*
+	 * enable the double bit error interrupts
 	 * (assume reserved bits, which are read-only,  are ignored)
 	 */
 	r = RMIXL_IOREG_READ(RMIXL_ADDR_ERR_BITERR_INT_EN);

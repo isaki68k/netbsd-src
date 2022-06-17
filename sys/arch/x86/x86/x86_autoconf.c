@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_autoconf.c,v 1.78 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: x86_autoconf.c,v 1.87 2022/03/19 13:51:35 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.78 2019/05/24 14:28:48 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.87 2022/03/19 13:51:35 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,11 +54,13 @@ __KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.78 2019/05/24 14:28:48 nonaka Exp
 #include <machine/bootinfo.h>
 #include <machine/pio.h>
 
+#include <xen/xen.h>
+
 #include <dev/i2c/i2cvar.h>
 
 #include "acpica.h"
 #include "wsdisplay.h"
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #endif
 
@@ -93,12 +95,13 @@ is_valid_disk(device_t dv)
 {
 
 	if (device_class(dv) != DV_DISK)
-		return (0);
-	
+		return 0;
+
 	return (device_is_a(dv, "dk") ||
 		device_is_a(dv, "sd") ||
 		device_is_a(dv, "wd") ||
 		device_is_a(dv, "ld") ||
+		device_is_a(dv, "xbd") ||
 		device_is_a(dv, "ed"));
 }
 
@@ -137,10 +140,7 @@ matchbiosdisks(void)
 	    sizeof(struct nativedisk_info);
 
 	/* XXX M_TEMP is wrong */
-	x86_alldisks = malloc(dklist_size, M_TEMP, M_NOWAIT | M_ZERO);
-	if (x86_alldisks == NULL)
-		return;
-
+	x86_alldisks = malloc(dklist_size, M_TEMP, M_WAITOK | M_ZERO);
 	x86_alldisks->dl_nnativedisks = x86_ndisks;
 	x86_alldisks->dl_nbiosdisks = numbig;
 	for (i = 0; i < numbig; i++) {
@@ -178,7 +178,7 @@ matchbiosdisks(void)
 		}
 
 		error = vn_rdwr(UIO_READ, tv, mbr, DEV_BSIZE, 0, UIO_SYSSPACE,
-		    0, NOCRED, NULL, NULL);
+		    IO_NODELOCKED, NOCRED, NULL, NULL);
 		VOP_CLOSE(tv, FREAD, NOCRED);
 		vput(tv);
 		if (error) {
@@ -243,7 +243,7 @@ match_bootwedge(device_t dv, struct btinfo_bootwedge *biw)
 	     nblks != 0; nblks--, blk++) {
 		error = vn_rdwr(UIO_READ, tmpvn, (void *) bf,
 		    sizeof(bf), blk * DEV_BSIZE, UIO_SYSSPACE,
-		    0, NOCRED, NULL, NULL);
+		    IO_NODELOCKED, NOCRED, NULL, NULL);
 		if (error) {
 			if (error != EINVAL) {
 				aprint_error("%s: unable to read block %"
@@ -292,13 +292,15 @@ match_bootdisk(device_t dv, struct btinfo_bootdisk *bid)
 		DPRINTF(("%s: no label %s\n", __func__, device_xname(dv)));
 		return 0;
 	}
-	
+
 	if ((tmpvn = opendisk(dv)) == NULL) {
 		DPRINTF(("%s: can't open %s\n", __func__, device_xname(dv)));
 		return 0;
 	}
 
+	VOP_UNLOCK(tmpvn);
 	error = VOP_IOCTL(tmpvn, DIOCGDINFO, &label, FREAD, NOCRED);
+	vn_lock(tmpvn, LK_EXCLUSIVE | LK_RETRY);
 	if (error) {
 		/*
 		 * XXX Can't happen -- open() would have errored out
@@ -319,7 +321,7 @@ match_bootdisk(device_t dv, struct btinfo_bootdisk *bid)
  closeout:
 	VOP_CLOSE(tmpvn, FREAD, NOCRED);
 	vput(tmpvn);
-	return (found);
+	return found;
 }
 
 /*
@@ -340,7 +342,7 @@ findroot(void)
 
 	if (booted_device)
 		return;
-	
+
 	if (lookup_bootinfo(BTINFO_NETIF) != NULL) {
 		/*
 		 * We got netboot interface information, but device_register()
@@ -409,7 +411,7 @@ findroot(void)
 				 */
 				if ((biw->biosdev & 0x80) == 0 ||
 				    match_bootwedge(dv, biw) == 0)
-				    	continue;
+					continue;
 				goto bootwedge_found;
 			}
 
@@ -456,7 +458,7 @@ findroot(void)
 				/* XXX device_unit() abuse */
 				if ((bid->biosdev & 0x80) != 0 ||
 				    device_unit(dv) != bid->biosdev)
-				    	continue;
+					continue;
 				goto bootdisk_found;
 			}
 
@@ -468,7 +470,7 @@ findroot(void)
 				 */
 				if ((bid->biosdev & 0x80) == 0 ||
 				    match_bootdisk(dv, bid) == 0)
-				    	continue;
+					continue;
 				goto bootdisk_found;
 			}
 
@@ -537,6 +539,12 @@ findroot(void)
 void
 cpu_bootconf(void)
 {
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH) {
+		xen_bootconf();
+		return;
+	}
+#endif
 	findroot();
 	matchbiosdisks();
 }
@@ -562,26 +570,26 @@ device_register(device_t dev, void *aux)
 	 * only for reading memory module EERPOMs and sensors.
 	 */
 	if (device_is_a(dev, "iic") &&
-	    device_is_a(dev->dv_parent, "imcsmb")) {
-		static const char *imcsmb_device_whitelist[] = {
+	    device_is_a(device_parent(dev), "imcsmb")) {
+		static const char *imcsmb_device_permitlist[] = {
 			"spdmem",
 			"sdtemp",
 			NULL,
 		};
-		prop_array_t whitelist = prop_array_create();
+		prop_array_t permitlist = prop_array_create();
 		prop_dictionary_t props = device_properties(dev);
 		int i;
 
-		for (i = 0; imcsmb_device_whitelist[i] != NULL; i++) {
-			prop_string_t pstr = prop_string_create_cstring_nocopy(
-			    imcsmb_device_whitelist[i]);
-			(void) prop_array_add(whitelist, pstr);
+		for (i = 0; imcsmb_device_permitlist[i] != NULL; i++) {
+			prop_string_t pstr = prop_string_create_nocopy(
+			    imcsmb_device_permitlist[i]);
+			(void) prop_array_add(permitlist, pstr);
 			prop_object_release(pstr);
 		}
 		(void) prop_dictionary_set(props,
-					   I2C_PROP_INDIRECT_DEVICE_WHITELIST,
-					   whitelist);
-		(void) prop_dictionary_set_cstring_nocopy(props,
+					   I2C_PROP_INDIRECT_DEVICE_PERMITLIST,
+					   permitlist);
+		(void) prop_dictionary_set_string_nocopy(props,
 					   I2C_PROP_INDIRECT_PROBE_STRATEGY,
 					   I2C_PROBE_STRATEGY_NONE);
 	}

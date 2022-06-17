@@ -1,4 +1,4 @@
-/*	$NetBSD: sysvbfs_vfsops.c,v 1.46 2015/01/02 16:51:02 hannken Exp $	*/
+/*	$NetBSD: sysvbfs_vfsops.c,v 1.48 2022/05/03 07:34:38 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vfsops.c,v 1.46 2015/01/02 16:51:02 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vfsops.c,v 1.48 2022/05/03 07:34:38 hannken Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -139,9 +139,11 @@ sysvbfs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 		    (mp->mnt_flag & MNT_RDONLY) == 0)
 			accessmode |= VWRITE;
 
+		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 		error = kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_MOUNT,
 		    KAUTH_REQ_SYSTEM_MOUNT_DEVICE, mp, devvp,
 		    KAUTH_ARG(accessmode));
+		VOP_UNLOCK(devvp);
 	}
 
 	if (error) {
@@ -239,13 +241,13 @@ sysvbfs_unmount(struct mount *mp, int mntflags)
 }
 
 int
-sysvbfs_root(struct mount *mp, struct vnode **vpp)
+sysvbfs_root(struct mount *mp, int lktype, struct vnode **vpp)
 {
 	struct vnode *vp;
 	int error;
 
 	DPRINTF("%s:\n", __func__);
-	if ((error = VFS_VGET(mp, BFS_ROOT_INODE, &vp)) != 0)
+	if ((error = VFS_VGET(mp, BFS_ROOT_INODE, lktype, &vp)) != 0)
 		return error;
 	*vpp = vp;
 
@@ -362,7 +364,7 @@ sysvbfs_loadvnode(struct mount *mp, struct vnode *vp,
 }
 
 int
-sysvbfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
+sysvbfs_vget(struct mount *mp, ino_t ino, int lktype, struct vnode **vpp)
 {
 	int error;
 	uint16_t number;
@@ -376,7 +378,7 @@ sysvbfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 	error = vcache_get(mp, &number, sizeof(number), &vp);
 	if (error)
 		return error;
-	error = vn_lock(vp, LK_EXCLUSIVE);
+	error = vn_lock(vp, lktype);
 	if (error) {
 		vrele(vp);
 		return error;
@@ -388,7 +390,8 @@ sysvbfs_vget(struct mount *mp, ino_t ino, struct vnode **vpp)
 }
 
 int
-sysvbfs_fhtovp(struct mount *mp, struct fid *fid, struct vnode **vpp)
+sysvbfs_fhtovp(struct mount *mp, struct fid *fid, int lktype,
+    struct vnode **vpp)
 {
 
 	DPRINTF("%s:\n", __func__);

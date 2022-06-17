@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_reconmap.c,v 1.37 2019/02/09 03:34:00 christos Exp $	*/
+/*	$NetBSD: rf_reconmap.c,v 1.39 2022/04/08 10:27:04 andvar Exp $	*/
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
  * All rights reserved.
@@ -34,7 +34,7 @@
  *************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_reconmap.c,v 1.37 2019/02/09 03:34:00 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_reconmap.c,v 1.39 2022/04/08 10:27:04 andvar Exp $");
 
 #include "rf_raid.h"
 #include <sys/time.h>
@@ -86,7 +86,6 @@ rf_MakeReconMap(RF_Raid_t *raidPtr, RF_SectorCount_t ru_sectors,
 	RF_RaidLayout_t *layoutPtr = &raidPtr->Layout;
 	RF_ReconUnitCount_t num_rus = layoutPtr->stripeUnitsPerDisk / layoutPtr->SUsPerRU;
 	RF_ReconMap_t *p;
-	int error;
 
 	p = RF_Malloc(sizeof(*p));
 	p->sectorsPerReconUnit = ru_sectors;
@@ -105,8 +104,7 @@ rf_MakeReconMap(RF_Raid_t *raidPtr, RF_SectorCount_t ru_sectors,
 
 	pool_init(&p->elem_pool, sizeof(RF_ReconMapListElem_t), 0,
 	    0, 0, "raidreconpl", NULL, IPL_BIO);
-	if ((error = pool_prime(&p->elem_pool, RF_NUM_RECON_POOL_ELEM)) != 0)
-		panic("%s: failed to prime pool: %d", __func__, error);
+	pool_prime(&p->elem_pool, RF_NUM_RECON_POOL_ELEM);
 
 	rf_init_mutex2(p->mutex, IPL_VM);
 	rf_init_cond2(p->cv, "reconupdate");
@@ -180,7 +178,7 @@ rf_ReconMapUpdate(RF_Raid_t *raidPtr, RF_ReconMap_t *mapPtr,
 			mapPtr->low_ru++;
 			mapPtr->high_ru++;
 			/* initialize "highest" RU status entry, which
-			   will take over the current head postion */
+			   will take over the current head position */
 			mapPtr->status[mapPtr->head]=RU_NOTHING;
 			
 			/* move head too */
@@ -399,4 +397,3 @@ rf_PrintReconSchedule(RF_ReconMap_t *mapPtr, struct timeval *starttime)
 	}
 }
 #endif
-

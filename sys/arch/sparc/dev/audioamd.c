@@ -1,4 +1,4 @@
-/*	$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $	*/
+/*	$NetBSD: audioamd.c,v 1.30 2020/09/12 05:19:16 isaki Exp $	*/
 /*	NetBSD: am7930_sparc.c,v 1.44 1999/03/14 22:29:00 jonathan Exp 	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.30 2020/09/12 05:19:16 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0
@@ -52,17 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $");
 
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
-#include <sparc/dev/audioamdvar.h>
 
 #define AUDIO_ROM_NAME "audio"
-
-#ifdef AUDIO_DEBUG
-#define DPRINTF(x)      if (am7930debug) printf x
-#define DPRINTFN(n,x)   if (am7930debug>(n)) printf x
-#else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
-#endif	/* AUDIO_DEBUG */
 
 struct audioamd_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
@@ -236,21 +227,22 @@ audioamd_sbus_attach(device_t parent, device_t self, void *aux)
 void
 audioamd_attach(struct audioamd_softc *sc, int pri)
 {
+	struct am7930_softc *amsc = &sc->sc_am7930;
 	device_t self;
 
 	/*
 	 * Set up glue for MI code early; we use some of it here.
 	 */
-	self = sc->sc_am7930.sc_dev;
-	sc->sc_am7930.sc_glue = &audioamd_glue;
-	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
+	amsc->sc_glue = &audioamd_glue;
+	am7930_init(amsc, AUDIOAMD_POLL_MODE);
 
 	(void)bus_intr_establish2(sc->sc_bt, pri, IPL_HIGH,
 				  am7930_hwintr, sc, NULL);
 
 	printf("\n");
 
-	evcnt_attach_dynamic(&sc->sc_am7930.sc_intrcnt, EVCNT_TYPE_INTR, NULL,
+	self = amsc->sc_dev;
+	evcnt_attach_dynamic(&amsc->sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
 	audio_attach_mi(&sa_hw_if, sc, self);

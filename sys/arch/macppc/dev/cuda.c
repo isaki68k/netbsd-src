@@ -1,4 +1,4 @@
-/*	$NetBSD: cuda.c,v 1.23 2018/09/03 16:29:25 riastradh Exp $ */
+/*	$NetBSD: cuda.c,v 1.29 2021/08/07 16:18:57 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cuda.c,v 1.23 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cuda.c,v 1.29 2021/08/07 16:18:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -79,7 +79,6 @@ struct cuda_softc {
 	struct todr_chip_handle sc_todr;
 	struct adb_bus_accessops sc_adbops;
 	struct i2c_controller sc_i2c;
-	kmutex_t sc_buslock;
 	bus_space_tag_t sc_memt;
 	bus_space_handle_t sc_memh;
 	int sc_node;
@@ -145,8 +144,6 @@ static 	int cuda_adb_send(void *, int, int, int, uint8_t *);
 static	int cuda_adb_set_handler(void *, void (*)(void *, int, uint8_t *), void *);
 
 /* i2c stuff */
-static int cuda_i2c_acquire_bus(void *, int);
-static void cuda_i2c_release_bus(void *, int);
 static int cuda_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *, size_t,
 		    void *, size_t, int);
 
@@ -206,7 +203,8 @@ cuda_attach(device_t parent, device_t self, void *aux)
 		aprint_normal(": unable to map registers\n");
 		return;
 	}
-	sc->sc_ih = intr_establish(irq, IST_EDGE, IPL_TTY, cuda_intr, sc);
+	sc->sc_ih = intr_establish_xname(irq, IST_EDGE, IPL_TTY, cuda_intr, sc,
+	    device_xname(self));
 	printf("\n");
 
 	for (i = 0; i < 16; i++) {
@@ -234,8 +232,8 @@ cuda_attach(device_t parent, device_t self, void *aux)
 			sc->sc_adbops.poll = cuda_adb_poll;
 			sc->sc_adbops.autopoll = cuda_autopoll;
 			sc->sc_adbops.set_handler = cuda_adb_set_handler;
-			config_found_ia(self, "adb_bus", &sc->sc_adbops,
-			    nadb_print);
+			config_found(self, &sc->sc_adbops, nadb_print,
+			    CFARGS(.iattr = "adb_bus"));
 		} else if (strncmp(name, "rtc", 4) == 0) {
 
 			sc->sc_todr.todr_gettime = cuda_todr_get;
@@ -251,7 +249,7 @@ cuda_attach(device_t parent, device_t self, void *aux)
 	caa.send = cuda_send;
 	caa.poll = cuda_poll;
 #if notyet
-	config_found(self, &caa, cuda_print);
+	config_found(self, &caa, cuda_print, CFARGS_NONE);
 #endif
 	cfg = prop_array_create();
 	prop_dictionary_set(dict, "i2c-child-devices", cfg);
@@ -262,7 +260,7 @@ cuda_attach(device_t parent, device_t self, void *aux)
 	node = OF_finddevice("/valkyrie");
 	if (node != -1) {
 		dev = prop_dictionary_create();
-		prop_dictionary_set_cstring(dev, "name", "videopll");
+		prop_dictionary_set_string(dev, "name", "videopll");
 		prop_dictionary_set_uint32(dev, "addr", 0x50);
 		prop_array_add(cfg, dev);
 		prop_object_release(dev);
@@ -271,25 +269,19 @@ cuda_attach(device_t parent, device_t self, void *aux)
 	node = OF_finddevice("/perch");
 	if (node != -1) {
 		dev = prop_dictionary_create();
-		prop_dictionary_set_cstring(dev, "name", "sgsmix");
+		prop_dictionary_set_string(dev, "name", "sgsmix");
 		prop_dictionary_set_uint32(dev, "addr", 0x8a);
 		prop_array_add(cfg, dev);
 		prop_object_release(dev);
 	}
 
-	mutex_init(&sc->sc_buslock, MUTEX_DEFAULT, IPL_NONE);
 	memset(&iba, 0, sizeof(iba));
 	iba.iba_tag = &sc->sc_i2c;
+	iic_tag_init(&sc->sc_i2c);
 	sc->sc_i2c.ic_cookie = sc;
-	sc->sc_i2c.ic_acquire_bus = cuda_i2c_acquire_bus;
-	sc->sc_i2c.ic_release_bus = cuda_i2c_release_bus;
-	sc->sc_i2c.ic_send_start = NULL;
-	sc->sc_i2c.ic_send_stop = NULL;
-	sc->sc_i2c.ic_initiate_xfer = NULL;
-	sc->sc_i2c.ic_read_byte = NULL;
-	sc->sc_i2c.ic_write_byte = NULL;
 	sc->sc_i2c.ic_exec = cuda_i2c_exec;
-	config_found_ia(self, "i2cbus", &iba, iicbus_print);
+	config_found(self, &iba, iicbus_print,
+	    CFARGS(.iattr = "i2cbus"));
 
 	if (cuda0 == NULL)
 		cuda0 = &caa;
@@ -937,23 +929,6 @@ cuda_adb_set_handler(void *cookie, void (*handler)(void *, int, uint8_t *),
 }
 
 /* i2c message handling */
-
-static int
-cuda_i2c_acquire_bus(void *cookie, int flags)
-{
-	struct cuda_softc *sc = cookie;
-
-	mutex_enter(&sc->sc_buslock);
-	return 0;
-}
-
-static void
-cuda_i2c_release_bus(void *cookie, int flags)
-{
-	struct cuda_softc *sc = cookie;
-
-	mutex_exit(&sc->sc_buslock);
-}
 
 static int
 cuda_i2c_exec(void *cookie, i2c_op_t op, i2c_addr_t addr, const void *_send,

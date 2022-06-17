@@ -1,4 +1,4 @@
-/*      $NetBSD: loongson_intr.c,v 1.6 2016/08/27 05:53:40 skrll Exp $      */
+/*      $NetBSD: loongson_intr.c,v 1.8 2020/11/21 15:36:36 thorpej Exp $      */
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: loongson_intr.c,v 1.6 2016/08/27 05:53:40 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: loongson_intr.c,v 1.8 2020/11/21 15:36:36 thorpej Exp $");
 
 #define __INTR_PRIVATE
 
@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: loongson_intr.c,v 1.6 2016/08/27 05:53:40 skrll Exp 
 #include <sys/cpu.h>
 #include <sys/intr.h>
 #include <sys/bus.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <mips/mips3_clock.h>
 #include <machine/locore.h>
@@ -295,10 +295,7 @@ evbmips_intr_establish(int irq, int (*func)(void *), void *arg)
 	KASSERT(irq < BONITO_NINTS);
 	DPRINTF(("loongson_intr_establish %d %p", irq, func));
 
-	ih = malloc(sizeof(*ih), M_DEVBUF, M_NOWAIT|M_ZERO);
-	if (ih == NULL)
-		return NULL;
-
+	ih = kmem_zalloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_func = func;
 	ih->ih_arg = arg;
 	ih->ih_irq = irq;
@@ -330,7 +327,7 @@ evbmips_intr_disestablish(void *cookie)
 	    !BONITO_IRQ_IS_ISA(ih->ih_irq))
 		REGVAL(BONITO_INTENCLR) = (1 << ih->ih_irq);
 	splx(s);
-	free(ih, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 const char *

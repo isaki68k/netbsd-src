@@ -1,9 +1,7 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: xpbus.c,v 1.1 2022/06/10 21:42:23 tsutsui Exp $	*/
 
-/* TODO: ao-kenji 's copyright */
-/* TODO: my copyright */
-/*
- * Copyright (c) 2018 Tetsuya Isaki. All rights reserved.
+/*-
+ * Copyright (c) 2016 Izumi Tsutsui.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -18,21 +16,28 @@
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
  * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*
  * LUNA's Hitachi HD647180 "XP" I/O processor
  */
 
+/*
+ * Specification of interrupts from XP to the host is confirmed
+ * by Kenji Aoyama, in xptty(4) driver for OpenBSD/luna88k:
+ *  https://gist.github.com/ao-kenji/790b0822e46a50ea63131cfa8d9110e7
+ * and CP/M BIOS for HD647180 on LUNA:
+ *  https://gist.github.com/ao-kenji/4f1e2b010f3b2b41ab07f3a8a3cc7484
+ */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD$");
+__KERNEL_RCSID(0, "$NetBSD: xpbus.c,v 1.1 2022/06/10 21:42:23 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,9 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <machine/board.h>
 
 #include <luna68k/dev/xpbusvar.h>
-
-// load default xplx firmware
-#include "xplxfirm.c"
+#include <luna68k/dev/xplxfirm.h>
 
 /*
  * PIO 0 port C is connected to XP's reset line
@@ -119,15 +122,15 @@ static void
 xpbus_attach(device_t parent, device_t self, void *aux)
 {
 	struct xpbus_softc *sc = device_private(self);
-	const struct xpbus_attach_args *xa;
+	struct xpbus_attach_args xa;
 	int i;
 
 	sc->sc_dev = self;
 	aprint_normal("\n");
 
 	for (i = 0; i < __arraycount(xpdevs); i++) {
-		xa = &xpdevs[i];
-		config_found(self, __UNCONST(xa), NULL);
+		xa = xpdevs[i];
+		config_found(self, &xa, NULL, CFARGS_NONE);
 	}
 }
 
@@ -139,6 +142,7 @@ xpbus_attach(device_t parent, device_t self, void *aux)
 u_int
 xp_acquire(int xplx_devid, u_int excl)
 {
+
 	for (;;) {
 		unsigned int before, after;
 		before = xp_acquired;
@@ -157,6 +161,7 @@ xp_acquire(int xplx_devid, u_int excl)
 void
 xp_release(int xplx_devid)
 {
+
 	for (;;) {
 		unsigned int before, after;
 		before = xp_acquired;
@@ -171,6 +176,7 @@ xp_release(int xplx_devid)
 void
 xp_set_shm_dirty(void)
 {
+
 	xp_shm_dirty = true;
 }
 
@@ -178,12 +184,13 @@ xp_set_shm_dirty(void)
 void
 xp_ensure_firmware(void)
 {
+
 	if (xp_shm_dirty) {
-		// firmware transfer
+		/* firmware transfer */
 		xp_cpu_reset_hold();
 		delay(100);
 		memcpy((void *)XP_SHM_BASE, xplx, xplx_size);
-		// XXX いるの?
+		/* XXX maybe not necessary */
 		delay(100);
 		xp_cpu_reset_release();
 		xp_shm_dirty = false;
@@ -205,6 +212,7 @@ put_pio0c(uint8_t bit, uint8_t set)
 void
 xp_cpu_reset_hold(void)
 {
+
 	put_pio0c(XP_RESET, ON);
 }
 
@@ -212,6 +220,7 @@ xp_cpu_reset_hold(void)
 void
 xp_cpu_reset_release(void)
 {
+
 	put_pio0c(XP_RESET, OFF);
 }
 
@@ -219,6 +228,7 @@ xp_cpu_reset_release(void)
 void
 xp_cpu_reset(void)
 {
+
 	xp_cpu_reset_hold();
 	delay(100);
 	xp_cpu_reset_release();
@@ -228,6 +238,7 @@ xp_cpu_reset(void)
 void
 xp_intr1_enable(void)
 {
+
 	put_pio0c(XP_INT1_ENA, ON);
 }
 
@@ -235,6 +246,7 @@ xp_intr1_enable(void)
 void
 xp_intr1_disable(void)
 {
+
 	put_pio0c(XP_INT1_ENA, OFF);
 }
 
@@ -242,10 +254,11 @@ xp_intr1_disable(void)
 void
 xp_intr1_acknowledge(void)
 {
+
 	/* reset the interrupt request: read PIO0 port A */
-	// XXX: たぶん
+	/* XXX: probably */
 	*(volatile uint8_t *)OBIO_PIO0A;
-	// XXX: たちまち、勘で。
+	/* XXX: just a guess */
 	*(volatile uint8_t *)OBIO_PIO0B;
 }
 
@@ -253,6 +266,7 @@ xp_intr1_acknowledge(void)
 void
 xp_intr5_enable(void)
 {
+
 	put_pio0c(XP_INT5_ENA, ON);
 }
 
@@ -260,6 +274,7 @@ xp_intr5_enable(void)
 void
 xp_intr5_disable(void)
 {
+
 	put_pio0c(XP_INT5_ENA, OFF);
 }
 
@@ -267,14 +282,16 @@ xp_intr5_disable(void)
 void
 xp_intr5_acknowledge(void)
 {
+
 	/* reset the interrupt request: read PIO0 port A */
-	*(volatile uint8_t *)OBIO_PIO0A;
+	(void)*(volatile uint8_t *)OBIO_PIO0A;
 }
 
 /* get XP shared memory pointer */
 void *
 xp_shmptr(int offset)
 {
+
 	return (uint8_t *)XP_SHM_BASE + offset;
 }
 
@@ -282,6 +299,7 @@ xp_shmptr(int offset)
 int
 xp_readmem8(int offset)
 {
+
 	return *((volatile uint8_t *)xp_shmptr(offset));
 }
 
@@ -289,6 +307,7 @@ xp_readmem8(int offset)
 int
 xp_readmem16le(int offset)
 {
+
 	return le16toh(*(volatile uint16_t *)xp_shmptr(offset));
 }
 
@@ -296,6 +315,7 @@ xp_readmem16le(int offset)
 void
 xp_writemem8(int offset, int v)
 {
+
 	*(volatile uint8_t *)(xp_shmptr(offset)) = v;
 }
 
@@ -303,5 +323,6 @@ xp_writemem8(int offset, int v)
 void
 xp_writemem16le(int offset, int v)
 {
+
 	*((volatile uint16_t *)xp_shmptr(offset)) = htole16((uint16_t)v);
 }

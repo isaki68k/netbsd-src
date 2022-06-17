@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mue.c,v 1.55 2019/08/23 04:32:57 mrg Exp $	*/
+/*	$NetBSD: if_mue.c,v 1.81 2022/03/03 05:56:28 riastradh Exp $	*/
 /*	$OpenBSD: if_mue.c,v 1.3 2018/08/04 16:42:46 jsg Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Driver for Microchip LAN7500/LAN7800 chipsets. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.55 2019/08/23 04:32:57 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.81 2022/03/03 05:56:28 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -60,7 +60,7 @@ struct mue_type {
 #define LAN7850		0x0008	/* LAN7850 */
 };
 
-const struct mue_type mue_devs[] = {
+static const struct mue_type mue_devs[] = {
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7500 }, LAN7500 },
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7505 }, LAN7500 },
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7800 }, LAN7800 },
@@ -92,30 +92,32 @@ static int	mue_chip_init(struct usbnet *);
 static void	mue_set_macaddr(struct usbnet *);
 static int	mue_get_macaddr(struct usbnet *, prop_dictionary_t);
 static int	mue_prepare_tso(struct usbnet *, struct mbuf *);
-static void	mue_setiff(struct usbnet *);
-static void	mue_sethwcsum(struct usbnet *);
-static void	mue_setmtu(struct usbnet *);
+static void	mue_uno_mcast(struct ifnet *);
+static void	mue_sethwcsum_locked(struct usbnet *);
+static void	mue_setmtu_locked(struct usbnet *);
 static void	mue_reset(struct usbnet *);
 
-static void	mue_stop_cb(struct ifnet *, int);
-static int	mue_ioctl_cb(struct ifnet *, u_long, void *);
-static int	mue_mii_read_reg(struct usbnet *, int, int, uint16_t *);
-static int	mue_mii_write_reg(struct usbnet *, int, int, uint16_t);
-static void	mue_mii_statchg(struct ifnet *);
-static void	mue_rx_loop(struct usbnet *, struct usbnet_chain *, uint32_t);
-static unsigned	mue_tx_prepare(struct usbnet *, struct mbuf *,
-			       struct usbnet_chain *);
-static int	mue_init(struct ifnet *);
+static void	mue_uno_stop(struct ifnet *, int);
+static int	mue_uno_ioctl(struct ifnet *, u_long, void *);
+static int	mue_uno_mii_read_reg(struct usbnet *, int, int, uint16_t *);
+static int	mue_uno_mii_write_reg(struct usbnet *, int, int, uint16_t);
+static void	mue_uno_mii_statchg(struct ifnet *);
+static void	mue_uno_rx_loop(struct usbnet *, struct usbnet_chain *,
+				uint32_t);
+static unsigned	mue_uno_tx_prepare(struct usbnet *, struct mbuf *,
+				   struct usbnet_chain *);
+static int	mue_uno_init(struct ifnet *);
 
-static struct usbnet_ops mue_ops = {
-	.uno_stop = mue_stop_cb,
-	.uno_ioctl = mue_ioctl_cb,
-	.uno_read_reg = mue_mii_read_reg,
-	.uno_write_reg = mue_mii_write_reg,
-	.uno_statchg = mue_mii_statchg,
-	.uno_tx_prepare = mue_tx_prepare,
-	.uno_rx_loop = mue_rx_loop,
-	.uno_init = mue_init,
+static const struct usbnet_ops mue_ops = {
+	.uno_stop = mue_uno_stop,
+	.uno_ioctl = mue_uno_ioctl,
+	.uno_mcast = mue_uno_mcast,
+	.uno_read_reg = mue_uno_mii_read_reg,
+	.uno_write_reg = mue_uno_mii_write_reg,
+	.uno_statchg = mue_uno_mii_statchg,
+	.uno_tx_prepare = mue_uno_tx_prepare,
+	.uno_rx_loop = mue_uno_rx_loop,
+	.uno_init = mue_uno_init,
 };
 
 #define MUE_SETBIT(un, reg, x)	\
@@ -158,7 +160,7 @@ mue_csr_read(struct usbnet *un, uint32_t reg)
 
 	err = usbd_do_request(un->un_udev, &req, &val);
 	if (err) {
-		MUE_PRINTF(un, "reg = 0x%x: %s\n", reg, usbd_errstr(err));
+		MUE_PRINTF(un, "reg = %#x: %s\n", reg, usbd_errstr(err));
 		return 0;
 	}
 
@@ -184,7 +186,7 @@ mue_csr_write(struct usbnet *un, uint32_t reg, uint32_t aval)
 
 	err = usbd_do_request(un->un_udev, &req, &val);
 	if (err) {
-		MUE_PRINTF(un, "reg = 0x%x: %s\n", reg, usbd_errstr(err));
+		MUE_PRINTF(un, "reg = %#x: %s\n", reg, usbd_errstr(err));
 		return -1;
 	}
 
@@ -199,6 +201,8 @@ mue_wait_for_bits(struct usbnet *un, uint32_t reg,
 	int ntries;
 
 	for (ntries = 0; ntries < 1000; ntries++) {
+		if (usbnet_isdying(un))
+			return 1;
 		val = mue_csr_read(un, reg);
 		if ((val & set) || !(val & clear))
 			return 0;
@@ -211,17 +215,18 @@ mue_wait_for_bits(struct usbnet *un, uint32_t reg,
 }
 
 static int
-mue_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
+mue_uno_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
 {
 	uint32_t data;
 
-	usbnet_isowned_mii(un);
-
-	if (un->un_phyno != phy)
+	if (un->un_phyno != phy) {
+		*val = 0;
 		return EINVAL;
+	}
 
 	if (MUE_WAIT_CLR(un, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
 		MUE_PRINTF(un, "not ready\n");
+		*val = 0;
 		return EBUSY;
 	}
 
@@ -231,6 +236,7 @@ mue_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
 
 	if (MUE_WAIT_CLR(un, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
 		MUE_PRINTF(un, "timed out\n");
+		*val = 0;
 		return ETIMEDOUT;
 	}
 
@@ -241,9 +247,8 @@ mue_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
 }
 
 static int
-mue_mii_write_reg(struct usbnet *un, int phy, int reg, uint16_t val)
+mue_uno_mii_write_reg(struct usbnet *un, int phy, int reg, uint16_t val)
 {
-	usbnet_isowned_mii(un);
 
 	if (un->un_phyno != phy)
 		return EINVAL;
@@ -267,7 +272,7 @@ mue_mii_write_reg(struct usbnet *un, int phy, int reg, uint16_t val)
 }
 
 static void
-mue_mii_statchg(struct ifnet *ifp)
+mue_uno_mii_statchg(struct ifnet *ifp)
 {
 	struct usbnet * const un = ifp->if_softc;
 	struct mii_data * const mii = usbnet_mii(un);
@@ -291,7 +296,7 @@ mue_mii_statchg(struct ifnet *ifp)
 
 	/* Lost link, do nothing. */
 	if (!usbnet_havelink(un)) {
-		DPRINTF(un, "mii_media_status = 0x%x\n", mii->mii_media_status);
+		DPRINTF(un, "mii_media_status = %#x\n", mii->mii_media_status);
 		return;
 	}
 
@@ -734,7 +739,7 @@ mue_get_macaddr(struct usbnet *un, prop_dictionary_t dict)
 	if (eaprop != NULL) {
 		KASSERT(prop_object_type(eaprop) == PROP_TYPE_DATA);
 		KASSERT(prop_data_size(eaprop) == ETHER_ADDR_LEN);
-		memcpy(un->un_eaddr, prop_data_data_nocopy(eaprop),
+		memcpy(un->un_eaddr, prop_data_value(eaprop),
 		    ETHER_ADDR_LEN);
 		if (ETHER_IS_VALID(un->un_eaddr))
 			return 0;
@@ -851,7 +856,7 @@ mue_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Set these up now for mue_cmd().  */
-	usbnet_attach(un, "muedet");
+	usbnet_attach(un);
 
 	un->un_phyno = 1;
 
@@ -863,7 +868,7 @@ mue_attach(device_t parent, device_t self, void *aux)
 	/* A Microchip chip was detected.  Inform the world. */
 	id_rev = mue_csr_read(un, MUE_ID_REV);
 	descr = (un->un_flags & LAN7500) ? "LAN7500" : "LAN7800";
-	aprint_normal_dev(self, "%s id 0x%x rev 0x%x\n", descr,
+	aprint_normal_dev(self, "%s id %#x rev %#x\n", descr,
 		(unsigned)__SHIFTOUT(id_rev, MUE_ID_REV_ID),
 		(unsigned)__SHIFTOUT(id_rev, MUE_ID_REV_REV));
 
@@ -891,15 +896,13 @@ mue_attach(device_t parent, device_t self, void *aux)
 }
 
 static unsigned
-mue_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
+mue_uno_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
 {
 	struct ifnet * const ifp = usbnet_ifp(un);
 	struct mue_txbuf_hdr hdr;
 	uint32_t tx_cmd_a, tx_cmd_b;
 	int csum, len, rv;
 	bool tso, ipe, tpe;
-
-	usbnet_isowned_tx(un);
 
 	if ((unsigned)m->m_pkthdr.len > un->un_tx_bufsz - sizeof(hdr))
 		return 0;
@@ -997,10 +1000,10 @@ mue_prepare_tso(struct usbnet *un, struct mbuf *m)
 }
 
 static void
-mue_setiff(struct usbnet *un)
+mue_uno_mcast(struct ifnet *ifp)
 {
+	struct usbnet *un = ifp->if_softc;
 	struct ethercom *ec = usbnet_ec(un);
-	struct ifnet * const ifp = usbnet_ifp(un);
 	const uint8_t *enaddr = CLLADDR(ifp->if_sadl);
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -1024,10 +1027,11 @@ mue_setiff(struct usbnet *un)
 	/* Always accept broadcast frames. */
 	rxfilt |= MUE_RFE_CTL_BROADCAST;
 
+	ETHER_LOCK(ec);
 	if (ifp->if_flags & IFF_PROMISC) {
 		rxfilt |= MUE_RFE_CTL_UNICAST;
 allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
-		ifp->if_flags |= IFF_ALLMULTI;
+		ec->ec_flags |= ETHER_F_ALLMULTI;
 		if (ifp->if_flags & IFF_PROMISC)
 			DPRINTF(un, "promisc\n");
 		else
@@ -1037,7 +1041,6 @@ allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
 		pfiltbl[0][0] = MUE_ENADDR_HI(enaddr) | MUE_ADDR_FILTX_VALID;
 		pfiltbl[0][1] = MUE_ENADDR_LO(enaddr);
 		i = 1;
-		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
@@ -1045,7 +1048,6 @@ allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
 				memset(pfiltbl, 0, sizeof(pfiltbl));
 				memset(hashtbl, 0, sizeof(hashtbl));
 				rxfilt &= ~MUE_RFE_CTL_MULTICAST_HASH;
-				ETHER_UNLOCK(ec);
 				goto allmulti;
 			}
 			if (i < MUE_NUM_ADDR_FILTX) {
@@ -1063,14 +1065,14 @@ allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
 			i++;
 			ETHER_NEXT_MULTI(step, enm);
 		}
-		ETHER_UNLOCK(ec);
+		ec->ec_flags &= ~ETHER_F_ALLMULTI;
 		rxfilt |= MUE_RFE_CTL_PERFECT;
-		ifp->if_flags &= ~IFF_ALLMULTI;
 		if (rxfilt & MUE_RFE_CTL_MULTICAST_HASH)
 			DPRINTF(un, "perfect filter and hash tables\n");
 		else
 			DPRINTF(un, "perfect filter\n");
 	}
+	ETHER_UNLOCK(ec);
 
 	for (i = 0; i < MUE_NUM_ADDR_FILTX; i++) {
 		hireg = (un->un_flags & LAN7500) ?
@@ -1088,10 +1090,12 @@ allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
 }
 
 static void
-mue_sethwcsum(struct usbnet *un)
+mue_sethwcsum_locked(struct usbnet *un)
 {
 	struct ifnet * const ifp = usbnet_ifp(un);
 	uint32_t reg, val;
+
+	KASSERT(IFNET_LOCKED(ifp));
 
 	reg = (un->un_flags & LAN7500) ? MUE_7500_RFE_CTL : MUE_7800_RFE_CTL;
 	val = mue_csr_read(un, reg);
@@ -1120,10 +1124,12 @@ mue_sethwcsum(struct usbnet *un)
 }
 
 static void
-mue_setmtu(struct usbnet *un)
+mue_setmtu_locked(struct usbnet *un)
 {
 	struct ifnet * const ifp = usbnet_ifp(un);
 	uint32_t val;
+
+	KASSERT(IFNET_LOCKED(ifp));
 
 	/* Set the maximum frame size. */
 	MUE_CLRBIT(un, MUE_MAC_RX, MUE_MAC_RX_RXEN);
@@ -1135,7 +1141,7 @@ mue_setmtu(struct usbnet *un)
 }
 
 static void
-mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
+mue_uno_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 {
 	struct ifnet * const ifp = usbnet_ifp(un);
 	struct mue_rxbuf_hdr *hdrp;
@@ -1145,15 +1151,13 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 	uint8_t *buf = c->unc_buf;
 	bool v6;
 
-	usbnet_isowned_rx(un);
-
 	KASSERTMSG(total_len <= un->un_rx_bufsz, "%u vs %u",
 	    total_len, un->un_rx_bufsz);
 
 	do {
 		if (__predict_false(total_len < sizeof(*hdrp))) {
 			MUE_PRINTF(un, "packet length %u too short\n", total_len);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 
@@ -1166,8 +1170,8 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 			 * it is turned on in the cases of L3/L4
 			 * checksum errors which we handle below.
 			 */
-			MUE_PRINTF(un, "rx_cmd_a: 0x%x\n", rx_cmd_a);
-			ifp->if_ierrors++;
+			MUE_PRINTF(un, "rx_cmd_a: %#x\n", rx_cmd_a);
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 
@@ -1179,7 +1183,7 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 		    pktlen > MCLBYTES - ETHER_ALIGN || /* XXX */
 		    pktlen + sizeof(*hdrp) > total_len)) {
 			MUE_PRINTF(un, "invalid packet length %d\n", pktlen);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 
@@ -1225,66 +1229,35 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 }
 
 static int
-mue_init_locked(struct ifnet *ifp)
+mue_uno_init(struct ifnet *ifp)
 {
 	struct usbnet * const un = ifp->if_softc;
-
-	if (usbnet_isdying(un)) {
-		DPRINTF(un, "dying\n");
-		return EIO;
-	}
-
-	/* Cancel pending I/O and free all TX/RX buffers. */
-	if (ifp->if_flags & IFF_RUNNING)
-		usbnet_stop(un, ifp, 1);
 
 	mue_reset(un);
 
 	/* Set MAC address. */
 	mue_set_macaddr(un);
 
-	/* Load the multicast filter. */
-	mue_setiff(un);
-
 	/* TCP/UDP checksum offload engines. */
-	mue_sethwcsum(un);
+	mue_sethwcsum_locked(un);
 
 	/* Set MTU. */
-	mue_setmtu(un);
+	mue_setmtu_locked(un);
 
-	return usbnet_init_rx_tx(un);
+	return 0;
 }
 
 static int
-mue_init(struct ifnet *ifp)
-{
-	struct usbnet * const	un = ifp->if_softc;
-	int rv;
-
-	usbnet_lock(un);
-	rv = mue_init_locked(ifp);
-	usbnet_unlock(un);
-
-	return rv;
-}
-
-static int
-mue_ioctl_cb(struct ifnet *ifp, u_long cmd, void *data)
+mue_uno_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct usbnet * const un = ifp->if_softc;
 
 	switch (cmd) {
-	case SIOCSIFFLAGS:
-	case SIOCSETHERCAP:
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		mue_setiff(un);
-		break;
 	case SIOCSIFCAP:
-		mue_sethwcsum(un);
+		mue_sethwcsum_locked(un);
 		break;
 	case SIOCSIFMTU:
-		mue_setmtu(un);
+		mue_setmtu_locked(un);
 		break;
 	default:
 		break;
@@ -1306,7 +1279,7 @@ mue_reset(struct usbnet *un)
 }
 
 static void
-mue_stop_cb(struct ifnet *ifp, int disable)
+mue_uno_stop(struct ifnet *ifp, int disable)
 {
 	struct usbnet * const un = ifp->if_softc;
 

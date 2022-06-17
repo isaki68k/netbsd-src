@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.17 2012/07/28 23:11:00 matt Exp $	*/
+/*	$NetBSD: machdep.c,v 1.19 2022/02/16 23:49:26 riastradh Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.17 2012/07/28 23:11:00 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.19 2022/02/16 23:49:26 riastradh Exp $");
 
 #include "opt_compat_netbsd.h"
 
@@ -149,7 +149,7 @@ initppc(u_long startkernel, u_long endkernel, u_int args, void *btinfo)
 	 */
 	boothowto = 0;		/* XXX - should make this an option */
 
-	prep_initppc(startkernel, endkernel, args);
+	prep_initppc(startkernel, endkernel, args, 0);
 }
 
 /*
@@ -249,13 +249,13 @@ halt_sys:
 	    reg &= ~1UL;
 	    *(volatile u_char *)(PREP_BUS_SPACE_IO + 0x92) = reg;
 
-	    __asm volatile("sync; eieio\n");
+	    __asm volatile("sync; eieio" ::: "memory");
 
 	    reg = *(volatile u_char *)(PREP_BUS_SPACE_IO + 0x92);
 	    reg |= 1;
 	    *(volatile u_char *)(PREP_BUS_SPACE_IO + 0x92) = reg;
 
-	    __asm volatile("sync; eieio\n");
+	    __asm volatile("sync; eieio" ::: "memory");
 	}
 
 	for (;;)

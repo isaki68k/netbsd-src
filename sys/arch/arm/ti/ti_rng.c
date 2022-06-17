@@ -1,4 +1,4 @@
-/* $NetBSD: ti_rng.c,v 1.2 2019/10/29 22:19:13 jmcneill Exp $ */
+/* $NetBSD: ti_rng.c,v 1.7 2022/03/19 11:55:03 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_rng.c,v 1.2 2019/10/29 22:19:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_rng.c,v 1.7 2022/03/19 11:55:03 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -34,7 +34,6 @@ __KERNEL_RCSID(0, "$NetBSD: ti_rng.c,v 1.2 2019/10/29 22:19:13 jmcneill Exp $");
 #include <sys/conf.h>
 #include <sys/mutex.h>
 #include <sys/bus.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 
 #include <dev/fdt/fdtvar.h>
@@ -42,9 +41,9 @@ __KERNEL_RCSID(0, "$NetBSD: ti_rng.c,v 1.2 2019/10/29 22:19:13 jmcneill Exp $");
 #include <arm/ti/ti_prcm.h>
 #include <arm/ti/ti_rngreg.h>
 
-static const char * const compatible[] = {
-	"ti,omap4-rng",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "ti,omap4-rng" },
+	DEVICE_COMPAT_EOL
 };
 
 struct ti_rng_softc {
@@ -52,7 +51,6 @@ struct ti_rng_softc {
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
 
-	kmutex_t sc_lock;
 	krndsource_t sc_rndsource;
 };
 
@@ -73,7 +71,7 @@ ti_rng_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -102,8 +100,6 @@ ti_rng_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
-
 	if ((RD4(sc, TRNG_CONTROL_REG) & TRNG_CONTROL_ENABLE) == 0) {
 		WR4(sc, TRNG_CONFIG_REG,
 		    __SHIFTIN(0x21, TRNG_CONFIG_MIN_REFILL) |
@@ -113,14 +109,12 @@ ti_rng_attach(device_t parent, device_t self, void *aux)
 		    TRNG_CONTROL_ENABLE);
 	}
 
-	rndsource_setcb(&sc->sc_rndsource, ti_rng_callback, sc);
-	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
-	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-
 	aprint_naive("\n");
 	aprint_normal(": RNG\n");
 
-	ti_rng_callback(RND_POOLBITS / NBBY, sc);
+	rndsource_setcb(&sc->sc_rndsource, ti_rng_callback, sc);
+	rnd_attach_source(&sc->sc_rndsource, device_xname(self), RND_TYPE_RNG,
+	    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 }
 
 static void
@@ -130,7 +124,6 @@ ti_rng_callback(size_t bytes_wanted, void *priv)
 	uint32_t buf[2];
 	u_int retry;
 
-	mutex_enter(&sc->sc_lock);
 	while (bytes_wanted) {
 		for (retry = 10; retry > 0; retry--) {
 			if (RD4(sc, TRNG_STATUS_REG) & TRNG_STATUS_READY)
@@ -147,5 +140,4 @@ ti_rng_callback(size_t bytes_wanted, void *priv)
 		bytes_wanted -= MIN(bytes_wanted, sizeof(buf));
 	}
 	explicit_memset(buf, 0, sizeof(buf));
-	mutex_exit(&sc->sc_lock);
 }

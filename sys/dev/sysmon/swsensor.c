@@ -1,4 +1,4 @@
-/*	$NetBSD: swsensor.c,v 1.15 2015/04/25 23:55:23 pgoyette Exp $ */
+/*	$NetBSD: swsensor.c,v 1.19 2021/12/31 11:05:41 riastradh Exp $ */
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: swsensor.c,v 1.15 2015/04/25 23:55:23 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: swsensor.c,v 1.19 2021/12/31 11:05:41 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -44,8 +44,6 @@ __KERNEL_RCSID(0, "$NetBSD: swsensor.c,v 1.15 2015/04/25 23:55:23 pgoyette Exp $
 #endif
 
 int swsensorattach(int);
-
-static struct sysctllog *swsensor_sysctllog = NULL;
 
 static int sensor_value_sysctl = 0;
 static int sensor_state_sysctl = 0;
@@ -66,18 +64,14 @@ MODULE(MODULE_CLASS_DRIVER, swsensor, "sysmon_envsys");
  * Set-up the sysctl interface for setting the sensor's cur_value
  */
 
-static
-void
-sysctl_swsensor_setup(void)
+SYSCTL_SETUP(sysctl_swsensor_setup, "swsensor sysctl")
 {
 	int ret;
 	int node_sysctl_num;
 	const struct sysctlnode *me = NULL;
 	const struct sysctlnode *me2;
 
-	KASSERT(swsensor_sysctllog == NULL);
-
-	ret = sysctl_createv(&swsensor_sysctllog, 0, NULL, &me,
+	ret = sysctl_createv(clog, 0, NULL, &me,
 			     CTLFLAG_READWRITE,
 			     CTLTYPE_NODE, "swsensor", NULL,
 			     NULL, 0, NULL, 0,
@@ -86,7 +80,7 @@ sysctl_swsensor_setup(void)
 		return;
 
 	node_sysctl_num = me->sysctl_num;
-	ret = sysctl_createv(&swsensor_sysctllog, 0, NULL, &me2,
+	ret = sysctl_createv(clog, 0, NULL, &me2,
 			     CTLFLAG_READWRITE,
 			     CTLTYPE_INT, "cur_value", NULL,
 			     NULL, 0, &sw_sensor_value, 0,
@@ -96,7 +90,7 @@ sysctl_swsensor_setup(void)
 		sensor_value_sysctl = me2->sysctl_num;
 
 	node_sysctl_num = me->sysctl_num;
-	ret = sysctl_createv(&swsensor_sysctllog, 0, NULL, &me2,
+	ret = sysctl_createv(clog, 0, NULL, &me2,
 			     CTLFLAG_READWRITE,
 			     CTLTYPE_INT, "state", NULL,
 			     NULL, 0, &sw_sensor_state, 0,
@@ -145,18 +139,18 @@ swsensor_refresh(struct sysmon_envsys *sme, envsys_data_t *edata)
  * Sensor get/set limit routines
  */
 
-static void     
+static void
 swsensor_get_limits(struct sysmon_envsys *sme, envsys_data_t *edata,
-                  sysmon_envsys_lim_t *limits, uint32_t *props)  
+                  sysmon_envsys_lim_t *limits, uint32_t *props)
 {
 
 	*props = PROP_CRITMIN | PROP_DRIVER_LIMITS;
 	limits->sel_critmin = sw_sensor_limit;
 }
 
-static void     
+static void
 swsensor_set_limits(struct sysmon_envsys *sme, envsys_data_t *edata,
-                  sysmon_envsys_lim_t *limits, uint32_t *props)  
+                  sysmon_envsys_lim_t *limits, uint32_t *props)
 {
 
 	if (limits == NULL) {
@@ -218,11 +212,11 @@ swsensor_init(void *arg)
 			return ENOMEM;
 
 		while ((obj = prop_object_iterator_next(iter)) != NULL) {
-			key = prop_dictionary_keysym_cstring_nocopy(obj);
+			key = prop_dictionary_keysym_value(obj);
 			po  = prop_dictionary_get_keysym(pd, obj);
 			type = prop_object_type(po);
 			if (type == PROP_TYPE_NUMBER)
-				val = prop_number_integer_value(po);
+				val = prop_number_signed_value(po);
 
 			/* Sensor type/units */
 			if (strcmp(key, "type") == 0) {
@@ -236,7 +230,7 @@ swsensor_init(void *arg)
 				}
 				if (type != PROP_TYPE_STRING)
 					return EINVAL;
-				str = prop_string_cstring_nocopy(po);
+				str = prop_string_value(po);
 				descr = sme_find_table_desc(SME_DESC_UNITS,
 							    str);
 				if (descr == NULL)
@@ -256,7 +250,7 @@ swsensor_init(void *arg)
 			/* Sensor limit behavior
 			 *	0 - simple sensor, no hw limits
 			 *	1 - simple sensor, hw provides initial limit
-			 *	2 - complex sensor, hw provides settable 
+			 *	2 - complex sensor, hw provides settable
 			 *	    limits and does its own limit checking
 			 */
 			if (strcmp(key, "mode") == 0) {
@@ -352,7 +346,6 @@ swsensor_init(void *arg)
 		return error;
 	}
 
-	sysctl_swsensor_setup();
 	aprint_normal("swsensor: initialized\n");
 
 	return 0;
@@ -364,8 +357,6 @@ swsensor_fini(void *arg)
 {
 
 	sysmon_envsys_unregister(swsensor_sme);
-
-	sysctl_teardown(&swsensor_sysctllog);
 
 	return 0;
 }

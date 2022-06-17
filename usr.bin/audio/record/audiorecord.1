@@ -1,4 +1,4 @@
-.\"	$NetBSD: audiorecord.1,v 1.42 2014/03/18 18:20:44 riastradh Exp $
+.\"	$NetBSD: audiorecord.1,v 1.44 2021/03/25 10:03:26 nia Exp $
 .\"
 .\" Copyright (c) 1998, 1999, 2001, 2002, 2010 Matthew R. Green
 .\" All rights reserved.
@@ -24,7 +24,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd December 30, 2010
+.Dd March 25, 2021
 .Dt AUDIORECORD 1
 .Os
 .Sh NAME
@@ -181,12 +181,14 @@ the audio control device to be used.
 .It AUDIODEVICE
 the audio device to be used.
 .El
+.Sh EXAMPLES
+Record CD quality audio to a WAVE file:
+.Dl audiorecord -c 2 -e slinear_le -P 16 -s 44100 recording.wav
 .Sh SEE ALSO
 .Xr audioctl 1 ,
 .Xr audioplay 1 ,
 .Xr aria 4 ,
 .Xr audio 4 ,
-.Xr audioamd 4 ,
 .Xr auich 4 ,
 .Xr autri 4 ,
 .Xr auvia 4 ,
@@ -203,6 +205,7 @@ the audio device to be used.
 .Xr guspnp 4 ,
 .Xr neo 4 ,
 .Xr sb 4 ,
+.Xr sparc/audioamd 4 ,
 .Xr sv 4 ,
 .Xr wss 4 ,
 .Xr yds 4 ,

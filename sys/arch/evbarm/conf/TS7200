@@ -1,4 +1,4 @@
-#	$NetBSD: TS7200,v 1.73 2019/02/06 11:58:31 rin Exp $
+#	$NetBSD: TS7200,v 1.77 2021/06/29 10:22:35 nia Exp $
 #
 #	TS7200 - Kernel for Technologic Systems TS7200 ARM hardware
 #
@@ -113,7 +113,7 @@ options 	IRQSTATS	# manage IRQ statistics
 
 options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=1
@@ -356,9 +356,6 @@ uhub*	at uhub? port ?
 #ucom*	at uvscom? portno ?
 #atu*	at uhub? port ?		# Atmel AT76C50XX 802.11b adapter
 
-# Diamond Multimedia Rio 500
-# urio*	at uhub? port ?
-
 # USB Handspring Visor
 # uvisor*	at uhub? port ?
 # ucom*	at uvisor?
@@ -367,14 +364,8 @@ uhub*	at uhub? port ?
 #ukyopon* at uhub? port ?
 #ucom*	at ukyopon? portno ?
 
-# USB scanners
-# uscanner* at uhub? port ?
-
 # USB scanners that use SCSI emulation, e.g., HP5300
 # usscanner* at uhub? port ?
-
-# Y@P firmware loader
-# uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 # udsbr*	at uhub? port ?

@@ -1,4 +1,4 @@
-/*	$NetBSD: bandit.c,v 1.32 2016/07/08 22:21:52 macallan Exp $	*/
+/*	$NetBSD: bandit.c,v 1.35 2022/01/21 19:12:28 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bandit.c,v 1.32 2016/07/08 22:21:52 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bandit.c,v 1.35 2022/01/21 19:12:28 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -152,7 +152,8 @@ bandit_attach(device_t parent, device_t self, void *aux)
 	pba.pba_pc = pc;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
 
-	config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint,
+	    CFARGS(.devhandle = device_handle(self)));
 }
 
 static pcireg_t

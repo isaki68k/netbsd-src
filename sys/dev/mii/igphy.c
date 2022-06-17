@@ -1,4 +1,4 @@
-/*	$NetBSD: igphy.c,v 1.31 2019/03/25 07:34:13 msaitoh Exp $	*/
+/*	$NetBSD: igphy.c,v 1.37 2020/11/04 09:15:10 msaitoh Exp $	*/
 
 /*
  * The Intel copyright applies to the analog register setup, and the
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: igphy.c,v 1.31 2019/03/25 07:34:13 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: igphy.c,v 1.37 2020/11/04 09:15:10 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mii.h"
@@ -157,7 +157,8 @@ igphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &igphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS_GIGE;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -165,13 +166,10 @@ igphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 typedef struct {
@@ -270,7 +268,7 @@ igphy_load_dspcode(struct mii_softc *sc)
 
 	delay(20000);
 
-	PHY_WRITE(sc, MII_IGPHY_PAGE_SELECT, 0x0000);
+	PHY_WRITE(sc, IGPHY_PAGE_SELECT, 0x0000);
 	PHY_WRITE(sc, 0x0000, 0x0140);
 
 	delay(5000);
@@ -278,7 +276,7 @@ igphy_load_dspcode(struct mii_softc *sc)
 	for (i = 0; !((code[i].reg == 0) && (code[i].val == 0)); i++)
 		IGPHY_WRITE(sc, code[i].reg, code[i].val);
 
-	PHY_WRITE(sc, MII_IGPHY_PAGE_SELECT, 0x0000);
+	PHY_WRITE(sc, IGPHY_PAGE_SELECT, 0x0000);
 	PHY_WRITE(sc, 0x0000, 0x3300);
 
 	delay(20000);
@@ -303,6 +301,8 @@ igphy_reset(struct mii_softc *sc)
 	struct igphy_softc *igsc = (struct igphy_softc *)sc;
 	uint16_t fused, fine, coarse;
 
+	KASSERT(mii_locked(sc->mii_pdata));
+
 	mii_phy_reset(sc);
 	delay(150);
 
@@ -323,9 +323,9 @@ igphy_reset(struct mii_softc *sc)
 	}
 
 	if (igsc->sc_mactype == WM_T_82547) {
-		IGPHY_READ(sc, MII_IGPHY_ANALOG_SPARE_FUSE_STATUS, &fused);
+		IGPHY_READ(sc, IGPHY_ANALOG_SPARE_FUSE_STATUS, &fused);
 		if ((fused & ANALOG_SPARE_FUSE_ENABLED) == 0) {
-			IGPHY_READ(sc, MII_IGPHY_ANALOG_FUSE_STATUS, &fused);
+			IGPHY_READ(sc, IGPHY_ANALOG_FUSE_STATUS, &fused);
 
 			fine = fused & ANALOG_FUSE_FINE_MASK;
 			coarse = fused & ANALOG_FUSE_COARSE_MASK;
@@ -340,12 +340,12 @@ igphy_reset(struct mii_softc *sc)
 			    (fine & ANALOG_FUSE_FINE_MASK) |
 			    (coarse & ANALOG_FUSE_COARSE_MASK);
 
-			IGPHY_WRITE(sc, MII_IGPHY_ANALOG_FUSE_CONTROL, fused);
-			IGPHY_WRITE(sc, MII_IGPHY_ANALOG_FUSE_BYPASS,
+			IGPHY_WRITE(sc, IGPHY_ANALOG_FUSE_CONTROL, fused);
+			IGPHY_WRITE(sc, IGPHY_ANALOG_FUSE_BYPASS,
 			    ANALOG_FUSE_ENABLE_SW_CONTROL);
 		}
 	}
-	PHY_WRITE(sc, MII_IGPHY_PAGE_SELECT, 0x0000);
+	PHY_WRITE(sc, IGPHY_PAGE_SELECT, 0x0000);
 }
 
 
@@ -354,6 +354,8 @@ igphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -377,14 +379,14 @@ igphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
-		PHY_READ(sc, MII_IGPHY_PORT_CTRL, &reg);
+		PHY_READ(sc, IGPHY_PORT_CTRL, &reg);
 		if (IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO) {
 			reg |= PSCR_AUTO_MDIX;
 			reg &= ~PSCR_FORCE_MDI_MDIX;
-			PHY_WRITE(sc, MII_IGPHY_PORT_CTRL, reg);
+			PHY_WRITE(sc, IGPHY_PORT_CTRL, reg);
 		} else {
 			reg &= ~(PSCR_AUTO_MDIX | PSCR_FORCE_MDI_MDIX);
-			PHY_WRITE(sc, MII_IGPHY_PORT_CTRL, reg);
+			PHY_WRITE(sc, IGPHY_PORT_CTRL, reg);
 		}
 
 		mii_phy_setmedia(sc);
@@ -422,18 +424,19 @@ igphy_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, pssr, gtsr, bmsr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
-	PHY_READ(sc, MII_IGPHY_PORT_STATUS, &pssr);
+	PHY_READ(sc, IGPHY_PORT_STATUS, &pssr);
 
-	if (pssr & PSSR_LINK_UP)
+	if (pssr & IGPHY_PSSR_LINK_UP)
 		mii->mii_media_status |= IFM_ACTIVE;
 
 	PHY_READ(sc, MII_BMCR, &bmcr);
 	if (bmcr & BMCR_ISO) {
 		mii->mii_media_active |= IFM_NONE;
-		mii->mii_media_status = 0;
 		return;
 	}
 
@@ -449,19 +452,19 @@ igphy_status(struct mii_softc *sc)
 			mii->mii_media_active |= IFM_NONE;
 			return;
 		}
-		switch (pssr & PSSR_SPEED_MASK) {
-		case PSSR_SPEED_1000MBPS:
+		switch (pssr & IGPHY_PSSR_SPEED_MASK) {
+		case IGPHY_PSSR_SPEED_1000MBPS:
 			mii->mii_media_active |= IFM_1000_T;
 			PHY_READ(sc, MII_100T2SR, &gtsr);
 			if (gtsr & GTSR_MS_RES)
 				mii->mii_media_active |= IFM_ETH_MASTER;
 			break;
 
-		case PSSR_SPEED_100MBPS:
+		case IGPHY_PSSR_SPEED_100MBPS:
 			mii->mii_media_active |= IFM_100_TX;
 			break;
 
-		case PSSR_SPEED_10MBPS:
+		case IGPHY_PSSR_SPEED_10MBPS:
 			mii->mii_media_active |= IFM_10_T;
 			break;
 
@@ -471,7 +474,7 @@ igphy_status(struct mii_softc *sc)
 			return;
 		}
 
-		if (pssr & PSSR_FULL_DUPLEX)
+		if (pssr & IGPHY_PSSR_FULL_DUPLEX)
 			mii->mii_media_active |=
 			    IFM_FDX | mii_phy_flowstatus(sc);
 		else
@@ -519,14 +522,14 @@ igphy_smartspeed_workaround(struct mii_softc *sc)
 					gtcr &= ~GTCR_MAN_MS;
 					PHY_WRITE(sc, MII_100T2CR, gtcr);
 				}
-				mii_phy_auto(sc, 0);
+				mii_phy_auto(sc);
 			}
 			break;
 		case IGPHY_TICK_DOWNSHIFT:
 			PHY_READ(sc, MII_100T2CR, &gtcr);
 			gtcr |= GTCR_MAN_MS;
 			PHY_WRITE(sc, MII_100T2CR, gtcr);
-			mii_phy_auto(sc, 0);
+			mii_phy_auto(sc);
 			break;
 		default:
 			break;

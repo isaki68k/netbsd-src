@@ -1,4 +1,4 @@
-/*	$NetBSD: sig_machdep.c,v 1.46 2018/11/27 14:09:54 maxv Exp $	*/
+/*	$NetBSD: sig_machdep.c,v 1.54 2021/11/01 05:07:15 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,10 +32,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.46 2018/11/27 14:09:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.54 2021/11/01 05:07:15 thorpej Exp $");
 
-#include "opt_ppcarch.h"
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -61,7 +63,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	struct lwp * const l = curlwp;
 	struct proc * const p = l->l_proc;
 	struct trapframe * const tf = l->l_md.md_utf;
-	struct sigaltstack * const ss = &l->l_sigstk;
+	stack_t * const ss = &l->l_sigstk;
 	const struct sigact_sigdesc * const sd =
 	    &p->p_sigacts->sa_sigdesc[ksi->ksi_signo];
 	/* save handler before sendsig_reset trashes it! */
@@ -91,6 +93,8 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Save register context. */
 	memset(&uc, 0, sizeof(uc));
 	uc.uc_flags = _UC_SIGMASK;
+	uc.uc_flags |= (ss->ss_flags & SS_ONSTACK) ?
+	    _UC_SETSTACK : _UC_CLRSTACK;
 	uc.uc_sigmask = *mask;
 	uc.uc_link = l->l_ctxlink;
 	sendsig_reset(l, ksi->ksi_signo);
@@ -118,7 +122,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	 * numbers are coordinated with machine-dependent code in libc.
 	 */
 	switch (sd->sd_vers) {
-	case 2:		/* siginfo sigtramp */
+	case __SIGTRAMP_SIGINFO_VERSION:	/* siginfo sigtramp */
 		tf->tf_fixreg[1]  = (register_t)sp - CALLFRAMELEN;
 		tf->tf_fixreg[3]  = (register_t)ksi->ksi_signo;
 		tf->tf_fixreg[4]  = (register_t)sip;
@@ -199,6 +203,7 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 {
 	struct trapframe * const tf = l->l_md.md_utf;
 	const __greg_t * const gr = mcp->__gregs;
+	struct proc * const p = l->l_proc;
 	int error;
 
 	/* Restore GPR context, if any. */
@@ -261,6 +266,13 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		vec_restore_from_mcontext(l, mcp);
 #endif
 
+	mutex_enter(p->p_lock);
+	if (flags & _UC_SETSTACK)
+		l->l_sigstk.ss_flags |= SS_ONSTACK;
+	if (flags & _UC_CLRSTACK)
+		l->l_sigstk.ss_flags &= ~SS_ONSTACK;
+	mutex_exit(p->p_lock);
+
 	return (0);
 }
 
@@ -270,5 +282,6 @@ cpu_lwp_setprivate(lwp_t *l, void *addr)
 	struct trapframe * const tf = l->l_md.md_utf;
 
 	tf->tf_fixreg[_REG_R2] = (register_t)addr;
+
 	return 0;
 }

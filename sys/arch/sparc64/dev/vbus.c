@@ -1,4 +1,4 @@
-/*	$NetBSD: vbus.c,v 1.3 2017/02/17 20:53:17 palle Exp $	*/
+/*	$NetBSD: vbus.c,v 1.9 2022/01/22 11:49:17 thorpej Exp $	*/
 /*	$OpenBSD: vbus.c,v 1.8 2015/09/27 11:29:20 kettenis Exp $	*/
 /*
  * Copyright (c) 2008 Mark Kettenis
@@ -19,6 +19,7 @@
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
 
 #include <machine/autoconf.h>
@@ -80,6 +81,7 @@ vbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dmatag = ma->ma_dmatag;
 	printf("\n");
 
+	devhandle_t selfh = device_handle(self);
 	for (node = OF_child(ma->ma_node); node; node = OF_peer(node)) {
 		struct vbus_attach_args va;
 		char buf[32];
@@ -95,13 +97,15 @@ vbus_attach(device_t parent, device_t self, void *aux)
 			     &va.va_nreg, (void **)&va.va_reg);
 		prom_getprop(node, "interrupts", sizeof(*va.va_intr),
 			     &va.va_nintr, (void **)&va.va_intr);
-		config_found(self, &va, vbus_print);
+		config_found(self, &va, vbus_print,
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+							       va.va_node)));
 	}
 
 	struct vbus_attach_args va;
 	bzero(&va, sizeof(va));
 	va.va_name = "rtc";
-	config_found(self, &va, vbus_print);
+	config_found(self, &va, vbus_print, CFARGS_NONE);
 
 }
 
@@ -155,9 +159,7 @@ vbus_intr_map(int node, int ino, uint64_t *sysino)
 	len = OF_getproplen(parent, "interrupt-map-mask");
 	if (len < (address_cells + interrupt_cells) * sizeof(int))
 		return (-1);
-	imap_mask = malloc(len, M_DEVBUF, M_NOWAIT);
-	if (imap_mask == NULL)
-		return (-1);
+	imap_mask = malloc(len, M_DEVBUF, M_WAITOK);
 	if (OF_getprop(parent, "interrupt-map-mask", imap_mask, len) != len)
 		goto out;
 
@@ -263,10 +265,7 @@ vbus_alloc_bus_tag(struct vbus_softc *sc, bus_space_tag_t parent)
 {
 	struct sparc_bus_space_tag *bt;
 
-	bt = malloc(sizeof(*bt), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (bt == NULL)
-		panic("could not allocate vbus bus tag");
-
+	bt = kmem_zalloc(sizeof(*bt), KM_SLEEP);
 	bt->cookie = sc;
 	bt->parent = parent;
 	bt->sparc_bus_map = parent->sparc_bus_map;

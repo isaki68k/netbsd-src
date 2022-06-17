@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_codec.h,v 1.5 2019/05/08 13:40:14 isaki Exp $ */
+/* $NetBSD: sunxi_codec.h,v 1.8 2021/05/05 20:58:03 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -35,6 +35,7 @@
 #include <dev/fdt/fdtvar.h>
 
 #include "h3_codec.h"
+#include "v3s_codec.h"
 
 struct sunxi_codec_softc;
 
@@ -100,7 +101,7 @@ struct sunxi_codec_softc {
 	int			sc_phandle;
 	bus_addr_t		sc_baseaddr;
 
-	struct sunxi_codec_conf	*sc_cfg;
+	const struct sunxi_codec_conf	*sc_cfg;
 	void			*sc_codec_priv;
 
 	struct fdtbus_gpio_pin	*sc_pin_pa;
@@ -118,19 +119,32 @@ struct sunxi_codec_softc {
 
 #if NH3_CODEC > 0
 extern const struct sunxi_codec_conf sun8i_h3_codecconf;
-#define	H3_CODEC_COMPATDATA	\
-	{ "allwinner,sun8i-h3-codec",	(uintptr_t)&sun8i_h3_codecconf }
+#define	H3_CODEC_COMPATDATA						\
+	{ .compat = "allwinner,sun8i-h3-codec",				\
+	  .data = &sun8i_h3_codecconf },
 #else
 #define	H3_CODEC_COMPATDATA
 #endif
 
+#if NV3S_CODEC > 0
+extern const struct sunxi_codec_conf sun8i_v3s_codecconf;
+#define V3S_CODEC_COMPATDATA						\
+	{ .compat = "allwinner,sun8i-v3s-codec",			\
+	  .data = &sun8i_v3s_codecconf },
+#else
+#define V3S_CODEC_COMPATDATA
+#endif
+
 extern const struct sunxi_codec_conf sun4i_a10_codecconf;
-#define	A10_CODEC_COMPATDATA	\
-	{ "allwinner,sun4i-a10-codec",	(uintptr_t)&sun4i_a10_codecconf }, \
-	{ "allwinner,sun7i-a20-codec",	(uintptr_t)&sun4i_a10_codecconf }
+#define	A10_CODEC_COMPATDATA						\
+	{ .compat = "allwinner,sun4i-a10-codec",			\
+	  .data = &sun4i_a10_codecconf }, 				\
+	{ .compat = "allwinner,sun7i-a20-codec",			\
+	  .data = &sun4i_a10_codecconf },
 
 extern const struct sunxi_codec_conf sun6i_a31_codecconf;
-#define	A31_CODEC_COMPATDATA	\
-	{ "allwinner,sun6i-a31-codec",	(uintptr_t)&sun6i_a31_codecconf }
+#define	A31_CODEC_COMPATDATA						\
+	{ .compat = "allwinner,sun6i-a31-codec",			\
+	  .data = &sun6i_a31_codecconf },
 
 #endif /* !_ARM_SUNXI_CODEC_H */

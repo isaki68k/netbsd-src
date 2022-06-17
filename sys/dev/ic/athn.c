@@ -1,4 +1,4 @@
-/*	$NetBSD: athn.c,v 1.22 2019/07/25 11:56:09 msaitoh Exp $	*/
+/*	$NetBSD: athn.c,v 1.26 2022/03/18 23:32:24 riastradh Exp $	*/
 /*	$OpenBSD: athn.c,v 1.83 2014/07/22 13:12:11 mpi Exp $	*/
 
 /*-
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: athn.c,v 1.22 2019/07/25 11:56:09 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: athn.c,v 1.26 2022/03/18 23:32:24 riastradh Exp $");
 
 #ifndef _MODULE
 #include "athn_usb.h"		/* for NATHN_USB */
@@ -348,16 +348,7 @@ athn_attach(struct athn_softc *sc)
 	IFQ_SET_READY(&ifp->if_snd);
 	memcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 
-	error = if_initialize(ifp);
-	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		pmf_event_deregister(sc->sc_dev, PMFE_RADIO_OFF,
-		    athn_pmf_wlan_off, false);
-		callout_destroy(&sc->sc_scan_to);
-		callout_destroy(&sc->sc_calib_to);
-		return error;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);
@@ -1302,7 +1293,6 @@ athn_iter_func(void *arg, struct ieee80211_node *ni)
 Static void
 athn_calib_to(void *arg)
 {
-	extern int ticks;
 	struct athn_softc *sc = arg;
 	struct athn_ops *ops = &sc->sc_ops;
 	struct ieee80211com *ic = &sc->sc_ic;
@@ -1363,7 +1353,6 @@ athn_init_calib(struct athn_softc *sc, struct ieee80211_channel *curchan,
 	if (!AR_SREV_9380_10_OR_LATER(sc)) {
 		/* Do PA calibration. */
 		if (AR_SREV_9285_11_OR_LATER(sc)) {
-			extern int ticks;
 			sc->sc_pa_calib_ticks = ticks;
 			if (AR_SREV_9271(sc))
 				ar9271_pa_calib(sc);
@@ -2671,14 +2660,14 @@ athn_start(struct ifnet *ifp)
 
 		if (m->m_len < (int)sizeof(*eh) &&
 		    (m = m_pullup(m, sizeof(*eh))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		eh = mtod(m, struct ether_header *);
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2691,7 +2680,7 @@ athn_start(struct ifnet *ifp)
 
 		if (sc->sc_ops.tx(sc, m, ni, 0) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2713,7 +2702,7 @@ athn_watchdog(struct ifnet *ifp)
 			/* see athn_init, no need to call athn_stop here */
 			/* athn_stop(ifp, 0); */
 			(void)athn_init(ifp);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;
@@ -2734,7 +2723,7 @@ athn_set_multi(struct athn_softc *sc)
 
 	if ((ifp->if_flags & (IFF_ALLMULTI | IFF_PROMISC)) != 0) {
 		lo = hi = 0xffffffff;
-		goto done;
+		goto done2;
 	}
 	lo = hi = 0;
 	ETHER_LOCK(ec);
@@ -2760,6 +2749,7 @@ athn_set_multi(struct athn_softc *sc)
 	}
  done:
 	ETHER_UNLOCK(ec);
+ done2:
 	AR_WRITE(sc, AR_MCAST_FIL0, lo);
 	AR_WRITE(sc, AR_MCAST_FIL1, hi);
 	AR_WRITE_BARRIER(sc);

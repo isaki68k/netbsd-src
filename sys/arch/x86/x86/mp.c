@@ -1,4 +1,4 @@
-/*	$NetBSD: mp.c,v 1.4 2018/12/24 22:05:45 cherry Exp $	*/
+/*	$NetBSD: mp.c,v 1.7 2021/10/07 12:52:27 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mp.c,v 1.4 2018/12/24 22:05:45 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mp.c,v 1.7 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_acpi.h"
@@ -81,7 +81,7 @@ static int intr_find_pcibridge(int, pcitag_t *, pci_chipset_tag_t *);
 #if NPCI > 0
 int
 mp_pci_scan(device_t self, struct pcibus_attach_args *pba,
-	        cfprint_t print)
+    cfprint_t print)
 {
 	int i, cnt;
 	struct mp_bus *mpb;
@@ -93,8 +93,8 @@ mp_pci_scan(device_t self, struct pcibus_attach_args *pba,
 			continue;
 		if (strcmp(mpb->mb_name, "pci") == 0 && mpb->mb_dev == NULL) {
 			pba->pba_bus = i;
-			mpb->mb_dev =
-			    config_found_ia(self, "pcibus", pba, print);
+			mpb->mb_dev = config_found(self, pba, print,
+			    CFARGS(.iattr = "pcibus"));
 			cnt++;
 		}
 	}

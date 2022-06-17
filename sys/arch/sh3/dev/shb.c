@@ -1,4 +1,4 @@
-/*	$NetBSD: shb.c,v 1.14 2009/04/05 00:25:59 uwe Exp $	*/
+/*	$NetBSD: shb.c,v 1.16 2021/08/07 16:19:05 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: shb.c,v 1.14 2009/04/05 00:25:59 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: shb.c,v 1.16 2021/08/07 16:19:05 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,7 +64,8 @@ shb_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	config_search_ia(shb_search, self, "shb", NULL);
+	config_search(self, NULL,
+	    CFARGS(.search = shb_search));
 
 	/*
 	 * XXX: TODO: provide hooks to manage on-chip modules.  For
@@ -78,8 +79,8 @@ static int
 shb_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 
-	if (config_match(parent, cf, NULL) > 0)
-		config_attach(parent, cf, NULL, shb_print);
+	if (config_probe(parent, cf, NULL))
+		config_attach(parent, cf, NULL, shb_print, CFARGS_NONE);
 
 	return (0);
 }

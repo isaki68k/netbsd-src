@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_machdep.c,v 1.44 2019/02/11 14:59:33 cherry Exp $	*/
+/*	$NetBSD: isa_machdep.c,v 1.52 2022/04/15 17:53:44 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.44 2019/02/11 14:59:33 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.52 2022/04/15 17:53:44 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -94,6 +94,10 @@ __KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.44 2019/02/11 14:59:33 cherry Exp 
 #if NIOAPIC > 0
 #include <machine/i82093var.h>
 #include <machine/mpbiosvar.h>
+#endif
+
+#if NACPICA > 0
+#include <dev/acpi/acpivar.h>
 #endif
 
 static int _isa_dma_may_bounce(bus_dma_tag_t, bus_dmamap_t, int, int *);
@@ -142,11 +146,7 @@ isa_intr_alloc(isa_chipset_tag_t ic, int mask, int type, int *irq)
 	for (i = 0; i < NUM_LEGACY_IRQS; i++) {
 		if (LEGAL_IRQ(i) == 0 || (mask & (1<<i)) == 0)
 			continue;
-#if !defined(XENPV)
 		isp = ci->ci_isources[i];
-#else
-		isp = ci->ci_xsources[i];
-#endif
 		if (isp == NULL) {
 			/* if nothing's using the irq, just return it */
 			*irq = i;
@@ -255,7 +255,7 @@ isa_intr_disestablish(isa_chipset_tag_t ic, void *arg)
 		panic("intr_disestablish: bogus irq");
 
 	intr_disestablish(ih);
-#endif	
+#endif
 }
 
 void
@@ -310,7 +310,7 @@ isa_mem_free(bus_space_tag_t t, bus_space_handle_t bsh, bus_size_t size)
  * in memory below the 16M boundary.  On DMA reads,
  * DMA happens to the bounce buffers, and is copied into
  * the caller's buffer.  On writes, data is copied into
- * but bounce buffer, and the DMA happens from those
+ * the bounce buffer, and the DMA happens from those
  * pages.  To software using the DMA mapping interface,
  * this looks simply like a data cache.
  *
@@ -369,14 +369,38 @@ device_isa_register(device_t dev, void *aux)
 			    	return dev;
 		}
 	}
+	if (vm_guest == VM_GUEST_XENPVH)
+		prop_dictionary_set_bool(device_properties(dev),
+		    "no-legacy-devices", true);
 #if NACPICA > 0
 #if notyet
+	/*
+	 * The following code block is technically correct, but unfortunately
+	 * it breaks things like being able to use lm(4) on platforms that
+	 * have no other means of exposing temperature, fan, and voltage
+	 * sensors.
+	 */
 	if (device_is_a(dev, "isa") && acpi_active) {
-		if (!(AcpiGbl_FADT.BootFlags & ACPI_FADT_LEGACY_DEVICES))
+		/*
+		 * For FACP >= 2, the LEGACY_DEVICES flag indicates that
+		 * the motherboard supports user-visible devices on the LPC
+		 * or ISA bus. If clear, assume that no such devices are
+		 * present and we can enumerate everything we need using
+		 * ACPI tables.
+		 */
+		if (AcpiGbl_FADT.Header.Revision >= 2 &&
+		    !(AcpiGbl_FADT.BootFlags & ACPI_FADT_LEGACY_DEVICES)) {
 			prop_dictionary_set_bool(device_properties(dev),
 			    "no-legacy-devices", true);
+		}
 	}
 #endif
+
+	if (vm_guest == VM_GUEST_VMWARE &&
+	    device_is_a(dev, "isa") && acpi_active) {
+		prop_dictionary_set_bool(device_properties(dev),
+		    "no-legacy-devices", true);
+	}
 #endif /* NACPICA > 0 */
 	return NULL;
 }

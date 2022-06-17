@@ -1,4 +1,4 @@
-/*	$NetBSD: boot32.c,v 1.46 2019/01/23 14:52:49 sborrill Exp $	*/
+/*	$NetBSD: boot32.c,v 1.50 2022/05/24 06:27:59 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2002 Reinoud Zandijk
@@ -26,7 +26,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Thanks a bunch for Ben's framework for the bootloader and its suporting
+ * Thanks a bunch for Ben's framework for the bootloader and its supporting
  * libs. This file tries to actually boot NetBSD/acorn32 !
  *
  */
@@ -312,7 +312,7 @@ get_memory_configuration(void)
 			/* passed a boundary ... note this block	   */
 			/*
 			 * splitting in different vars is for
-			 * compatability reasons
+			 * compatibility reasons
 			 */
 			switch (current_page_type) {
 			case -1:
@@ -409,7 +409,7 @@ get_memory_configuration(void)
 		DRAM_pages[top_bank  ] -= one_mb_pages;
 		dram_blocks++;
 
-		/* Map video memory at the end of the choosen DIMM */
+		/* Map video memory at the end of the chosen DIMM */
 		videomem_start          = DRAM_addr[video_bank] +
 		    (DRAM_pages[video_bank] - videomem_pages)*nbpp;
 		DRAM_pages[video_bank] -= videomem_pages;
@@ -1070,7 +1070,7 @@ process_args(int argc, char **argv, int *howto, char *file, int *start_args)
 	static char filename[80];
 
 	*howto = 0;
-	*file = NULL; *start_args = 1;
+	*file = '\0'; *start_args = 1;
 	for (i = 1; i < argc; i++) {
 		if (argv[i][0] == '-')
 			for (j = 1; argv[i][j]; j++)
@@ -1085,7 +1085,7 @@ process_args(int argc, char **argv, int *howto, char *file, int *start_args)
 			break;
 		}
 	}
-	if (*file == NULL) {
+	if (*file == '\0') {
 		if (*howto & RB_ASKNAME) {
 			printf("boot: ");
 			kgets(filename, sizeof(filename));

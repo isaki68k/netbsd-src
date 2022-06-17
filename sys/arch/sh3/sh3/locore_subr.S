@@ -1,4 +1,4 @@
-/*	$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp $	*/
+/*	$NetBSD: locore_subr.S,v 1.61 2021/07/15 04:58:33 rin Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #include <sh3/mmu_sh3.h>
 #include <sh3/mmu_sh4.h>
 
-__KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp $")
+__KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.61 2021/07/15 04:58:33 rin Exp $")
 
 
 /*
@@ -86,13 +86,10 @@ __KERNEL_RCSID(0, "$NetBSD: locore_subr.S,v 1.57 2019/04/06 03:06:27 thorpej Exp
  *	Return olwp (in the nlwp context).
  */
 ENTRY(cpu_switchto)
-	tst	r4, r4			! olwp can be NULL
-	bt	.L_saved
-
 	!! save old lwp's context to switchframe
 	mov.l	@(L_MD_PCB, r4), r1	! olwp->l_md.md_pcb
 	SAVEPCB(r1)
-.L_saved:
+
 	!! free to use callee-save registers now
 
 	mov.l	.L_curlwp, r2
@@ -143,7 +140,22 @@ ENTRY(cpu_switchto)
 	mov	r10, r1		! &nlwp->l_md.md_pcb->pcb_sf
 	mov	r9, r0		! return olwp (we are about to clobber r9)
 	ldc.l	@r1+, gbr
-	ldc.l	@r1+, sr
+
+	/*
+	 * We cannot simply pop SR here; PSL_IMASK field should be
+	 * inherited to nlwp. Otherwise, IPL is lost during context
+	 * switch, which allows improper interrupts when, e.g.,
+	 * spin mutexes are hold.
+	 */
+	mov.l	@r1+, r8	! r8  = new SR
+	mov	#0x78, r9
+	shll	r9		! r9  =  PSL_IMASK
+	not	r9, r10		! r10 = ~PSL_IMASK
+	and	r9, r11		! r11 = old SR & PSL_IMASK
+	and	r10, r8
+	or	r11, r8
+	ldc	r8, sr
+
 	lds.l	@r1+, pr
 	mov.l	@r1+, r8
 	mov.l	@r1+, r9
@@ -301,15 +313,15 @@ NENTRY(_cpu_intr_resume)
  *	if exception occur, jump to 0xa0000000 (hard reset).
  */
 NENTRY(_cpu_exception_suspend)
-	stc	sr,	r0	/* r0 = SR */
-	mov	#0x10,	r1
-	swap.b	r1,	r1
-	mov	r0,	r2	/* r2 = r0 */
-	swap.w	r1,	r1	/* r1 = 0x10000000 */
-	or	r1,	r2	/* r2 |= 0x10000000 */
-	ldc	r2,	sr	/* SR = r2 */
-	rts
-	 and	r1,	r0	/* r0 &= 0x10000000 */
+	stc	sr, r0		/* r0 = SR */
+	mov	#0x10, r1	/* bswap32(PSL_BL) - fits immediate */
+	swap.b	r1, r1
+	mov	r0, r2		/* r2 = r0 */
+	swap.w	r1, r1		/* r1 = PSL_BL */
+	or	r1, r2		/* r2 |= PSL_BL */
+	ldc	r2, sr		/* SR = r2 */
+	rts			/* return old SR */
+	 nop
 	SET_ENTRY_SIZE(_cpu_exception_suspend)
 
 
@@ -318,14 +330,14 @@ NENTRY(_cpu_exception_suspend)
  *	restore 's' exception mask. (SR.BL)
  */
 NENTRY(_cpu_exception_resume)
-	stc	sr,	r0	/* r0 = SR */
-	mov	#0x10,	r1
-	swap.b	r1,	r1
-	swap.w	r1,	r1
-	not	r1,	r1	/* r1 = ~0x10000000 */
-	and	r1,	r0	/* r0 &= ~0x10000000 */
-	or	r4,	r0	/* r0 |= old SR.BL */
-	ldc	r0,	sr	/* SR = r0 (don't move to delay slot) */
+	stc	sr, r0		/* r0 = SR */
+	mov	#0x10, r1	/* bswap32(PSL_BL) - fits immediate */
+	swap.b	r1, r1
+	swap.w	r1, r1
+	not	r1, r1		/* r1 = ~PSL_BL */
+	and	r1, r0		/* r0 &= ~PSL_BL */
+	or	r4, r0		/* r0 |= old SR.BL */
+	ldc	r0, sr		/* SR = r0 (don't move to delay slot) */
 	rts
 	 nop
 	SET_ENTRY_SIZE(_cpu_exception_resume)

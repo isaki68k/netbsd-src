@@ -1,4 +1,4 @@
-/* $NetBSD: kern_drvctl.c,v 1.44 2018/09/18 01:25:09 mrg Exp $ */
+/* $NetBSD: kern_drvctl.c,v 1.51 2022/03/28 12:33:22 riastradh Exp $ */
 
 /*
  * Copyright (c) 2004
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_drvctl.c,v 1.44 2018/09/18 01:25:09 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_drvctl.c,v 1.51 2022/03/28 12:33:22 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -144,7 +144,7 @@ devmon_insert(const char *event, prop_dictionary_t ev)
 	}
 
 	/* Fill in mandatory member */
-	if (!prop_dictionary_set_cstring_nocopy(ev, "event", event)) {
+	if (!prop_dictionary_set_string_nocopy(ev, "event", event)) {
 		prop_object_release(ev);
 		mutex_exit(&drvctl_lock);
 		return 0;
@@ -195,6 +195,8 @@ pmdevbyname(u_long cmd, struct devpmargs *a)
 {
 	device_t d;
 
+	KASSERT(KERNEL_LOCKED_P());
+
 	if ((d = device_find_by_xname(a->devname)) == NULL)
 		return ENXIO;
 
@@ -220,6 +222,8 @@ listdevbyname(struct devlistargs *l)
 	device_t d, child;
 	deviter_t di;
 	int cnt = 0, idx, error = 0;
+
+	KASSERT(KERNEL_LOCKED_P());
 
 	if (*l->l_devname == '\0')
 		d = NULL;
@@ -250,9 +254,21 @@ static int
 detachdevbyname(const char *devname)
 {
 	device_t d;
+	deviter_t di;
+	int error;
 
-	if ((d = device_find_by_xname(devname)) == NULL)
-		return ENXIO;
+	KASSERT(KERNEL_LOCKED_P());
+
+	for (d = deviter_first(&di, DEVITER_F_RW);
+	     d != NULL;
+	     d = deviter_next(&di)) {
+		if (strcmp(device_xname(d), devname) == 0)
+			break;
+	}
+	if (d == NULL) {
+		error = ENXIO;
+		goto out;
+	}
 
 #ifndef XXXFULLRISK
 	/*
@@ -261,10 +277,16 @@ detachdevbyname(const char *devname)
 	 * There might be a private notification mechanism,
 	 * but better play it safe here.
 	 */
-	if (d->dv_parent && !d->dv_parent->dv_cfattach->ca_childdetached)
-		return ENOTSUP;
+	if (device_parent(d) &&
+	    !device_cfattach(device_parent(d))->ca_childdetached) {
+		error = ENOTSUP;
+		goto out;
+	}
 #endif
-	return config_detach(d, 0);
+
+	error = config_detach(d, 0);
+out:	deviter_release(&di);
+	return error;
 }
 
 static int
@@ -274,6 +296,8 @@ rescanbus(const char *busname, const char *ifattr,
 	int i, rc;
 	device_t d;
 	const struct cfiattrdata * const *ap;
+
+	KASSERT(KERNEL_LOCKED_P());
 
 	/* XXX there should be a way to get limits and defaults (per device)
 	   from config generated data */
@@ -291,25 +315,29 @@ rescanbus(const char *busname, const char *ifattr,
 	 * must support rescan, and must have something
 	 * to attach to
 	 */
-	if (!d->dv_cfattach->ca_rescan ||
-	    !d->dv_cfdriver->cd_attrs)
+	if (!device_cfattach(d)->ca_rescan ||
+	    !device_cfdriver(d)->cd_attrs)
 		return ENODEV;
 
-	/* allow to omit attribute if there is exactly one */
+	/* rescan all ifattrs if none is specified */
 	if (!ifattr) {
-		if (d->dv_cfdriver->cd_attrs[1])
-			return EINVAL;
-		ifattr = d->dv_cfdriver->cd_attrs[0]->ci_name;
+		rc = 0;
+		for (ap = device_cfdriver(d)->cd_attrs; *ap; ap++) {
+			rc = (*device_cfattach(d)->ca_rescan)(d,
+			    (*ap)->ci_name, locs);
+			if (rc)
+				break;
+		}
 	} else {
 		/* check for valid attribute passed */
-		for (ap = d->dv_cfdriver->cd_attrs; *ap; ap++)
+		for (ap = device_cfdriver(d)->cd_attrs; *ap; ap++)
 			if (!strcmp((*ap)->ci_name, ifattr))
 				break;
 		if (!*ap)
 			return EINVAL;
+		rc = (*device_cfattach(d)->ca_rescan)(d, ifattr, locs);
 	}
 
-	rc = (*d->dv_cfattach->ca_rescan)(d, ifattr, locs);
 	config_deferred(NULL);
 	return rc;
 }
@@ -336,6 +364,7 @@ drvctl_ioctl(struct file *fp, u_long cmd, void *data)
 	int *locs;
 	size_t locs_sz = 0; /* XXXgcc */
 
+	KERNEL_LOCK(1, NULL);
 	switch (cmd) {
 	case DRVSUSPENDDEV:
 	case DRVRESUMEDEV:
@@ -363,14 +392,16 @@ drvctl_ioctl(struct file *fp, u_long cmd, void *data)
 			ifattr = 0;
 
 		if (d->numlocators) {
-			if (d->numlocators > MAXLOCATORS)
-				return EINVAL;
+			if (d->numlocators > MAXLOCATORS) {
+				res = EINVAL;
+				goto out;
+			}
 			locs_sz = d->numlocators * sizeof(int);
 			locs = kmem_alloc(locs_sz, KM_SLEEP);
 			res = copyin(d->locators, locs, locs_sz);
 			if (res) {
 				kmem_free(locs, locs_sz);
-				return res;
+				goto out;
 			}
 		} else
 			locs = NULL;
@@ -388,8 +419,10 @@ drvctl_ioctl(struct file *fp, u_long cmd, void *data)
 		    fp->f_flag);
 		break;
 	default:
-		return EPASSTHROUGH;
+		res = EPASSTHROUGH;
+		break;
 	}
+out:	KERNEL_UNLOCK_ONE(NULL);
 	return res;
 }
 
@@ -468,7 +501,7 @@ drvctl_command_get_properties(struct lwp *l,
 	
 	for (dev = deviter_first(&di, 0); dev != NULL;
 	     dev = deviter_next(&di)) {
-		if (prop_string_equals_cstring(devname_string,
+		if (prop_string_equals_string(devname_string,
 					       device_xname(dev))) {
 			prop_dictionary_set(results_dict, "drvctl-result-data",
 			    device_properties(dev));
@@ -527,8 +560,8 @@ drvctl_command(struct lwp *l, struct plistref *pref, u_long ioctl_cmd,
 	}
 
 	for (dcd = drvctl_command_table; dcd->dcd_name != NULL; dcd++) {
-		if (prop_string_equals_cstring(command_string,
-					       dcd->dcd_name))
+		if (prop_string_equals_string(command_string,
+					      dcd->dcd_name))
 			break;
 	}
 
@@ -633,15 +666,10 @@ drvctl_modcmd(modcmd_t cmd, void *arg)
 		devmon_insert_vec = saved_insert_vec;
 		saved_insert_vec = NULL;
 #ifdef _MODULE
-		error = devsw_detach(NULL, &drvctl_cdevsw);
-		if (error != 0) {
-			saved_insert_vec = devmon_insert_vec;
-			devmon_insert_vec = devmon_insert;
-		}
+		devsw_detach(NULL, &drvctl_cdevsw);
 #endif
 		mutex_exit(&drvctl_lock);
-		if (error == 0)
-			drvctl_fini();
+		drvctl_fini();
 
 		break;
 	default:

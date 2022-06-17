@@ -1,4 +1,4 @@
-/* $NetBSD: mcpcia_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $ */
+/* $NetBSD: mcpcia_dma.c,v 1.26 2021/07/04 22:42:36 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998, 1999 The NetBSD Foundation, Inc.
@@ -32,13 +32,12 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: mcpcia_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mcpcia_dma.c,v 1.26 2021/07/04 22:42:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 
 #define _ALPHA_BUS_DMA_PRIVATE
 #include <sys/bus.h>
@@ -47,23 +46,22 @@ __KERNEL_RCSID(0, "$NetBSD: mcpcia_dma.c,v 1.21 2012/02/06 02:14:14 matt Exp $")
 #include <dev/pci/pcivar.h>
 #include <alpha/pci/mcpciareg.h>
 #include <alpha/pci/mcpciavar.h>
-#include <alpha/pci/pci_kn300.h>
 
-bus_dma_tag_t mcpcia_dma_get_tag(bus_dma_tag_t, alpha_bus_t);
+static bus_dma_tag_t mcpcia_dma_get_tag(bus_dma_tag_t, alpha_bus_t);
 
-int	mcpcia_bus_dmamap_load_sgmap(bus_dma_tag_t, bus_dmamap_t, void *,
-	    bus_size_t, struct proc *, int);
+static int	mcpcia_bus_dmamap_load_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    void *, bus_size_t, struct proc *, int);
 
-int	mcpcia_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    struct mbuf *, int);
+static int	mcpcia_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    struct mbuf *, int);
 
-int	mcpcia_bus_dmamap_load_uio_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    struct uio *, int);
+static int	mcpcia_bus_dmamap_load_uio_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    struct uio *, int);
 
-int	mcpcia_bus_dmamap_load_raw_sgmap(bus_dma_tag_t, bus_dmamap_t,
-	    bus_dma_segment_t *, int, bus_size_t, int);
+static int	mcpcia_bus_dmamap_load_raw_sgmap(bus_dma_tag_t, bus_dmamap_t,
+		    bus_dma_segment_t *, int, bus_size_t, int);
 
-void	mcpcia_bus_dmamap_unload_sgmap(bus_dma_tag_t, bus_dmamap_t);
+static void	mcpcia_bus_dmamap_unload_sgmap(bus_dma_tag_t, bus_dmamap_t);
 
 /*
  * Direct-mapped window: 2G at 2G
@@ -240,20 +238,13 @@ mcpcia_dma_init(struct mcpcia_config *ccp)
 	REGVAL(MCPCIA_W2_BASE(ccp)) =
 		MCPCIA_WBASE_EN | MCPCIA_WBASE_SG | MCPCIA_PCI_SG_MAPPED_BASE;
 	alpha_mb();
-
-	/* XXX XXX BEGIN XXX XXX */
-	{							/* XXX */
-		extern paddr_t alpha_XXX_dmamap_or;		/* XXX */
-		alpha_XXX_dmamap_or = MCPCIA_DIRECT_MAPPED_BASE;/* XXX */
-	}							/* XXX */
-	/* XXX XXX END XXX XXX */
 }
 
 /*
  * Return the bus dma tag to be used for the specified bus type.
  * INTERNAL USE ONLY!
  */
-bus_dma_tag_t
+static bus_dma_tag_t
 mcpcia_dma_get_tag(bus_dma_tag_t t, alpha_bus_t bustype)
 {
 	struct mcpcia_config *ccp = t->_cookie;
@@ -284,7 +275,7 @@ mcpcia_dma_get_tag(bus_dma_tag_t t, alpha_bus_t bustype)
 /*
  * Load a MCPCIA SGMAP-mapped DMA map with a linear buffer.
  */
-int
+static int
 mcpcia_bus_dmamap_load_sgmap(bus_dma_tag_t t, bus_dmamap_t map, void *buf, bus_size_t buflen, struct proc *p, int flags)
 {
 	int error;
@@ -300,7 +291,7 @@ mcpcia_bus_dmamap_load_sgmap(bus_dma_tag_t t, bus_dmamap_t map, void *buf, bus_s
 /*
  * Load a MCPCIA SGMAP-mapped DMA map with an mbuf chain.
  */
-int
+static int
 mcpcia_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m, int flags)
 {
 	int error;
@@ -315,7 +306,7 @@ mcpcia_bus_dmamap_load_mbuf_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf
 /*
  * Load a MCPCIA SGMAP-mapped DMA map with a uio.
  */
-int
+static int
 mcpcia_bus_dmamap_load_uio_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct uio *uio, int flags)
 {
 	int error;
@@ -330,7 +321,7 @@ mcpcia_bus_dmamap_load_uio_sgmap(bus_dma_tag_t t, bus_dmamap_t map, struct uio *
 /*
  * Load a MCPCIA SGMAP-mapped DMA map with raw memory.
  */
-int
+static int
 mcpcia_bus_dmamap_load_raw_sgmap(bus_dma_tag_t t, bus_dmamap_t map, bus_dma_segment_t *segs, int nsegs, bus_size_t size, int flags)
 {
 	int error;
@@ -346,7 +337,7 @@ mcpcia_bus_dmamap_load_raw_sgmap(bus_dma_tag_t t, bus_dmamap_t map, bus_dma_segm
 /*
  * Unload a MCPCIA DMA map.
  */
-void
+static void
 mcpcia_bus_dmamap_unload_sgmap(bus_dma_tag_t t, bus_dmamap_t map)
 {
 	struct mcpcia_config *ccp = t->_cookie;
@@ -360,5 +351,5 @@ mcpcia_bus_dmamap_unload_sgmap(bus_dma_tag_t t, bus_dmamap_t map)
 	/*
 	 * Do the generic bits of the unload.
 	 */
-	_bus_dmamap_unload(t, map);
+	_bus_dmamap_unload_common(t, map);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_fixup.c,v 1.3 2019/03/02 14:21:19 christos Exp $	*/
+/*	$NetBSD: pci_fixup.c,v 1.5 2021/11/01 21:28:02 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -53,8 +53,6 @@
 static void mspcic_pci_fixup(int, pcitag_t, int *, uint32_t *, uint32_t *,
 	uint32_t, uint32_t memtop);
 
-extern struct mspcic_pci_map mspcic_pci_iomap[];
-extern struct mspcic_pci_map mspcic_pci_memmap[];
 
 /* ======================================================================
  *
@@ -103,7 +101,7 @@ mspcic_pci_scan(int root)
 	/*
 	 * Scan our known PCI devices and collect:
 	 *   maximum bus number
-	 *   maxium used address in each I/O and memory range
+	 *   maximum used address in each I/O and memory range
 	 */
 	while(node) {
 		uint32_t busrange[2];

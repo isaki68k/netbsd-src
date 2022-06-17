@@ -25,7 +25,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: omapl1x_timer.c,v 1.1 2013/10/02 16:48:26 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omapl1x_timer.c,v 1.4 2022/02/12 17:09:43 riastradh Exp $");
 
 #include "opt_timer.h"
 
@@ -61,7 +61,6 @@ typedef struct timer_factors {
 } timer_factors_t;
 
 typedef struct omapl1xtmr_softc {
-	struct device		sc_dev;
 	uint			sc_timerno;
 	uint			sc_timer_freq;
 	bus_space_tag_t		sc_iot;
@@ -436,7 +435,7 @@ omapl1xtimer_attach (device_t parent, device_t self, void *aux)
 	struct omapl1xtmr_softc *sc = device_private(self);
 	struct tipb_attach_args *tipb = aux;
 
-	sc->sc_timerno = self->dv_unit;
+	sc->sc_timerno = device_unit(self);
 	sc->sc_iot = tipb->tipb_iot;
 	sc->sc_intr = tipb->tipb_intr;
 	sc->sc_addr = tipb->tipb_addr;
@@ -486,7 +485,7 @@ omapl1xtimer_attach (device_t parent, device_t self, void *aux)
 	wdt.wdt_addr = OMAPL1X_WDT_ADDR;
 	wdt.wdt_size = OMAPL1X_WDT_SIZE;
 
-	/* Map WDT registers. We want to use it for reseting the chip */
+	/* Map WDT registers. We want to use it for resetting the chip */
 	if (bus_space_map(wdt.wdt_iot, wdt.wdt_addr,
 			  wdt.wdt_size, 0, &wdt.wdt_ioh)) {
 		aprint_error_dev(self, "can't map wdt mem space\n");

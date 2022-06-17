@@ -1,4 +1,4 @@
-$NetBSD: TODO.usbmp,v 1.16 2019/08/23 07:29:29 mrg Exp $
+$NetBSD: TODO.usbmp,v 1.21 2021/06/29 10:22:37 nia Exp $
 
 
 the majority of the USB MP device interface is documented in usbdivar.h.
@@ -20,22 +20,16 @@ KERNEL_LOCK
 
 usb_detach_{waitold,wakeup} to usb_detach_{wait,broadcast} conversion:
   - drivers:
-      if_aue.c
-      stuirda.c
-      ubt.c
-      ucom.c
-      ucycom.c
-      udsir.c
-      uhso.c
-      uirda.c
-      ulpt.c
-      umass.c		- done, partially done -- need to check umass_scsipi.c change
-      urio.c
-      uscanner.c
-      usscanner.c
-      ustir.c
-      utoppy.c
-
+      - stuirda.c
+      - ubt.c
+      - ucycom.c
+      - udsir.c
+      - uhso.c
+      - uirda.c
+      - ulpt.c
+      - usscanner.c
+      - ustir.c
+      - utoppy.c
 
 use usb_delay_ms_locked() in places
 
@@ -53,9 +47,6 @@ convert uhidev users to MPSAFE:
   uts(4)
   pbms(4)
   - depends upon wscons? check intr
-
-  uyurex(4)
-  - sysmon -- hm?
 
 splusb drivers to convert:
   - auvitek_dtv.c
@@ -77,30 +68,25 @@ splusb drivers to convert:
   - uirda.c
   - ukbd.c
   - ulpt.c
-  - urio.c
   - usbdi.h
-  - uscanner.c
   - usscanner.c
   - ustir.c
   - utoppy.c
   - uvideo.c
 
 wakeup/tsleep drivers:
-  - if_otus.c
+  - if_rum.c
   - if_run.c
   - if_upgt.c
-  - if_urtwn.c
-  - if_zyd.c
-  - ucom.c
+  - if_ural.c
   - ucycom.c
   - udsir.c
   - uirda.c
-  - ulpt.c
-  - umass_isdata.c
+  - umcs.h
+  - usb.c
+  - usb_subr.c
+  - usbdi.c
   - ustir.c
-  - uthum.c
-  - uvscom.c
-  - uyurex.c
 
 missing D_MPSAFE drivers:
   - ucom
@@ -108,9 +94,7 @@ missing D_MPSAFE drivers:
   - ugen		- partially ready
   - uhso
   - ulpt
-  - urio
   - usb
-  - uscanner
   - utoppy
 
 missing CALLOUT_MPSAFE drivers:
@@ -124,7 +108,6 @@ missing CALLOUT_MPSAFE drivers:
   - if_zyd.c
   - ukbd.c
   - ulpt.c
-  - uyurex.c
 
 driver testing:		STATUS
   - uhub		working
@@ -167,11 +150,8 @@ driver testing:		STATUS
   - upl			working
   - uberry
   - uipad
-  - urio
-  - uscanner		? (must take kernel lock for scsipi)
   - usscanner
   - utoppy
-  - uyap
   - udsbr
   - ugen		mostly done
   - pseye		working

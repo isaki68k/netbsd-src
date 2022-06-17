@@ -1,4 +1,4 @@
-/*	$NetBSD: umap_vnops.c,v 1.60 2017/06/04 08:02:26 hannken Exp $	*/
+/*	$NetBSD: umap_vnops.c,v 1.62 2021/10/20 03:08:18 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umap_vnops.c,v 1.60 2017/06/04 08:02:26 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umap_vnops.c,v 1.62 2021/10/20 03:08:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -92,6 +92,7 @@ const struct vnodeopv_entry_desc umap_vnodeop_entries[] = {
 	{ &vop_close_desc,	layer_close },
 	{ &vop_setattr_desc,	layer_setattr },
 	{ &vop_access_desc,	layer_access },
+	{ &vop_accessx_desc,	genfs_accessx },
 	{ &vop_remove_desc,	layer_remove },
 	{ &vop_revoke_desc,	layer_revoke },
 	{ &vop_rmdir_desc,	layer_rmdir },
@@ -516,7 +517,7 @@ umap_print(void *v)
 int
 umap_rename(void *v)
 {
-	struct vop_rename_args  /* {
+	struct vop_rename_args /* {
 		struct vnode *a_fdvp;
 		struct vnode *a_fvp;
 		struct componentname *a_fcnp;

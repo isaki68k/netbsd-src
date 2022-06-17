@@ -42,6 +42,39 @@
 #ifndef _ARM_CPUFUNC_H_
 #define _ARM_CPUFUNC_H_
 
+#ifdef _ARM_ARCH_7
+/*
+ * Options for DMB and DSB:
+ *	oshld	Outer Shareable, load
+ *	oshst	Outer Shareable, store
+ *	osh	Outer Shareable, all
+ *	nshld	Non-shareable, load
+ *	nshst	Non-shareable, store
+ *	nsh	Non-shareable, all
+ *	ishld	Inner Shareable, load
+ *	ishst	Inner Shareable, store
+ *	ish	Inner Shareable, all
+ *	ld	Full system, load
+ *	st	Full system, store
+ *	sy	Full system, all
+ */
+#define	dsb(opt)	__asm __volatile("dsb " __STRING(opt) : : : "memory")
+#define	dmb(opt)	__asm __volatile("dmb " __STRING(opt) : : : "memory")
+#define	isb()		__asm __volatile("isb" : : : "memory")
+#define	sev()		__asm __volatile("sev" : : : "memory")
+
+#else
+
+#define dsb(opt)	\
+	__asm __volatile("mcr p15, 0, %0, c7, c10, 4" :: "r" (0) : "memory")
+#define dmb(opt)	\
+	__asm __volatile("mcr p15, 0, %0, c7, c10, 5" :: "r" (0) : "memory")
+#define isb()		\
+	__asm __volatile("mcr p15, 0, %0, c7, c5, 4" :: "r" (0) : "memory")
+#define sev()		__nothing
+
+#endif
+
 #ifdef __arm__
 
 #ifdef _KERNEL
@@ -232,10 +265,6 @@ void	cpufunc_domains		(u_int);
 u_int	cpufunc_faultstatus	(void);
 u_int	cpufunc_faultaddress	(void);
 
-#define setttb		cpu_setttb
-#define drain_writebuf	cpu_drain_writebuf
-
-
 #if defined(CPU_XSCALE)
 #define	cpu_cpwait()		cpufuncs.cf_cpwait()
 #endif
@@ -320,6 +349,10 @@ enable_interrupts(uint32_t mask)
 #define restore_interrupts(old_cpsr)					\
 	(__set_cpsr_c((I32_bit | F32_bit), (old_cpsr) & (I32_bit | F32_bit)))
 
+#define	ENABLE_INTERRUPT()		cpsie(I32_bit)
+#define	DISABLE_INTERRUPT()		cpsid(I32_bit)
+#define	DISABLE_INTERRUPT_SAVE()	cpsid(I32_bit)
+
 static inline void cpsie(register_t psw) __attribute__((__unused__));
 static inline register_t cpsid(register_t psw) __attribute__((__unused__));
 
@@ -372,35 +405,6 @@ u_int	GetCPSR(void);
  */
 
 void cpu_reset		(void) __dead;
-
-/*
- * Cache info variables.
- */
-#define	CACHE_TYPE_VIVT		0
-#define	CACHE_TYPE_xxPT		1
-#define	CACHE_TYPE_VIPT		1
-#define	CACHE_TYPE_PIxx		2
-#define	CACHE_TYPE_PIPT		3
-
-/* PRIMARY CACHE VARIABLES */
-struct arm_cache_info {
-	u_int icache_size;
-	u_int icache_line_size;
-	u_int icache_ways;
-	u_int icache_way_size;
-	u_int icache_sets;
-
-	u_int dcache_size;
-	u_int dcache_line_size;
-	u_int dcache_ways;
-	u_int dcache_way_size;
-	u_int dcache_sets;
-
-	uint8_t cache_type;
-	bool cache_unified;
-	uint8_t icache_type;
-	uint8_t dcache_type;
-};
 
 #if (ARM_MMU_V6 + ARM_MMU_V7) != 0
 extern u_int arm_cache_prefer_mask;

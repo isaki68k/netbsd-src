@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_info_43.c,v 1.37 2019/01/27 02:08:39 pgoyette Exp $	*/
+/*	$NetBSD: kern_info_43.c,v 1.40 2021/09/07 11:43:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1991, 1993
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_info_43.c,v 1.37 2019/01/27 02:08:39 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_info_43.c,v 1.40 2021/09/07 11:43:02 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -172,11 +172,19 @@ compat_43_sys_getkerninfo(struct lwp *l, const struct compat_43_sys_getkerninfo_
 		syscallarg(int) arg;
 	} */
 	int error, name[6];
+	int isize;
 	size_t size;
 
-	if (SCARG(uap, size) && (error = copyin((void *)SCARG(uap, size),
-	    (void *)&size, sizeof(size))))
-		return (error);
+	if (!SCARG(uap, size))
+		return EINVAL;
+
+	if ((error = copyin(SCARG(uap, size), &isize, sizeof(isize))) != 0)
+		return error;
+
+	if (isize < 0 || isize > 4096)
+		return EINVAL;
+
+	size = isize;
 
 	switch (SCARG(uap, op) & 0xff00) {
 
@@ -255,6 +263,8 @@ compat_43_sys_getkerninfo(struct lwp *l, const struct compat_43_sys_getkerninfo_
 				break;
 			}
 
+			memset(&ksi, 0, sizeof(ksi));
+
 #define COPY(fld)							\
 			ksi.fld = us - (u_long) usi;			\
 			if ((error = copyoutstr(fld, us, 1024, &len)) != 0)\
@@ -283,7 +293,7 @@ compat_43_sys_getkerninfo(struct lwp *l, const struct compat_43_sys_getkerninfo_
 			ksi.open_max = OPEN_MAX;
 			ksi.child_max = CHILD_MAX;
 
-			TIMESPEC_TO_TIMEVAL(&tv, &boottime);
+			getmicroboottime(&tv);
 			timeval_to_timeval50(&tv, &ksi.boottime);
 			COPY(hostname);
 

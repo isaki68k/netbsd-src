@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm.h,v 1.12 2019/10/28 08:30:49 maxv Exp $	*/
+/*	$NetBSD: nvmm.h,v 1.16 2021/03/26 15:59:53 reinoud Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,17 +15,17 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #ifndef _NVMM_H_
@@ -44,11 +43,16 @@ typedef uint64_t	gvaddr_t;
 typedef uint32_t	nvmm_machid_t;
 typedef uint32_t	nvmm_cpuid_t;
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #include <dev/nvmm/x86/nvmm_x86.h>
 #endif
 
-#define NVMM_KERN_VERSION		1
+#define NVMM_KERN_VERSION		2
+
+/*
+ * Version 1 - Initial release in NetBSD 9.0.
+ * Version 2 - Added nvmm_vcpu::stop.
+ */
 
 struct nvmm_capability {
 	uint32_t version;
@@ -81,6 +85,9 @@ struct nvmm_comm_page {
 	/* Event. */
 	bool event_commit;
 	struct nvmm_vcpu_event event;
+
+	/* Race-free exit from nvmm_vcpu_run() without signals. */
+	volatile int stop;
 };
 
 /*
@@ -95,5 +102,10 @@ struct nvmm_comm_page {
 
 #define NVMM_COMM_CPUID(off)		\
 	((off >> 12) & 0xFF)
+
+#ifdef _KERNEL
+/* At most one page, for the NVMM_COMM_* macros. */
+CTASSERT(sizeof(struct nvmm_comm_page) <= PAGE_SIZE);
+#endif
 
 #endif

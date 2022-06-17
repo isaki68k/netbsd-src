@@ -1,4 +1,4 @@
-/*	$NetBSD: at91bus.c,v 1.25 2019/07/16 14:41:43 skrll Exp $	*/
+/*	$NetBSD: at91bus.c,v 1.29 2021/08/07 16:18:43 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -27,13 +27,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.25 2019/07/16 14:41:43 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.29 2021/08/07 16:18:43 thorpej Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_pmap_debug.h"
 #include "locators.h"
 
 /* Define various stack sizes in pages */
@@ -107,15 +106,11 @@ paddr_t msgbufphys;
 
 //static struct arm32_dma_range dma_ranges[4];
 
-#ifdef PMAP_DEBUG
-extern int pmap_debug_level;
-#endif
-
 #define KERNEL_PT_SYS		0	/* L2 table for mapping vectors page */
 
 #define KERNEL_PT_KERNEL	1	/* L2 table for mapping kernel */
 #define	KERNEL_PT_KERNEL_NUM	4
-					/* L2 tables for mapping kernel VM */ 
+					/* L2 tables for mapping kernel VM */
 #define KERNEL_PT_VMDATA	(KERNEL_PT_KERNEL + KERNEL_PT_KERNEL_NUM)
 
 #define	KERNEL_PT_VMDATA_NUM	4	/* start with 16MB of KVM */
@@ -319,20 +314,20 @@ at91bus_setup(BootConfig *mem)
 
 #ifdef VERBOSE_INIT_ARM
 	printf("IRQ stack: p0x%08lx v0x%08lx\n", irqstack.pv_pa,
-	    irqstack.pv_va); 
+	    irqstack.pv_va);
 	printf("ABT stack: p0x%08lx v0x%08lx\n", abtstack.pv_pa,
-	    abtstack.pv_va); 
+	    abtstack.pv_va);
 	printf("UND stack: p0x%08lx v0x%08lx\n", undstack.pv_pa,
-	    undstack.pv_va); 
+	    undstack.pv_va);
 	printf("SVC stack: p0x%08lx v0x%08lx\n", kernelstack.pv_pa,
-	    kernelstack.pv_va); 
+	    kernelstack.pv_va);
 #endif
 
 	alloc_pages(msgbufphys, round_page(MSGBUFSIZE) / PAGE_SIZE);
 
 	/*
 	 * Ok we have allocated physical pages for the primary kernel
-	 * page tables.  Save physical_freeend for when we give whats left 
+	 * page tables.  Save physical_freeend for when we give whats left
 	 * of memory below 2Mbyte to UVM.
 	 */
 
@@ -585,8 +580,9 @@ at91bus_found(device_t self, bus_addr_t addr, int pid)
 	sa.sa_size = 1;
 	sa.sa_pid = pid;
 
-	return config_found_sm_loc(self, "at91bus", locs, &sa,
-				   at91bus_print, at91bus_submatch);
+	return config_found(self, &sa, at91bus_print,
+	    CFARGS(.submatch = at91bus_submatch,
+		   .locators = locs));
 }
 
 static void
@@ -616,16 +612,17 @@ at91bus_attach(device_t parent, device_t self, void *aux)
 	       AT91_PLLBCLK / 1000000U, (AT91_PLLBCLK / 1000U) % 1000U);
 
 	/*
-	 *  Attach devices 
+	 *  Attach devices
 	 */
 	at91_search_peripherals(self, at91bus_found);
 
-	
+
 	struct at91bus_attach_args sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_iot = sc->sc_iot;
 	sa.sa_dmat = sc->sc_dmat;
-	config_search_ia(at91bus_search, self, "at91bus", &sa);
+	config_search(self, &sa,
+	    CFARGS(.search = at91bus_search));
 }
 
 int
@@ -652,8 +649,8 @@ at91bus_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	sa->sa_size = cf->cf_loc[AT91BUSCF_SIZE];
 	sa->sa_pid  = cf->cf_loc[AT91BUSCF_PID];
 
-	if (config_match(parent, cf, aux) > 0)
-		config_attach(parent, cf, aux, at91bus_print);
+	if (config_probe(parent, cf, aux))
+		config_attach(parent, cf, aux, at91bus_print, CFARGS_NONE);
 
 	return (0);
 }

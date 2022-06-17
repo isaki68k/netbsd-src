@@ -1,9 +1,9 @@
-/* $NetBSD: ixgbe_phy.h,v 1.11 2018/04/04 08:13:07 msaitoh Exp $ */
+/* $NetBSD: ixgbe_phy.h,v 1.13 2021/12/24 05:02:11 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -194,6 +194,7 @@ s32 ixgbe_get_phy_firmware_version_generic(struct ixgbe_hw *hw,
 
 s32 ixgbe_reset_phy_nl(struct ixgbe_hw *hw);
 s32 ixgbe_set_copper_phy_power(struct ixgbe_hw *hw, bool on);
+bool ixgbe_sfp_cage_full(struct ixgbe_hw *hw);
 s32 ixgbe_identify_module_generic(struct ixgbe_hw *hw);
 s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw);
 u64 ixgbe_get_supported_phy_sfp_layer_generic(struct ixgbe_hw *hw);

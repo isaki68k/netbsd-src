@@ -1,4 +1,4 @@
-/*	$NetBSD: glxtphy.c,v 1.29 2019/03/25 07:34:13 msaitoh Exp $	*/
+/*	$NetBSD: glxtphy.c,v 1.32 2020/03/15 23:04:50 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: glxtphy.c,v 1.29 2019/03/25 07:34:13 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: glxtphy.c,v 1.32 2020/03/15 23:04:50 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -125,7 +125,8 @@ glxtphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &glxtphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	sc->mii_anegticks = MII_ANEGTICKS;
+
+	mii_lock(mii);
 
 	PHY_RESET(sc);
 
@@ -134,13 +135,9 @@ glxtphyattach(device_t parent, device_t self, void *aux)
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 
-	aprint_normal_dev(self, "");
-	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0 &&
-	    (sc->mii_extcapabilities & EXTSR_MEDIAMASK) == 0)
-		aprint_error("no media present");
-	else
-		mii_phy_add_media(sc);
-	aprint_normal("\n");
+	mii_unlock(mii);
+
+	mii_phy_add_media(sc);
 }
 
 static int
@@ -148,6 +145,8 @@ glxtphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t reg;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -203,6 +202,8 @@ glxtphy_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmcr, qsr, gtsr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -223,7 +224,7 @@ glxtphy_status(struct mii_softc *sc)
 
 	if (bmcr & BMCR_AUTOEN) {
 		/*
-		 * The media status bits are only valid of autonegotiation
+		 * The media status bits are only valid if autonegotiation
 		 * has completed (or it's disabled).
 		 */
 		if ((qsr & QSR_ACOMP) == 0) {

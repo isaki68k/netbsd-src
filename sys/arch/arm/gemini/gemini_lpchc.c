@@ -1,4 +1,4 @@
-/*	$NetBSD: gemini_lpchc.c,v 1.3 2019/01/08 19:41:10 jdolecek Exp $	*/
+/*	$NetBSD: gemini_lpchc.c,v 1.5 2020/11/20 18:10:07 thorpej Exp $	*/
 
 /*
  * GEMINI LPC Host Controller
@@ -7,7 +7,7 @@
 #include "locators.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gemini_lpchc.c,v 1.3 2019/01/08 19:41:10 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gemini_lpchc.c,v 1.5 2020/11/20 18:10:07 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/callout.h>
@@ -15,7 +15,7 @@ __KERNEL_RCSID(0, "$NetBSD: gemini_lpchc.c,v 1.3 2019/01/08 19:41:10 jdolecek Ex
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <sys/bus.h>
 
@@ -94,12 +94,7 @@ gemini_lpchc_intrq_insert(gemini_lpchc_softc_t *sc, int (*func)(void *),
 {
 	gemini_lpchc_intrq_t *iqp;
 
-        iqp = malloc(sizeof(*iqp), M_DEVBUF, M_NOWAIT|M_ZERO);
-        if (iqp == NULL) {
-		printf("gemini_lpchc_intrq_insert: malloc failed\n");
-		return NULL;
-	}
-
+        iqp = kmem_zalloc(sizeof(*iqp), KM_SLEEP);
         iqp->iq_func = func;
         iqp->iq_arg = arg;
         iqp->iq_bit = bit;
@@ -118,7 +113,7 @@ gemini_lpchc_intrq_remove(gemini_lpchc_softc_t *sc, void *cookie)
 		if ((void *)iqp == cookie) {
 			SIMPLEQ_REMOVE(&sc->sc_intrq,
 				iqp, gemini_lpchc_intrq, iq_q);
-			free(iqp, M_DEVBUF);
+			kmem_free(iqp, sizeof(*iqp));
 			return;
 		}
 	}
@@ -199,10 +194,6 @@ gemini_lpchc_intr_establish(lpcintrtag_t tag, uint irq,
 		gemini_lpchc_sirq_enable(iot, ioh);
 
 	ih = gemini_lpchc_intrq_insert(sc, func, arg, bit, isedge); 
-	if (ih == NULL)
-		if (gemini_lpchc_intrq_empty(sc))
-			gemini_lpchc_sirq_disable(iot, ioh);
-
 	return ih;
 }
 
@@ -228,4 +219,3 @@ printf("%s: exit\n", __FUNCTION__);
 
 	return rv;
 }
-

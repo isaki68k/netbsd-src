@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.68 2019/04/06 03:06:25 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.72 2021/10/09 20:00:41 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.68 2019/04/06 03:06:25 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.72 2021/10/09 20:00:41 tsutsui Exp $");
 
 #include "opt_bufcache.h"
 #include "opt_ddb.h"
@@ -260,7 +260,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	printf("avail mem = %ld\n", ptoa(uvmexp.free));
+	printf("avail mem = %ld\n", ptoa(uvm_availmem(false)));
 }
 
 /*
@@ -337,7 +337,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 		printf("\n");
 	}
 #endif
@@ -345,7 +347,9 @@ cpu_reboot(int howto, char *bootstr)
 	/* Finally, halt/reboot the system. */
 	if (howto & RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
+		cnpollc(1);
 		(void)cngetc();
+		cnpollc(0);
 	}
 
 	printf("rebooting...\n");

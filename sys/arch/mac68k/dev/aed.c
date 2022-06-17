@@ -1,4 +1,4 @@
-/*	$NetBSD: aed.c,v 1.34 2017/10/25 08:12:37 maya Exp $	*/
+/*	$NetBSD: aed.c,v 1.38 2021/09/26 16:36:18 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1994	Bradley A. Grantham
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.34 2017/10/25 08:12:37 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.38 2021/09/26 16:36:18 thorpej Exp $");
 
 #include "opt_adb.h"
 
@@ -585,7 +585,7 @@ filt_aedrdetach(struct knote *kn)
 	int s;
 
 	s = splvm();
-	SLIST_REMOVE(&aed_sc->sc_selinfo.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&aed_sc->sc_selinfo, kn);
 	splx(s);
 }
 
@@ -598,45 +598,32 @@ filt_aedread(struct knote *kn, long hint)
 }
 
 static const struct filterops aedread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_aedrdetach,
 	.f_event = filt_aedread,
 };
 
-static const struct filterops aed_seltrue_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_aedrdetach,
-	.f_event = filt_seltrue,
-};
-
 int
 aedkqfilter(dev_t dev, struct knote *kn)
 {
-	struct klist *klist;
 	int s;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &aed_sc->sc_selinfo.sel_klist;
 		kn->kn_fop = &aedread_filtops;
+		s = splvm();
+		selrecord_knote(&aed_sc->sc_selinfo, kn);
+		splx(s);
 		break;
 
 	case EVFILT_WRITE:
-		klist = &aed_sc->sc_selinfo.sel_klist;
-		kn->kn_fop = &aed_seltrue_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
 
 	default:
-		return (1);
+		return (EINVAL);
 	}
-
-	kn->kn_hook = NULL;
-
-	s = splvm();
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
-	splx(s);
 
 	return (0);
 }

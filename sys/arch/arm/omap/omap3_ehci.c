@@ -1,4 +1,4 @@
-/* $NetBSD: omap3_ehci.c,v 1.13 2018/04/09 16:21:09 jakllsch Exp $ */
+/* $NetBSD: omap3_ehci.c,v 1.16 2021/08/07 16:18:45 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2010-2012 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap3_ehci.c,v 1.13 2018/04/09 16:21:09 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap3_ehci.c,v 1.16 2021/08/07 16:18:45 thorpej Exp $");
 
 #include "locators.h"
 
@@ -336,7 +336,8 @@ omap3_ehci_attach1(device_t self)
 		return;
 	}
 
-	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint);
+	sc->sc.sc_child = config_found(self, &sc->sc.sc_bus, usbctlprint,
+	    CFARGS_NONE);
 }
 
 static int
@@ -364,7 +365,7 @@ omap3_ehci_get_port_mode(prop_dictionary_t prop, const char *key)
 	const char *s = NULL;
 	enum omap3_ehci_port_mode mode = OMAP3_EHCI_PORT_MODE_NONE;
 
-	if (prop_dictionary_get_cstring_nocopy(prop, key, &s) && s != NULL) {
+	if (prop_dictionary_get_string(prop, key, &s) && s != NULL) {
 		if (strcmp(s, "phy") == 0) {
 			mode = OMAP3_EHCI_PORT_MODE_PHY;
 #ifdef OMAP_3XXX

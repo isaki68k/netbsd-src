@@ -38,7 +38,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/contrib/ena-com/ena_plat.h 333453 2018-05-10 09:25:51Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: ena_plat.h,v 1.4 2018/11/28 19:15:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ena_plat.h,v 1.9 2022/04/09 23:44:54 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -312,9 +312,11 @@ int	ena_dma_alloc(device_t dmadev, bus_size_t size, ena_mem_handle_t *dma,
 #define ENA_MEM_FREE_COHERENT(dmadev, size, virt, phys, dma)		\
 	do {								\
 		(void)size;						\
+		size_t mapsize = (dma).map->dm_mapsize;			\
 		bus_dmamap_unload((dma).tag, (dma).map);		\
+		bus_dmamem_unmap((dma).tag, (dma).vaddr, mapsize);	\
 		bus_dmamem_free((dma).tag, &(dma).seg, (dma).nseg);	\
-		bus_dma_tag_destroy((dma).tag);	/* XXX remove */	\
+		bus_dmamap_destroy((dma).tag, (dma).map);		\
 		(dma).tag = NULL;					\
 		(virt) = NULL;						\
 	} while (0)
@@ -376,8 +378,23 @@ void prefetch(void *x)
 
 #include "ena_defs/ena_includes.h"
 
-#define	rmb()		membar_enter()
-#define	wmb()		membar_exit()
+/*
+ * XXX This is not really right.  Need to adjust the driver to use
+ * bus_space_barrier or bus_dmamap_sync.
+ */
+#if defined(__i386__) || defined(__x86_64__)
+#include <x86/cpufunc.h>
+#define	rmb()		x86_lfence()
+#define	wmb()		x86_sfence()
+#define	mb()		x86_mfence()
+#elif defined(__aarch64__)
+#define	rmb()		__asm __volatile("dsb ld" ::: "memory")
+#define	wmb()		__asm __volatile("dsb st" ::: "memory")
+#define	mb()		__asm __volatile("dsb sy" ::: "memory")
+#else
+#define	rmb()		membar_acquire()
+#define	wmb()		membar_release()
 #define	mb()		membar_sync()
+#endif
 
 #endif /* ENA_PLAT_H_ */

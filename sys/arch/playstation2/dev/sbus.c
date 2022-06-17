@@ -1,4 +1,4 @@
-/*	$NetBSD: sbus.c,v 1.17 2016/07/19 17:04:25 maya Exp $	*/
+/*	$NetBSD: sbus.c,v 1.20 2022/02/11 17:30:48 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.17 2016/07/19 17:04:25 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.20 2022/02/11 17:30:48 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -85,7 +85,7 @@ STATIC int sbus_search(device_t, cfdata_t,
 		       const int *, void *);
 STATIC int sbus_print(void *, const char *);
 
-CFATTACH_DECL_NEW(sbus, sizeof (struct device),
+CFATTACH_DECL_NEW(sbus, 0,
     sbus_match, sbus_attach, NULL, NULL);
 
 extern struct cfdriver sbus_cd;
@@ -112,7 +112,8 @@ sbus_attach(device_t parent, device_t self, void *aux)
 	/* Initialize SBUS controller */
 	sbus_init(type);
 
-	config_search_ia(sbus_search, self, "sbus", 0);
+	config_search(self, NULL,
+	    CFARGS(.search = sbus_search));
 }
 
 int
@@ -121,8 +122,8 @@ sbus_search(device_t parent, cfdata_t cf,
 {
 	struct sbus_attach_args sa;
 
-	if (config_match(parent, cf, &sa))
-		config_attach(parent, cf, &sa, sbus_print);
+	if (config_probe(parent, cf, &sa))
+		config_attach(parent, cf, &sa, sbus_print, CFARGS_NONE);
 	
 	return (0);
 }

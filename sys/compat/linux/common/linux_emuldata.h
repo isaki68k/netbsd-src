@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_emuldata.h,v 1.18 2010/11/02 18:18:07 chs Exp $	*/
+/*	$NetBSD: linux_emuldata.h,v 1.20 2022/05/20 19:34:22 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998,2002 The NetBSD Foundation, Inc.
@@ -29,13 +29,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <compat/linux/common/linux_futex.h>
-
 #ifndef _COMMON_LINUX_EMULDATA_H
 #define _COMMON_LINUX_EMULDATA_H
 
 /*
- * This is auxillary data the linux compat code
+ * This is auxiliary data the linux compat code
  * needs to do its work.  A pointer to it is
  * stored in the emuldata field of the proc
  * structure.
@@ -47,7 +45,6 @@ struct linux_emuldata {
 
 	void	*led_child_tidptr;	/* Used during clone() */
 	void	*led_clear_tid;		/* Own TID to clear on exit */
-	struct linux_robust_list_head *led_robust_head;
 	long	led_personality;
 };
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: trap_subr.S,v 1.12 2015/01/26 04:47:53 nonaka Exp $	*/
+/*	$NetBSD: trap_subr.S,v 1.14 2022/05/07 04:19:22 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,7 +34,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-RCSID("$NetBSD: trap_subr.S,v 1.12 2015/01/26 04:47:53 nonaka Exp $")
+RCSID("$NetBSD: trap_subr.S,v 1.14 2022/05/07 04:19:22 rin Exp $")
+
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
+#include "opt_ddb.h"
+#include "opt_mpc85xx.h"
+#include "opt_multiprocessor.h"
+#endif
 
 	.globl	_C_LABEL(sctrapexit), _C_LABEL(trapexit), _C_LABEL(intrcall)
 
@@ -61,15 +68,20 @@ RCSID("$NetBSD: trap_subr.S,v 1.12 2015/01/26 04:47:53 nonaka Exp $")
 	 * needed, saves sprg3, and then refers to the save using a
 	 * displacement of -amount.
 	 */
+	/*
+	 * XXXclang
+	 * At the moment, clang cannot correctly assemble m[ft]sprgN
+	 * (N >= 4); use m[ft]spr for SPR_SPRGN instead.
+	 */
 #define	FRAME_EXC_PROLOGUE(start, sprg, srr)				\
-	mt##sprg %r2;			/* save r2 */			\
+	mtspr	sprg,%r2;		/* save r2 */			\
 	mfsprg3	%r2;			/* get save_area pointer */	\
 	addi	%r2,%r2,4*(32-start);					\
 					/* allocate save area */	\
 	mtsprg3	%r2;			/* save updated pointer */	\
 	stmw	%r##start,-4*(32-start)(%r2);				\
 					/* free r24-r31 for use */	\
-	mf##sprg %r26;			/* get saved r2 */		\
+	mfspr	%r26,sprg;		/* get saved r2 */		\
 	mfcr	%r27;			/* get Condition Register */	\
 	mfxer	%r28;			/* get XER */			\
 	mfspr	%r30, SPR_##srr##0;	/* get SRR0 */			\
@@ -96,41 +108,41 @@ RCSID("$NetBSD: trap_subr.S,v 1.12 2015/01/26 04:47:53 nonaka Exp $")
 				mtsrr1	r
 
 #define	FRAME_PROLOGUE		\
-	FRAME_EXC_PROLOGUE(26, sprg1, SRR)
+	FRAME_EXC_PROLOGUE(26, SPR_SPRG1, SRR)
 
 #define	FRAME_PROLOGUE_DEAR_ESR	\
-	FRAME_EXC_PROLOGUE(24, sprg1, SRR); \
+	FRAME_EXC_PROLOGUE(24, SPR_SPRG1, SRR); \
 	PROLOGUE_GET_ESR; \
 	PROLOGUE_GET_DEAR
 
 #define	FRAME_PROLOGUE_ESR	\
-	FRAME_EXC_PROLOGUE(25, sprg1, SRR); \
+	FRAME_EXC_PROLOGUE(25, SPR_SPRG1, SRR); \
 	PROLOGUE_GET_ESR
 
 #define	FRAME_TLBPROLOGUE	\
-	FRAME_EXC_PROLOGUE(20, sprg1, SRR); \
+	FRAME_EXC_PROLOGUE(20, SPR_SPRG1, SRR); \
 	PROLOGUE_GET_ESR; \
 	PROLOGUE_GET_DEAR
 
 #define	FRAME_INTR_PROLOGUE	\
-	FRAME_EXC_PROLOGUE(26, sprg1, SRR)
+	FRAME_EXC_PROLOGUE(26, SPR_SPRG1, SRR)
 
 /*
  * These need to save SRR0/SRR1 as well their SRR0/SRR1 in case normal
  * exceptions happened during their execution.
  */
 #define	FRAME_CRIT_PROLOGUE	\
-	FRAME_EXC_PROLOGUE(24, sprg4, CSRR); \
+	FRAME_EXC_PROLOGUE(24, SPR_SPRG4, CSRR); \
 	PROLOGUE_GET_SPRG1; \
 	PROLOGUE_GET_SRRS
 
 #define	FRAME_MCHK_PROLOGUE	\
-	FRAME_EXC_PROLOGUE(24, sprg5, MCSRR); \
+	FRAME_EXC_PROLOGUE(24, SPR_SPRG5, MCSRR); \
 	PROLOGUE_GET_SPRG1; \
 	PROLOGUE_GET_SRRS
 
 #define	FRAME_DEBUG_PROLOGUE	\
-	FRAME_EXC_PROLOGUE(24, sprg4, CSRR); \
+	FRAME_EXC_PROLOGUE(24, SPR_SPRG4, CSRR); \
 	PROLOGUE_GET_SPRG1; \
 	PROLOGUE_GET_SRRS
 

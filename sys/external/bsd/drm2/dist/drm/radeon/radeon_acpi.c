@@ -1,4 +1,4 @@
-/*	$NetBSD: radeon_acpi.c,v 1.2 2018/08/27 04:58:36 riastradh Exp $	*/
+/*	$NetBSD: radeon_acpi.c,v 1.4 2022/02/27 14:24:27 riastradh Exp $	*/
 
 /*
  * Copyright 2012 Advanced Micro Devices, Inc.
@@ -24,18 +24,29 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeon_acpi.c,v 1.2 2018/08/27 04:58:36 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: radeon_acpi.c,v 1.4 2022/02/27 14:24:27 riastradh Exp $");
 
-#include <linux/pci.h>
 #include <linux/acpi.h>
-#include <linux/slab.h>
+#include <linux/pci.h>
+#include <linux/pm_runtime.h>
 #include <linux/power_supply.h>
+#include <linux/slab.h>
+
+#include <acpi/acpi_bus.h>
 #include <acpi/video.h>
-#include <drm/drmP.h>
+
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_probe_helper.h>
+
+#include "atom.h"
 #include "radeon.h"
 #include "radeon_acpi.h"
-#include "atom.h"
+
+#if defined(CONFIG_VGA_SWITCHEROO)
+bool radeon_atpx_dgpu_req_power_for_displays(void);
+#else
+static inline bool radeon_atpx_dgpu_req_power_for_displays(void) { return false; }
+#endif
 
 #define ACPI_AC_CLASS           "ac_adapter"
 
@@ -136,7 +147,7 @@ static union acpi_object *radeon_atif_call(acpi_handle handle, int function,
 	if (ACPI_FAILURE(status) && status != AE_NOT_FOUND) {
 		DRM_DEBUG_DRIVER("failed to evaluate ATIF got %s\n",
 				 acpi_format_exception(status));
-		kfree(buffer.pointer);
+		ACPI_FREE(buffer.pointer);
 		return NULL;
 	}
 
@@ -232,7 +243,7 @@ static int radeon_atif_verify_interface(acpi_handle handle,
 	radeon_atif_parse_functions(&atif->functions, output.function_bits);
 
 out:
-	kfree(info);
+	ACPI_FREE(info);
 	return err;
 }
 
@@ -295,7 +306,7 @@ out:
 	DRM_DEBUG_DRIVER("Notification %s, command code = %#x\n",
 			(n->enabled ? "enabled" : "disabled"),
 			n->command_code);
-	kfree(info);
+	ACPI_FREE(info);
 	return err;
 }
 
@@ -335,7 +346,7 @@ static int radeon_atif_get_sbios_requests(acpi_handle handle,
 	count = hweight32(req->pending);
 
 out:
-	kfree(info);
+	ACPI_FREE(info);
 	return count;
 }
 
@@ -349,7 +360,7 @@ out:
  * handles it.
  * Returns NOTIFY code
  */
-int radeon_atif_handler(struct radeon_device *rdev,
+static int radeon_atif_handler(struct radeon_device *rdev,
 		struct acpi_bus_event *event)
 {
 	struct radeon_atif *atif = &rdev->atif;
@@ -397,6 +408,16 @@ int radeon_atif_handler(struct radeon_device *rdev,
 						       BACKLIGHT_UPDATE_HOTKEY);
 			}
 #endif
+		}
+	}
+	if (req.pending & ATIF_DGPU_DISPLAY_EVENT) {
+		if ((rdev->flags & RADEON_IS_PX) &&
+		    radeon_atpx_dgpu_req_power_for_displays()) {
+			pm_runtime_get_sync(rdev->ddev->dev);
+			/* Just fire off a uevent and let userspace tell us what to do */
+			drm_helper_hpd_irq_event(rdev->ddev);
+			pm_runtime_mark_last_busy(rdev->ddev->dev);
+			pm_runtime_put_autosuspend(rdev->ddev->dev);
 		}
 	}
 	/* TODO: check other events */
@@ -451,7 +472,7 @@ static union acpi_object *radeon_atcs_call(acpi_handle handle, int function,
 	if (ACPI_FAILURE(status) && status != AE_NOT_FOUND) {
 		DRM_DEBUG_DRIVER("failed to evaluate ATCS got %s\n",
 				 acpi_format_exception(status));
-		kfree(buffer.pointer);
+		ACPI_FREE(buffer.pointer);
 		return NULL;
 	}
 
@@ -517,7 +538,7 @@ static int radeon_atcs_verify_interface(acpi_handle handle,
 	radeon_atcs_parse_functions(&atcs->functions, output.function_bits);
 
 out:
-	kfree(info);
+	ACPI_FREE(info);
 	return err;
 }
 
@@ -567,7 +588,7 @@ int radeon_acpi_pcie_notify_device_ready(struct radeon_device *rdev)
 	if (!info)
 		return -EIO;
 
-	kfree(info);
+	ACPI_FREE(info);
 
 	return 0;
 }
@@ -626,14 +647,14 @@ int radeon_acpi_pcie_performance_request(struct radeon_device *rdev,
 		size = *(u16 *) info->buffer.pointer;
 		if (size < 3) {
 			DRM_INFO("ATCS buffer is too small: %zu\n", size);
-			kfree(info);
+			ACPI_FREE(info);
 			return -EINVAL;
 		}
 		size = min(sizeof(atcs_output), size);
 
 		memcpy(&atcs_output, info->buffer.pointer, size);
 
-		kfree(info);
+		ACPI_FREE(info);
 
 		switch (atcs_output.ret_val) {
 		case ATCS_REQUEST_REFUSED:
@@ -746,13 +767,6 @@ int radeon_acpi_init(struct radeon_device *rdev)
 		}
 
 		atif->encoder_for_bl = target;
-		if (!target) {
-			/* Brightness change notification is enabled, but we
-			 * didn't find a backlight controller, this should
-			 * never happen.
-			 */
-			DRM_ERROR("Cannot find a backlight controller\n");
-		}
 	}
 
 	if (atif->functions.sbios_requests && !atif->functions.system_params) {

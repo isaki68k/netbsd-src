@@ -1,4 +1,4 @@
-/*	$NetBSD: nouveau_nvkm_subdev_devinit_nv04.c,v 1.2 2018/08/27 04:58:33 riastradh Exp $	*/
+/*	$NetBSD: nouveau_nvkm_subdev_devinit_nv04.c,v 1.4 2021/12/18 23:45:39 riastradh Exp $	*/
 
 /*
  * Copyright (C) 2010 Francisco Jerez.
@@ -26,7 +26,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_subdev_devinit_nv04.c,v 1.2 2018/08/27 04:58:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_subdev_devinit_nv04.c,v 1.4 2021/12/18 23:45:39 riastradh Exp $");
 
 #include "nv04.h"
 #include "fbmem.h"
@@ -124,17 +124,13 @@ powerctrl_1_shift(int chip_version, int reg)
 
 	switch (reg) {
 	case 0x680520:
-		shift += 4;
-		/*FALLTHROUGH*/
+		shift += 4; /* fall through */
 	case 0x680508:
-		shift += 4;
-		/*FALLTHROUGH*/
+		shift += 4; /* fall through */
 	case 0x680504:
-		shift += 4;
-		/*FALLTHROUGH*/
+		shift += 4; /* fall through */
 	case 0x680500:
 		shift += 4;
-		/*FALLTHROUGH*/
 	}
 
 	/*
@@ -254,17 +250,13 @@ setPLL_double_highregs(struct nvkm_devinit *init, u32 reg1,
 
 		switch (reg1) {
 		case 0x680504:
-			shift_c040 += 2;
-			/*FALLTHROUGH*/
+			shift_c040 += 2; /* fall through */
 		case 0x680500:
-			shift_c040 += 2;
-			/*FALLTHROUGH*/
+			shift_c040 += 2; /* fall through */
 		case 0x680520:
-			shift_c040 += 2;
-			/*FALLTHROUGH*/
+			shift_c040 += 2; /* fall through */
 		case 0x680508:
 			shift_c040 += 2;
-			/*FALLTHROUGH*/
 		}
 
 		savedc040 = nvkm_rd32(device, 0xc040);
@@ -406,7 +398,7 @@ nv04_devinit_pll_set(struct nvkm_devinit *devinit, u32 type, u32 freq)
 int
 nv04_devinit_post(struct nvkm_devinit *init, bool execute)
 {
-	return nvbios_init(&init->subdev, execute);
+	return nvbios_post(&init->subdev, execute);
 }
 
 void

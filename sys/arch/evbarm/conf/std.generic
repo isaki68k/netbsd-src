@@ -1,4 +1,4 @@
-#	$NetBSD: std.generic,v 1.6 2018/11/14 11:02:52 jmcneill Exp $
+#	$NetBSD: std.generic,v 1.10 2021/09/03 21:58:36 andvar Exp $
 #
 # 	generic NetBSD/evbarm with FDT support
 
@@ -9,7 +9,7 @@ include		"arch/arm/conf/std.arm"		# arch standard options
 options 	EXEC_ELF32
 options 	EXEC_SCRIPT
 
-# Architecture opions
+# Architecture options
 options 	ARM32
 
 options 	ARM_GENERIC_TODR
@@ -22,17 +22,21 @@ options 	FPU_VFP
 options 	MODULAR
 options 	MODULAR_DEFAULT_AUTOLOAD
 options 	PCI_NETBSD_CONFIGURE
-options 	TPIDRPRW_IS_CURCPU
+options 	TPIDRPRW_IS_CURLWP
 options 	__BUS_SPACE_HAS_STREAM_METHODS
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
+options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_GENERIC_START
 options 	__HAVE_GENERIC_CPU_INITCLOCKS
-options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_PCI_CONF_HOOK
 options 	__HAVE_PCI_MSI_MSIX
 
 makeoptions	BOARDMKFRAG="${THISARM}/conf/mk.generic"
+
+# Prevent the addition of a command line -DKERNEL_BASE_VOFFSET= as it
+# is done at runtime.
+makeoptions	KERNEL_VOFFSET_RUNTIME=1
 
 # The physical address is chosen by u-boot and determined by armv6_start.S.
 # The 64 byte offset is due to u-boot header.

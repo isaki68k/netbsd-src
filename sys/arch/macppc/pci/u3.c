@@ -1,4 +1,4 @@
-/* $NetBSD: u3.c,v 1.9 2018/04/13 22:13:09 macallan Exp $ */
+/* $NetBSD: u3.c,v 1.12 2022/01/21 19:12:28 thorpej Exp $ */
 
 /*
  * Copyright 2006 Kyma Systems LLC.
@@ -164,7 +164,9 @@ ibmcpc_attach(device_t parent, device_t self, void *aux)
 		pba.pba_pc = pc;
 		pba.pba_bus = pc->pc_bus;
 		pba.pba_flags = PCI_FLAGS_MEM_OKAY | PCI_FLAGS_IO_OKAY;
-		config_found_ia(self, "pcibus", &pba, pcibusprint);
+
+		config_found(self, &pba, pcibusprint,
+		    CFARGS(.devhandle = device_handle(self)));
 
 		pc++;
 	}

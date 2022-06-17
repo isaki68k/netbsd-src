@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_syscalls_43.c,v 1.64 2019/01/27 02:08:39 pgoyette Exp $	*/
+/*	$NetBSD: vfs_syscalls_43.c,v 1.68 2021/09/07 11:43:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls_43.c,v 1.64 2019/01/27 02:08:39 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls_43.c,v 1.68 2021/09/07 11:43:02 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -75,11 +75,17 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_syscalls_43.c,v 1.64 2019/01/27 02:08:39 pgoyett
 #include <compat/common/compat_util.h>
 #include <compat/common/compat_mod.h>
 
-static void cvttimespec(struct timespec *, struct timespec50 *);
-static void cvtstat(struct stat *, struct stat43 *);
-
 static struct syscall_package vfs_syscalls_43_syscalls[] = {
-	{ SYS_compat_43_oquota, 0, (sy_call_t *)compat_43_sys_quota },
+	{ SYS_compat_43_oquota,     0, (sy_call_t *)compat_43_sys_quota },
+	{ SYS_compat_43_stat43,     0, (sy_call_t *)compat_43_sys_stat },
+	{ SYS_compat_43_lstat43,    0, (sy_call_t *)compat_43_sys_lstat },
+	{ SYS_compat_43_fstat43,    0, (sy_call_t *)compat_43_sys_fstat },
+	{ SYS_compat_43_otruncate,  0, (sy_call_t *)compat_43_sys_ftruncate },
+	{ SYS_compat_43_oftruncate, 0, (sy_call_t *)compat_43_sys_ftruncate },
+	{ SYS_compat_43_olseek,     0, (sy_call_t *)compat_43_sys_lseek },
+	{ SYS_compat_43_ocreat,     0, (sy_call_t *)compat_43_sys_creat },
+	{ SYS_compat_43_ogetdirentries, 0,
+	    (sy_call_t *)compat_43_sys_getdirentries },
 	{ 0, 0, NULL }
 };
 
@@ -87,7 +93,7 @@ static struct syscall_package vfs_syscalls_43_syscalls[] = {
  * Convert from an old to a new timespec structure.
  */
 static void
-cvttimespec(struct timespec *ts, struct timespec50 *ots)
+cvttimespec(struct timespec50 *ots, const struct timespec *ts)
 {
 
 	if (ts->tv_sec > INT_MAX) {
@@ -111,11 +117,11 @@ cvttimespec(struct timespec *ts, struct timespec50 *ots)
  * Convert from an old to a new stat structure.
  */
 static void
-cvtstat(struct stat *st, struct stat43 *ost)
+cvtstat(struct stat43 *ost, const struct stat *st)
 {
 
 	/* Handle any padding. */
-	memset(ost, 0, sizeof *ost);
+	memset(ost, 0, sizeof(*ost));
 	ost->st_dev = st->st_dev;
 	ost->st_ino = st->st_ino;
 	ost->st_mode = st->st_mode & 0xffff;
@@ -127,9 +133,9 @@ cvtstat(struct stat *st, struct stat43 *ost)
 		ost->st_size = st->st_size;
 	else
 		ost->st_size = -2;
-	cvttimespec(&st->st_atimespec, &ost->st_atimespec);
-	cvttimespec(&st->st_mtimespec, &ost->st_mtimespec);
-	cvttimespec(&st->st_ctimespec, &ost->st_ctimespec);
+	cvttimespec(&ost->st_atimespec, &st->st_atimespec);
+	cvttimespec(&ost->st_mtimespec, &st->st_mtimespec);
+	cvttimespec(&ost->st_ctimespec, &st->st_ctimespec);
 	ost->st_blksize = st->st_blksize;
 	ost->st_blocks = st->st_blocks;
 	ost->st_flags = st->st_flags;
@@ -153,10 +159,9 @@ compat_43_sys_stat(struct lwp *l, const struct compat_43_sys_stat_args *uap, reg
 
 	error = do_sys_stat(SCARG(uap, path), FOLLOW, &sb);
 	if (error)
-		return (error);
-	cvtstat(&sb, &osb);
-	error = copyout((void *)&osb, (void *)SCARG(uap, ub), sizeof (osb));
-	return (error);
+		return error;
+	cvtstat(&osb, &sb);
+	return copyout(&osb, SCARG(uap, ub), sizeof(osb));
 }
 
 /*
@@ -168,74 +173,23 @@ compat_43_sys_lstat(struct lwp *l, const struct compat_43_sys_lstat_args *uap, r
 {
 	/* {
 		syscallarg(char *) path;
-		syscallarg(struct ostat *) ub;
+		syscallarg(struct stat43 *) ub;
 	} */
-	struct vnode *vp, *dvp;
-	struct stat sb, sb1;
+	struct stat sb;
 	struct stat43 osb;
 	int error;
-	struct pathbuf *pb;
-	struct nameidata nd;
-	int ndflags;
 
-	error = pathbuf_copyin(SCARG(uap, path), &pb);
-	if (error) {
+	error = do_sys_stat(SCARG(uap, path), NOFOLLOW, &sb);
+	if (error)
 		return error;
-	}
 
-	ndflags = NOFOLLOW | LOCKLEAF | LOCKPARENT | TRYEMULROOT;
-again:
-	NDINIT(&nd, LOOKUP, ndflags, pb);
-	if ((error = namei(&nd))) {
-		if (error == EISDIR && (ndflags & LOCKPARENT) != 0) {
-			/*
-			 * Should only happen on '/'. Retry without LOCKPARENT;
-			 * this is safe since the vnode won't be a VLNK.
-			 */
-			ndflags &= ~LOCKPARENT;
-			goto again;
-		}
-		pathbuf_destroy(pb);
-		return (error);
-	}
 	/*
-	 * For symbolic links, always return the attributes of its
+	 * For symbolic links, BSD4.3 returned the attributes of its
 	 * containing directory, except for mode, size, and links.
+	 * This is no longer emulated, the parent directory is not consulted.
 	 */
-	vp = nd.ni_vp;
-	dvp = nd.ni_dvp;
-	pathbuf_destroy(pb);
-	if (vp->v_type != VLNK) {
-		if ((ndflags & LOCKPARENT) != 0) {
-			if (dvp == vp)
-				vrele(dvp);
-			else
-				vput(dvp);
-		}
-		error = vn_stat(vp, &sb);
-		vput(vp);
-		if (error)
-			return (error);
-	} else {
-		error = vn_stat(dvp, &sb);
-		vput(dvp);
-		if (error) {
-			vput(vp);
-			return (error);
-		}
-		error = vn_stat(vp, &sb1);
-		vput(vp);
-		if (error)
-			return (error);
-		sb.st_mode &= ~S_IFDIR;
-		sb.st_mode |= S_IFLNK;
-		sb.st_nlink = sb1.st_nlink;
-		sb.st_size = sb1.st_size;
-		sb.st_blocks = sb1.st_blocks;
-	}
-	cvtstat(&sb, &osb);
-	error = copyout((void *)&osb, (void *)SCARG(uap, ub), sizeof (osb));
-	return (error);
+	cvtstat(&osb, &sb);
+	return copyout(&osb, SCARG(uap, ub), sizeof(osb));
 }
 
 /*
@@ -249,18 +203,16 @@ compat_43_sys_fstat(struct lwp *l, const struct compat_43_sys_fstat_args *uap, r
 		syscallarg(int) fd;
 		syscallarg(struct stat43 *) sb;
 	} */
-	struct stat ub;
-	struct stat43 oub;
+	struct stat sb;
+	struct stat43 osb;
 	int error;
 
-	error = do_sys_fstat(SCARG(uap, fd), &ub);
-	if (error == 0) {
-		cvtstat(&ub, &oub);
-		error = copyout((void *)&oub, (void *)SCARG(uap, sb),
-		    sizeof (oub));
-	}
+	error = do_sys_fstat(SCARG(uap, fd), &sb);
+	if (error)
+		return error;
 
-	return (error);
+	cvtstat(&osb, &sb);
+	return copyout(&osb, SCARG(uap, sb), sizeof(osb));
 }
 
 
@@ -283,7 +235,7 @@ compat_43_sys_ftruncate(struct lwp *l, const struct compat_43_sys_ftruncate_args
 
 	SCARG(&nuap, fd) = SCARG(uap, fd);
 	SCARG(&nuap, length) = SCARG(uap, length);
-	return (sys_ftruncate(l, &nuap, retval));
+	return sys_ftruncate(l, &nuap, retval);
 }
 
 /*
@@ -468,6 +420,7 @@ again:
 				off += reclen;
 			continue;
 		}
+		memset(&idb, 0, sizeof(idb));
 		if (bdp->d_namlen >= sizeof(idb.d_name))
 			idb.d_namlen = sizeof(idb.d_name) - 1;
 		else
@@ -522,7 +475,7 @@ out1:
 	fd_putfile(SCARG(uap, fd));
 	if (error)
 		return error;
-	return copyout(&loff, SCARG(uap, basep), sizeof(long));
+	return copyout(&loff, SCARG(uap, basep), sizeof(loff));
 }
 
 int

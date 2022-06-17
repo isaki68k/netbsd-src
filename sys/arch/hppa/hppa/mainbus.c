@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.4 2019/04/26 18:37:24 skrll Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.9 2022/03/30 22:34:48 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.4 2019/04/26 18:37:24 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.9 2022/03/30 22:34:48 macallan Exp $");
 
 #include "locators.h"
 #include "power.h"
@@ -71,6 +71,7 @@ __KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.4 2019/04/26 18:37:24 skrll Exp $");
 #include <sys/extent.h>
 #include <sys/mbuf.h>
 #include <sys/proc.h>
+#include <sys/kmem.h>
 
 #include <uvm/uvm_page.h>
 #include <uvm/uvm.h>
@@ -354,8 +355,7 @@ mbus_vaddr(void *v, bus_space_handle_t h)
 paddr_t
 mbus_mmap(void *v, bus_addr_t addr, off_t off, int prot, int flags)
 {
-
-	return -1;
+	return btop(addr + off);
 }
 
 uint8_t
@@ -730,6 +730,14 @@ const struct hppa_bus_space_tag hppa_bustag = {
 	mbus_cp_1,  mbus_cp_2, mbus_cp_4, mbus_cp_8
 };
 
+static size_t
+_bus_dmamap_mapsize(int const nsegments)
+{
+	KASSERT(nsegments > 0);
+	return sizeof(struct hppa_bus_dmamap) +
+	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
+}
+
 /*
  * Common function for DMA map creation.  May be called by bus-specific DMA map
  * creation functions.
@@ -739,7 +747,6 @@ mbus_dmamap_create(void *v, bus_size_t size, int nsegments, bus_size_t maxsegsz,
     bus_size_t boundary, int flags, bus_dmamap_t *dmamp)
 {
 	struct hppa_bus_dmamap *map;
-	size_t mapsize;
 
 	/*
 	 * Allocate and initialize the DMA map.  The end of the map is a
@@ -753,14 +760,11 @@ mbus_dmamap_create(void *v, bus_size_t size, int nsegments, bus_size_t maxsegsz,
 	 * The bus_dmamap_t includes one bus_dma_segment_t, hence the
 	 * (nsegments - 1).
 	 */
-	mapsize = sizeof(struct hppa_bus_dmamap) +
-	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
-	map = malloc(mapsize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK);
+	map = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP);
 	if (!map)
 		return ENOMEM;
 
-	memset(map, 0, mapsize);
 	map->_dm_size = size;
 	map->_dm_segcnt = nsegments;
 	map->_dm_maxsegsz = maxsegsz;
@@ -787,7 +791,7 @@ mbus_dmamap_destroy(void *v, bus_dmamap_t map)
 	if (map->dm_mapsize != 0)
 		mbus_dmamap_unload(v, map);
 
-	free(map, M_DMAMAP);
+	kmem_free(map, _bus_dmamap_mapsize(map->_dm_segcnt));
 }
 
 /*
@@ -1068,8 +1072,8 @@ mbus_dmamem_alloc(void *v, bus_size_t size, bus_size_t alignment,
 	low = 0;
 	high = ((flags & BUS_DMA_24BIT) ? (1 << 24) : 0) - 1;
 
-	if ((mlist = malloc(sizeof(*mlist), M_DEVBUF,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL)
+	if ((mlist = kmem_alloc(sizeof(*mlist),
+	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return ENOMEM;
 
 	/*
@@ -1084,7 +1088,7 @@ mbus_dmamem_alloc(void *v, bus_size_t size, bus_size_t alignment,
 		DPRINTF(("%s: uvm_pglistalloc(%lx, %lx, %lx, 0, 0, %p, %d, %0x)"
 		    " failed", __func__, size, low, high, mlist, nsegs,
 		    (flags & BUS_DMA_NOWAIT) == 0));
-		free(mlist, M_DEVBUF);
+		kmem_free(mlist, sizeof(*mlist));
 		return error;
 	}
 
@@ -1096,7 +1100,7 @@ mbus_dmamem_alloc(void *v, bus_size_t size, bus_size_t alignment,
 		if (pa != pa_next) {
 			if (++seg >= nsegs) {
 				uvm_pglistfree(mlist);
-				free(mlist, M_DEVBUF);
+				kmem_free(mlist, sizeof(*mlist));
 				return ENOMEM;
 			}
 			segs[seg].ds_addr = pa;
@@ -1137,7 +1141,7 @@ mbus_dmamem_free(void *v, bus_dma_segment_t *segs, int nsegs)
 		return;
 
 	uvm_pglistfree(mlist);
-	free(mlist, M_DEVBUF);
+	kmem_free(mlist, sizeof(*mlist));
 }
 
 /*
@@ -1337,7 +1341,8 @@ mb_module_callback(device_t self, struct confargs *ca)
 	    ca->ca_type.iodc_type == HPPA_TYPE_MEMORY)
 		return NULL;
 
-	return config_found_sm_loc(self, "gedoens", NULL, ca, mbprint, mbsubmatch);
+	return config_found(self, ca, mbprint,
+	    CFARGS(.submatch = mbsubmatch));
 }
 
 static device_t
@@ -1347,7 +1352,8 @@ mb_cpu_mem_callback(device_t self, struct confargs *ca)
 	     ca->ca_type.iodc_type != HPPA_TYPE_MEMORY))
 		return NULL;
 
-	return config_found_sm_loc(self, "gedoens", NULL, ca, mbprint, mbsubmatch);
+	return config_found(self, ca, mbprint,
+	    CFARGS(.submatch = mbsubmatch));
 }
 
 void
@@ -1392,7 +1398,7 @@ mbattach(device_t parent, device_t self, void *aux)
 	nca.ca_hpa = 0;
 	nca.ca_iot = &hppa_bustag;
 	nca.ca_dmatag = &hppa_dmatag;
-	config_found(self, &nca, mbprint);
+	config_found(self, &nca, mbprint, CFARGS_NONE);
 
 #if NPOWER > 0
 	/* get some power */
@@ -1400,22 +1406,28 @@ mbattach(device_t parent, device_t self, void *aux)
 	nca.ca_name = "power";
 	nca.ca_irq = HPPACF_IRQ_UNDEF;
 	nca.ca_iot = &hppa_bustag;
-	config_found(self, &nca, mbprint);
+	config_found(self, &nca, mbprint, CFARGS_NONE);
 #endif
 
 #if NLCD > 0
 	memset(&nca, 0, sizeof(nca));
 	err = pdcproc_chassis_info(&pdc_chassis_info, &nca.ca_pcl);
-	if (!err && nca.ca_pcl.enabled) {
-		nca.ca_name = "lcd";
-		nca.ca_dp.dp_bc[0] = nca.ca_dp.dp_bc[1] = nca.ca_dp.dp_bc[2] =
-		nca.ca_dp.dp_bc[3] = nca.ca_dp.dp_bc[4] = nca.ca_dp.dp_bc[5] = -1;
-		nca.ca_dp.dp_mod = -1;
-		nca.ca_irq = HPPACF_IRQ_UNDEF;
-		nca.ca_iot = &hppa_bustag;
-		nca.ca_hpa = nca.ca_pcl.cmd_addr;
+	if (!err) {
+		if (nca.ca_pcl.enabled) {
+			nca.ca_name = "lcd";
+			nca.ca_dp.dp_bc[0] = nca.ca_dp.dp_bc[1] = nca.ca_dp.dp_bc[2] =
+			nca.ca_dp.dp_bc[3] = nca.ca_dp.dp_bc[4] = nca.ca_dp.dp_bc[5] = -1;
+			nca.ca_dp.dp_mod = -1;
+			nca.ca_irq = HPPACF_IRQ_UNDEF;
+			nca.ca_iot = &hppa_bustag;
+			nca.ca_hpa = nca.ca_pcl.cmd_addr;
 
-		config_found(self, &nca, mbprint);
+			config_found(self, &nca, mbprint, CFARGS_NONE);
+		} else if (nca.ca_pcl.model == 2) {
+			bus_space_map(&hppa_bustag, nca.ca_pcl.cmd_addr,
+		  	  4, 0, (bus_space_handle_t *)&machine_ledaddr);
+		  	machine_ledword = 1;
+		}
 	}
 #endif
 

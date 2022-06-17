@@ -1,4 +1,4 @@
-/* $NetBSD: lpt_sableio.c,v 1.10 2014/03/29 19:28:25 christos Exp $ */
+/* $NetBSD: lpt_sableio.c,v 1.12 2021/05/07 16:58:34 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: lpt_sableio.c,v 1.10 2014/03/29 19:28:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lpt_sableio.c,v 1.12 2021/05/07 16:58:34 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -65,13 +65,13 @@ struct lpt_sableio_softc {
 	void	*sc_ih;			/* interrupt handler */
 };
 
-int	lpt_sableio_match(device_t, cfdata_t , void *);
-void	lpt_sableio_attach(device_t, device_t, void *);
+static int	lpt_sableio_match(device_t, cfdata_t , void *);
+static void	lpt_sableio_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(lpt_sableio, sizeof(struct lpt_sableio_softc),
     lpt_sableio_match, lpt_sableio_attach, NULL, NULL);
 
-int
+static int
 lpt_sableio_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct sableio_attach_args *sa = aux;
@@ -83,7 +83,7 @@ lpt_sableio_match(device_t parent, cfdata_t match, void *aux)
 	return (0);
 }
 
-void
+static void
 lpt_sableio_attach(device_t parent, device_t self, void *aux)
 {
 	struct lpt_sableio_softc *ssc = device_private(self);
@@ -91,6 +91,7 @@ lpt_sableio_attach(device_t parent, device_t self, void *aux)
 	struct sableio_attach_args *sa = aux;
 	const char *intrstr;
 	char buf[PCI_INTRSTR_LEN];
+	pci_intr_handle_t ih;
 
 	sc->sc_dev = self;
 	sc->sc_iot = sa->sa_iot;
@@ -106,10 +107,10 @@ lpt_sableio_attach(device_t parent, device_t self, void *aux)
 
 	lpt_attach_subr(sc);
 
-	intrstr = pci_intr_string(sa->sa_pc, sa->sa_sableirq[0],
-	    buf, sizeof(buf));
-	ssc->sc_ih = pci_intr_establish(sa->sa_pc, sa->sa_sableirq[0],
-	    IPL_TTY, lptintr, sc);
+	alpha_pci_intr_handle_init(&ih, sa->sa_sableirq[0], 0);
+
+	intrstr = pci_intr_string(sa->sa_pc, ih, buf, sizeof(buf));
+	ssc->sc_ih = pci_intr_establish(sa->sa_pc, ih, IPL_TTY, lptintr, sc);
 	if (ssc->sc_ih == NULL) {
 		aprint_error_dev(self, "unable to establish interrupt");
 		if (intrstr != NULL)

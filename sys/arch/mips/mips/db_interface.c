@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.82 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.96 2022/01/15 10:32:32 skrll Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,12 +27,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.82 2019/04/06 03:06:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.96 2022/01/15 10:32:32 skrll Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
 #include "opt_cputype.h"	/* which mips CPUs do we support? */
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
+#endif
 
 #define __PMAP_PRIVATE
 
@@ -46,7 +48,6 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.82 2019/04/06 03:06:26 thorpej Ex
 
 #include <uvm/uvm_extern.h>
 
-#include <mips/asm.h>
 #include <mips/regnum.h>
 #include <mips/cache.h>
 #include <mips/pcb.h>
@@ -58,6 +59,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.82 2019/04/06 03:06:26 thorpej Ex
 #include <machine/int_fmtio.h>
 #include <machine/db_machdep.h>
 #include <ddb/db_access.h>
+#include <ddb/db_user.h>
 #ifndef KGDB
 #include <ddb/db_command.h>
 #include <ddb/db_output.h>
@@ -72,7 +74,9 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.82 2019/04/06 03:06:26 thorpej Ex
 volatile u_int ddb_cpu = NOCPU;
 
 int		db_active = 0;
+#ifdef _KERNEL
 db_regs_t	ddb_regs;
+#endif
 
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 static void db_watch_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -83,9 +87,11 @@ static void db_unwatch_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void db_mach_cpu_cmd(db_expr_t, bool, db_expr_t, const char *);
 #endif
 
-void db_tlbdump_cmd(db_expr_t, bool, db_expr_t, const char *);
-void db_kvtophys_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_cp0dump_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_kvtophys_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_tlbdump_cmd(db_expr_t, bool, db_expr_t, const char *);
+
 #ifdef MIPS64_XLS
 void db_mfcr_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_mtcr_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -93,19 +99,8 @@ void db_mtcr_cmd(db_expr_t, bool, db_expr_t, const char *);
 
 paddr_t kvtophys(vaddr_t);
 
+#ifdef _KERNEL
 CTASSERT(sizeof(ddb_regs) == sizeof(struct reg));
-
-#ifdef DDB_TRACE
-bool
-kdbpeek(vaddr_t addr, int *valp)
-{
-
-	if (addr == 0 || (addr & 3))
-		return false;
-	*valp = *(int *)addr;
-	return true;
-}
-#endif
 
 #ifndef KGDB
 int
@@ -187,6 +182,23 @@ void
 db_read_bytes(vaddr_t addr, size_t size, char *data)
 {
 	const char *src = (char *)addr;
+	int err;
+
+	/*
+	 * If asked to fetch from userspace, do it safely.
+	 * Note that MIPS_KSEG0_START is the proper address for
+	 * both 32-bit and 64-bit kernels.
+	 */
+	if (addr < (vaddr_t)MIPS_KSEG0_START) {
+		err = copyin(src, data, size);
+		if (err) {
+#ifdef DDB
+			db_printf("address %p is invalid\n", src);
+#endif
+			memset(data, 0, size);
+		}
+		return;
+	}
 
 	if (size <= 8 && (size & (size-1)) == 0 && (addr & (size-1)) == 0
 	    && ((uintptr_t)data & (size-1)) == 0) {
@@ -212,6 +224,18 @@ db_write_bytes(vaddr_t addr, size_t size, const char *data)
 {
 	char *p = (char *)addr;
 	size_t n = size;
+	int err;
+
+	/* If asked to fetch from userspace, do it safely */
+	if (addr < (vaddr_t)MIPS_KSEG0_START) {
+		err = copyout(data, p, size);
+		if (err) {
+#ifdef DDB
+			db_printf("address %p is invalid\n", p);
+#endif
+		}
+		return;
+	}
 
 	if (size <= 8 && (size & (size-1)) == 0 && (addr & (size-1)) == 0
 	    && ((uintptr_t)data & (size-1)) == 0) {
@@ -238,6 +262,10 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	       const char *modif)
 {
 	struct tlbmask tlb;
+	bool valid_only = false;
+
+	if (modif[0] == 'v')
+		valid_only = true;
 
 #ifdef MIPS1
 	if (!MIPS_HAS_R4K_MMU) {
@@ -245,6 +273,8 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 		for (i = 0; i < mips_options.mips_num_tlb_entries; i++) {
 			tlb_read_entry(i, &tlb);
+			if (valid_only && !(tlb.tlb_lo1 & MIPS1_PG_V))
+				continue;	/* skip invalid TLBs */
 			db_printf("TLB%c%2d Hi 0x%08x Lo 0x%08x",
 				(tlb.tlb_lo1 & MIPS1_PG_V) ? ' ' : '*',
 				i, tlb.tlb_hi,
@@ -259,12 +289,18 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 #ifdef MIPS3_PLUS
 	if (MIPS_HAS_R4K_MMU) {
 		int i;
+		const int tlb_count_width =
+		    mips_options.mips_num_tlb_entries > 100 ? 3 : 2;
 
 		for (i = 0; i < mips_options.mips_num_tlb_entries; i++) {
 			tlb_read_entry(i, &tlb);
-			db_printf("TLB%c%2d Hi 0x%08"PRIxVADDR" ",
-			(tlb.tlb_lo0 | tlb.tlb_lo1) & MIPS3_PG_V ? ' ' : '*',
-				i, tlb.tlb_hi);
+			if (valid_only &&
+			    !((tlb.tlb_lo0 | tlb.tlb_lo1) & MIPS3_PG_V))
+				continue;	/* skip invalid TLBs */
+
+			db_printf("TLB%c%*d Hi 0x%08"PRIxVADDR" ",
+			    (tlb.tlb_lo0 | tlb.tlb_lo1) & MIPS3_PG_V ? ' ' : '*',
+			    tlb_count_width, i, tlb.tlb_hi);
 			db_printf("Lo0=0x%09" PRIx64 " %c%c attr %x ",
 				(uint64_t)mips_tlbpfn_to_paddr(tlb.tlb_lo0),
 				(tlb.tlb_lo0 & MIPS3_PG_D) ? 'D' : ' ',
@@ -301,10 +337,12 @@ db_kvtophys_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 #define	FLDWIDTH	10
 
-#define SHOW32(reg, name)	SHOW32SEL(reg, 0, name)
-#define SHOW64(reg, name)	SHOW64SEL(reg, 0, name)
+#define SHOW32(reg, name)	SHOW32SELECT(reg, 0, name)
+#define SHOW64(reg, name)	SHOW64SELECT(reg, 0, name)
+#define SHOW32SEL(reg, name)	SHOW32SELECT(reg, name)
+#define SHOW64SEL(reg, name)	SHOW64SELECT(reg, name)
 
-#define	SHOW32SEL(num, sel, name)					\
+#define	SHOW32SELECT(num, sel, name)					\
 do {									\
 	uint32_t __val;							\
 									\
@@ -319,7 +357,7 @@ do {									\
 } while (0)
 
 /* XXX not 64-bit ABI safe! */
-#define	SHOW64SEL(num, sel, name)					\
+#define	SHOW64SELECT(num, sel, name)					\
 do {									\
 	uint64_t __val;							\
 									\
@@ -421,9 +459,9 @@ db_cp0dump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 	if ((cp0flags & MIPS_CP0FL_USE) != 0) {
 		if ((cp0flags & MIPS_CP0FL_EIRR) != 0)
-			SHOW64SEL(9, 6, "eirr");
+			SHOW64SEL(MIPS_COP_0_EIRR, "eirr");
 		if ((cp0flags & MIPS_CP0FL_EIMR) != 0)
-			SHOW64SEL(9, 7, "eimr");
+			SHOW64SEL(MIPS_COP_0_EIMR, "eimr");
 	}
 
 	if (CPUIS64BITS) {
@@ -449,27 +487,27 @@ db_cp0dump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 	if ((cp0flags & MIPS_CP0FL_USE) != 0) {
 		if ((cp0flags & MIPS_CP0FL_EBASE) != 0)
-			SHOW32SEL(15, 1, "ebase");
+			SHOW32SEL(MIPS_COP_0_EBASE, "ebase");
 		if ((cp0flags & MIPS_CP0FL_CONFIG) != 0)
 			SHOW32(MIPS_COP_0_CONFIG, "config");
 		if ((cp0flags & MIPS_CP0FL_CONFIG1) != 0)
-			SHOW32SEL(16, 1, "config1");
+			SHOW32SEL(MIPS_COP_0_CONFIG1, "config1");
 		if ((cp0flags & MIPS_CP0FL_CONFIG2) != 0)
-			SHOW32SEL(16, 2, "config2");
+			SHOW32SEL(MIPS_COP_0_CONFIG2, "config2");
 		if ((cp0flags & MIPS_CP0FL_CONFIG3) != 0)
-			SHOW32SEL(16, 3, "config3");
+			SHOW32SEL(MIPS_COP_0_CONFIG3, "config3");
 		if ((cp0flags & MIPS_CP0FL_CONFIG4) != 0)
-			SHOW32SEL(16, 4, "config4");
+			SHOW32SEL(MIPS_COP_0_CONFIG4, "config4");
 		if ((cp0flags & MIPS_CP0FL_CONFIG5) != 0)
-			SHOW32SEL(16, 5, "config5");
+			SHOW32SEL(MIPS_COP_0_CONFIG5, "config5");
 		if ((cp0flags & MIPS_CP0FL_CONFIG6) != 0)
-			SHOW32SEL(16, 6, "config6");
+			SHOW32SEL(MIPS_COP_0_CONFIG6, "config6");
 		if ((cp0flags & MIPS_CP0FL_CONFIG7) != 0)
-			SHOW32SEL(16, 7, "config7");
-		if ((cp0flags & MIPS_CP0FL_HWRENA) != 0)
-			SHOW32(7, "hwrena");
-		if ((cp0flags & MIPS_CP0FL_USERLOCAL) != 0)
-			SHOW32SEL(4, 2, "userlocal");
+			SHOW32SEL(MIPS_COP_0_CONFIG7, "config7");
+		if (CPUISMIPSNNR2)
+			SHOW32(MIPS_COP_0_HWRENA, "hwrena");
+		if (MIPS_HAS_USERLOCAL)
+			SHOW32SEL(MIPS_COP_0_USERLOCAL, "userlocal");
 	} else {
 		SHOW32(MIPS_COP_0_CONFIG, "config");
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
@@ -508,9 +546,11 @@ db_cp0dump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 	if (CPUISMIPSNN) {
 		if (CPUIS64BITS) {
-			SHOW64(MIPS_COP_0_PERFCNT, "perfcnt");
+			SHOW64(MIPS_COP_0_PERFCNT0_CTL, "perfcnt0ctl");
+			SHOW64SEL(MIPS_COP_0_PERFCNT0_CNT, "perfcnt0cnt");
 		} else {
-			SHOW32(MIPS_COP_0_PERFCNT, "perfcnt");
+			SHOW32(MIPS_COP_0_PERFCNT0_CTL, "perfcnt0ctl");
+			SHOW32SEL(MIPS_COP_0_PERFCNT0_CNT, "perfcnt0cnt");
 		}
 	}
 
@@ -531,6 +571,66 @@ db_cp0dump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		SHOW32(MIPS_COP_0_ERROR_PC, "errorpc");
 	}
 }
+
+
+static void
+show_cpuinfo(struct cpu_info *kci)
+{
+	struct cpu_info cpuinfobuf;
+	cpuid_t cpuid;
+	int i;
+
+	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+
+	struct cpu_info *ci = &cpuinfobuf;
+	cpuid = ci->ci_cpuid;
+	db_printf("cpu_info=%p, cpu_name=%s\n", kci, ci->ci_cpuname);
+	db_printf("%p cpu[%lu].ci_cpuid         = %lu\n",
+	    &ci->ci_cpuid, cpuid, ci->ci_cpuid);
+	db_printf("%p cpu[%lu].ci_curlwp        = %p\n",
+	    &ci->ci_curlwp, cpuid, ci->ci_curlwp);
+	for (i = 0; i < SOFTINT_COUNT; i++) {
+		db_printf("%p cpu[%lu].ci_softlwps[%d]   = %p\n",
+		    &ci->ci_softlwps[i], cpuid, i, ci->ci_softlwps[i]);
+	}
+	db_printf("%p cpu[%lu].ci_want_resched  = %d\n",
+	    &ci->ci_want_resched, cpuid, ci->ci_want_resched);
+	db_printf("%p cpu[%lu].ci_cpl           = %d\n",
+	    &ci->ci_cpl, cpuid, ci->ci_cpl);
+	db_printf("%p cpu[%lu].ci_softints      = 0x%08x\n",
+	    &ci->ci_softints, cpuid, ci->ci_softints);
+	db_printf("%p cpu[%lu].ci_idepth        = %u\n",
+	    &ci->ci_idepth, cpuid, ci->ci_idepth);
+}
+
+void
+db_cpuinfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+#ifdef MULTIPROCESSOR
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+	bool showall = false;
+
+	if (modif != NULL) {
+		for (; *modif != '\0'; modif++) {
+			switch (*modif) {
+			case 'a':
+				showall = true;
+				break;
+			}
+		}
+	}
+
+	if (showall) {
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			show_cpuinfo(ci);
+		}
+	} else
+#endif /* MULTIPROCESSOR */
+		show_cpuinfo(curcpu());
+}
+
 
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 static void
@@ -698,7 +798,7 @@ db_mfcr_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		"mfcr %0,%1			\n\t"			\
 		".set pop 			\n\t"			\
 	    : "=r"(value) : "r"(addr));
-	
+
 	db_printf("control reg 0x%" DDB_EXPR_FMT "x = 0x%" PRIx64 "\n",
 	    addr, value);
 }
@@ -745,7 +845,7 @@ db_mach_nmi_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	
+
 	if (!have_addr) {
 		db_printf("CPU not specific\n");
 		return;
@@ -766,16 +866,21 @@ db_mach_nmi_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	mips3_sd(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_NMI), __BIT(ci->ci_cpuid));
 }
 #endif
+#endif
 
 static void
 db_mach_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		const char *modif)
 {
-	mips3_sd(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_SOFT_RST),
-	     mips3_ld(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_FUSE)));
+
+	if (cpu_reset_address == NULL) {
+		db_printf("cpu_reset_address is not set\n");
+		return;
+	}
+
+	cpu_reset_address();
 }
 
-#endif
 const struct db_command db_machine_command_table[] = {
 #ifdef MULTIPROCESSOR
 	{ DDB_ADD_CMD("cpu",	db_mach_cpu_cmd,	0,
@@ -783,6 +888,33 @@ const struct db_command db_machine_command_table[] = {
 #endif
 	{ DDB_ADD_CMD("cp0",	db_cp0dump_cmd,	0,
 		"Dump CP0 registers.",
+		NULL, NULL) },
+	{ DDB_ADD_CMD("cpuinfo", db_cpuinfo_cmd,	0,
+			"Displays the cpuinfo",
+		    NULL, NULL)
+	},
+	{ DDB_ADD_CMD("kvtop",	db_kvtophys_cmd,	0,
+		"Print the physical address for a given kernel virtual address",
+		"address",
+		"   address:\tvirtual address to look up") },
+#ifdef MIPS64_XLS
+	{ DDB_ADD_CMD("mfcr", 	db_mfcr_cmd,		CS_NOREPEAT,
+		"Dump processor control register",
+		NULL, NULL) },
+	{ DDB_ADD_CMD("mtcr", 	db_mtcr_cmd,		CS_NOREPEAT|CS_MORE,
+		"Set processor control register",
+		NULL, NULL) },
+#endif
+#if defined(MIPS64_OCTEON) && defined(MULTIPROCESSOR)
+	{ DDB_ADD_CMD("nmi", 	db_mach_nmi_cmd,	CS_NOREPEAT,
+		"Send NMI to processor",
+		"cpu#", NULL) },
+#endif	/* OCTEON + MP */
+	{ DDB_ADD_CMD("reset", 	db_mach_reset_cmd,	CS_NOREPEAT,
+		"Initiate hardware reset",
+		NULL, NULL) },
+	{ DDB_ADD_CMD("tlb",	db_tlbdump_cmd,		0,
+		"Print out TLB entries. (only works with options DEBUG)",
 		NULL, NULL) },
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 	{ DDB_ADD_CMD("watch",	db_watch_cmd,		CS_MORE,
@@ -792,32 +924,7 @@ const struct db_command db_machine_command_table[] = {
 		"delete cp0 watchpoint",
 		"address", NULL) },
 #endif	/* (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0 */
-	{ DDB_ADD_CMD("kvtop",	db_kvtophys_cmd,	0,
-		"Print the physical address for a given kernel virtual address",
-		"address", 
-		"   address:\tvirtual address to look up") },
-	{ DDB_ADD_CMD("tlb",	db_tlbdump_cmd,		0,
-		"Print out TLB entries. (only works with options DEBUG)",
-		NULL, NULL) },
-#ifdef MIPS64_XLS
-	{ DDB_ADD_CMD("mfcr", 	db_mfcr_cmd,		CS_NOREPEAT,
-		"Dump processor control register",
-		NULL, NULL) },
-	{ DDB_ADD_CMD("mtcr", 	db_mtcr_cmd,		CS_NOREPEAT|CS_MORE,
-		"Set processor control register",
-		NULL, NULL) },
-#endif
-#ifdef MIPS64_OCTEON
-#ifdef MULTIPROCESSOR
-	{ DDB_ADD_CMD("nmi", 	db_mach_nmi_cmd,	CS_NOREPEAT,
-		"Send NMI to processor",
-		"cpu#", NULL) },
-#endif
-	{ DDB_ADD_CMD("reset", 	db_mach_reset_cmd,	CS_NOREPEAT,
-		"Initiate hardware reset",
-		NULL, NULL) },
-#endif
-	{ DDB_ADD_CMD(NULL,     NULL,               0,  NULL,NULL,NULL) }
+	{ DDB_END_CMD },
 };
 #endif	/* !KGDB */
 
@@ -984,7 +1091,7 @@ next_instr_address(db_addr_t pc, bool bd)
 
 	if (bd == false)
 		return (pc + 4);
-	
+
 	if (pc < MIPS_KSEG0_START)
 		ins = mips_ufetch32((void *)pc);
 	else
@@ -998,15 +1105,15 @@ next_instr_address(db_addr_t pc, bool bd)
 
 #ifdef MULTIPROCESSOR
 
-bool 
+bool
 ddb_running_on_this_cpu_p(void)
-{               
+{
 	return ddb_cpu == cpu_number();
 }
 
-bool 
+bool
 ddb_running_on_any_cpu_p(void)
-{               
+{
 	return ddb_cpu != NOCPU;
 }
 
@@ -1024,7 +1131,7 @@ db_mach_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	
+
 	if (!have_addr) {
 		cpu_debug_dump();
 		return;
@@ -1047,3 +1154,5 @@ db_mach_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 	}
 }
 #endif	/* MULTIPROCESSOR */
+
+#endif	/* _KERNEL */

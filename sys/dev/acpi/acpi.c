@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.278 2018/10/21 13:41:15 jmcneill Exp $	*/
+/*	$NetBSD: acpi.c,v 1.298 2022/05/31 20:28:57 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,13 +100,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.278 2018/10/21 13:41:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.298 2022/05/31 20:28:57 mrg Exp $");
 
 #include "pci.h"
 #include "opt_acpi.h"
 #include "opt_pcifixup.h"
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -166,16 +167,18 @@ static const char * const acpi_ignored_ids[] = {
 #if defined(i386) || defined(x86_64)
 	"ACPI0007",	/* ACPI CPUs do not attach to acpi(4) */
 	"PNP0000",	/* AT interrupt controller is handled internally */
+	"PNP0001",	/* EISA interrupt controller is handled internally */
 	"PNP0200",	/* AT DMA controller is handled internally */
 	"PNP0A??",	/* PCI Busses are handled internally */
 	"PNP0B00",	/* AT RTC is handled internally */
+	"PNP0C02",	/* PnP motherboard resources */
 	"PNP0C0F",	/* ACPI PCI link devices are handled internally */
 #endif
 #if defined(x86_64)
 	"PNP0C04",	/* FPU is handled internally */
 #endif
 #if defined(__aarch64__)
-	"ACPI0007",	/* ACPI CPUs are attached via MADT GICC subtables */
+	"ACPI0004",	/* ACPI module devices are handled internally */
 	"PNP0C0F",	/* ACPI PCI link devices are handled internally */
 #endif
 	NULL
@@ -199,6 +202,7 @@ static bool		acpi_resume(device_t, const pmf_qual_t *);
 
 static void		acpi_build_tree(struct acpi_softc *);
 static void		acpi_config_tree(struct acpi_softc *);
+static void		acpi_config_dma(struct acpi_softc *);
 static ACPI_STATUS	acpi_make_devnode(ACPI_HANDLE, uint32_t,
 					  void *, void **);
 static ACPI_STATUS	acpi_make_devnode_post(ACPI_HANDLE, uint32_t,
@@ -236,6 +240,10 @@ ACPI_STATUS		acpi_allocate_resources(ACPI_HANDLE);
 
 void (*acpi_print_verbose)(struct acpi_softc *) = acpi_print_verbose_stub;
 void (*acpi_print_dev)(const char *) = acpi_print_dev_stub;
+
+bus_dma_tag_t		acpi_default_dma_tag(struct acpi_softc *, struct acpi_devnode *);
+bus_dma_tag_t		acpi_default_dma64_tag(struct acpi_softc *, struct acpi_devnode *);
+pci_chipset_tag_t	acpi_default_pci_chipset_tag(struct acpi_softc *, int, int);
 
 CFATTACH_DECL2_NEW(acpi, sizeof(struct acpi_softc),
     acpi_match, acpi_attach, acpi_detach, NULL, acpi_rescan, acpi_childdet);
@@ -353,7 +361,9 @@ acpi_disable(void)
 int
 acpi_check(device_t parent, const char *ifattr)
 {
-	return (config_search_ia(acpi_submatch, parent, ifattr, NULL) != NULL);
+	return config_search(parent, NULL,
+			     CFARGS(.submatch = acpi_submatch,
+				    .iattr = ifattr)) != NULL;
 }
 
 int
@@ -423,8 +433,9 @@ acpi_attach(device_t parent, device_t self, void *aux)
 {
 	struct acpi_softc *sc = device_private(self);
 	struct acpibus_attach_args *aa = aux;
-	ACPI_TABLE_HEADER *rsdt;
+	ACPI_TABLE_HEADER *rsdt, *hdr;
 	ACPI_STATUS rv;
+	int i;
 
 	aprint_naive("\n");
 	aprint_normal(": Intel ACPICA %08x\n", ACPI_CA_VERSION);
@@ -456,13 +467,12 @@ acpi_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_iot = aa->aa_iot;
 	sc->sc_memt = aa->aa_memt;
-	sc->sc_pc = aa->aa_pc;
 	sc->sc_pciflags = aa->aa_pciflags;
 	sc->sc_ic = aa->aa_ic;
 	sc->sc_dmat = aa->aa_dmat;
 	sc->sc_dmat64 = aa->aa_dmat64;
 
-	SIMPLEQ_INIT(&sc->ad_head);
+	SIMPLEQ_INIT(&sc->sc_head);
 
 	acpi_softc = sc;
 
@@ -481,7 +491,8 @@ acpi_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Early initialization of acpiec(4) via ECDT.
 	 */
-	(void)config_found_ia(self, "acpiecdtbus", aa, NULL);
+	config_found(self, aa, NULL,
+	    CFARGS(.iattr = "acpiecdtbus"));
 
 	rv = AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
 
@@ -535,6 +546,19 @@ acpi_attach(device_t parent, device_t self, void *aux)
 		 */
 		acpi_register_fixed_button(sc, ACPI_EVENT_POWER_BUTTON);
 		acpi_register_fixed_button(sc, ACPI_EVENT_SLEEP_BUTTON);
+	}
+
+	/*
+	 * Load drivers that operate on System Description Tables.
+	 */
+	for (i = 0; i < AcpiGbl_RootTableList.CurrentTableCount; ++i) {
+		rv = AcpiGetTableByIndex(i, &hdr);
+		if (ACPI_FAILURE(rv)) {
+			continue;
+		}
+		config_found(sc->sc_dev, hdr, NULL,
+		    CFARGS(.iattr = "acpisdtbus"));
+		AcpiPutTable(hdr);
 	}
 
 	acpitimer_init(sc);
@@ -612,7 +636,7 @@ acpi_childdet(device_t self, device_t child)
 	if (sc->sc_wdrt == child)
 		sc->sc_wdrt = NULL;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device == child)
 			ad->ad_device = NULL;
@@ -674,15 +698,21 @@ acpi_build_tree(struct acpi_softc *sc)
 	(void)AcpiWalkNamespace(ACPI_TYPE_ANY, ACPI_ROOT_OBJECT, UINT32_MAX,
 	    acpi_make_devnode, acpi_make_devnode_post, &awc, NULL);
 
+#if NPCI > 0
 	/*
 	 * Scan the internal namespace.
 	 */
 	(void)acpi_pcidev_scan(sc->sc_root);
+#endif
 }
 
 static void
 acpi_config_tree(struct acpi_softc *sc)
 {
+	/*
+	 * Assign bus_dma resources
+	 */
+	acpi_config_dma(sc);
 
 	/*
 	 * Configure all everything found "at acpi?".
@@ -701,6 +731,25 @@ acpi_config_tree(struct acpi_softc *sc)
 	 * Defer rest of the configuration.
 	 */
 	(void)config_defer(sc->sc_dev, acpi_rescan_capabilities);
+}
+
+// XXXNH?
+static void
+acpi_config_dma(struct acpi_softc *sc)
+{
+	struct acpi_devnode *ad;
+
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
+
+		if (ad->ad_device != NULL)
+			continue;
+
+		if (ad->ad_devinfo->Type != ACPI_TYPE_DEVICE)
+			continue;
+
+		ad->ad_dmat = acpi_get_dma_tag(sc, ad);
+		ad->ad_dmat64 = acpi_get_dma64_tag(sc, ad);
+	}
 }
 
 static ACPI_STATUS
@@ -756,7 +805,7 @@ acpi_make_devnode(ACPI_HANDLE handle, uint32_t level,
 			acpi_wakedev_init(ad);
 
 		SIMPLEQ_INIT(&ad->ad_child_head);
-		SIMPLEQ_INSERT_TAIL(&sc->ad_head, ad, ad_list);
+		SIMPLEQ_INSERT_TAIL(&sc->sc_head, ad, ad_list);
 
 		if (ad->ad_parent != NULL) {
 
@@ -765,6 +814,11 @@ acpi_make_devnode(ACPI_HANDLE handle, uint32_t level,
 		}
 
 		awc->aw_parent = ad;
+		break;
+
+	default:
+		ACPI_FREE(devinfo);
+		break;
 	}
 
 	return AE_OK;
@@ -808,6 +862,27 @@ acpi_make_name(struct acpi_devnode *ad, uint32_t name)
 		ad->ad_name[0] = '_';
 }
 
+bus_dma_tag_t
+acpi_default_dma_tag(struct acpi_softc *sc, struct acpi_devnode *ad)
+{
+	return sc->sc_dmat;
+}
+__weak_alias(acpi_get_dma_tag,acpi_default_dma_tag);
+
+bus_dma_tag_t
+acpi_default_dma64_tag(struct acpi_softc *sc, struct acpi_devnode *ad)
+{
+	return sc->sc_dmat64;
+}
+__weak_alias(acpi_get_dma64_tag,acpi_default_dma64_tag);
+
+pci_chipset_tag_t
+acpi_default_pci_chipset_tag(struct acpi_softc *sc, int seg, int bbn)
+{
+	return NULL;
+}
+__weak_alias(acpi_get_pci_chipset_tag,acpi_default_pci_chipset_tag);
+
 /*
  * Device attachment.
  */
@@ -822,9 +897,10 @@ acpi_rescan(device_t self, const char *ifattr, const int *locators)
 	 */
 	aa.aa_memt = sc->sc_memt;
 
-	if (ifattr_match(ifattr, "acpihpetbus") && sc->sc_hpet == NULL)
-		sc->sc_hpet = config_found_ia(sc->sc_dev,
-		    "acpihpetbus", &aa, NULL);
+	if (ifattr_match(ifattr, "acpihpetbus") && sc->sc_hpet == NULL) {
+		sc->sc_hpet = config_found(sc->sc_dev, &aa, NULL,
+					   CFARGS(.iattr = "acpihpetbus"));
+	}
 
 	/*
 	 * A two-pass scan for acpinodebus.
@@ -837,13 +913,15 @@ acpi_rescan(device_t self, const char *ifattr, const int *locators)
 	/*
 	 * Attach APM emulation and acpiwdrt(4).
 	 */
-	if (ifattr_match(ifattr, "acpiapmbus") && sc->sc_apmbus == NULL)
-		sc->sc_apmbus = config_found_ia(sc->sc_dev,
-		    "acpiapmbus", NULL, NULL);
+	if (ifattr_match(ifattr, "acpiapmbus") && sc->sc_apmbus == NULL) {
+		sc->sc_apmbus = config_found(sc->sc_dev, NULL, NULL,
+					     CFARGS(.iattr = "acpiapmbus"));
+	}
 
-	if (ifattr_match(ifattr, "acpiwdrtbus") && sc->sc_wdrt == NULL)
-		sc->sc_wdrt = config_found_ia(sc->sc_dev,
-		    "acpiwdrtbus", NULL, NULL);
+	if (ifattr_match(ifattr, "acpiwdrtbus") && sc->sc_wdrt == NULL) {
+		sc->sc_wdrt = config_found(sc->sc_dev, NULL, NULL,
+					   CFARGS(.iattr = "acpiwdrtbus"));
+	}
 
 	return 0;
 }
@@ -860,7 +938,7 @@ acpi_rescan_early(struct acpi_softc *sc)
 	 * We want these devices to attach regardless of
 	 * the device status and other restrictions.
 	 */
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device != NULL)
 			continue;
@@ -871,17 +949,23 @@ acpi_rescan_early(struct acpi_softc *sc)
 		if (acpi_match_hid(ad->ad_devinfo, acpi_early_ids) == 0)
 			continue;
 
+		KASSERT(ad->ad_handle != NULL);
+
 		aa.aa_node = ad;
 		aa.aa_iot = sc->sc_iot;
 		aa.aa_memt = sc->sc_memt;
-		aa.aa_pc = sc->sc_pc;
-		aa.aa_pciflags = sc->sc_pciflags;
+		if (ad->ad_pciinfo != NULL) {
+			aa.aa_pc = ad->ad_pciinfo->ap_pc;
+			aa.aa_pciflags = sc->sc_pciflags;
+		}
 		aa.aa_ic = sc->sc_ic;
-		aa.aa_dmat = sc->sc_dmat;
-		aa.aa_dmat64 = sc->sc_dmat64;
+		aa.aa_dmat = ad->ad_dmat;
+		aa.aa_dmat64 = ad->ad_dmat64;
 
-		ad->ad_device = config_found_ia(sc->sc_dev,
-		    "acpinodebus", &aa, acpi_print);
+		ad->ad_device = config_found(sc->sc_dev, &aa, acpi_print,
+		    CFARGS(.iattr = "acpinodebus",
+			   .devhandle = devhandle_from_acpi(devhandle_invalid(),
+							    ad->ad_handle)));
 	}
 }
 
@@ -893,7 +977,7 @@ acpi_rescan_nodes(struct acpi_softc *sc)
 	struct acpi_devnode *ad;
 	ACPI_DEVICE_INFO *di;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device != NULL)
 			continue;
@@ -933,17 +1017,23 @@ acpi_rescan_nodes(struct acpi_softc *sc)
 		if (acpi_match_hid(di, hpet_ids) != 0 && sc->sc_hpet != NULL)
 			continue;
 
+		KASSERT(ad->ad_handle != NULL);
+
 		aa.aa_node = ad;
 		aa.aa_iot = sc->sc_iot;
 		aa.aa_memt = sc->sc_memt;
-		aa.aa_pc = sc->sc_pc;
-		aa.aa_pciflags = sc->sc_pciflags;
+		if (ad->ad_pciinfo != NULL) {
+			aa.aa_pc = ad->ad_pciinfo->ap_pc;
+			aa.aa_pciflags = sc->sc_pciflags;
+		}
 		aa.aa_ic = sc->sc_ic;
-		aa.aa_dmat = sc->sc_dmat;
-		aa.aa_dmat64 = sc->sc_dmat64;
+		aa.aa_dmat = ad->ad_dmat;
+		aa.aa_dmat64 = ad->ad_dmat64;
 
-		ad->ad_device = config_found_ia(sc->sc_dev,
-		    "acpinodebus", &aa, acpi_print);
+		ad->ad_device = config_found(sc->sc_dev, &aa, acpi_print,
+		    CFARGS(.iattr = "acpinodebus",
+			   .devhandle = devhandle_from_acpi(devhandle_invalid(),
+							    ad->ad_handle)));
 	}
 }
 
@@ -955,7 +1045,7 @@ acpi_rescan_capabilities(device_t self)
 	ACPI_HANDLE tmp;
 	ACPI_STATUS rv;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_devinfo->Type != ACPI_TYPE_DEVICE)
 			continue;
@@ -1061,6 +1151,7 @@ acpi_notify_handler(ACPI_HANDLE handle, uint32_t event, void *aux)
 {
 	struct acpi_softc *sc = acpi_softc;
 	struct acpi_devnode *ad;
+	ACPI_NOTIFY_HANDLER notify;
 
 	KASSERT(sc != NULL);
 	KASSERT(aux == NULL);
@@ -1099,18 +1190,18 @@ acpi_notify_handler(ACPI_HANDLE handle, uint32_t event, void *aux)
 	 * that have registered a handler with us.
 	 * The opaque pointer is always the device_t.
 	 */
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device == NULL)
 			continue;
 
-		if (ad->ad_notify == NULL)
+		if ((notify = atomic_load_acquire(&ad->ad_notify)) == NULL)
 			continue;
 
 		if (ad->ad_handle != handle)
 			continue;
 
-		(*ad->ad_notify)(ad->ad_handle, event, ad->ad_device);
+		(*notify)(ad->ad_handle, event, ad->ad_device);
 
 		return;
 	}
@@ -1133,7 +1224,12 @@ acpi_register_notify(struct acpi_devnode *ad, ACPI_NOTIFY_HANDLER notify)
 	if (ad == NULL || notify == NULL)
 		goto fail;
 
-	ad->ad_notify = notify;
+	KASSERTMSG(ad->ad_notify == NULL,
+	    "%s: ACPI node %s already has notify handler: %p",
+	    ad->ad_device ? device_xname(ad->ad_device) : "(unknown)",
+	    ad->ad_name,
+	    ad->ad_notify);
+	atomic_store_release(&ad->ad_notify, notify);
 
 	return true;
 
@@ -1148,7 +1244,10 @@ void
 acpi_deregister_notify(struct acpi_devnode *ad)
 {
 
-	ad->ad_notify = NULL;
+	atomic_store_relaxed(&ad->ad_notify, NULL);
+
+	/* Wait for any in-flight calls to the notifier to complete.  */
+	AcpiOsWaitEventsComplete();
 }
 
 /*
@@ -1757,7 +1856,7 @@ acpi_madt_walk(ACPI_STATUS (*func)(ACPI_SUBTABLE_HEADER *, void *), void *aux)
 
 		hdrp = (ACPI_SUBTABLE_HEADER *)where;
 
-		if (ACPI_FAILURE(func(hdrp, aux)))
+		if (hdrp->Length == 0 || ACPI_FAILURE(func(hdrp, aux)))
 			break;
 
 		where += hdrp->Length;
@@ -1777,7 +1876,7 @@ acpi_gtdt_walk(ACPI_STATUS (*func)(ACPI_GTDT_HEADER *, void *), void *aux)
 
 		hdrp = (ACPI_GTDT_HEADER *)where;
 
-		if (ACPI_FAILURE(func(hdrp, aux)))
+		if (hdrp->Length == 0 || ACPI_FAILURE(func(hdrp, aux)))
 			break;
 
 		where += hdrp->Length;

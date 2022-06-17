@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.63 2019/10/04 06:27:42 maxv Exp $	*/
+/*	$NetBSD: types.h,v 1.71 2021/04/01 04:35:45 simonb Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -83,7 +83,7 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_NEW_STYLE_BUS_H
 #define	__HAVE_CPU_COUNTER
 #define	__HAVE_CPU_DATA_FIRST
-#define __HAVE_CPU_BOOTCONF
+#define	__HAVE_CPU_BOOTCONF
 #define	__HAVE_MD_CPU_OFFLINE
 #define	__HAVE_SYSCALL_INTERN
 #define	__HAVE_MINIMAL_EMUL
@@ -100,24 +100,23 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_MM_MD_DIRECT_MAPPED_IO
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define	__HAVE_UCAS_FULL
+#define	__HAVE_BUS_SPACE_8
 
 #ifdef _KERNEL_OPT
 #define	__HAVE_RAS
 
 #include "opt_xen.h"
 #include "opt_kasan.h"
+#include "opt_kmsan.h"
 #ifdef KASAN
-#define __HAVE_KASAN_INSTR_BUS
-#define __HAVE_KASAN_INSTR_DMA
+#define	__HAVE_KASAN_INSTR_BUS
 #endif
 #if defined(__x86_64__) && !defined(XENPV)
-#if !defined(KASAN)
+#if !defined(KASAN) && !defined(KMSAN)
 #define	__HAVE_PCPU_AREA 1
 #define	__HAVE_DIRECT_MAP 1
 #endif
-#if !defined(NO_PCI_MSI_MSIX)
-#define	__HAVE_PCI_MSI_MSIX
-#endif
+#define	__HAVE_CPU_UAREA_ROUTINES 1
 #endif
 #endif
 

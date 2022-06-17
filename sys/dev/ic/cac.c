@@ -1,4 +1,4 @@
-/*	$NetBSD: cac.c,v 1.60 2019/05/08 05:40:51 cnst Exp $	*/
+/*	$NetBSD: cac.c,v 1.63 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2006, 2007 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cac.c,v 1.60 2019/05/08 05:40:51 cnst Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cac.c,v 1.63 2021/08/07 16:19:12 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "bio.h"
@@ -194,7 +194,7 @@ cac_init(struct cac_softc *sc, const char *intrstr, int startfw)
 
 	/* Attach our units */
 	sc->sc_unitmask = 0;
-	cac_rescan(sc->sc_dev, "cac", 0);
+	cac_rescan(sc->sc_dev, NULL, NULL);
 
 	/* Set our `shutdownhook' before we start any device activity. */
 	if (cac_sdh == NULL)
@@ -217,11 +217,11 @@ cac_init(struct cac_softc *sc, const char *intrstr, int startfw)
 }
 
 int
-cac_rescan(device_t self, const char *attr, const int *flags)
+cac_rescan(device_t self, const char *attr, const int *locs)
 {
 	struct cac_softc *sc;
 	struct cac_attach_args caca;
-	int locs[CACCF_NLOCS];
+	int mlocs[CACCF_NLOCS];
 	int i;
 
 	sc = device_private(self);
@@ -230,10 +230,11 @@ cac_rescan(device_t self, const char *attr, const int *flags)
 			continue;
 		caca.caca_unit = i;
 
-		locs[CACCF_UNIT] = i;
+		mlocs[CACCF_UNIT] = i;
 
-		if (config_found_sm_loc(self, attr, locs, &caca, cac_print,
-			    config_stdsubmatch))
+		if (config_found(self, &caca, cac_print,
+				 CFARGS(.submatch = config_stdsubmatch,
+					.locators = mlocs)) != NULL)
 			sc->sc_unitmask |= 1 << i;
 	}
 	return 0;
@@ -693,12 +694,7 @@ cac_create_sensors(struct cac_softc *sc)
 
 	sc->sc_sme = sysmon_envsys_create();
 	sc->sc_sensor = malloc(sizeof(envsys_data_t) * nsensors,
-	    M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (sc->sc_sensor == NULL) {
-		aprint_error_dev(sc->sc_dev, "can't allocate envsys_data_t\n");
-		return(ENOMEM);
-	}
-
+	    M_DEVBUF, M_WAITOK | M_ZERO);
 	for (i = 0; i < nsensors; i++) {
 		sc->sc_sensor[i].units = ENVSYS_DRIVE;
 		sc->sc_sensor[i].state = ENVSYS_SINVALID;

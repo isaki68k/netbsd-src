@@ -1,4 +1,4 @@
-/*	$NetBSD: grf.c,v 1.64 2015/11/12 12:01:53 phx Exp $ */
+/*	$NetBSD: grf.c,v 1.68 2022/05/24 20:50:18 andvar Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf.c,v 1.64 2015/11/12 12:01:53 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf.c,v 1.68 2022/05/24 20:50:18 andvar Exp $");
 
 /*
  * Graphics display driver for the Amiga
@@ -163,7 +163,7 @@ grfmatch(device_t parent, cfdata_t cf, void *aux)
 /*
  * Attach.. plug pointer in and print some info.
  * Then try and attach a wsdisplay or ite to us.
- * Note: self is NULL durring console init.
+ * Note: self is NULL during console init.
  */
 void
 grfattach(device_t parent, device_t self, void *aux)
@@ -213,7 +213,8 @@ grfattach(device_t parent, device_t self, void *aux)
 		wa.scrdata = gp->g_scrlist;
 		wa.accessops = gp->g_accessops;
 		wa.accesscookie = &gp->g_vd;
-		config_found(self, &wa, wsemuldisplaydevprint);
+		config_found(self, &wa, wsemuldisplaydevprint,
+		    CFARGS(.iattr = "wsemuldisplaydev"));
 #endif  /* NWSDISPLAY > 0 */
 	}
 
@@ -221,7 +222,8 @@ grfattach(device_t parent, device_t self, void *aux)
 	/*
 	 * try and attach an ite
 	 */
-	amiga_config_found(cfdata, self, gp, grfprint);
+	amiga_config_found(cfdata, self, gp, grfprint,
+	    CFARGS(.iattr = "grf"));
 #endif
 }
 

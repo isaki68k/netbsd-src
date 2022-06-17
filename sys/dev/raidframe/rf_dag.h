@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_dag.h,v 1.20 2019/10/10 03:43:59 christos Exp $	*/
+/*	$NetBSD: rf_dag.h,v 1.22 2021/12/05 04:28:53 msaitoh Exp $	*/
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
  * All rights reserved.
@@ -178,7 +178,7 @@ struct RF_DagHeader_s {
 	RF_Raid_t *raidPtr;	/* the descriptor for the RAID device this DAG
 				 * is for */
 	RF_RaidAccessDesc_t *desc;	/* ptr to descriptor for this access */
-	void   *bp;		/* the bp for this I/O passed down from the
+	const struct buf *bp;	/* the bp for this I/O passed down from the
 				 * file system. ignored outside kernel */
 };
 
@@ -196,7 +196,7 @@ struct RF_DagList_s {
 	struct RF_DagList_s *next;     /* next DagList, if any */
 };
 
-/* convience macro for declaring a create dag function */
+/* convenience macro for declaring a create dag function */
 
 #define RF_CREATE_DAG_FUNC_DECL(_name_) \
 void _name_ ( \

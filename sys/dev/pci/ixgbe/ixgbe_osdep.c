@@ -1,8 +1,8 @@
-/* $NetBSD: ixgbe_osdep.c,v 1.4 2018/04/04 08:13:07 msaitoh Exp $ */
+/* $NetBSD: ixgbe_osdep.c,v 1.8 2021/12/24 05:02:11 msaitoh Exp $ */
 
 /******************************************************************************
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,9 @@
 ******************************************************************************/
 /*$FreeBSD: head/sys/dev/ixgbe/ixgbe_osdep.c 327031 2017-12-20 18:15:06Z erj $*/
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: ixgbe_osdep.c,v 1.8 2021/12/24 05:02:11 msaitoh Exp $");
+
 #include "ixgbe_osdep.h"
 #include "ixgbe.h"
 
@@ -56,7 +59,7 @@ ixgbe_read_pci_cfg(struct ixgbe_hw *hw, u32 reg)
 		return __SHIFTOUT(pci_conf_read(pc, tag, reg - 2),
 		    __BITS(31, 16));
 	default:
-		panic("%s: invalid register (%" PRIx32, __func__, reg); 
+		panic("%s: invalid register (%" PRIx32, __func__, reg);
 		break;
 	}
 }
@@ -79,7 +82,7 @@ ixgbe_write_pci_cfg(struct ixgbe_hw *hw, u32 reg, u16 value)
 		    __SHIFTIN(value, __BITS(31, 16)) | old);
 		break;
 	default:
-		panic("%s: invalid register (%" PRIx32, __func__, reg); 
+		panic("%s: invalid register (%" PRIx32, __func__, reg);
 		break;
 	}
 
@@ -115,4 +118,13 @@ ixgbe_write_reg_array(struct ixgbe_hw *hw, u32 reg, u32 offset, u32 val)
 	bus_space_write_4(((struct adapter *)hw->back)->osdep.mem_bus_space_tag,
 	    ((struct adapter *)hw->back)->osdep.mem_bus_space_handle,
 	    reg + (offset << 2), val);
+}
+
+inline void
+ixgbe_write_barrier(struct ixgbe_hw *hw)
+{
+	bus_space_barrier(((struct adapter *)hw->back)->osdep.mem_bus_space_tag,
+	    ((struct adapter *)hw->back)->osdep.mem_bus_space_handle,
+	    0, ((struct adapter *)hw->back)->osdep.mem_size,
+	    BUS_SPACE_BARRIER_WRITE);
 }

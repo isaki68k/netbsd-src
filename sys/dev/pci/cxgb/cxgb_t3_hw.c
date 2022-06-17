@@ -28,7 +28,7 @@ POSSIBILITY OF SUCH DAMAGE.
 ***************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cxgb_t3_hw.c,v 1.3 2018/09/03 16:29:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cxgb_t3_hw.c,v 1.7 2021/12/10 20:36:04 andvar Exp $");
 
 
 #ifdef CONFIG_DEFINED
@@ -543,7 +543,7 @@ struct t3_vpd {
  *
  *  Read a 32-bit word from a location in VPD EEPROM using the card's PCI
  *  VPD ROM capability.  A zero is written to the flag bit when the
- *  addres is written to the control register.  The hardware device will
+ *  address is written to the control register.  The hardware device will
  *  set the flag to 1 when 4 bytes have been read into the data register.
  */
 int t3_seeprom_read(adapter_t *adapter, u32 addr, u32 *data)
@@ -785,7 +785,7 @@ static int flash_wait_op(adapter_t *adapter, int attempts, int delay)
  *  Read the specified number of 32-bit words from the serial flash.
  *  If @byte_oriented is set the read data is stored as a byte array
  *  (i.e., big-endian), otherwise as 32-bit words in the platform's
- *  natural endianess.
+ *  natural endianness.
  */
 int t3_read_flash(adapter_t *adapter, unsigned int addr, unsigned int nwords,
           u32 *data, int byte_oriented)
@@ -1214,11 +1214,11 @@ struct intr_info {
  *  @reg: the interrupt status register to process
  *  @mask: a mask to apply to the interrupt status
  *  @acts: table of interrupt actions
- *  @stats: statistics counters tracking interrupt occurences
+ *  @stats: statistics counters tracking interrupt occurrences
  *
  *  A table driven interrupt handler that applies a set of masks to an
  *  interrupt status word and performs the corresponding actions if the
- *  interrupts described by the mask have occured.  The actions include
+ *  interrupts described by the mask have occurred.  The actions include
  *  optionally printing a warning or alert message, and optionally
  *  incrementing a stat counter.  The table is terminated by an entry
  *  specifying mask 0.  Returns the number of fatal interrupt conditions.

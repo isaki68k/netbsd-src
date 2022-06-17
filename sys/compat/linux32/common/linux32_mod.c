@@ -1,4 +1,4 @@
-/*	$NetBSD: linux32_mod.c,v 1.12 2019/01/27 02:08:40 pgoyette Exp $	*/
+/*	$NetBSD: linux32_mod.c,v 1.15 2021/11/25 02:38:56 ryo Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux32_mod.c,v 1.12 2019/01/27 02:08:40 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux32_mod.c,v 1.15 2021/11/25 02:38:56 ryo Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_execfmt.h"
@@ -76,7 +76,7 @@ static struct execsw linux32_execsw[] = {
 		.es_copyargs = linux32_elf32_copyargs,
 		.es_setregs = NULL,
 		.es_coredump = coredump_elf32,
-		.es_setup_stack = linux_exec_setup_stack,
+		.es_setup_stack = linux32_exec_setup_stack,
 	},
 #endif
 };
@@ -124,10 +124,7 @@ compat_linux32_modcmd(modcmd_t cmd, void *arg)
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		linux32_sysctl_init();
 		error = exec_add(linux32_execsw, __arraycount(linux32_execsw));
-		if (error != 0) 	 
-			linux32_sysctl_fini(); 	 
 		return error;
 
 	case MODULE_CMD_FINI:

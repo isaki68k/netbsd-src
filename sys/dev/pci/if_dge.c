@@ -1,4 +1,4 @@
-/*	$NetBSD: if_dge.c,v 1.55 2019/05/29 10:07:29 msaitoh Exp $ */
+/*	$NetBSD: if_dge.c,v 1.63 2021/12/31 14:25:23 riastradh Exp $ */
 
 /*
  * Copyright (c) 2004, SUNET, Swedish University Computer Network.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.55 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.63 2021/12/31 14:25:23 riastradh Exp $");
 
 
 
@@ -177,7 +177,7 @@ int	dge_debug = 0;
 #define DGE_RXSPACE		10
 #define DGE_PREVRX(x)		(((x) - DGE_RXSPACE) & DGE_NRXDESC_MASK)
 /*
- * Receive descriptor fetch threshholds. These are values recommended
+ * Receive descriptor fetch thresholds. These are values recommended
  * by Intel, do not touch them unless you know what you are doing.
  */
 #define RXDCTL_PTHRESH_VAL	128
@@ -403,10 +403,11 @@ do {									\
 	struct dge_rxsoft *__rxs = &(sc)->sc_rxsoft[(x)];		\
 	struct dge_rdes *__rxd = &(sc)->sc_rxdescs[(x)];		\
 	struct mbuf *__m = __rxs->rxs_mbuf;				\
+	const bus_addr_t __rxaddr = sc->sc_bugmap->dm_segs[0].ds_addr +	\
+	    (mtod((__m), char *) - (char *)sc->sc_bugbuf);		\
 									\
-	__rxd->dr_baddrl = htole32(sc->sc_bugmap->dm_segs[0].ds_addr +	\
-	    (mtod((__m), char *) - (char *)sc->sc_bugbuf));		\
-	__rxd->dr_baddrh = 0;						\
+	__rxd->dr_baddrl = htole32(__rxaddr);				\
+	__rxd->dr_baddrh = htole32(((uint64_t)__rxaddr) >> 32);		\
 	__rxd->dr_len = 0;						\
 	__rxd->dr_cksum = 0;						\
 	__rxd->dr_status = 0;						\
@@ -439,10 +440,12 @@ do {									\
 	 */								\
 	__m->m_data = __m->m_ext.ext_buf + (sc)->sc_align_tweak;	\
 									\
-	__rxd->dr_baddrl =						\
-	    htole32(__rxs->rxs_dmamap->dm_segs[0].ds_addr +		\
-		(sc)->sc_align_tweak);					\
-	__rxd->dr_baddrh = 0;						\
+	const bus_addr_t __rxaddr =					\
+	    __rxs->rxs_dmamap->dm_segs[0].ds_addr +			\
+	    (sc)->sc_align_tweak;					\
+									\
+	__rxd->dr_baddrl = htole32(__rxaddr);				\
+	__rxd->dr_baddrh = htole32(((uint64_t)__rxaddr) >> 32);		\
 	__rxd->dr_len = 0;						\
 	__rxd->dr_cksum = 0;						\
 	__rxd->dr_status = 0;						\
@@ -518,11 +521,7 @@ dge_alloc_rcvmem(struct dge_softc *sc)
 	 * Now divide it up into DGE_BUFFER_SIZE pieces and save the addresses
 	 * in an array.
 	 */
-	if ((entry = malloc(sizeof(*entry) * DGE_NBUFFERS,
-	    M_DEVBUF, M_NOWAIT)) == NULL) {
-		error = ENOBUFS;
-		goto out;
-	}
+	entry = malloc(sizeof(*entry) * DGE_NBUFFERS, M_DEVBUF, M_WAITOK);
 	sc->sc_entry = entry;
 	for (i = 0; i < DGE_NBUFFERS; i++) {
 		entry[i].rb_slot = i;
@@ -648,49 +647,41 @@ static char (*dge_txseg_evcnt_names)[DGE_NTXSEGS][8 /* "txseg00" + \0 */];
 /*
  * Devices supported by this driver.
  */
-static const struct dge_product {
-	pci_vendor_id_t dgep_vendor;
-	pci_product_id_t dgep_product;
-	const char *dgep_name;
-	int dgep_flags;
+struct dge_product {
+	const char *name;
+	int flags;
 #define DGEP_F_10G_LR	  0x01
 #define DGEP_F_10G_SR	  0x02
-} dge_products[] = {
-	{ PCI_VENDOR_INTEL,  PCI_PRODUCT_INTEL_82597EX,
-	  "Intel i82597EX 10GbE-LR Ethernet",
-	  DGEP_F_10G_LR },
-
-	{ PCI_VENDOR_INTEL,  PCI_PRODUCT_INTEL_82597EX_SR,
-	  "Intel i82597EX 10GbE-SR Ethernet",
-	  DGEP_F_10G_SR },
-
-	{ 0,	    0,
-	  NULL,
-	  0 },
 };
 
-static const struct dge_product *
-dge_lookup(const struct pci_attach_args *pa)
-{
-	const struct dge_product *dgep;
+static const struct dge_product i82597EX_lr = {
+	.name = "Intel i82597EX 10GbE-LR Ethernet",
+	.flags = DGEP_F_10G_LR
+};
 
-	for (dgep = dge_products; dgep->dgep_name != NULL; dgep++) {
-		if (PCI_VENDOR(pa->pa_id) == dgep->dgep_vendor &&
-		    PCI_PRODUCT(pa->pa_id) == dgep->dgep_product)
-			return dgep;
-		}
-	return NULL;
-}
+static const struct dge_product i82597EX_sr = {
+	.name = "Intel i82597EX 10GbE-SR Ethernet",
+	.flags = DGEP_F_10G_SR
+};
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_82597EX),
+	  .data = &i82597EX_lr },
+
+	{ .id = PCI_ID_CODE(PCI_VENDOR_INTEL,
+		PCI_PRODUCT_INTEL_82597EX_SR),
+	  .data = &i82597EX_sr },
+
+	PCI_COMPAT_EOL
+};
 
 static int
 dge_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct pci_attach_args *pa = aux;
 
-	if (dge_lookup(pa) != NULL)
-		return 1;
-
-	return 0;
+	return pci_compatible_match(pa, compat_data);
 }
 
 static void
@@ -708,21 +699,24 @@ dge_attach(device_t parent, device_t self, void *aux)
 	pcireg_t preg, memtype;
 	uint32_t reg;
 	char intrbuf[PCI_INTRSTR_LEN];
+	const struct device_compatible_entry *dce;
 	const struct dge_product *dgep;
 
-	sc->sc_dgep = dgep = dge_lookup(pa);
-	if (dgep == NULL) {
-		printf("\n");
-		panic("dge_attach: impossible");
-	}
+	dce = pci_compatible_lookup(pa, compat_data);
+	KASSERT(dce != NULL);
+	sc->sc_dgep = dgep = dce->data;
 
 	sc->sc_dev = self;
-	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_pt = pa->pa_tag;
 
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
+
 	pci_aprint_devinfo_fancy(pa, "Ethernet controller",
-		dgep->dgep_name, 1);
+		dgep->name, 1);
 
 	memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, DGE_PCI_BAR);
 	if (pci_mapreg_map(pa, DGE_PCI_BAR, memtype, 0,
@@ -911,7 +905,7 @@ dge_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, IFM_IMASK, dge_xgmii_mediachange,
 	    dge_xgmii_mediastatus);
-	if (dgep->dgep_flags & DGEP_F_10G_SR) {
+	if (dgep->flags & DGEP_F_10G_SR) {
 		ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_10G_SR, 0, NULL);
 		ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10G_SR);
 	} else { /* XXX default is LR */
@@ -935,7 +929,7 @@ dge_attach(device_t parent, device_t self, void *aux)
 	    ETHERCAP_JUMBO_MTU | ETHERCAP_VLAN_MTU;
 
 	/*
-	 * We can perform TCPv4 and UDPv4 checkums in-bound.
+	 * We can perform TCPv4 and UDPv4 checksums in-bound.
 	 */
 	ifp->if_capabilities |=
 	    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx |
@@ -1336,11 +1330,8 @@ dge_start(struct ifnet *ifp)
 		for (nexttx = sc->sc_txnext, seg = 0;
 		     seg < dmamap->dm_nsegs;
 		     seg++, nexttx = DGE_NEXTTX(nexttx)) {
-			/*
-			 * Note: we currently only use 32-bit DMA
-			 * addresses.
-			 */
-			sc->sc_txdescs[nexttx].dt_baddrh = 0;
+			sc->sc_txdescs[nexttx].dt_baddrh =
+			    htole32(((uint64_t)dmamap->dm_segs[seg].ds_addr) >> 32);
 			sc->sc_txdescs[nexttx].dt_baddrl =
 			    htole32(dmamap->dm_segs[seg].ds_addr);
 			sc->sc_txdescs[nexttx].dt_ctl =
@@ -1351,10 +1342,11 @@ dge_start(struct ifnet *ifp)
 			lasttx = nexttx;
 
 			DPRINTF(DGE_DEBUG_TX,
-			    ("%s: TX: desc %d: low 0x%08lx, len 0x%04lx\n",
+			    ("%s: TX: desc %d: high 0x%08lx, low 0x%08lx, len 0x%04lx\n",
 			    device_xname(sc->sc_dev), nexttx,
-			    (unsigned long)le32toh(dmamap->dm_segs[seg].ds_addr),
-			    (unsigned long)le32toh(dmamap->dm_segs[seg].ds_len)));
+			    (unsigned long)(((uint64_t)dmamap->dm_segs[seg].ds_addr) >> 32),
+			    (unsigned long)((uint32_t)dmamap->dm_segs[seg].ds_addr),
+			    (unsigned long)dmamap->dm_segs[seg].ds_len));
 		}
 
 		KASSERT(lasttx != -1);
@@ -1429,7 +1421,7 @@ dge_watchdog(struct ifnet *ifp)
 		printf("%s: device timeout (txfree %d txsfree %d txnext %d)\n",
 		    device_xname(sc->sc_dev), sc->sc_txfree, sc->sc_txsfree,
 		    sc->sc_txnext);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 		/* Reset the interface. */
 		(void) dge_init(ifp);
@@ -1461,7 +1453,7 @@ dge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		else if ((error = ifioctl_common(ifp, cmd, data)) != ENETRESET)
 			break;
 		else if (ifp->if_flags & IFF_UP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else
 			error = 0;
 		break;
@@ -1496,7 +1488,7 @@ dge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING) {
@@ -1626,7 +1618,7 @@ dge_txintr(struct dge_softc *sc)
 		    device_xname(sc->sc_dev), i, txs->txs_firstdesc,
 		    txs->txs_lastdesc));
 
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		sc->sc_txfree += txs->txs_ndesc;
 		bus_dmamap_sync(sc->sc_dmat, txs->txs_dmamap,
 		    0, txs->txs_dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
@@ -1710,7 +1702,7 @@ dge_rxintr(struct dge_softc *sc)
 			 * Failed, throw away what we've done so
 			 * far, and discard the rest of the packet.
 			 */
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			bus_dmamap_sync(sc->sc_dmat, rxs->rxs_dmamap, 0,
 			    rxs->rxs_dmamap->dm_mapsize, BUS_DMASYNC_PREREAD);
 			DGE_INIT_RXDESC(sc, i);
@@ -1765,7 +1757,7 @@ dge_rxintr(struct dge_softc *sc)
 		 */
 		if (errors & (RDESC_ERR_CE | RDESC_ERR_SE | RDESC_ERR_P |
 		    RDESC_ERR_RXE)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			if (errors & RDESC_ERR_SE)
 				printf("%s: symbol error\n",
 				    device_xname(sc->sc_dev));
@@ -1893,7 +1885,7 @@ dge_init(struct ifnet *ifp)
 	uint32_t reg;
 
 	/*
-	 * *_HDR_ALIGNED_P is constant 1 if __NO_STRICT_ALIGMENT is set.
+	 * *_HDR_ALIGNED_P is constant 1 if __NO_STRICT_ALIGNMENT is set.
 	 * There is a small but measurable benefit to avoiding the adjusment
 	 * of the descriptor so that the headers are aligned, for normal mtu,
 	 * on such platforms.  One possibility is that the DMA itself is
@@ -1928,7 +1920,7 @@ dge_init(struct ifnet *ifp)
 	sc->sc_txctx_ipcs = 0xffffffff;
 	sc->sc_txctx_tucs = 0xffffffff;
 
-	CSR_WRITE(sc, DGE_TDBAH, 0);
+	CSR_WRITE(sc, DGE_TDBAH, ((uint64_t)DGE_CDTXADDR(sc, 0)) >> 32);
 	CSR_WRITE(sc, DGE_TDBAL, DGE_CDTXADDR(sc, 0));
 	CSR_WRITE(sc, DGE_TDLEN, sizeof(sc->sc_txdescs));
 	CSR_WRITE(sc, DGE_TDH, 0);
@@ -1955,7 +1947,7 @@ dge_init(struct ifnet *ifp)
 	 * Initialize the receive descriptor and receive job
 	 * descriptor rings.
 	 */
-	CSR_WRITE(sc, DGE_RDBAH, 0);
+	CSR_WRITE(sc, DGE_RDBAH, ((uint64_t)DGE_CDRXADDR(sc, 0)) >> 32);
 	CSR_WRITE(sc, DGE_RDBAL, DGE_CDRXADDR(sc, 0));
 	CSR_WRITE(sc, DGE_RDLEN, sizeof(sc->sc_rxdescs));
 	CSR_WRITE(sc, DGE_RDH, DGE_RXSPACE);
@@ -2405,7 +2397,7 @@ dge_xgmii_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 	struct dge_softc *sc = ifp->if_softc;
 
 	ifmr->ifm_status = IFM_AVALID;
-	if (sc->sc_dgep->dgep_flags & DGEP_F_10G_SR ) {
+	if (sc->sc_dgep->flags & DGEP_F_10G_SR ) {
 		ifmr->ifm_active = IFM_ETHER | IFM_10G_SR;
 	} else {
 		ifmr->ifm_active = IFM_ETHER | IFM_10G_LR;

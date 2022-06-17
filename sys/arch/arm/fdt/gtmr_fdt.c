@@ -1,4 +1,4 @@
-/* $NetBSD: gtmr_fdt.c,v 1.7 2017/11/30 14:51:01 skrll Exp $ */
+/* $NetBSD: gtmr_fdt.c,v 1.12 2021/11/12 21:59:05 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr_fdt.c,v 1.7 2017/11/30 14:51:01 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr_fdt.c,v 1.12 2021/11/12 21:59:05 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -44,6 +44,10 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr_fdt.c,v 1.7 2017/11/30 14:51:01 skrll Exp $");
 #include <dev/fdt/fdtvar.h>
 #include <arm/fdt/arm_fdtvar.h>
 
+#if defined(__arm__)
+#include <arm/armreg.h>
+#endif
+
 static int	gtmr_fdt_match(device_t, cfdata_t, void *);
 static void	gtmr_fdt_attach(device_t, device_t, void *);
 
@@ -54,17 +58,18 @@ CFATTACH_DECL_NEW(gtmr_fdt, 0, gtmr_fdt_match, gtmr_fdt_attach, NULL, NULL);
 /* The virtual timer list entry */
 #define GTMR_VTIMER 2
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "arm,armv7-timer" },
+	{ .compat = "arm,armv8-timer" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 gtmr_fdt_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"arm,armv7-timer",
-		"arm,armv8-timer",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_compatible(faa->faa_phandle, compatible) >= 0;
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -86,15 +91,32 @@ gtmr_fdt_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	void *ih = fdtbus_intr_establish(phandle, GTMR_VTIMER, IPL_CLOCK,
-	    FDT_INTR_MPSAFE, gtmr_intr, NULL);
+	void *ih = fdtbus_intr_establish_xname(phandle, GTMR_VTIMER, IPL_CLOCK,
+	    FDT_INTR_MPSAFE, gtmr_intr, NULL, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't install interrupt handler\n");
 		return;
 	}
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
-	config_found(self, &mpcaa, NULL);
+#if defined(__arm__)
+	/*
+	 * If arm,cpu-registers-not-fw-configured is present, we need
+	 * to initialize cntfrq from the clock-frequency property. Only
+	 * applicable on Armv7.
+	 */
+	if (of_hasprop(phandle, "arm,cpu-registers-not-fw-configured")) {
+		uint32_t freq;
+
+		if (of_getprop_uint32(phandle, "clock-frequency", &freq) == 0) {
+			armreg_cnt_frq_write(freq);
+			prop_dictionary_set_bool(device_properties(self),
+			    "arm,cpu-registers-not-fw-configured", true);
+		}
+	}
+#endif
+
+	config_found(self, &mpcaa, NULL, CFARGS_NONE);
 
 	arm_fdt_cpu_hatch_register(self, gtmr_fdt_cpu_hatch);
 	arm_fdt_timer_register(gtmr_cpu_initclocks);

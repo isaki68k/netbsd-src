@@ -1,4 +1,4 @@
-/*	$NetBSD: cputypes.h,v 1.10 2019/09/08 08:10:13 tnn Exp $	*/
+/*	$NetBSD: cputypes.h,v 1.16 2021/11/13 01:09:51 simonb Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Ben Harris
@@ -173,6 +173,8 @@
 #define CPU_ID_CORTEXA75R2	0x412fd0a0
 #define CPU_ID_CORTEXA76AER1	0x411fd0e0
 #define CPU_ID_CORTEXA76R3	0x413fd0b0
+#define CPU_ID_NEOVERSEN1R3	0x413fd0c0
+#define CPU_ID_NEOVERSEE1R1	0x411fd4a0
 #define CPU_ID_CORTEXA77R0	0x410fd0d0
 
 #define CPU_ID_CORTEX_P(n)	((n & 0xff0fe000) == 0x410fc000)
@@ -196,6 +198,8 @@
 #define CPU_ID_CORTEX_A76AE_P(n) ((n & 0xff0ff0f0) == 0x410fd0e0)
 #define CPU_ID_CORTEX_A77_P(n)	((n & 0xff0ff0f0) == 0x410fd0f0)
 
+#define CPU_ID_NEOVERSEN1_P(n)	((n & 0xff0ffff0) == 0x410fd0c0)
+
 #define CPU_ID_THUNDERXRX	0x43000a10
 #define CPU_ID_THUNDERXP1d0	0x43000a10
 #define CPU_ID_THUNDERXP1d1	0x43000a11
@@ -204,8 +208,28 @@
 #define CPU_ID_THUNDERX83XXRX	0x43000a30
 #define CPU_ID_THUNDERX2RX	0x43000af0
 
+/*
+ * Chip-specific errata. These defines are intended to be
+ * booleans used within if statements. When an appropriate
+ * kernel option is disabled, these defines must be defined
+ * as 0 to allow the compiler to remove a dead code thus
+ * produce better optimized kernel image.
+ */
+/*
+ * Vendor:	Cavium
+ * Chip:	ThunderX
+ * Revision(s):	Pass 1.0, Pass 1.1
+ */
+#define	CPU_ID_ERRATA_CAVIUM_THUNDERX_1_1_P(n)		\
+    (((n) & 0xfff0ffff) == CPU_ID_THUNDERXP1d0 ||	\
+     ((n) & 0xfff0ffff) == CPU_ID_THUNDERXP1d1)
+
+#define CPU_ID_APPLE_M1_ICESTORM	0x61000220
+#define CPU_ID_APPLE_M1_FIRESTORM	0x61000230
+
 #define CPU_ID_SA110		0x4401a100
 #define CPU_ID_SA1100		0x4401a110
+#define CPU_ID_NVIDIADENVER2	0x4e0f0030
 #define CPU_ID_EMAG8180		0x503f0002
 #define CPU_ID_TI925T		0x54029250
 #define CPU_ID_MV88FR571_VD	0x56155710

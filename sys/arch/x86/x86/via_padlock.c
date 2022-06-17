@@ -1,5 +1,5 @@
 /*	$OpenBSD: via.c,v 1.8 2006/11/17 07:47:56 tom Exp $	*/
-/*	$NetBSD: via_padlock.c,v 1.26 2018/07/14 14:46:41 maxv Exp $ */
+/*	$NetBSD: via_padlock.c,v 1.35 2022/05/22 11:39:27 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2003 Jason Wright
@@ -20,7 +20,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.26 2018/07/14 14:46:41 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.35 2022/05/22 11:39:27 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -37,10 +37,11 @@ __KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.26 2018/07/14 14:46:41 maxv Exp $"
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 
+#include <crypto/aes/aes_bear.h>
+
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/cryptosoft.h>
 #include <opencrypto/xform.h>
-#include <crypto/rijndael/rijndael.h>
 
 #include <opencrypto/cryptosoft_xform.c>
 
@@ -66,7 +67,7 @@ int	via_padlock_crypto_swauth(struct cryptop *, struct cryptodesc *,
 	    struct swcr_data *, void *);
 int	via_padlock_crypto_encdec(struct cryptop *, struct cryptodesc *,
 	    struct via_padlock_session *, struct via_padlock_softc *, void *);
-int	via_padlock_crypto_freesession(void *, uint64_t);
+void	via_padlock_crypto_freesession(void *, uint64_t);
 static	__inline void via_padlock_cbc(void *, void *, void *, void *, int,
 	    void *);
 
@@ -98,10 +99,10 @@ via_c3_ace_init(struct via_padlock_softc *sc)
 	 *
 	 *
 	 * XXX We should actually implement the HMAC modes this hardware
-	 * XXX can accellerate (wrap its plain SHA1/SHA2 as HMAC) and
+	 * XXX can accelerate (wrap its plain SHA1/SHA2 as HMAC) and
 	 * XXX strongly consider removing those passed through to cryptosoft.
 	 * XXX As it stands, we can "steal" sessions from drivers which could
-	 * XXX better accellerate them.
+	 * XXX better accelerate them.
 	 *
 	 * XXX Note the ordering dependency between when this (or any
 	 * XXX crypto driver) attaches and when cryptosoft does.  We are
@@ -133,10 +134,6 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 	const struct swcr_auth_hash *axf;
 	struct swcr_data *swd;
 	int sesn, i, cw0;
-
-	KASSERT(sc != NULL /*, ("via_padlock_crypto_freesession: null softc")*/);
-	if (sc == NULL || sidp == NULL || cri == NULL)
-		return (EINVAL);
 
 	if (sc->sc_sessions == NULL) {
 		ses = sc->sc_sessions = malloc(sizeof(*ses), M_DEVBUF,
@@ -174,14 +171,29 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
 		case CRYPTO_AES_CBC:
+			memset(ses->ses_ekey, 0, sizeof(ses->ses_ekey));
+			memset(ses->ses_dkey, 0, sizeof(ses->ses_dkey));
+
 			switch (c->cri_klen) {
 			case 128:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 16);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 16);
 				cw0 = C3_CRYPT_CWLO_KEY128;
 				break;
 			case 192:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 24);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 24);
 				cw0 = C3_CRYPT_CWLO_KEY192;
 				break;
 			case 256:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 32);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 32);
 				cw0 = C3_CRYPT_CWLO_KEY256;
 				break;
 			default:
@@ -191,20 +203,14 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 				C3_CRYPT_CWLO_KEYGEN_SW |
 				C3_CRYPT_CWLO_NORMAL;
 
-			cprng_fast(ses->ses_iv, sizeof(ses->ses_iv));
 			ses->ses_klen = c->cri_klen;
 			ses->ses_cw0 = cw0;
 
-			/* Build expanded keys for both directions */
-			rijndaelKeySetupEnc(ses->ses_ekey, c->cri_key,
-			    c->cri_klen);
-			rijndaelKeySetupDec(ses->ses_dkey, c->cri_key,
-			    c->cri_klen);
-			for (i = 0; i < 4 * (RIJNDAEL_MAXNR + 1); i++) {
+			/* Convert words to host byte order (???) */
+			for (i = 0; i < 4*(AES_256_NROUNDS + 1); i++) {
 				ses->ses_ekey[i] = ntohl(ses->ses_ekey[i]);
 				ses->ses_dkey[i] = ntohl(ses->ses_dkey[i]);
 			}
-
 			break;
 
 		/* Use hashing implementations from the cryptosoft code. */
@@ -292,7 +298,7 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 	return (0);
 }
 
-int
+void
 via_padlock_crypto_freesession(void *arg, uint64_t tid)
 {
 	struct via_padlock_softc *sc = arg;
@@ -301,13 +307,10 @@ via_padlock_crypto_freesession(void *arg, uint64_t tid)
 	int sesn;
 	uint32_t sid = ((uint32_t)tid) & 0xffffffff;
 
-	KASSERT(sc != NULL /*, ("via_padlock_crypto_freesession: null softc")*/);
-	if (sc == NULL)
-		return (EINVAL);
-
 	sesn = VIAC3_SESSION(sid);
-	if (sesn >= sc->sc_nsessions)
-		return (EINVAL);
+	KASSERTMSG(sesn >= 0, "sesn=%d", sesn);
+	KASSERTMSG(sesn < sc->sc_nsessions, "sesn=%d nsessions=%d",
+	    sesn, sc->sc_nsessions);
 
 	if (sc->sc_sessions[sesn].swd) {
 		swd = sc->sc_sessions[sesn].swd;
@@ -325,7 +328,6 @@ via_padlock_crypto_freesession(void *arg, uint64_t tid)
 	}
 
 	memset(&sc->sc_sessions[sesn], 0, sizeof(sc->sc_sessions[sesn]));
-	return (0);
 }
 
 static __inline void
@@ -341,7 +343,7 @@ via_padlock_cbc(void *cw, void *src, void *dst, void *key, int rep,
 	lcr0(cr0 & ~(CR0_EM|CR0_TS));
 
 	/* Do the deed */
-	__asm __volatile("pushfl; popfl");	/* force key reload */
+	__asm __volatile("pushf; popf");	/* force key reload */
 	__asm __volatile(".byte 0xf3, 0x0f, 0xa7, 0xd0" : /* rep xcrypt-cbc */
 			: "a" (iv), "b" (key), "c" (rep), "d" (cw), "S" (src), "D" (dst)
 			: "memory", "cc");
@@ -370,18 +372,13 @@ via_padlock_crypto_encdec(struct cryptop *crp, struct cryptodesc *crd,
     struct via_padlock_session *ses, struct via_padlock_softc *sc, void *buf)
 {
 	uint32_t *key;
-	int err = 0;
 
-	if ((crd->crd_len % 16) != 0) {
-		err = EINVAL;
-		return (err);
-	}
+	if ((crd->crd_len % 16) != 0)
+		return (EINVAL);
 
 	sc->op_buf = malloc(crd->crd_len, M_DEVBUF, M_NOWAIT);
-	if (sc->op_buf == NULL) {
-		err = ENOMEM;
-		return (err);
-	}
+	if (sc->op_buf == NULL)
+		return (ENOMEM);
 
 	if (crd->crd_flags & CRD_F_ENCRYPT) {
 		sc->op_cw[0] = ses->ses_cw0 | C3_CRYPT_CWLO_ENCRYPT;
@@ -389,7 +386,7 @@ via_padlock_crypto_encdec(struct cryptop *crp, struct cryptodesc *crd,
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(sc->op_iv, crd->crd_iv, 16);
 		else
-			memcpy(sc->op_iv, ses->ses_iv, 16);
+			cprng_fast(sc->op_iv, 16);
 
 		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0) {
 			if (crp->crp_flags & CRYPTO_F_IMBUF)
@@ -444,28 +441,13 @@ via_padlock_crypto_encdec(struct cryptop *crp, struct cryptodesc *crd,
 		memcpy((char *)crp->crp_buf + crd->crd_skip, sc->op_buf,
 		    crd->crd_len);
 
-	/* copy out last block for use as next session IV */
-	if (crd->crd_flags & CRD_F_ENCRYPT) {
-		if (crp->crp_flags & CRYPTO_F_IMBUF)
-			m_copydata((struct mbuf *)crp->crp_buf,
-			    crd->crd_skip + crd->crd_len - 16, 16,
-			    ses->ses_iv);
-		else if (crp->crp_flags & CRYPTO_F_IOV)
-			cuio_copydata((struct uio *)crp->crp_buf,
-			    crd->crd_skip + crd->crd_len - 16, 16,
-			    ses->ses_iv);
-		else
-			memcpy(ses->ses_iv, (char *)crp->crp_buf +
-			    crd->crd_skip + crd->crd_len - 16, 16);
-	}
-
 	if (sc->op_buf != NULL) {
 		memset(sc->op_buf, 0, crd->crd_len);
 		free(sc->op_buf, M_DEVBUF);
 		sc->op_buf = NULL;
 	}
 
-	return (err);
+	return 0;
 }
 
 int
@@ -514,7 +496,7 @@ via_padlock_crypto_process(void *arg, struct cryptop *crp, int hint)
 out:
 	crp->crp_etype = err;
 	crypto_done(crp);
-	return (err);
+	return 0;
 }
 
 static int

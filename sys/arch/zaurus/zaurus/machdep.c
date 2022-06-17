@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.43 2019/10/19 14:42:30 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.49 2022/01/02 16:40:46 christos Exp $	*/
 /*	$OpenBSD: zaurus_machdep.c,v 1.25 2006/06/20 18:24:04 todd Exp $	*/
 
 /*
@@ -13,7 +13,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. The name of Genetec Corporation may not be used to endorse or 
+ * 3. The name of Genetec Corporation may not be used to endorse or
  *    promote products derived from this software without specific prior
  *    written permission.
  *
@@ -29,7 +29,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Machine dependent functions for kernel setup for 
+ * Machine dependent functions for kernel setup for
  * Intel DBPXA250 evaluation board (a.k.a. Lubbock).
  * Based on iq80310_machhdep.c
  */
@@ -107,12 +107,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.43 2019/10/19 14:42:30 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.49 2022/01/02 16:40:46 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_modular.h"
-#include "opt_pmap_debug.h"
 #include "opt_md.h"
 #include "opt_com.h"
 #include "ksyms.h"
@@ -214,10 +213,6 @@ pv_addr_t minidataclean;
 
 paddr_t msgbufphys;
 
-#ifdef PMAP_DEBUG
-extern int pmap_debug_level;
-#endif
-
 #define KERNEL_PT_SYS		0	/* Page table for mapping proc0 zero page */
 #define KERNEL_PT_KERNEL	1	/* Page table for mapping kernel */
 #define	KERNEL_PT_KERNEL_NUM	((KERNEL_VM_BASE - KERNEL_BASE) >> 22)
@@ -246,6 +241,12 @@ struct bootinfo _bootinfo;
 #endif
 struct bootinfo *bootinfo;
 struct btinfo_howto *bi_howto;
+
+extern char etext[], end[];
+extern void *esym;
+#if NKSYMS || defined(DDB) || defined(MODULAR)
+#include <sys/exec_elf.h>
+#endif
 
 #define	KERNEL_BASE_PHYS	((paddr_t)&KERNEL_BASE_phys)
 #define	BOOTINFO_PAGE		(KERNEL_BASE_PHYS - PAGE_SIZE)
@@ -635,7 +636,7 @@ hw_isc1000(void)
 vaddr_t
 initarm(void *arg)
 {
-#ifdef DIAGNOSTIC
+#if defined(DIAGNOSTIC) || defined(VERBOSE_INIT_ARM)
 	extern vsize_t xscale_minidata_clean_size; /* used in KASSERT */
 #endif
 	extern vaddr_t xscale_cache_clean_addr;
@@ -647,6 +648,9 @@ initarm(void *arg)
 	psize_t memsize;
 	struct pxa2x0_gpioconf **zaurus_gpioconf;
 	u_int *magicaddr;
+#if NKSYMS || defined(DDB) || defined(MODULAR)
+	u_int symbolsize;
+#endif
 
 	/* Get ready for zaurus_restart() */
 	pxa2x0_memctl_bootstrap(PXA2X0_MEMCTL_BASE);
@@ -751,7 +755,7 @@ initarm(void *arg)
 	bootconfig.dram[0].pages = memsize / PAGE_SIZE;
 
 	/*
-	 * Set up the variables that define the availablilty of
+	 * Set up the variables that define the availability of
 	 * physical memory.  For now, we're going to set
 	 * physical_freestart to 0xa0200000 (where the kernel
 	 * was loaded), and allocate the memory we need downwards.
@@ -852,7 +856,9 @@ initarm(void *arg)
 	valloc_pages(kernelstack, UPAGES);
 
 	/* Allocate enough pages for cleaning the Mini-Data cache. */
+#ifdef DIAGNOSTIC
 	KASSERT(xscale_minidata_clean_size <= PAGE_SIZE);
+#endif
 	valloc_pages(minidataclean, 1);
 
 #ifdef KLOADER
@@ -917,6 +923,48 @@ initarm(void *arg)
 	pmap_curmaxkvaddr =
 	    KERNEL_VM_BASE + (KERNEL_PT_VMDATA_NUM * 0x00400000);
 
+	/* check symbol table loaded by bootloader (zbsdmod.o) */
+	esym = end;
+#if NKSYMS || defined(DDB) || defined(MODULAR)
+	symbolsize = 0;
+	Elf_Ehdr *eh = (Elf_Ehdr *)end;
+#ifdef VERBOSE_INIT_ARM
+	printf("Checking ELF MAGIC at end: %02x %02x %02x %02x\n",
+	    end[0], end[1], end[2], end[3]);
+#endif
+	if (memcmp(eh->e_ident, ELFMAG, SELFMAG) == 0) {
+		Elf_Shdr *sh;
+#ifdef VERBOSE_INIT_ARM
+		printf("ELF header found at end\n");
+#endif
+		sh = (Elf_Shdr *)((char *)end + eh->e_shoff);
+		for (loop = 0; loop < eh->e_shnum; loop++, sh++) {
+#ifdef VERBOSE_INIT_ARM
+			printf("Checking ELF header %d\n", loop);
+#endif
+			if (sh->sh_type != SHT_SYMTAB &&
+			    sh->sh_type != SHT_STRTAB) {
+				continue;
+			}
+#ifdef VERBOSE_INIT_ARM
+			printf("Section[%2d]: offset = %d, size = %d\n",
+			    loop, sh->sh_offset, sh->sh_size);
+#endif
+			if (sh->sh_offset > 0 &&
+			    (sh->sh_offset + sh->sh_size) > symbolsize) {
+				symbolsize = sh->sh_offset + sh->sh_size;
+			}
+#ifdef VERBOSE_INIT_ARM
+			printf("Updating symbolsize = %d\n", symbolsize);
+#endif
+		}
+		esym = (char *)esym + symbolsize;
+	}
+#ifdef VERBOSE_INIT_ARM
+	printf("symbolsize = %d\n", symbolsize);
+#endif
+#endif /* NKSYMS || defined(DDB) || defined(MODULAR) */
+
 #ifdef VERBOSE_INIT_ARM
 	printf("Mapping kernel\n");
 #endif
@@ -924,9 +972,9 @@ initarm(void *arg)
 	/* Now we fill in the L2 pagetable for the kernel static code/data
 	 * and the symbol table. */
 	{
-		extern char etext[], _end[];
+
 		size_t textsize = (uintptr_t) etext - KERNEL_TEXT_BASE;
-		size_t totalsize = (uintptr_t) _end - KERNEL_TEXT_BASE;
+		size_t totalsize = (uintptr_t) esym - KERNEL_TEXT_BASE;
 		u_int logical;
 
 		textsize = (textsize + PGOFSET) & ~PGOFSET;
@@ -1012,10 +1060,9 @@ initarm(void *arg)
 	 * variables.
 	 */
 	{
-		extern char _end[];
 
 		physical_freestart = physical_start +
-		    ((((uintptr_t) _end + PGOFSET) & ~PGOFSET) - KERNEL_BASE);
+		    ((((uintptr_t) esym + PGOFSET) & ~PGOFSET) - KERNEL_BASE);
 		physical_freeend = physical_end;
 		free_pages =
 		    (physical_freeend - physical_freestart) / PAGE_SIZE;
@@ -1109,13 +1156,9 @@ initarm(void *arg)
 	md_root_setconf(memory_disk, sizeof memory_disk);
 #endif
 
-#if NKSYMS || defined(MODULAR)
-# ifdef DDB
-	ddb_init(0, NULL, NULL);
-# else
-	/* Firmware doesn't load symbols. */
-	ksyms_addsyms_elf(0, NULL, NULL);
-# endif
+#if NKSYMS || defined(DDB) || defined(MODULAR)
+	if (symbolsize > 0)
+		ksyms_addsyms_elf(symbolsize, &end, esym);
 #endif
 
 #ifdef KGDB

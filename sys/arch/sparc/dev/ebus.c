@@ -1,4 +1,4 @@
-/*	$NetBSD: ebus.c,v 1.36 2019/10/18 04:09:02 msaitoh Exp $ */
+/*	$NetBSD: ebus.c,v 1.42 2022/01/22 11:49:16 thorpej Exp $ */
 
 /*
  * Copyright (c) 1999, 2000 Matthew R. Green
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.36 2019/10/18 04:09:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.42 2022/01/22 11:49:16 thorpej Exp $");
 
 #if defined(DEBUG) && !defined(EBUS_DEBUG)
 #define EBUS_DEBUG
@@ -56,6 +56,7 @@ int ebus_debug = 0;
 #include <sys/device.h>
 #include <sys/errno.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/callout.h>
 #include <sys/kernel.h>
 
@@ -306,6 +307,7 @@ ebus_attach(device_t parent, device_t self, void *aux)
 	 * now attach all our children
 	 */
 	DPRINTF(EDB_CHILD, ("ebus node %08x, searching children...\n", node));
+	devhandle_t selfh = device_handle(self);
 	for (node = firstchild(node); node; node = nextsibling(node)) {
 		char *name = prom_getpropstring(node, "name");
 
@@ -315,7 +317,8 @@ ebus_attach(device_t parent, device_t self, void *aux)
 		}
 		DPRINTF(EDB_CHILD,
 			("- found child `%s', attaching\n", ea.ea_name));
-		(void)config_found(self, &ea, ebus_print);
+		(void)config_found(self, &ea, ebus_print,
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 		ebus_destroy_attach_args(&ea);
 	}
 }
@@ -372,7 +375,7 @@ ebus_setup_attach_args(struct ebus_softc *sc,
 		const struct msiiep_ebus_intr_wiring *w = &wiring_map[n];
 		if (strcmp(w->name, ea->ea_name) == 0) {
 			ea->ea_intr = malloc(sizeof(uint32_t),
-					     M_DEVBUF, M_NOWAIT);
+					     M_DEVBUF, M_WAITOK);
 			ea->ea_intr[0] = w->line;
 			ea->ea_nintr = 1;
 			break;
@@ -421,12 +424,7 @@ ebus_alloc_dma_tag(struct ebus_softc *sc, bus_dma_tag_t pdt)
 {
 	bus_dma_tag_t dt;
 
-	dt = (bus_dma_tag_t)
-		malloc(sizeof(struct sparc_bus_dma_tag), M_DEVBUF, M_NOWAIT);
-	if (dt == NULL)
-		panic("unable to allocate ebus DMA tag");
-
-	memset(dt, 0, sizeof *dt);
+	dt = kmem_zalloc(sizeof(*dt), KM_SLEEP);
 	dt->_cookie = sc;
 #define PCOPY(x)	dt->x = pdt->x
 	PCOPY(_dmamap_create);

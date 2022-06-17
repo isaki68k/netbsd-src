@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_cv.c,v 1.59 2015/11/16 21:24:06 phx Exp $ */
+/*	$NetBSD: grf_cv.c,v 1.64 2022/03/28 12:38:57 riastradh Exp $ */
 
 /*
  * Copyright (c) 1995 Michael Teske
@@ -33,7 +33,7 @@
 #include "opt_amigacons.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_cv.c,v 1.59 2015/11/16 21:24:06 phx Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_cv.c,v 1.64 2022/03/28 12:38:57 riastradh Exp $");
 
 #include "grfcv.h"
 #include "ite.h"
@@ -57,6 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: grf_cv.c,v 1.59 2015/11/16 21:24:06 phx Exp $");
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>	/* XXX autoconf abuse */
 #include <sys/malloc.h>
 #include <sys/systm.h>
 #include <sys/syslog.h>
@@ -404,7 +405,7 @@ cvintr(void *arg)
 }
 
 /*
- * Get frambuffer memory size.
+ * Get framebuffer memory size.
  * phase5 didn't provide the bit in CR36,
  * so we have to do it this way.
  * Return 0 for 2MB, 1 for 4MB
@@ -554,7 +555,8 @@ grfcvattach(device_t parent, device_t self, void *aux)
 	/*
 	 * attach grf
 	 */
-	if (amiga_config_found(cfdata, gp->g_device, gp, grfcvprint)) {
+	if (amiga_config_found(cfdata, gp->g_device, gp, grfcvprint,
+			       CFARGS_NONE)) {
 		if (self != NULL)
 			printf("grfcv: CyberVision64 with %dMB being used\n",
 			    cv_fbsize/0x100000);
@@ -2510,7 +2512,7 @@ cv_wsioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		return cv_get_fbinfo(gp, data);
 	}
 
-	/* handle this command hw-independant in grf(4) */
+	/* handle this command hw-independent in grf(4) */
 	return grf_wsioctl(v, vs, cmd, data, flag, l);
 }
 

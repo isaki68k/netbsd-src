@@ -1,4 +1,4 @@
-/*	$NetBSD: si_sebuf.c,v 1.29 2013/11/07 17:50:18 christos Exp $	*/
+/*	$NetBSD: si_sebuf.c,v 1.31 2021/08/02 12:56:23 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -37,13 +37,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: si_sebuf.c,v 1.29 2013/11/07 17:50:18 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: si_sebuf.c,v 1.31 2021/08/02 12:56:23 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/errno.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/device.h>
 #include <sys/buf.h>
 #include <sys/proc.h>
@@ -250,9 +250,7 @@ se_attach(device_t parent, device_t self, void *args)
 	 * Allocate DMA handles.
 	 */
 	i = SCI_OPENINGS * sizeof(struct se_dma_handle);
-	sc->sc_dma = malloc(i, M_DEVBUF, M_WAITOK);
-	if (sc->sc_dma == NULL)
-		panic("se: dma_malloc failed");
+	sc->sc_dma = kmem_alloc(i, KM_SLEEP);
 	for (i = 0; i < SCI_OPENINGS; i++)
 		sc->sc_dma[i].dh_flags = 0;
 
@@ -333,7 +331,7 @@ se_intr_off(struct ncr5380_softc *ncr_sc)
  * that precedes a DATA_IN or DATA_OUT phase, in case we need
  * to setup the DMA engine before the bus enters a DATA phase.
  *
- * On the VME version, setup the start addres, but clear the
+ * On the VME version, setup the start address, but clear the
  * count (to make sure it stays idle) and set that later.
  * XXX: The VME adapter appears to suppress SBC interrupts
  * when the FIFO is not empty or the FIFO count is non-zero!

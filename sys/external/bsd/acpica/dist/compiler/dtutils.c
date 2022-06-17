@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2019, Intel Corp.
+ * Copyright (C) 2000 - 2021, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  * NO WARRANTY
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
  * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
@@ -78,10 +78,20 @@ DtError (
     DT_FIELD                *FieldObject,
     char                    *ExtraMessage)
 {
+    UINT32                  Line = 0;
+
+
+    /* Field object could be NULL */
+
+    if (FieldObject)
+    {
+        Line = FieldObject->Line;
+    }
 
     /* Check if user wants to ignore this exception */
 
-    if (AslIsExceptionIgnored (Level, MessageId))
+    if (AslIsExceptionIgnored (AslGbl_Files[ASL_FILE_INPUT].Filename,
+        Line, Level, MessageId))
     {
         return;
     }
@@ -308,6 +318,7 @@ DtGetFieldType (
     case ACPI_DMT_NAME6:
     case ACPI_DMT_NAME8:
     case ACPI_DMT_STRING:
+    case ACPI_DMT_IVRS_UNTERMINATED_STRING:
 
         Type = DT_FIELD_TYPE_STRING;
         break;
@@ -318,8 +329,10 @@ DtGetFieldType (
     case ACPI_DMT_BUF10:
     case ACPI_DMT_BUF12:
     case ACPI_DMT_BUF16:
+    case ACPI_DMT_BUF18:
     case ACPI_DMT_BUF128:
     case ACPI_DMT_PCI_PATH:
+    case ACPI_DMT_PMTT_VENDOR:
 
         Type = DT_FIELD_TYPE_BUFFER;
         break;
@@ -332,6 +345,7 @@ DtGetFieldType (
         break;
 
     case ACPI_DMT_UNICODE:
+    case ACPI_DMT_WPBT_UNICODE:
 
         Type = DT_FIELD_TYPE_UNICODE;
         break;
@@ -455,14 +469,27 @@ DtGetFieldLength (
     case ACPI_DMT_CHKSUM:
     case ACPI_DMT_SPACEID:
     case ACPI_DMT_ACCWIDTH:
+    case ACPI_DMT_CEDT:
     case ACPI_DMT_IVRS:
+    case ACPI_DMT_IVRS_DE:
     case ACPI_DMT_GTDT:
     case ACPI_DMT_MADT:
+    case ACPI_DMT_NHLT1:
+    case ACPI_DMT_NHLT1a:
+    case ACPI_DMT_NHLT1b:
+    case ACPI_DMT_NHLT1c:
+    case ACPI_DMT_NHLT1d:
+    case ACPI_DMT_NHLT1f:
     case ACPI_DMT_PCCT:
     case ACPI_DMT_PMTT:
     case ACPI_DMT_PPTT:
+    case ACPI_DMT_RGRT:
     case ACPI_DMT_SDEV:
     case ACPI_DMT_SRAT:
+    case ACPI_DMT_AEST:
+    case ACPI_DMT_AEST_RES:
+    case ACPI_DMT_AEST_XFACE:
+    case ACPI_DMT_AEST_XRUPT:
     case ACPI_DMT_ASF:
     case ACPI_DMT_HESTNTYP:
     case ACPI_DMT_FADTPM:
@@ -471,6 +498,7 @@ DtGetFieldLength (
     case ACPI_DMT_ERSTACT:
     case ACPI_DMT_ERSTINST:
     case ACPI_DMT_DMAR_SCOPE:
+    case ACPI_DMT_VIOT:
 
         ByteLength = 1;
         break;
@@ -480,7 +508,9 @@ DtGetFieldLength (
     case ACPI_DMT_HEST:
     case ACPI_DMT_HMAT:
     case ACPI_DMT_NFIT:
+    case ACPI_DMT_NHLT1e:
     case ACPI_DMT_PCI_PATH:
+    case ACPI_DMT_PHAT:
 
         ByteLength = 2;
         break;
@@ -491,6 +521,8 @@ DtGetFieldLength (
         break;
 
     case ACPI_DMT_UINT32:
+    case ACPI_DMT_AEST_CACHE:
+    case ACPI_DMT_AEST_GIC:
     case ACPI_DMT_NAME4:
     case ACPI_DMT_SIG:
     case ACPI_DMT_LPIT:
@@ -538,6 +570,22 @@ DtGetFieldLength (
         }
         break;
 
+    case ACPI_DMT_IVRS_UNTERMINATED_STRING:
+
+        Value = DtGetFieldValue (Field);
+        if (Value)
+        {
+            ByteLength = strlen (Value);
+        }
+        else
+        {   /* At this point, this is a fatal error */
+
+            snprintf (AslGbl_MsgBuffer, sizeof(AslGbl_MsgBuffer), "Expected \"%s\"", Info->Name);
+            DtFatal (ASL_MSG_COMPILER_INTERNAL, NULL, AslGbl_MsgBuffer);
+            return (0);
+        }
+        break;
+
     case ACPI_DMT_GAS:
 
         ByteLength = sizeof (ACPI_GENERIC_ADDRESS);
@@ -555,6 +603,7 @@ DtGetFieldLength (
 
     case ACPI_DMT_BUFFER:
     case ACPI_DMT_RAW_BUFFER:
+    case ACPI_DMT_PMTT_VENDOR:
 
         Value = DtGetFieldValue (Field);
         if (Value)
@@ -586,18 +635,24 @@ DtGetFieldLength (
         ByteLength = 16;
         break;
 
+    case ACPI_DMT_BUF18:
+
+        ByteLength = 18;
+        break;
+
     case ACPI_DMT_BUF128:
 
         ByteLength = 128;
         break;
 
     case ACPI_DMT_UNICODE:
+    case ACPI_DMT_WPBT_UNICODE:
 
         Value = DtGetFieldValue (Field);
 
         /* TBD: error if Value is NULL? (as below?) */
 
-        ByteLength = (strlen (Value) + 1) * sizeof(UINT16);
+        ByteLength = (strlen (Value) + 1) * sizeof (UINT16);
         break;
 
     default:

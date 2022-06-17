@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: bcm53xx_eth.c,v 1.39 2019/10/30 10:12:37 msaitoh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: bcm53xx_eth.c,v 1.41 2021/06/16 00:21:17 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -407,12 +407,7 @@ bcmeth_ccb_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach the interface.
 	 */
-	error = if_initialize(ifp);
-	if (error != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
-		    error);
-		goto fail_5;
-	}
+	if_initialize(ifp);
 	ether_ifattach(ifp, sc->sc_enaddr);
 	if_register(ifp);
 
@@ -433,8 +428,6 @@ bcmeth_ccb_attach(device_t parent, device_t self, void *aux)
 
 	return;
 
-fail_5:
-	ifmedia_removeall(&sc->sc_media);
 fail_4:
 	intr_disestablish(sc->sc_ih);
 fail_3:
@@ -1119,7 +1112,7 @@ bcmeth_rxq_consume(
 
 #ifdef BCMETH_RCVMAGIC
 		if (rxsts == BCMETH_RCVMAGIC) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			if ((m->m_ext.ext_paddr >> 28) == 8) {
 				BCMETH_EVCNT_INCR(sc->sc_ev_rx_badmagic_lo);
 			} else {
@@ -1137,7 +1130,7 @@ bcmeth_rxq_consume(
 			 * We encountered an error, take the mbufs and add them
 			 * to the rx bufcache so we can quickly reuse them.
 			 */
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			do {
 				struct mbuf *m0 = m->m_next;
 				m->m_next = NULL;
@@ -1662,10 +1655,10 @@ bcmeth_txq_consume(
 			    __func__, m, m->m_pkthdr.len);
 #endif
 			bpf_mtap(ifp, m, BPF_D_OUT);
-			ifp->if_opackets++;
-			ifp->if_obytes += m->m_pkthdr.len;
+			if_statinc(ifp, if_opackets);
+			if_statadd(ifp, if_obytes,  m->m_pkthdr.len);
 			if (m->m_flags & M_MCAST)
-				ifp->if_omcasts++;
+				if_statinc(ifp, if_omcasts);
 			m_freem(m);
 		}
 

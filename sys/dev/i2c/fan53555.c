@@ -1,4 +1,4 @@
-/* $NetBSD: fan53555.c,v 1.3 2019/06/29 14:45:10 jmcneill Exp $ */
+/* $NetBSD: fan53555.c,v 1.9 2021/01/27 02:29:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fan53555.c,v 1.3 2019/06/29 14:45:10 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fan53555.c,v 1.9 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: fan53555.c,v 1.3 2019/06/29 14:45:10 jmcneill Exp $"
 #define	 ID1_VENDOR			__BITS(7,5)
 #define	 ID1_DIE_ID			__BITS(3,0)
 #define	  SILERGY_DIE_ID_SYR82X		8
+#define	  SILERGY_DIE_ID_SYR83X		9
 #define	ID2_REG			0x04
 #define	 ID2_DIE_REV			__BITS(3,0)
 #define	MONITOR_REG		0x05
@@ -89,9 +90,9 @@ static const int fan53555_slew_rates[] = {
 };
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "silergy,syr827",		FAN_VENDOR_SILERGY },
-	{ "silergy,syr828",		FAN_VENDOR_SILERGY },
-	{ NULL,				0 }
+	{ .compat = "silergy,syr827",	.value = FAN_VENDOR_SILERGY },
+	{ .compat = "silergy,syr828",	.value = FAN_VENDOR_SILERGY },
+	DEVICE_COMPAT_EOL
 };
 
 static uint8_t
@@ -123,10 +124,10 @@ fan53555_write(struct fan53555_softc *sc, uint8_t reg, uint8_t val, int flags)
 		aprint_error_dev(sc->sc_dev, "error writing reg %#x: %d\n", reg, error);
 }
 
-#define	I2C_READ(sc, reg)	fan53555_read((sc), (reg), I2C_F_POLL)
-#define	I2C_WRITE(sc, reg, val)	fan53555_write((sc), (reg), (val), I2C_F_POLL)
-#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, I2C_F_POLL)
-#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, I2C_F_POLL)
+#define	I2C_READ(sc, reg)	fan53555_read((sc), (reg), 0)
+#define	I2C_WRITE(sc, reg, val)	fan53555_write((sc), (reg), (val), 0)
+#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, 0)
+#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, 0)
 
 static int
 fan53555_acquire(device_t dev)
@@ -231,6 +232,11 @@ fan53555_init(struct fan53555_softc *sc, enum fan53555_vendor vendor)
 			sc->sc_base = 712500;
 			sc->sc_step = 12500;
 			break;
+		case SILERGY_DIE_ID_SYR83X:
+			aprint_normal(": Silergy SYR83X\n");
+			sc->sc_base = 712500;
+			sc->sc_step = 12500;
+			break;
 		default:
 			aprint_error(": Unsupported Silergy chip (0x%x)\n", die_id);
 			return ENXIO;
@@ -303,9 +309,10 @@ fan53555_attach(device_t parent, device_t self, void *aux)
 	sc->sc_addr = ia->ia_addr;
 	sc->sc_phandle = ia->ia_cookie;
 
-	iic_compatible_match(ia, compat_data, &compat);
+	compat = iic_compatible_lookup(ia, compat_data);
+	KASSERT(compat != NULL);
 
-	if (fan53555_init(sc, compat->data) != 0)
+	if (fan53555_init(sc, compat->value) != 0)
 		return;
 
 	fdtbus_register_regulator_controller(self, sc->sc_phandle,

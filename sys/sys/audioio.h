@@ -1,4 +1,4 @@
-/*	$NetBSD: audioio.h,v 1.38 2019/05/08 13:40:19 isaki Exp $	*/
+/*	$NetBSD: audioio.h,v 1.40 2022/04/07 19:33:38 andvar Exp $	*/
 
 /*
  * Copyright (c) 1991-1993 Regents of the University of California.
@@ -62,7 +62,7 @@ struct audio_prinfo {
 	u_int	samples;	/* number of samples */
 	u_int	eof;		/* End Of File (zero-size writes) counter */
 	u_char	pause;		/* non-zero if paused, zero to resume */
-	u_char	error;		/* non-zero if underflow/overflow ocurred */
+	u_char	error;		/* non-zero if underflow/overflow occurred */
 	u_char	waiting;	/* non-zero if another process hangs in open */
 	u_char	balance;	/* stereo channel balance */
 	u_char	cspare[2];
@@ -183,7 +183,7 @@ struct audio_format {
 
 	/**
 	 * The bit size of one sample.
-	 * It must be >= validbits, and is usualy a multiple of 8.
+	 * It must be >= validbits, and is usually a multiple of 8.
 	 */
 	u_int precision;
 

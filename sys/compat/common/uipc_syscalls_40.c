@@ -1,9 +1,9 @@
-/*	$NetBSD: uipc_syscalls_40.c,v 1.20 2019/04/23 07:45:06 msaitoh Exp $	*/
+/*	$NetBSD: uipc_syscalls_40.c,v 1.23 2020/07/16 15:02:08 msaitoh Exp $	*/
 
 /* written by Pavel Cahyna, 2006. Public domain. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls_40.c,v 1.20 2019/04/23 07:45:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls_40.c,v 1.23 2020/07/16 15:02:08 msaitoh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -54,11 +54,14 @@ compat_ifconf(u_long cmd, void *data)
 		return ENOSYS;
 	}
 
-	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
+		if (ifc->ifc_len < 0)
+			return EINVAL;
+
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
 	}
+	memset(&ifr, 0, sizeof(ifr));
 
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
@@ -119,7 +122,7 @@ compat_ifconf(u_long cmd, void *data)
 			} else {
 				space -= sa->sa_len - sizeof(*sa);
 				if (space >= sz) {
-					error = copyout(&ifr, ifrp,
+					error = copyout(&ifr.ifr_name, ifrp,
 					    sizeof(ifr.ifr_name));
 					if (error == 0) {
 						error = copyout(sa,
@@ -168,7 +171,7 @@ void
 uipc_syscalls_40_init(void)
 {
  
-	MODULE_HOOK_SET(uipc_syscalls_40_hook, "uipc40", compat_ifconf);
+	MODULE_HOOK_SET(uipc_syscalls_40_hook, compat_ifconf);
 }
  
 void

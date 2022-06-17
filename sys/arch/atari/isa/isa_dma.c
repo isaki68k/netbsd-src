@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_dma.c,v 1.12 2016/02/26 18:16:51 christos Exp $	*/
+/*	$NetBSD: isa_dma.c,v 1.16 2022/01/22 15:10:30 skrll Exp $	*/
 
 #define ISA_DMA_STATS
 
@@ -33,14 +33,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_dma.c,v 1.12 2016/02/26 18:16:51 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_dma.c,v 1.16 2022/01/22 15:10:30 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/mbuf.h>
 
@@ -150,28 +150,11 @@ u_long	isa_dma_stats_nbouncebufs;
 #define	STAT_DECR(v)
 #endif
 
-/*
- * Create an ISA DMA map.
- */
-int
-_isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments, bus_size_t maxsegsz, bus_size_t boundary, int flags, bus_dmamap_t *dmamp)
+static int
+isadma_bounce_cookieflags(bus_dma_tag_t const t, bus_dmamap_t const map,
+    int const flags)
 {
-	struct atari_isa_dma_cookie *cookie;
-	bus_dmamap_t map;
-	int error, cookieflags;
-	void *cookiestore;
-	size_t cookiesize;
-
-	/* Call common function to create the basic map. */
-	error = _bus_dmamap_create(t, size, nsegments, maxsegsz, boundary,
-	    flags, dmamp);
-	if (error)
-		return (error);
-
-	map = *dmamp;
-	map->_dm_cookie = NULL;
-
-	cookiesize = sizeof(struct atari_isa_dma_cookie);
+	int cookieflags = 0;
 
 	/*
 	 * ISA only has 24-bits of address space.  This means
@@ -180,7 +163,7 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments, bus_size
 	 * in memory below the 16M boundary.  On DMA reads,
 	 * DMA happens to the bounce buffers, and is copied into
 	 * the caller's buffer.  On writes, data is copied into
-	 * but bounce buffer, and the DMA happens from those
+	 * the bounce buffer, and the DMA happens from those
 	 * pages.  To software using the DMA mapping interface,
 	 * this looks simply like a data cache.
 	 *
@@ -197,44 +180,97 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments, bus_size
 	 */
 	if (avail_end <= t->_bounce_thresh ||
 	    (flags & ISABUS_DMA_32BIT) != 0) {
-		/* Bouncing not necessary due to memory size. */ 
+		/* Bouncing not necessary due to memory size. */
 		map->_dm_bounce_thresh = 0;
 	}
-	cookieflags = 0;
 	if (map->_dm_bounce_thresh != 0 ||
 	    ((map->_dm_size / PAGE_SIZE) + 1) > map->_dm_segcnt) {
 		cookieflags |= ID_MIGHT_NEED_BOUNCE;
+	}
+	return cookieflags;
+}
+
+static size_t
+isadma_bounce_cookiesize(bus_dmamap_t const map, int cookieflags)
+{
+	size_t cookiesize = sizeof(struct atari_isa_dma_cookie);
+
+	if (cookieflags & ID_MIGHT_NEED_BOUNCE) {
 		cookiesize += (sizeof(bus_dma_segment_t) * map->_dm_segcnt);
 	}
+	return cookiesize;
+}
+
+static int
+isadma_bounce_cookie_alloc(bus_dma_tag_t const t, bus_dmamap_t const map,
+    int const flags)
+{
+	struct atari_isa_dma_cookie *cookie;
+	int cookieflags = isadma_bounce_cookieflags(t, map, flags);
+
+	if ((cookie = kmem_zalloc(isadma_bounce_cookiesize(map, cookieflags),
+	     (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL) {
+		return ENOMEM;
+	}
+
+	cookie->id_flags = cookieflags;
+	map->_dm_cookie = cookie;
+
+	return 0;
+}
+
+static void
+isadma_bounce_cookie_free(bus_dmamap_t const map)
+{
+	struct atari_isa_dma_cookie *cookie = map->_dm_cookie;
+
+	if (cookie != NULL) {
+		kmem_free(map->_dm_cookie,
+		    isadma_bounce_cookiesize(map, cookie->id_flags));
+		map->_dm_cookie = NULL;
+	}
+}
+
+/*
+ * Create an ISA DMA map.
+ */
+int
+_isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments, bus_size_t maxsegsz, bus_size_t boundary, int flags, bus_dmamap_t *dmamp)
+{
+	struct atari_isa_dma_cookie *cookie;
+	bus_dmamap_t map;
+	int error;
+
+	/* Call common function to create the basic map. */
+	error = _bus_dmamap_create(t, size, nsegments, maxsegsz, boundary,
+	    flags, dmamp);
+	if (error)
+		return (error);
+
+	map = *dmamp;
+	map->_dm_cookie = NULL;
 
 	/*
 	 * Allocate our cookie.
 	 */
-	if ((cookiestore = malloc(cookiesize, M_DMAMAP,
-	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL) {
-		error = ENOMEM;
+	if ((error = isadma_bounce_cookie_alloc(t, map, flags)) != 0) {
 		goto out;
 	}
-	memset(cookiestore, 0, cookiesize);
-	cookie = (struct atari_isa_dma_cookie *)cookiestore;
-	cookie->id_flags = cookieflags;
-	map->_dm_cookie = cookie;
+	cookie = map->_dm_cookie;
 
-	if (cookieflags & ID_MIGHT_NEED_BOUNCE) {
+	if (cookie->id_flags & ID_MIGHT_NEED_BOUNCE) {
 		/*
 		 * Allocate the bounce pages now if the caller
 		 * wishes us to do so.
 		 */
-		if ((flags & BUS_DMA_ALLOCNOW) == 0)
-			goto out;
-
-		error = _isa_dma_alloc_bouncebuf(t, map, size, flags);
+		if (flags & BUS_DMA_ALLOCNOW) {
+			error = _isa_dma_alloc_bouncebuf(t, map, size, flags);
+		}
 	}
 
  out:
 	if (error) {
-		if (map->_dm_cookie != NULL)
-			free(map->_dm_cookie, M_DMAMAP);
+		isadma_bounce_cookie_free(map);
 		_bus_dmamap_destroy(t, map);
 	}
 	return (error);
@@ -254,7 +290,7 @@ _isa_bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 	if (cookie->id_flags & ID_HAS_BOUNCE)
 		_isa_dma_free_bouncebuf(t, map);
 
-	free(cookie, M_DMAMAP);
+	isadma_bounce_cookie_free(map);
 	_bus_dmamap_destroy(t, map);
 }
 
@@ -328,7 +364,7 @@ _isa_bus_dmamap_load(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
  */
 int
 _isa_bus_dmamap_load_mbuf(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m0,
-    int flags)  
+    int flags)
 {
 	struct atari_isa_dma_cookie *cookie = map->_dm_cookie;
 	int error;
@@ -578,9 +614,9 @@ _isa_bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment, bu
 	paddr_t high;
 
 	if (avail_end > ISA_DMA_BOUNCE_THRESHOLD)
-		high = trunc_page(ISA_DMA_BOUNCE_THRESHOLD);
+		high = ISA_DMA_BOUNCE_THRESHOLD - 1;
 	else
-		high = trunc_page(avail_end);
+		high = avail_end - 1;
 
 	return (bus_dmamem_alloc_range(t, size, alignment, boundary,
 	    segs, nsegs, rsegs, flags, 0, high));

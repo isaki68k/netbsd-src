@@ -1,4 +1,4 @@
-/*	$NetBSD: powernow.c,v 1.10 2017/06/01 02:45:08 chs Exp $ */
+/*	$NetBSD: powernow.c,v 1.12 2021/10/07 12:52:27 msaitoh Exp $ */
 /*	$OpenBSD: powernow-k8.c,v 1.8 2006/06/16 05:58:50 gwk Exp $ */
 
 /*-
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: powernow.c,v 1.10 2017/06/01 02:45:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: powernow.c,v 1.12 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -95,7 +95,7 @@ static struct powernow_k7_quirk {
 	uint32_t rcpusig;	/* Correct cpu signature */
 	uint32_t pcpusig;	/* PST cpu signature */
 } powernow_k7_quirk[] = {
-	{ 0x680, 0x780 }, 	/* Reported by Olaf 'Rhialto' Seibert */
+	{ 0x680, 0x780 },	/* Reported by Olaf 'Rhialto' Seibert */
 	{ 0x6a0, 0x781 },	/* Reported by Eric Schnoebelen */
 	{ 0x6a0, 0x7a0 },	/* Reported by Nino Dehne */
 	{ 0, 0 }
@@ -249,7 +249,7 @@ powernow_detach(device_t self, int flags)
 static int
 powernow_sysctl(device_t self)
 {
-	const struct sysctlnode *freqnode, *node, *pnownode;
+	const struct sysctlnode *freqnode, *node, *cpunode;
 	struct powernow_softc *sc = device_private(self);
 	int rv;
 
@@ -263,14 +263,14 @@ powernow_sysctl(device_t self)
 	if (rv != 0)
 		goto fail;
 
-	rv = sysctl_createv(&sc->sc_log, 0, &node, &pnownode,
-	    0, CTLTYPE_NODE, "powernow", NULL,
+	rv = sysctl_createv(&sc->sc_log, 0, &node, &cpunode,
+	    0, CTLTYPE_NODE, "cpu", NULL,
 	    NULL, 0, NULL, 0, CTL_CREATE, CTL_EOL);
 
 	if (rv != 0)
 		goto fail;
 
-	rv = sysctl_createv(&sc->sc_log, 0, &pnownode, &freqnode,
+	rv = sysctl_createv(&sc->sc_log, 0, &cpunode, &freqnode,
 	    0, CTLTYPE_NODE, "frequency", NULL,
 	    NULL, 0, NULL, 0, CTL_CREATE, CTL_EOL);
 
@@ -493,7 +493,7 @@ powernow_k7_states(device_t self, unsigned int fid, unsigned int vid)
 				    __func__, cpusig, pst->signature));
 
 				cpusig_ok = powernow_k7_check(cpusig,
-				                              pst->signature);
+							      pst->signature);
 
 				if ((cpusig_ok != false &&
 				    (fid == pst->fid && vid == pst->vid))) {
@@ -754,7 +754,7 @@ powernow_k8_states(device_t self, unsigned int fid, unsigned int vid)
 
 		p += sizeof(struct powernow_psb_s);
 
-		for(i = 0; i < psb->n_pst; ++i) {
+		for (i = 0; i < psb->n_pst; ++i) {
 
 			pst = (struct powernow_pst_s *)p;
 

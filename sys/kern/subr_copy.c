@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_copy.c,v 1.11 2019/04/07 16:27:41 thorpej Exp $	*/
+/*	$NetBSD: subr_copy.c,v 1.16 2022/04/09 23:51:09 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2002, 2007, 2008, 2019
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_copy.c,v 1.11 2019/04/07 16:27:41 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_copy.c,v 1.16 2022/04/09 23:51:09 riastradh Exp $");
 
 #define	__UFETCHSTORE_PRIVATE
 #define	__UCAS_PRIVATE
@@ -123,9 +123,7 @@ uiomove(void *buf, size_t n, struct uio *uio)
 		if (cnt > n)
 			cnt = n;
 		if (!VMSPACE_IS_KERNEL_P(vm)) {
-			if (curcpu()->ci_schedstate.spc_flags &
-			    SPCF_SHOULDYIELD)
-				preempt();
+			preempt_point();
 		}
 
 		if (uio->uio_rw == UIO_READ) {
@@ -314,20 +312,21 @@ copyin_pid(pid_t pid, const void *uaddr, void *kaddr, size_t len)
 	struct vmspace *vm;
 	int error;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	p = proc_find(pid);
 	if (p == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return ESRCH;
 	}
 	mutex_enter(p->p_lock);
-	proc_vmspace_getref(p, &vm);
+	error = proc_vmspace_getref(p, &vm);
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
-	error = copyin_vmspace(vm, uaddr, kaddr, len);
-
-	uvmspace_free(vm);
+	if (error == 0) {
+		error = copyin_vmspace(vm, uaddr, kaddr, len);
+		uvmspace_free(vm);
+	}
 	return error;
 }
 
@@ -401,9 +400,32 @@ ucas_critical_cpu_gate(void *arg __unused)
 {
 	int count = SPINLOCK_BACKOFF_MIN;
 
-	KASSERT(ucas_critical_pausing_cpus > 0);
+	KASSERT(atomic_load_relaxed(&ucas_critical_pausing_cpus) > 0);
+
+	/*
+	 * Notify ucas_critical_wait that we have stopped.  Using
+	 * store-release ensures all our memory operations up to the
+	 * IPI happen before the ucas -- no buffered stores on our end
+	 * can clobber it later on, for instance.
+	 *
+	 * Matches atomic_load_acquire in ucas_critical_wait -- turns
+	 * the following atomic_dec_uint into a store-release.
+	 */
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_release();
+#endif
 	atomic_dec_uint(&ucas_critical_pausing_cpus);
-	while (ucas_critical_pausing_cpus != (u_int)-1) {
+
+	/*
+	 * Wait for ucas_critical_exit to reopen the gate and let us
+	 * proceed.  Using a load-acquire ensures the ucas happens
+	 * before any of our memory operations when we return from the
+	 * IPI and proceed -- we won't observe any stale cached value
+	 * that the ucas overwrote, for instance.
+	 *
+	 * Matches atomic_store_release in ucas_critical_exit.
+	 */
+	while (atomic_load_acquire(&ucas_critical_pausing_cpus) != (u_int)-1) {
 		SPINLOCK_BACKOFF(count);
 	}
 }
@@ -411,6 +433,7 @@ ucas_critical_cpu_gate(void *arg __unused)
 static int
 ucas_critical_init(void)
 {
+
 	ucas_critical_ipi = ipi_register(ucas_critical_cpu_gate, NULL);
 	return 0;
 }
@@ -420,7 +443,16 @@ ucas_critical_wait(void)
 {
 	int count = SPINLOCK_BACKOFF_MIN;
 
-	while (ucas_critical_pausing_cpus > 0) {
+	/*
+	 * Wait for all CPUs to stop at the gate.  Using a load-acquire
+	 * ensures all memory operations before they stop at the gate
+	 * happen before the ucas -- no buffered stores in other CPUs
+	 * can clobber it later on, for instance.
+	 *
+	 * Matches membar_release/atomic_dec_uint (store-release) in
+	 * ucas_critical_cpu_gate.
+	 */
+	while (atomic_load_acquire(&ucas_critical_pausing_cpus) > 0) {
 		SPINLOCK_BACKOFF(count);
 	}
 }
@@ -445,8 +477,6 @@ ucas_critical_enter(lwp_t * const l)
 		mutex_enter(&cpu_lock);
 		ucas_critical_splcookie = splhigh();
 		ucas_critical_pausing_cpus = ncpu - 1;
-		membar_enter();
-
 		ipi_trigger_broadcast(ucas_critical_ipi, true);
 		ucas_critical_wait();
 		return;
@@ -462,8 +492,17 @@ ucas_critical_exit(lwp_t * const l)
 
 #if !defined(__HAVE_UCAS_MP) && defined(MULTIPROCESSOR)
 	if (ncpu > 1) {
-		membar_exit();
-		ucas_critical_pausing_cpus = (u_int)-1;
+		/*
+		 * Open the gate and notify all CPUs in
+		 * ucas_critical_cpu_gate that they can now proceed.
+		 * Using a store-release ensures the ucas happens
+		 * before any memory operations they issue after the
+		 * IPI -- they won't observe any stale cache of the
+		 * target word, for instance.
+		 *
+		 * Matches atomic_load_acquire in ucas_critical_cpu_gate.
+		 */
+		atomic_store_release(&ucas_critical_pausing_cpus, (u_int)-1);
 		splx(ucas_critical_splcookie);
 		mutex_exit(&cpu_lock);
 		return;

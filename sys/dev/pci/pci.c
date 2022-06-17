@@ -1,4 +1,4 @@
-/*	$NetBSD: pci.c,v 1.156 2019/10/15 13:27:11 jmcneill Exp $	*/
+/*	$NetBSD: pci.c,v 1.164 2022/01/21 15:55:36 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1997, 1998
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.156 2019/10/15 13:27:11 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.164 2022/01/21 15:55:36 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pci.h"
@@ -52,6 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.156 2019/10/15 13:27:11 jmcneill Exp $");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/ppbvar.h>
+
+#include <dev/pci/pci_calls.h>
 
 #include <net/if.h>
 
@@ -267,6 +269,26 @@ pciprint(void *aux, const char *pnp)
 	return UNCONF;
 }
 
+static devhandle_t
+pci_bus_get_child_devhandle(struct pci_softc *sc, pcitag_t tag)
+{
+	struct pci_bus_get_child_devhandle_args args = {
+		.pc = sc->sc_pc,
+		.tag = tag,
+	};
+
+	if (device_call(sc->sc_dev, PCI_BUS_GET_CHILD_DEVHANDLE(&args)) != 0) {
+		/*
+		 * The call is either not supported or the requested
+		 * device was not found in the platform device tree.
+		 * Return an invalid handle.
+		 */
+		return devhandle_invalid();
+	}
+
+	return args.devhandle;
+}
+
 int
 pci_probe_device(struct pci_softc *sc, pcitag_t tag,
     int (*match)(const struct pci_attach_args *),
@@ -288,13 +310,7 @@ pci_probe_device(struct pci_softc *sc, pcitag_t tag,
 	if (sc->PCI_SC_DEVICESC(device, function).c_dev != NULL && !match)
 		return 0;
 
-	bhlcr = pci_conf_read(pc, tag, PCI_BHLC_REG);
-	if (PCI_HDRTYPE_TYPE(bhlcr) > 2)
-		return 0;
-
 	id = pci_conf_read(pc, tag, PCI_ID_REG);
-	/* csr = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG); */
-	pciclass = pci_conf_read(pc, tag, PCI_CLASS_REG);
 
 	/* Invalid vendor ID value? */
 	if (PCI_VENDOR(id) == PCI_VENDOR_INVALID)
@@ -302,6 +318,13 @@ pci_probe_device(struct pci_softc *sc, pcitag_t tag,
 	/* XXX Not invalid, but we've done this ~forever. */
 	if (PCI_VENDOR(id) == 0)
 		return 0;
+
+	bhlcr = pci_conf_read(pc, tag, PCI_BHLC_REG);
+	if (PCI_HDRTYPE_TYPE(bhlcr) > 2)
+		return 0;
+
+	/* csr = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG); */
+	pciclass = pci_conf_read(pc, tag, PCI_CLASS_REG);
 
 	/* Collect memory range info */
 	memset(sc->PCI_SC_DEVICESC(device, function).c_range, 0,
@@ -414,6 +437,8 @@ pci_probe_device(struct pci_softc *sc, pcitag_t tag,
 	}
 	pa.pa_intrline = PCI_INTERRUPT_LINE(intr);
 
+	devhandle_t devhandle = pci_bus_get_child_devhandle(sc, pa.pa_tag);
+
 #ifdef __HAVE_PCI_MSI_MSIX
 	if (pci_get_ht_capability(pc, tag, PCI_HT_CAP_MSIMAP, &off, &cap)) {
 		/*
@@ -460,8 +485,10 @@ pci_probe_device(struct pci_softc *sc, pcitag_t tag,
 		else
 			c->c_psok = false;
 
-		c->c_dev = config_found_sm_loc(sc->sc_dev, "pci", locs, &pa,
-					     pciprint, config_stdsubmatch);
+		c->c_dev = config_found(sc->sc_dev, &pa, pciprint,
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .locators = locs,
+			   .devhandle = devhandle));
 
 		ret = (c->c_dev != NULL);
 	}
@@ -708,7 +735,7 @@ pci_enumerate_bus(struct pci_softc *sc, const int *locators,
 		if (pci_get_capability(ppbpc, ppbtag, PCI_CAP_PCIEXPRESS,
 		    &pciecap, &capreg) != 0) {
 			switch (PCIE_XCAP_TYPE(capreg)) {
-			case PCIE_XCAP_TYPE_ROOT:
+			case PCIE_XCAP_TYPE_RP:
 			case PCIE_XCAP_TYPE_DOWN:
 			case PCIE_XCAP_TYPE_PCI2PCIE:
 				downstream_port = true;
@@ -934,7 +961,7 @@ pci_conf_capture(pci_chipset_tag_t pc, pcitag_t tag,
 	/* For MSI */
 	if (pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL) != 0) {
 		bool bit64, pvmask;
-		
+
 		pcs->msi_ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
 
 		bit64 = pcs->msi_ctl & PCI_MSI_CTL_64BIT_ADDR;

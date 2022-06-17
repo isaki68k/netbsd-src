@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmc_mem.c,v 1.70 2019/10/28 06:31:39 mlelstv Exp $	*/
+/*	$NetBSD: sdmmc_mem.c,v 1.74 2021/08/03 07:54:39 msaitoh Exp $	*/
 /*	$OpenBSD: sdmmc_mem.c,v 1.10 2009/01/09 10:55:22 jsg Exp $	*/
 
 /*
@@ -45,7 +45,7 @@
 /* Routines for SD/MMC memory cards. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdmmc_mem.c,v 1.70 2019/10/28 06:31:39 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdmmc_mem.c,v 1.74 2021/08/03 07:54:39 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -255,18 +255,17 @@ mmc_mode:
 		}
 
 		error = sdmmc_mem_signal_voltage(sc, SDMMC_SIGNAL_VOLTAGE_180);
-		if (error)
+		if (error) {
+			DPRINTF(("%s: voltage change on host failed\n",
+			    SDMMCDEVNAME(sc)));
 			goto out;
+		}
 
 		SET(sc->sc_flags, SMF_UHS_MODE);
 	}
 
 out:
 	SDMMC_UNLOCK(sc);
-
-	if (error)
-		printf("%s: %s failed with error %d\n", SDMMCDEVNAME(sc),
-		    __func__, error);
 
 	return error;
 }
@@ -676,7 +675,7 @@ sdmmc_mem_send_if_cond(struct sdmmc_softc *sc, uint32_t ocr, uint32_t *ocrp)
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.c_arg = ocr;
-	cmd.c_flags = SCF_CMD_BCR | SCF_RSP_R7 | SCF_RSP_SPI_R7;
+	cmd.c_flags = SCF_CMD_BCR | SCF_RSP_R7 | SCF_RSP_SPI_R7 | SCF_TOUT_OK;
 	cmd.c_opcode = SD_SEND_IF_COND;
 
 	error = sdmmc_mmc_command(sc, &cmd);
@@ -833,9 +832,14 @@ sdmmc_mem_sd_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 		DPRINTF(("%s: switch func mode 0\n", SDMMCDEVNAME(sc)));
 		error = sdmmc_mem_sd_switch(sf, 0, 1, 0, &status);
 		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "switch func mode 0 failed\n");
-			return error;
+			if (error == ENOTSUP) {
+				/* Not supported by controller */
+				goto skipswitchfuncs;
+			} else {
+				aprint_error_dev(sc->sc_dev,
+				    "switch func mode 0 failed\n");
+				return error;
+			}
 		}
 
 		support_func = SFUNC_STATUS_GROUP(&status, 1);
@@ -887,6 +891,7 @@ sdmmc_mem_sd_init(struct sdmmc_softc *sc, struct sdmmc_function *sf)
 			delay(25);
 		}
 	}
+skipswitchfuncs:
 
 	/* update bus clock */
 	if (sc->sc_busclk > sf->csd.tran_speed)
@@ -1599,8 +1604,8 @@ sdmmc_mem_sd_switch(struct sdmmc_function *sf, int mode, int group,
 	cmd.c_datalen = statlen;
 	cmd.c_blklen = statlen;
 	cmd.c_opcode = SD_SEND_SWITCH_FUNC;
-	cmd.c_arg =
-	    (!!mode << 31) | (function << gsft) | (0x00ffffff & ~(0xf << gsft));
+	cmd.c_arg = ((uint32_t)!!mode << 31) |
+	    (function << gsft) | (0x00ffffff & ~(0xf << gsft));
 	cmd.c_flags = SCF_CMD_ADTC | SCF_CMD_READ | SCF_RSP_R1 | SCF_RSP_SPI_R1;
 	if (ISSET(sc->sc_caps, SMC_CAPS_DMA))
 		cmd.c_dmamap = sc->sc_dmap;

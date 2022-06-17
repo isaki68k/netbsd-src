@@ -1,4 +1,4 @@
-/*	$NetBSD: plcom.c,v 1.59 2019/07/23 15:56:14 jmcneill Exp $	*/
+/*	$NetBSD: plcom.c,v 1.64 2021/10/20 01:09:49 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2001 ARM Ltd
@@ -94,7 +94,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plcom.c,v 1.59 2019/07/23 15:56:14 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plcom.c,v 1.64 2021/10/20 01:09:49 jmcneill Exp $");
 
 #include "opt_plcom.h"
 #include "opt_ddb.h"
@@ -297,12 +297,12 @@ pwritem1(struct plcom_instance *pi, bus_size_t o, const uint8_t *datap,
 
 #define	PREAD1(pi, reg)		pread1(pi, reg)
 #define	PREAD4(pi, reg)		\
-	(bus_space_read_4((pi)->pi_iot, (pi)->pi_ioh, (reg)))
+	bus_space_read_4((pi)->pi_iot, (pi)->pi_ioh, (reg))
 
 #define	PWRITE1(pi, reg, val)	pwrite1(pi, reg, val)
 #define	PWRITEM1(pi, reg, d, c)	pwritem1(pi, reg, d, c)
 #define	PWRITE4(pi, reg, val)	\
-	(bus_space_write_4((pi)->pi_iot, (pi)->pi_ioh, (reg), (val)))
+	bus_space_write_4((pi)->pi_iot, (pi)->pi_ioh, (reg), (val))
 
 int
 pl010comspeed(long speed, long frequency)
@@ -514,14 +514,9 @@ plcom_attach_subr(struct plcom_softc *sc)
 	tp->t_hwiflow = plcomhwiflow;
 
 	sc->sc_tty = tp;
-	sc->sc_rbuf = malloc(plcom_rbuf_size << 1, M_DEVBUF, M_NOWAIT);
+	sc->sc_rbuf = malloc(plcom_rbuf_size << 1, M_DEVBUF, M_WAITOK);
 	sc->sc_rbput = sc->sc_rbget = sc->sc_rbuf;
 	sc->sc_rbavail = plcom_rbuf_size;
-	if (sc->sc_rbuf == NULL) {
-		aprint_error_dev(sc->sc_dev,
-		    "unable to allocate ring buffer\n");
-		return;
-	}
 	sc->sc_ebuf = sc->sc_rbuf + (plcom_rbuf_size << 1);
 
 	tty_attach(tp);
@@ -691,10 +686,8 @@ plcom_shutdown(struct plcom_softc *sc)
 	 */
 	if (ISSET(tp->t_cflag, HUPCL)) {
 		plcom_modem(sc, 0);
-		mutex_spin_exit(&sc->sc_lock);
-		/* XXX will only timeout */
-		(void) kpause(ttclos, false, hz, NULL);
-		mutex_spin_enter(&sc->sc_lock);
+		microuptime(&sc->sc_hup_pending);
+		sc->sc_hup_pending.tv_sec++;
 	}
 
 	sc->sc_cr = 0;
@@ -778,6 +771,7 @@ plcomopen(dev_t dev, int flag, int mode, struct lwp *l)
 	 */
 	if (!ISSET(tp->t_state, TS_ISOPEN) && tp->t_wopen == 0) {
 		struct termios t;
+		struct timeval now, diff;
 
 		tp->t_dev = dev;
 
@@ -793,6 +787,19 @@ plcomopen(dev_t dev, int flag, int mode, struct lwp *l)
 			plcom_config(sc);
 		} else {
 			mutex_spin_enter(&sc->sc_lock);
+		}
+
+		if (timerisset(&sc->sc_hup_pending)) {
+			microuptime(&now);
+			while (timercmp(&now, &sc->sc_hup_pending, <)) {
+				timersub(&sc->sc_hup_pending, &now, &diff);
+				const int ms = diff.tv_sec * 100 +
+				    diff.tv_usec / 1000;
+				kpause(ttclos, false, uimax(mstohz(ms), 1),
+				    &sc->sc_lock);
+				microuptime(&now);
+			}
+			timerclear(&sc->sc_hup_pending);
 		}
 
 		/* Turn on interrupts. */
@@ -2331,11 +2338,6 @@ plcom_common_putc(dev_t dev, struct plcom_instance *pi, int c)
 
 	PWRITE1(pi, PL01XCOM_DR, c);
 	PLCOM_BARRIER(pi, BR | BW);
-
-	/* wait for this transmission to complete */
-	timo = 1500000;
-	while (!ISSET(PREAD1(pi, PL01XCOM_FR), PL01X_FR_TXFE) && --timo)
-		continue;
 
 	splx(s);
 }

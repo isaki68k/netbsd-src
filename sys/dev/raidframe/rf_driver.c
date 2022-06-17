@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_driver.c,v 1.136 2019/10/10 03:43:59 christos Exp $	*/
+/*	$NetBSD: rf_driver.c,v 1.139 2021/07/23 02:35:14 oster Exp $	*/
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -66,7 +66,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_driver.c,v 1.136 2019/10/10 03:43:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_driver.c,v 1.139 2021/07/23 02:35:14 oster Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_diagnostic.h"
@@ -128,7 +128,7 @@ static void rf_ConfigureDebug(RF_Config_t * cfgPtr);
 static void set_debug_option(char *name, long val);
 static void rf_UnconfigureArray(void);
 static void rf_ShutdownRDFreeList(void *);
-static int rf_ConfigureRDFreeList(RF_ShutdownList_t **);
+static int rf_ConfigureRDFreeList(RF_ShutdownList_t **, RF_Raid_t *, RF_Config_t *);
 
 rf_declare_mutex2(rf_printf_mutex);	/* debug only:  avoids interleaved
 					 * printfs by different stripes */
@@ -147,7 +147,7 @@ static rf_declare_mutex2(configureMutex); /* used to lock the configuration
 static RF_ShutdownList_t *globalShutdown;	/* non array-specific
 						 * stuff */
 
-static int rf_ConfigureRDFreeList(RF_ShutdownList_t ** listp);
+static int rf_ConfigureRDFreeList(RF_ShutdownList_t ** listp, RF_Raid_t *raidPtr, RF_Config_t *cfgPtr);
 static int rf_AllocEmergBuffers(RF_Raid_t *);
 static void rf_FreeEmergBuffers(RF_Raid_t *);
 static void rf_destroy_mutex_cond(RF_Raid_t *);
@@ -300,6 +300,8 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 {
 	RF_RowCol_t col;
 	int rc;
+	bool swapped = false;
+	bool first = true;
 
 	rf_lock_mutex2(configureMutex);
 	configureCount++;
@@ -307,7 +309,6 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 		rf_init_mutex2(rf_printf_mutex, IPL_VM);
 
 		/* initialize globals */
-
 		DO_INIT_CONFIGURE(rf_ConfigureAllocList);
 
 		/*
@@ -319,19 +320,9 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 #if RF_ACC_TRACE > 0
 		DO_INIT_CONFIGURE(rf_ConfigureAccessTrace);
 #endif
-		DO_INIT_CONFIGURE(rf_ConfigureMapModule);
-		DO_INIT_CONFIGURE(rf_ConfigureReconEvent);
-		DO_INIT_CONFIGURE(rf_ConfigureCallback);
-		DO_INIT_CONFIGURE(rf_ConfigureRDFreeList);
 		DO_INIT_CONFIGURE(rf_ConfigureNWayXor);
-		DO_INIT_CONFIGURE(rf_ConfigureStripeLockFreeList);
-		DO_INIT_CONFIGURE(rf_ConfigureMCPair);
-		DO_INIT_CONFIGURE(rf_ConfigureDAGs);
 		DO_INIT_CONFIGURE(rf_ConfigureDAGFuncs);
-		DO_INIT_CONFIGURE(rf_ConfigureReconstruction);
 		DO_INIT_CONFIGURE(rf_ConfigureCopyback);
-		DO_INIT_CONFIGURE(rf_ConfigureDiskQueueSystem);
-		DO_INIT_CONFIGURE(rf_ConfigurePSStatus);
 		isconfigged = 1;
 	}
 	rf_unlock_mutex2(configureMutex);
@@ -356,6 +347,17 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 	raidPtr->status = rf_rs_optimal;
 	raidPtr->reconControl = NULL;
 
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureMapModule);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureReconEvent);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureCallback);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureRDFreeList);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureStripeLockFreeList);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureMCPair);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureDAGs);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureReconstruction);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigureDiskQueueSystem);
+	DO_RAID_INIT_CONFIGURE(rf_ConfigurePSStatus);
+	
 	DO_RAID_INIT_CONFIGURE(rf_ConfigureEngine);
 	DO_RAID_INIT_CONFIGURE(rf_ConfigureStripeLocks);
 
@@ -377,6 +379,9 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 
 	DO_RAID_INIT_CONFIGURE(rf_ConfigureLayout);
 
+
+	
+	
 	/* Initialize per-RAID PSS bits */
 	rf_InitPSStatus(raidPtr);
 
@@ -430,10 +435,21 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 	printf("raid%d: Components:", raidPtr->raidid);
 
 	for (col = 0; col < raidPtr->numCol; col++) {
+		RF_ComponentLabel_t *clabel;
+		bool compswapped;
+
 		printf(" %s", raidPtr->Disks[col].devname);
 		if (RF_DEAD_DISK(raidPtr->Disks[col].status)) {
 			printf("[**FAILED**]");
 		}
+		clabel = raidget_component_label(raidPtr, col);
+		compswapped = clabel->version ==
+			      bswap32(RF_COMPONENT_LABEL_VERSION);
+		if (first)
+			swapped = compswapped;
+		else if (swapped != compswapped)
+			printf("raid%d: Component %d has different endian "
+			       "than first component.", raidPtr->raidid, col);
 	}
 	printf("\n");
 	printf("raid%d: Total Sectors: %" PRIu64 " (%" PRIu64 " MB)\n",
@@ -441,6 +457,9 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 	       raidPtr->totalSectors,
 	       (raidPtr->totalSectors / 1024 *
 				(1 << raidPtr->logBytesPerSector) / 1024));
+	if (swapped)
+		printf("raid%d: Using swapped-endian component labels.\n",
+		    raidPtr->raidid);
 
 	return (0);
 }
@@ -475,7 +494,7 @@ rf_AllocEmergBuffers(RF_Raid_t *raidPtr)
 				 raidPtr->logBytesPerSector,
 				 M_RAIDFRAME, M_WAITOK);
 		if (tmpbuf) {
-			vple = rf_AllocVPListElem();
+			vple = rf_AllocVPListElem(raidPtr);
 			vple->p= tmpbuf;
 			vple->next = raidPtr->iobuf;
 			raidPtr->iobuf = vple;
@@ -494,7 +513,7 @@ rf_AllocEmergBuffers(RF_Raid_t *raidPtr)
                                  raidPtr->logBytesPerSector),
                                  M_RAIDFRAME, M_WAITOK);
                 if (tmpbuf) {
-                        vple = rf_AllocVPListElem();
+                        vple = rf_AllocVPListElem(raidPtr);
                         vple->p= tmpbuf;
                         vple->next = raidPtr->stripebuf;
                         raidPtr->stripebuf = vple;
@@ -519,7 +538,7 @@ rf_FreeEmergBuffers(RF_Raid_t *raidPtr)
 		tmp = raidPtr->iobuf;
 		raidPtr->iobuf = raidPtr->iobuf->next;
 		free(tmp->p, M_RAIDFRAME);
-		rf_FreeVPListElem(tmp);
+		rf_FreeVPListElem(raidPtr,tmp);
 	}
 
 	/* Free the emergency stripe buffers */
@@ -527,24 +546,29 @@ rf_FreeEmergBuffers(RF_Raid_t *raidPtr)
 		tmp = raidPtr->stripebuf;
 		raidPtr->stripebuf = raidPtr->stripebuf->next;
 		free(tmp->p, M_RAIDFRAME);
-		rf_FreeVPListElem(tmp);
+		rf_FreeVPListElem(raidPtr, tmp);
 	}
 }
 
 
 static void
-rf_ShutdownRDFreeList(void *ignored)
+rf_ShutdownRDFreeList(void *arg)
 {
-	pool_destroy(&rf_pools.rad);
+	RF_Raid_t *raidPtr;
+
+	raidPtr = (RF_Raid_t *) arg;
+	
+	pool_destroy(&raidPtr->pools.rad);
 }
 
 static int
-rf_ConfigureRDFreeList(RF_ShutdownList_t **listp)
+rf_ConfigureRDFreeList(RF_ShutdownList_t **listp, RF_Raid_t *raidPtr,
+		       RF_Config_t *cfgPtr)
 {
 
-	rf_pool_init(&rf_pools.rad, sizeof(RF_RaidAccessDesc_t),
-		     "rf_rad_pl", RF_MIN_FREE_RAD, RF_MAX_FREE_RAD);
-	rf_ShutdownCreate(listp, rf_ShutdownRDFreeList, NULL);
+	rf_pool_init(raidPtr, raidPtr->poolNames.rad, &raidPtr->pools.rad, sizeof(RF_RaidAccessDesc_t),
+		     "rad", RF_MIN_FREE_RAD, RF_MAX_FREE_RAD);
+	rf_ShutdownCreate(listp, rf_ShutdownRDFreeList, raidPtr);
 	return (0);
 }
 
@@ -556,7 +580,7 @@ rf_AllocRaidAccDesc(RF_Raid_t *raidPtr, RF_IoType_t type,
 {
 	RF_RaidAccessDesc_t *desc;
 
-	desc = pool_get(&rf_pools.rad, PR_WAITOK);
+	desc = pool_get(&raidPtr->pools.rad, PR_WAITOK);
 
 	rf_lock_mutex2(raidPtr->rad_lock);
 	if (raidPtr->waitShutdown) {
@@ -566,7 +590,7 @@ rf_AllocRaidAccDesc(RF_Raid_t *raidPtr, RF_IoType_t type,
 	         */
 
 		rf_unlock_mutex2(raidPtr->rad_lock);
-		pool_put(&rf_pools.rad, desc);
+		pool_put(&raidPtr->pools.rad, desc);
 		return (NULL);
 	}
 	raidPtr->nAccOutstanding++;
@@ -612,7 +636,7 @@ rf_FreeRaidAccDesc(RF_RaidAccessDesc_t *desc)
 	while(dagList != NULL) {
 		temp = dagList;
 		dagList = dagList->next;
-		rf_FreeDAGList(temp);
+		rf_FreeDAGList(raidPtr, temp);
 	}
 
 	while (desc->iobufs) {
@@ -627,7 +651,7 @@ rf_FreeRaidAccDesc(RF_RaidAccessDesc_t *desc)
 		rf_FreeStripeBuffer(raidPtr, tmp);
 	}
 
-	pool_put(&rf_pools.rad, desc);
+	pool_put(&raidPtr->pools.rad, desc);
 	rf_lock_mutex2(raidPtr->rad_lock);
 	raidPtr->nAccOutstanding--;
 	if (raidPtr->waitShutdown) {
@@ -641,13 +665,11 @@ rf_FreeRaidAccDesc(RF_RaidAccessDesc_t *desc)
  * when either the DAG library is incomplete or there are too many
  * failures in a parity group.
  *
- * type should be read or write async_flag should be RF_TRUE or
- * RF_FALSE bp_in is a buf pointer.  void *to facilitate ignoring it
- * outside the kernel
+ * type should be read or write.  bp_in is a buf pointer.  void *to
+ * facilitate ignoring it outside the kernel
  ********************************************************************/
 int
-rf_DoAccess(RF_Raid_t * raidPtr, RF_IoType_t type, int async_flag,
-	    RF_RaidAddr_t raidAddress, RF_SectorCount_t numBlocks,
+rf_DoAccess(RF_Raid_t * raidPtr, RF_IoType_t type, RF_RaidAddr_t raidAddress, RF_SectorCount_t numBlocks,
 	    void *bufPtr, struct buf *bp, RF_RaidAccessFlags_t flags)
 {
 	RF_RaidAccessDesc_t *desc;
@@ -680,7 +702,6 @@ rf_DoAccess(RF_Raid_t * raidPtr, RF_IoType_t type, int async_flag,
 #if RF_ACC_TRACE > 0
 	RF_ETIMER_START(desc->tracerec.tot_timer);
 #endif
-	desc->async_flag = async_flag;
 
 	if (raidPtr->parity_map != NULL && 
 	    type == RF_IO_TYPE_WRITE)
@@ -832,7 +853,7 @@ rf_ResumeNewRequests(RF_Raid_t *raidPtr)
 		t = cb;
 		cb = cb->next;
 		(t->callbackFunc) (t->callbackArg);
-		rf_FreeCallbackFuncDesc(t);
+		rf_FreeCallbackFuncDesc(raidPtr, t);
 	}
 }
 /*****************************************************************************************

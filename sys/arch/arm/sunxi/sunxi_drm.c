@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_drm.c,v 1.7 2019/02/06 03:07:08 jmcneill Exp $ */
+/* $NetBSD: sunxi_drm.c,v 1.24 2022/04/21 21:22:25 andvar Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,36 +27,50 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_drm.c,v 1.7 2019/02/06 03:07:08 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_drm.c,v 1.24 2022/04/21 21:22:25 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/conf.h>
+#include <sys/systm.h>
 
+#include <uvm/uvm_device.h>
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_object.h>
-#include <uvm/uvm_device.h>
 
-#include <drm/drmP.h>
-#include <drm/drm_crtc_helper.h>
-#include <drm/drm_fb_helper.h>
-
-#include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_port.h>
+#include <dev/fdt/fdtvar.h>
 
 #include <arm/sunxi/sunxi_drm.h>
+
+#include <drm/drm_auth.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_vblank.h>
+
+#define	SUNXI_DRM_MAX_WIDTH	3840
+#define	SUNXI_DRM_MAX_HEIGHT	2160
+
+/*
+ * The DRM headers break trunc_page/round_page macros with a redefinition
+ * of PAGE_MASK. Use our own macros instead.
+ */
+#define	SUNXI_PAGE_MASK		(PAGE_SIZE - 1)
+#define	SUNXI_TRUNC_PAGE(x)	((x) & ~SUNXI_PAGE_MASK)
+#define	SUNXI_ROUND_PAGE(x)	(((x) + SUNXI_PAGE_MASK) & ~SUNXI_PAGE_MASK)
 
 static TAILQ_HEAD(, sunxi_drm_endpoint) sunxi_drm_endpoints =
     TAILQ_HEAD_INITIALIZER(sunxi_drm_endpoints);
 
-static const char * const compatible[] = {
-	"allwinner,sun8i-h3-display-engine",
-	"allwinner,sun50i-a64-display-engine",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "allwinner,sun8i-h3-display-engine" },
+	{ .compat = "allwinner,sun50i-a64-display-engine" },
+	DEVICE_COMPAT_EOL
 };
 
 static const char * fb_compatible[] = {
@@ -68,18 +82,19 @@ static int	sunxi_drm_match(device_t, cfdata_t, void *);
 static void	sunxi_drm_attach(device_t, device_t, void *);
 
 static void	sunxi_drm_init(device_t);
-
-static int	sunxi_drm_set_busid(struct drm_device *, struct drm_master *);
+static vmem_t	*sunxi_drm_alloc_cma_pool(struct drm_device *, size_t);
 
 static uint32_t	sunxi_drm_get_vblank_counter(struct drm_device *, unsigned int);
 static int	sunxi_drm_enable_vblank(struct drm_device *, unsigned int);
 static void	sunxi_drm_disable_vblank(struct drm_device *, unsigned int);
 
 static int	sunxi_drm_load(struct drm_device *, unsigned long);
-static int	sunxi_drm_unload(struct drm_device *);
+static void	sunxi_drm_unload(struct drm_device *);
+
+static void	sunxi_drm_task_work(struct work *, void *);
 
 static struct drm_driver sunxi_drm_driver = {
-	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_PRIME,
+	.driver_features = DRIVER_MODESET | DRIVER_GEM,
 	.dev_priv_size = 0,
 	.load = sunxi_drm_load,
 	.unload = sunxi_drm_unload,
@@ -89,7 +104,6 @@ static struct drm_driver sunxi_drm_driver = {
 	.gem_uvm_ops = &drm_gem_cma_uvm_ops,
 
 	.dumb_create = drm_gem_cma_dumb_create,
-	.dumb_map_offset = drm_gem_cma_dumb_map_offset,
 	.dumb_destroy = drm_gem_dumb_destroy,
 
 	.get_vblank_counter = sunxi_drm_get_vblank_counter,
@@ -102,8 +116,6 @@ static struct drm_driver sunxi_drm_driver = {
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
-
-	.set_busid = sunxi_drm_set_busid,
 };
 
 CFATTACH_DECL_NEW(sunxi_drm, sizeof(struct sunxi_drm_softc),
@@ -114,7 +126,7 @@ sunxi_drm_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -126,22 +138,31 @@ sunxi_drm_attach(device_t parent, device_t self, void *aux)
 	prop_dictionary_t dict = device_properties(self);
 	bool is_disabled;
 
-	sc->sc_dev = self;
-	sc->sc_dmat = faa->faa_dmat;
-	sc->sc_bst = faa->faa_bst;
-	sc->sc_phandle = faa->faa_phandle;
-
 	aprint_naive("\n");
 
-	if (prop_dictionary_get_bool(dict, "disabled", &is_disabled) && is_disabled) {
+	if (prop_dictionary_get_bool(dict, "disabled", &is_disabled) &&
+	    is_disabled) {
 		aprint_normal(": Display Engine Pipeline (disabled)\n");
 		return;
 	}
 
 	aprint_normal(": Display Engine Pipeline\n");
 
+	sc->sc_dev = self;
+	sc->sc_dmat = faa->faa_dmat;
+	sc->sc_bst = faa->faa_bst;
+	sc->sc_phandle = faa->faa_phandle;
+	sc->sc_task_thread = NULL;
+	SIMPLEQ_INIT(&sc->sc_tasks);
+	if (workqueue_create(&sc->sc_task_wq, "sunxidrm",
+		&sunxi_drm_task_work, NULL, PRI_NONE, IPL_NONE, WQ_MPSAFE)) {
+		aprint_error_dev(self, "unable to create workqueue\n");
+		sc->sc_task_wq = NULL;
+		return;
+	}
+
 	sc->sc_ddev = drm_dev_alloc(driver, sc->sc_dev);
-	if (sc->sc_ddev == NULL) {
+	if (IS_ERR(sc->sc_ddev)) {
 		aprint_error_dev(self, "couldn't allocate DRM device\n");
 		return;
 	}
@@ -163,34 +184,60 @@ sunxi_drm_init(device_t dev)
 	struct drm_driver * const driver = &sunxi_drm_driver;
 	int error;
 
+	/*
+	 * Cause any tasks issued synchronously during attach to be
+	 * processed at the end of this function.
+	 */
+	sc->sc_task_thread = curlwp;
+
 	error = -drm_dev_register(sc->sc_ddev, 0);
 	if (error) {
-		drm_dev_unref(sc->sc_ddev);
 		aprint_error_dev(dev, "couldn't register DRM device: %d\n",
 		    error);
-		return;
+		goto out;
 	}
+	sc->sc_dev_registered = true;
 
 	aprint_normal_dev(dev, "initialized %s %d.%d.%d %s on minor %d\n",
 	    driver->name, driver->major, driver->minor, driver->patchlevel,
 	    driver->date, sc->sc_ddev->primary->index);
+
+	/*
+	 * Process asynchronous tasks queued synchronously during
+	 * attach.  This will be for display detection to attach a
+	 * framebuffer, so we have the opportunity for a console device
+	 * to attach before autoconf has completed, in time for init(8)
+	 * to find that console without panicking.
+	 */
+	while (!SIMPLEQ_EMPTY(&sc->sc_tasks)) {
+		struct sunxi_drm_task *const task =
+		    SIMPLEQ_FIRST(&sc->sc_tasks);
+
+		SIMPLEQ_REMOVE_HEAD(&sc->sc_tasks, sdt_u.queue);
+		(*task->sdt_fn)(task);
+	}
+
+out:	/* Cause any subsequent tasks to be processed by the workqueue.  */
+	atomic_store_relaxed(&sc->sc_task_thread, NULL);
 }
 
-static int
-sunxi_drm_set_busid(struct drm_device *ddev, struct drm_master *master)
+static vmem_t *
+sunxi_drm_alloc_cma_pool(struct drm_device *ddev, size_t cma_size)
 {
 	struct sunxi_drm_softc * const sc = sunxi_drm_private(ddev);
-	char id[32];
+	bus_dma_segment_t segs[1];
+	int nsegs;
+	int error;
 
-	snprintf(id, sizeof(id), "platform:sunxi:%u", device_unit(sc->sc_dev));
+	error = bus_dmamem_alloc(sc->sc_dmat, cma_size, PAGE_SIZE, 0,
+	    segs, 1, &nsegs, BUS_DMA_NOWAIT);
+	if (error) {
+		aprint_error_dev(sc->sc_dev, "couldn't allocate CMA pool\n");
+		return NULL;
+	}
 
-	master->unique = kzalloc(strlen(id) + 1, GFP_KERNEL);
-	if (master->unique == NULL)
-		return -ENOMEM;
-	strcpy(master->unique, id);
-	master->unique_len = strlen(master->unique);
-
-	return 0;
+	return vmem_create("sunxidrm", segs[0].ds_addr, segs[0].ds_len,
+	    PAGE_SIZE, NULL, NULL, NULL, 0, VM_SLEEP, IPL_NONE);
 }
 
 static int
@@ -208,7 +255,7 @@ sunxi_drm_fb_destroy(struct drm_framebuffer *fb)
 	struct sunxi_drm_framebuffer *sfb = to_sunxi_drm_framebuffer(fb);
 
 	drm_framebuffer_cleanup(fb);
-	drm_gem_object_unreference_unlocked(&sfb->obj->base);
+	drm_gem_object_put_unlocked(&sfb->obj->base);
 	kmem_free(sfb, sizeof(*sfb));
 }
 
@@ -219,7 +266,7 @@ static const struct drm_framebuffer_funcs sunxi_drm_framebuffer_funcs = {
 
 static struct drm_framebuffer *
 sunxi_drm_fb_create(struct drm_device *ddev, struct drm_file *file,
-    struct drm_mode_fb_cmd2 *cmd)
+    const struct drm_mode_fb_cmd2 *cmd)
 {
 	struct sunxi_drm_framebuffer *fb;
 	struct drm_gem_object *gem_obj;
@@ -228,31 +275,13 @@ sunxi_drm_fb_create(struct drm_device *ddev, struct drm_file *file,
 	if (cmd->flags)
 		return NULL;
 
-	gem_obj = drm_gem_object_lookup(ddev, file, cmd->handles[0]);
+	gem_obj = drm_gem_object_lookup(file, cmd->handles[0]);
 	if (gem_obj == NULL)
 		return NULL;
 
 	fb = kmem_zalloc(sizeof(*fb), KM_SLEEP);
 	fb->obj = to_drm_gem_cma_obj(gem_obj);
-	fb->base.pitches[0] = cmd->pitches[0];
-	fb->base.pitches[1] = cmd->pitches[1];
-	fb->base.pitches[2] = cmd->pitches[2];
-	fb->base.offsets[0] = cmd->offsets[0];
-	fb->base.offsets[1] = cmd->offsets[2];
-	fb->base.offsets[2] = cmd->offsets[1];
-	fb->base.width = cmd->width;
-	fb->base.height = cmd->height;
-	fb->base.pixel_format = cmd->pixel_format;
-	fb->base.bits_per_pixel = drm_format_plane_cpp(fb->base.pixel_format, 0) * 8;
-
-	switch (fb->base.pixel_format) {
-	case DRM_FORMAT_XRGB8888:
-	case DRM_FORMAT_ARGB8888:
-		fb->base.depth = 32;
-		break;
-	default:
-		break;
-	}
+	drm_helper_mode_fill_fb_struct(ddev, &fb->base, cmd);
 
 	error = drm_framebuffer_init(ddev, &fb->base, &sunxi_drm_framebuffer_funcs);
 	if (error != 0)
@@ -263,7 +292,7 @@ sunxi_drm_fb_create(struct drm_device *ddev, struct drm_file *file,
 dealloc:
 	drm_framebuffer_cleanup(&fb->base);
 	kmem_free(fb, sizeof(*fb));
-	drm_gem_object_unreference_unlocked(gem_obj);
+	drm_gem_object_put_unlocked(gem_obj);
 
 	return NULL;
 }
@@ -273,6 +302,39 @@ static struct drm_mode_config_funcs sunxi_drm_mode_config_funcs = {
 };
 
 static int
+sunxi_drm_simplefb_lookup(bus_addr_t *paddr, bus_size_t *psize)
+{
+	static const struct device_compatible_entry simplefb_compat[] = {
+		{ .compat = "simple-framebuffer" },
+		DEVICE_COMPAT_EOL
+	};
+	int chosen, child, error;
+	bus_addr_t addr_end;
+
+	chosen = OF_finddevice("/chosen");
+	if (chosen == -1)
+		return ENOENT;
+
+	for (child = OF_child(chosen); child; child = OF_peer(child)) {
+		if (!fdtbus_status_okay(child))
+			continue;
+		if (!of_compatible_match(child, simplefb_compat))
+			continue;
+		error = fdtbus_get_reg(child, 0, paddr, psize);
+		if (error != 0)
+			return error;
+
+		/* Reclaim entire pages used by the simplefb */
+		addr_end = *paddr + *psize;
+		*paddr = SUNXI_TRUNC_PAGE(*paddr);
+		*psize = SUNXI_ROUND_PAGE(addr_end - *paddr);
+		return 0;
+	}
+
+	return ENOENT;
+}
+
+static int
 sunxi_drm_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_size *sizes)
 {
 	struct sunxi_drm_softc * const sc = sunxi_drm_private(helper->dev);
@@ -280,6 +342,9 @@ sunxi_drm_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_si
 	struct sunxi_drm_framebuffer *sfb = to_sunxi_drm_framebuffer(helper->fb);
 	struct drm_framebuffer *fb = helper->fb;
 	struct sunxi_drmfb_attach_args sfa;
+	bus_addr_t sfb_addr;
+	bus_size_t sfb_size;
+	size_t cma_size;
 	int error;
 
 	const u_int width = sizes->surface_width;
@@ -287,6 +352,32 @@ sunxi_drm_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_si
 	const u_int pitch = width * (32 / 8);
 
 	const size_t size = roundup(height * pitch, PAGE_SIZE);
+
+	if (sunxi_drm_simplefb_lookup(&sfb_addr, &sfb_size) != 0)
+		sfb_size = 0;
+
+	/* Reserve enough memory for a 4K plane, rounded to 1MB */
+	cma_size = (SUNXI_DRM_MAX_WIDTH * SUNXI_DRM_MAX_HEIGHT * 4);
+	if (sfb_size == 0) {
+		/* Add memory for FB console if we cannot reclaim bootloader memory */
+		cma_size += size;
+	}
+	cma_size = roundup(cma_size, 1024 * 1024);
+	sc->sc_ddev->cma_pool = sunxi_drm_alloc_cma_pool(sc->sc_ddev, cma_size);
+	if (sc->sc_ddev->cma_pool != NULL) {
+		if (sfb_size != 0) {
+			error = vmem_add(sc->sc_ddev->cma_pool, sfb_addr,
+			    sfb_size, VM_SLEEP);
+			if (error != 0)
+				sfb_size = 0;
+		}
+		aprint_normal_dev(sc->sc_dev, "reserved %u MB DRAM for CMA",
+		    (u_int)((cma_size + sfb_size) / (1024 * 1024)));
+		if (sfb_size != 0)
+			aprint_normal(" (%u MB reclaimed from bootloader)",
+			    (u_int)(sfb_size / (1024 * 1024)));
+		aprint_normal("\n");
+	}
 
 	sfb->obj = drm_gem_cma_create(ddev, size);
 	if (sfb->obj == NULL) {
@@ -298,8 +389,8 @@ sunxi_drm_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_si
 	fb->offsets[0] = 0;
 	fb->width = width;
 	fb->height = height;
-	fb->pixel_format = DRM_FORMAT_XRGB8888;
-	drm_fb_get_bpp_depth(fb->pixel_format, &fb->depth, &fb->bits_per_pixel);
+	fb->format = drm_format_info(DRM_FORMAT_XRGB8888);
+	fb->dev = ddev;
 
 	error = drm_framebuffer_init(ddev, fb, &sunxi_drm_framebuffer_funcs);
 	if (error != 0) {
@@ -315,7 +406,8 @@ sunxi_drm_fb_probe(struct drm_fb_helper *helper, struct drm_fb_helper_surface_si
 	sfa.sfa_fb_dmat = sc->sc_dmat;
 	sfa.sfa_fb_linebytes = helper->fb->pitches[0];
 
-	helper->fbdev = config_found_ia(ddev->dev, "sunxifbbus", &sfa, NULL);
+	helper->fbdev = config_found(ddev->dev, &sfa, NULL,
+	    CFARGS(.iattr = "sunxifbbus"));
 	if (helper->fbdev == NULL) {
 		DRM_ERROR("unable to attach framebuffer\n");
 		return -ENXIO;
@@ -340,8 +432,8 @@ sunxi_drm_load(struct drm_device *ddev, unsigned long flags)
 	drm_mode_config_init(ddev);
 	ddev->mode_config.min_width = 0;
 	ddev->mode_config.min_height = 0;
-	ddev->mode_config.max_width = 3840;
-	ddev->mode_config.max_height = 2160;
+	ddev->mode_config.max_width = SUNXI_DRM_MAX_WIDTH;
+	ddev->mode_config.max_height = SUNXI_DRM_MAX_HEIGHT;
 	ddev->mode_config.funcs = &sunxi_drm_mode_config_funcs;
 
 	num_crtc = 0;
@@ -367,16 +459,17 @@ sunxi_drm_load(struct drm_device *ddev, unsigned long flags)
 
 	if (num_crtc == 0) {
 		aprint_error_dev(sc->sc_dev, "no pipelines configured\n");
-		return ENXIO;
+		error = ENXIO;
+		goto drmerr;
 	}
 
 	fbdev = kmem_zalloc(sizeof(*fbdev), KM_SLEEP);
 
 	drm_fb_helper_prepare(ddev, &fbdev->helper, &sunxi_drm_fb_helper_funcs);
 
-	error = drm_fb_helper_init(ddev, &fbdev->helper, num_crtc, num_crtc);
+	error = drm_fb_helper_init(ddev, &fbdev->helper, num_crtc);
 	if (error)
-		goto drmerr;
+		goto allocerr;
 
 	fbdev->helper.fb = kmem_zalloc(sizeof(struct sunxi_drm_framebuffer), KM_SLEEP);
 
@@ -392,9 +485,10 @@ sunxi_drm_load(struct drm_device *ddev, unsigned long flags)
 
 	return 0;
 
+allocerr:
+	kmem_free(fbdev, sizeof(*fbdev));
 drmerr:
 	drm_mode_config_cleanup(ddev);
-	kmem_free(fbdev, sizeof(*fbdev));
 
 	return error;
 }
@@ -443,12 +537,10 @@ sunxi_drm_disable_vblank(struct drm_device *ddev, unsigned int crtc)
 	sc->sc_vbl[crtc].disable_vblank(sc->sc_vbl[crtc].priv);
 }
 
-static int
+static void
 sunxi_drm_unload(struct drm_device *ddev)
 {
 	drm_mode_config_cleanup(ddev);
-
-	return 0;
 }
 
 int
@@ -475,4 +567,32 @@ sunxi_drm_endpoint_device(struct fdt_endpoint *ep)
 			return sep->ddev;
 
 	return NULL;
+}
+
+static void
+sunxi_drm_task_work(struct work *work, void *cookie)
+{
+	struct sunxi_drm_task *task = container_of(work, struct sunxi_drm_task,
+	    sdt_u.work);
+
+	(*task->sdt_fn)(task);
+}
+
+void
+sunxi_task_init(struct sunxi_drm_task *task,
+    void (*fn)(struct sunxi_drm_task *))
+{
+
+	task->sdt_fn = fn;
+}
+
+void
+sunxi_task_schedule(device_t self, struct sunxi_drm_task *task)
+{
+	struct sunxi_drm_softc *sc = device_private(self);
+
+	if (atomic_load_relaxed(&sc->sc_task_thread) == curlwp)
+		SIMPLEQ_INSERT_TAIL(&sc->sc_tasks, task, sdt_u.queue);
+	else
+		workqueue_enqueue(sc->sc_task_wq, &task->sdt_u.work, NULL);
 }

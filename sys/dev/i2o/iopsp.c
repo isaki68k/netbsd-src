@@ -1,4 +1,4 @@
-/*	$NetBSD: iopsp.c,v 1.37 2015/08/16 19:22:33 msaitoh Exp $	*/
+/*	$NetBSD: iopsp.c,v 1.41 2022/05/04 07:48:34 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2001, 2007 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: iopsp.c,v 1.37 2015/08/16 19:22:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: iopsp.c,v 1.41 2022/05/04 07:48:34 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -146,7 +146,7 @@ iopsp_attach(device_t parent, device_t self, void *aux)
 	fc = (param.p.ci.bustype == I2O_HBA_BUS_FCA);
 
 	/*
-	 * Say what the device is.  If we can find out what the controling
+	 * Say what the device is.  If we can find out what the controlling
 	 * device is, say what that is too.
 	 */
 	aprint_normal(": SCSI port");
@@ -192,14 +192,14 @@ iopsp_attach(device_t parent, device_t self, void *aux)
 	 * purposes only.
 	 */
 	size = sc->sc_channel.chan_ntargets * sizeof(struct iopsp_target);
-	sc->sc_targetmap = malloc(size, M_DEVBUF, M_NOWAIT|M_ZERO);
+	sc->sc_targetmap = malloc(size, M_DEVBUF, M_WAITOK|M_ZERO);
 
  	/* Build the two maps, and attach to scsipi. */
 	if (iopsp_reconfig(self) != 0) {
 		aprint_error_dev(sc->sc_dev, "configure failed\n");
 		goto bad;
 	}
-	config_found(self, &sc->sc_channel, scsiprint);
+	config_found(self, &sc->sc_channel, scsiprint, CFARGS_NONE);
 	return;
 
  bad:

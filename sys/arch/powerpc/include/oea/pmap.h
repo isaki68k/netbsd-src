@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.29 2018/04/19 21:50:07 christos Exp $	*/
+/*	$NetBSD: pmap.h,v 1.37 2022/05/07 07:10:46 rin Exp $	*/
 
 /*-
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -38,14 +38,18 @@
 #error use assym.h instead
 #endif
 
-#if defined(_LKM) || defined(_MODULE)
+#ifdef _MODULE
 #error this file should not be included by loadable kernel modules
 #endif
 
 #ifdef _KERNEL_OPT
 #include "opt_ppcarch.h"
+#include "opt_modular.h"
 #endif
 #include <powerpc/oea/pte.h>
+
+#define	__HAVE_PMAP_PV_TRACK
+#include <uvm/pmap/pmap_pvt.h>
 
 /*
  * Pmap stuff
@@ -89,6 +93,7 @@ struct pmap_ops {
 	void (*pmapop_protect)(pmap_t, vaddr_t, vaddr_t, vm_prot_t);
 	void (*pmapop_unwire)(pmap_t, vaddr_t);
 	void (*pmapop_page_protect)(struct vm_page *, vm_prot_t);
+	void (*pmapop_pv_protect)(paddr_t, vm_prot_t);
 	bool (*pmapop_query_bit)(struct vm_page *, int);
 	bool (*pmapop_clear_bit)(struct vm_page *, int);
 
@@ -106,6 +111,8 @@ struct pmap_ops {
 	void (*pmapop_pvo_verify)(void);
 	vaddr_t (*pmapop_steal_memory)(vsize_t, vaddr_t *, vaddr_t *);
 	void (*pmapop_bootstrap)(paddr_t, paddr_t);
+	void (*pmapop_bootstrap1)(paddr_t, paddr_t);
+	void (*pmapop_bootstrap2)(void);
 };
 
 #ifdef	_KERNEL
@@ -128,10 +135,11 @@ extern int pmap_use_altivec;
 #define	pmap_wired_count(pmap)		((pmap)->pm_stats.wired_count)
 
 /* ARGSUSED */
-static __inline void
+static __inline bool
 pmap_remove_all(struct pmap *pmap)
 {
 	/* Nothing. */
+	return false;
 }
 
 #if (defined(PPC_OEA) + defined(PPC_OEA64) + defined(PPC_OEA64_BRIDGE)) != 1
@@ -143,6 +151,8 @@ extern unsigned int pmap_pteg_cnt;
 extern unsigned int pmap_pteg_mask;
 
 void pmap_bootstrap(vaddr_t, vaddr_t);
+void pmap_bootstrap1(vaddr_t, vaddr_t);
+void pmap_bootstrap2(void);
 bool pmap_extract(pmap_t, vaddr_t, paddr_t *);
 bool pmap_query_bit(struct vm_page *, int);
 bool pmap_clear_bit(struct vm_page *, int);
@@ -151,6 +161,13 @@ void pmap_procwr(struct proc *, vaddr_t, size_t);
 int pmap_pte_spill(pmap_t, vaddr_t, bool);
 int pmap_ste_spill(pmap_t, vaddr_t, bool);
 void pmap_pinit(pmap_t);
+
+#ifdef PPC_OEA601
+bool	pmap_extract_ioseg601(vaddr_t, paddr_t *);
+#endif /* PPC_OEA601 */
+#ifdef PPC_OEA
+bool	pmap_extract_battable(vaddr_t, paddr_t *);
+#endif /* PPC_OEA */
 
 u_int powerpc_mmap_flags(paddr_t);
 #define POWERPC_MMAP_FLAG_MASK	0xf
@@ -234,11 +251,20 @@ LIST_HEAD(pvo_head, pvo_entry);
 
 #define	__HAVE_VM_PAGE_MD
 
-struct vm_page_md {
-	unsigned int mdpg_attrs; 
-	struct pvo_head mdpg_pvoh;
+struct pmap_page {
+	unsigned int pp_attrs;
+	struct pvo_head pp_pvoh;
 #ifdef MODULAR
-	uintptr_t mdpg_dummy[3];
+	uintptr_t pp_dummy[3];
+#endif
+};
+
+struct vm_page_md {
+	struct pmap_page mdpg_pp;
+#define	mdpg_attrs	mdpg_pp.pp_attrs
+#define	mdpg_pvoh	mdpg_pp.pp_pvoh
+#ifdef MODULAR
+#define	mdpg_dummy	mdpg_pp.pp_dummy
 #endif
 };
 

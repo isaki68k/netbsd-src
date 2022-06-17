@@ -1,4 +1,4 @@
-/*	$NetBSD: mb86960.c,v 1.93 2019/05/29 10:07:29 msaitoh Exp $	*/
+/*	$NetBSD: mb86960.c,v 1.96 2021/07/31 14:36:33 andvar Exp $	*/
 
 /*
  * All Rights Reserved, Copyright (C) Fujitsu Limited 1995
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mb86960.c,v 1.93 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mb86960.c,v 1.96 2021/07/31 14:36:33 andvar Exp $");
 
 /*
  * Device driver for Fujitsu MB86960A/MB86965A based Ethernet cards.
@@ -427,7 +427,7 @@ mb86960_watchdog(struct ifnet *ifp)
 #endif
 
 	/* Record how many packets are lost by this accident. */
-	sc->sc_ec.ec_if.if_oerrors += sc->txb_sched + sc->txb_count;
+	if_statadd(ifp, if_oerrors, sc->txb_sched + sc->txb_count);
 
 	mb86960_reset(sc);
 }
@@ -582,7 +582,7 @@ mb86960_init(struct mb86960_softc *sc)
 	ifp->if_flags |= IFF_RUNNING;
 
 	/*
-	 * At this point, the interface is runnung properly,
+	 * At this point, the interface is running properly,
 	 * except that it receives *no* packets.  we then call
 	 * mb86960_setmode() to tell the chip what packets to be
 	 * received, based on the if_flags and multicast group
@@ -696,7 +696,7 @@ mb86960_start(struct ifnet *ifp)
 	/*
 	 * Stop accepting more transmission packets temporarily, when
 	 * a filter change request is delayed.  Updating the MARs on
-	 * 86960 flushes the transmisstion buffer, so it is delayed
+	 * 86960 flushes the transmission buffer, so it is delayed
 	 * until all buffered transmission packets have been sent
 	 * out.
 	 */
@@ -818,9 +818,11 @@ mb86960_tint(struct mb86960_softc *sc, uint8_t tstat)
 		/*
 		 * Update statistics.
 		 */
-		ifp->if_collisions += 16;
-		ifp->if_oerrors++;
-		ifp->if_opackets += sc->txb_sched - left;
+		net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+		if_statadd_ref(nsr, if_collisions, 16);
+		if_statinc_ref(nsr, if_oerrors);
+		if_statadd_ref(nsr, if_opackets, sc->txb_sched - left);
+		IF_STAT_PUTREF(ifp);
 
 		/*
 		 * Collision statistics has been updated.
@@ -858,7 +860,7 @@ mb86960_tint(struct mb86960_softc *sc, uint8_t tstat)
 		 * 86960 has a design flow on collision count on multiple
 		 * packet transmission.  When we send two or more packets
 		 * with one start command (that's what we do when the
-		 * transmission queue is clauded), 86960 informs us number
+		 * transmission queue is crowded), 86960 informs us number
 		 * of collisions occurred on the last packet on the
 		 * transmission only.  Number of collisions on previous
 		 * packets are lost.  I have told that the fact is clearly
@@ -889,7 +891,7 @@ mb86960_tint(struct mb86960_softc *sc, uint8_t tstat)
 				col = 1;
 			} else
 				col >>= FE_D4_COL_SHIFT;
-			ifp->if_collisions += col;
+			if_statadd(ifp, if_collisions, col);
 #if FE_DEBUG >= 4
 			log(LOG_WARNING, "%s: %d collision%s (%d)\n",
 			    device_xname(sc->sc_dev), col, col == 1 ? "" : "s",
@@ -901,7 +903,7 @@ mb86960_tint(struct mb86960_softc *sc, uint8_t tstat)
 		 * Update total number of successfully
 		 * transmitted packets.
 		 */
-		ifp->if_opackets += sc->txb_sched;
+		if_statadd(ifp, if_opackets, sc->txb_sched);
 		sc->txb_sched = 0;
 	}
 
@@ -948,7 +950,7 @@ mb86960_rint(struct mb86960_softc *sc, uint8_t rstat)
 		log(LOG_WARNING, "%s: receive error: %s\n",
 		    device_xname(sc->sc_dev), sbuf);
 #endif
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 	}
 
 	/*
@@ -956,7 +958,7 @@ mb86960_rint(struct mb86960_softc *sc, uint8_t rstat)
 	 * We just loop checking the flag to pull out all received
 	 * packets.
 	 *
-	 * We limit the number of iterrations to avoid infinite loop.
+	 * We limit the number of iterations to avoid infinite loop.
 	 * It can be caused by a very slow CPU (some broken
 	 * peripheral may insert incredible number of wait cycles)
 	 * or, worse, by a broken MB86960 chip.
@@ -988,7 +990,7 @@ mb86960_rint(struct mb86960_softc *sc, uint8_t rstat)
 		 */
 		if ((status & FE_RXSTAT_GOODPKT) == 0) {
 			if ((ifp->if_flags & IFF_PROMISC) == 0) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				mb86960_droppacket(sc);
 				continue;
 			}
@@ -1022,7 +1024,7 @@ mb86960_rint(struct mb86960_softc *sc, uint8_t rstat)
 			    device_xname(sc->sc_dev),
 			    len < ETHER_HDR_LEN ? "partial" : "big", len);
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			mb86960_droppacket(sc);
 			continue;
 		}
@@ -1051,7 +1053,7 @@ mb86960_rint(struct mb86960_softc *sc, uint8_t rstat)
 			    "%s: out of mbufs; dropping packet (%u bytes)\n",
 			    device_xname(sc->sc_dev), len);
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			mb86960_droppacket(sc);
 
 			/*
@@ -1391,7 +1393,7 @@ mb86960_write_mbufs(struct mb86960_softc *sc, struct mbuf *m)
 		log(LOG_ERR, "%s: got a %s packet (%u bytes) to send\n",
 		    device_xname(sc->sc_dev),
 		    totlen < ETHER_HDR_LEN ? "partial" : "big", totlen);
-		sc->sc_ec.ec_if.if_oerrors++;
+		if_statinc(&sc->sc_ec.ec_if, if_oerrors);
 		return;
 	}
 #endif
@@ -1658,7 +1660,7 @@ mb86960_setmode(struct mb86960_softc *sc)
 	 * DLC trashes all packets in both transmission and receive
 	 * buffers when stopped.
 	 *
-	 * ... Are the above sentenses correct?  I have to check the
+	 * ... Are the above sentences correct?  I have to check the
 	 *     manual of the MB86960A.  FIXME.
 	 *
 	 * To reduce the packet lossage, we delay the filter update
@@ -1687,7 +1689,7 @@ mb86960_setmode(struct mb86960_softc *sc)
 /*
  * Load a new multicast address filter into MARs.
  *
- * The caller must have splnet'ed befor mb86960_loadmar.
+ * The caller must have splnet'ed before mb86960_loadmar.
  * This function starts the DLC upon return.  So it can be called only
  * when the chip is working, i.e., from the driver's point of view, when
  * a device is RUNNING.  (I mistook the point in previous versions.)
@@ -1797,14 +1799,14 @@ mb86960_detach(struct mb86960_softc *sc)
 	if ((sc->sc_stat & FE_STAT_ATTACHED) == 0)
 		return 0;
 
-	/* Delete all media. */
-	ifmedia_delete_instance(&sc->sc_media, IFM_INST_ANY);
-
 	/* Unhook the entropy source. */
 	rnd_detach_source(&sc->rnd_source);
 
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete all media. */
+	ifmedia_fini(&sc->sc_media);
 
 	mb86960_disable(sc);
 	return 0;

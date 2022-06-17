@@ -1,4 +1,4 @@
-/*	$NetBSD: sl811hs.c,v 1.101 2019/02/17 04:17:52 rin Exp $	*/
+/*	$NetBSD: sl811hs.c,v 1.112 2022/05/03 20:52:32 andvar Exp $	*/
 
 /*
  * Not (c) 2007 Matthew Orgass
@@ -59,7 +59,7 @@
 
 /*
  * XXX TODO:
- *   copy next output packet while transfering
+ *   copy next output packet while transferring
  *   usb suspend
  *   could keep track of known values of all buffer space?
  *   combined print/log function for errors
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sl811hs.c,v 1.101 2019/02/17 04:17:52 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sl811hs.c,v 1.112 2022/05/03 20:52:32 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_slhci.h"
@@ -584,28 +584,28 @@ DDOLOGBUF(uint8_t *buf, unsigned int length)
 	SLHCIHIST_FUNC(); SLHCIHIST_CALLED();
 	int i;
 
-	for(i=0; i+8 <= length; i+=8)
+	for(i = 0; i + 8 <= length; i += 8)
 		DDOLOG("%.4x %.4x %.4x %.4x", (buf[i] << 8) | buf[i+1],
 		    (buf[i+2] << 8) | buf[i+3], (buf[i+4] << 8) | buf[i+5],
 		    (buf[i+6] << 8) | buf[i+7]);
-	if (length == i+7)
+	if (length == i + 7)
 		DDOLOG("%.4x %.4x %.4x %.2x", (buf[i] << 8) | buf[i+1],
 		    (buf[i+2] << 8) | buf[i+3], (buf[i+4] << 8) | buf[i+5],
 		    buf[i+6]);
-	else if (length == i+6)
+	else if (length == i + 6)
 		DDOLOG("%.4x %.4x %.4x", (buf[i] << 8) | buf[i+1],
 		    (buf[i+2] << 8) | buf[i+3], (buf[i+4] << 8) | buf[i+5], 0);
-	else if (length == i+5)
+	else if (length == i + 5)
 		DDOLOG("%.4x %.4x %.2x", (buf[i] << 8) | buf[i+1],
 		    (buf[i+2] << 8) | buf[i+3], buf[i+4], 0);
-	else if (length == i+4)
+	else if (length == i + 4)
 		DDOLOG("%.4x %.4x", (buf[i] << 8) | buf[i+1],
 		    (buf[i+2] << 8) | buf[i+3], 0,0);
-	else if (length == i+3)
+	else if (length == i + 3)
 		DDOLOG("%.4x %.2x", (buf[i] << 8) | buf[i+1], buf[i+2], 0,0);
-	else if (length == i+2)
+	else if (length == i + 2)
 		DDOLOG("%.4x", (buf[i] << 8) | buf[i+1], 0,0,0);
-	else if (length == i+1)
+	else if (length == i + 1)
 		DDOLOG("%.2x", buf[i], 0,0,0);
 }
 #define DLOGBUF(x, b, l) SLHCI_DEXEC(x, DDOLOGBUF(b, l))
@@ -702,7 +702,7 @@ DDOLOGBUF(uint8_t *buf, unsigned int length)
 
 const struct usbd_bus_methods slhci_bus_methods = {
 	.ubm_open = slhci_open,
-	.ubm_softint= slhci_void,
+	.ubm_softint = slhci_void,
 	.ubm_dopoll = slhci_poll,
 	.ubm_allocx = slhci_allocx,
 	.ubm_freex = slhci_freex,
@@ -839,32 +839,13 @@ usbd_status
 slhci_transfer(struct usbd_xfer *xfer)
 {
 	SLHCIHIST_FUNC(); SLHCIHIST_CALLED();
-	struct slhci_softc *sc = SLHCI_XFER2SC(xfer);
 	usbd_status error;
 
 	DLOG(D_TRACE, "transfer type %jd xfer %#jx spipe %#jx ",
 	    SLHCI_XFER_TYPE(xfer), (uintptr_t)xfer, (uintptr_t)xfer->ux_pipe,
 	    0);
 
-	/* Insert last in queue */
-	mutex_enter(&sc->sc_lock);
-	error = usb_insert_transfer(xfer);
-	mutex_exit(&sc->sc_lock);
-	if (error) {
-		if (error != USBD_IN_PROGRESS)
-			DLOG(D_ERR, "usb_insert_transfer returns %jd!", error,
-			    0,0,0);
-		return error;
-	}
-
-	/*
-	 * Pipe isn't running (otherwise error would be USBD_INPROG),
-	 * so start it first.
-	 */
-
-	/*
-	 * Start will take the lock.
-	 */
+	/* Pipe isn't running, so start it first.  */
 	error = xfer->ux_pipe->up_methods->upm_start(SIMPLEQ_FIRST(&xfer->ux_pipe->up_queue));
 
 	return error;
@@ -882,7 +863,7 @@ slhci_start(struct usbd_xfer *xfer)
 	usb_endpoint_descriptor_t *ed = pipe->up_endpoint->ue_edesc;
 	unsigned int max_packet;
 
-	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	max_packet = UGETW(ed->wMaxPacketSize);
 
@@ -1004,8 +985,6 @@ slhci_start(struct usbd_xfer *xfer)
 
 	slhci_start_entry(sc, spipe);
 
-	mutex_exit(&sc->sc_lock);
-
 	return USBD_IN_PROGRESS;
 }
 
@@ -1027,11 +1006,13 @@ slhci_root_start(struct usbd_xfer *xfer)
 	DLOG(D_TRACE, "transfer type %jd start",
 	    SLHCI_XFER_TYPE(xfer), 0, 0, 0);
 
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
+
 	KASSERT(spipe->ptype == PT_ROOT_INTR);
 
-	mutex_enter(&sc->sc_intr_lock);
+	KASSERT(t->rootintr == NULL);
 	t->rootintr = xfer;
-	mutex_exit(&sc->sc_intr_lock);
+	xfer->ux_status = USBD_IN_PROGRESS;
 
 	return USBD_IN_PROGRESS;
 }
@@ -1269,7 +1250,8 @@ slhci_attach(struct slhci_softc *sc)
 	t->flags |= F_ACTIVE;
 
 	/* Attach usb and uhub. */
-	sc->sc_child = config_found(SC_DEV(sc), &sc->sc_bus, usbctlprint);
+	sc->sc_child = config_found(SC_DEV(sc), &sc->sc_bus, usbctlprint,
+	    CFARGS_NONE);
 
 	if (!sc->sc_child)
 		return -1;
@@ -2003,7 +1985,7 @@ slhci_abdone(struct slhci_softc *sc, int ab)
 	 * 200MB file).
 	 *
 	 * Overflow can indicate that the device and host disagree about how
-	 * much data has been transfered.  This may indicate a problem at any
+	 * much data has been transferred.  This may indicate a problem at any
 	 * point during the transfer, not just when the error occurs.  It may
 	 * indicate data corruption.  A warning message is printed.
 	 *
@@ -2023,7 +2005,7 @@ slhci_abdone(struct slhci_softc *sc, int ab)
 	 * However, I have seen this problem again ("done but not started"
 	 * errors), which in some cases cases the SETUP status bit to remain
 	 * set on future transfers.  In other cases, the SETUP bit is not set
-	 * and no data corruption occurs.  This occured while using both umass
+	 * and no data corruption occurs.  This occurred while using both umass
 	 * and aue on a powered hub (maybe triggered by some local activity
 	 * also) and needs several reads of the 200MB file to trigger.  The
 	 * driver now halts if SETUP is detected.
@@ -2389,6 +2371,8 @@ slhci_callback(struct slhci_softc *sc)
 			if (t->rootintr != NULL) {
 				u_char *p;
 
+				KASSERT(t->rootintr->ux_status ==
+				    USBD_IN_PROGRESS);
 				p = t->rootintr->ux_buf;
 				p[0] = 2;
 				t->rootintr->ux_actlen = 1;
@@ -2738,7 +2722,7 @@ slhci_drain(struct slhci_softc *sc)
 
 	t->pend = INT_MAX;
 
-	for (i=0; i<=1; i++) {
+	for (i = 0; i <= 1; i++) {
 		t->len[i] = -1;
 		if (t->spipe[i] != NULL) {
 			enter_callback(t, t->spipe[i]);
@@ -2854,7 +2838,7 @@ slhci_reset(struct slhci_softc *sc)
 		/*
 		 * Initialize B registers.  This can't be done earlier since
 		 * they are not valid until the SL811_CSOF register is written
-		 * above due to SL11H compatability.
+		 * above due to SL11H compatibility.
 		 */
 		slhci_write(sc, SL11_E1ADDR, SL11_BUFFER_END - 8);
 		slhci_write(sc, SL11_E1LEN, 0);
@@ -3514,7 +3498,7 @@ slhci_log_sc(void)
 	DDOLOG("a = %p Alen=%d b = %p Blen=%d", t->spipe[0], t->len[0],
 	    t->spipe[1], t->len[1]);
 
-	for (i=0; i<=Q_MAX; i++)
+	for (i = 0; i <= Q_MAX; i++)
 		DDOLOG("Q %d: %p", i, gcq_hq(&t->q[i]), 0,0);
 
 	DDOLOG("TIMED: %p", GCQ_ITEM(gcq_hq(&t->to),

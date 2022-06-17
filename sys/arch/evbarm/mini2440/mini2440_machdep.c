@@ -131,13 +131,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mini2440_machdep.c,v 1.15 2019/07/16 14:41:47 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mini2440_machdep.c,v 1.19 2021/08/17 22:00:29 andvar Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_pmap_debug.h"
 #include "opt_md.h"
 
 #include <sys/param.h>
@@ -235,10 +234,6 @@ int max_processes = 64;		/* Default number */
 #endif				/* !PMAP_STATIC_L1S */
 
 paddr_t msgbufphys;
-
-#ifdef PMAP_DEBUG
-extern int pmap_debug_level;
-#endif
 
 #define KERNEL_PT_SYS		0	/* L2 table for mapping zero page */
 #define KERNEL_PT_KERNEL	1	/* L2 table for mapping kernel */
@@ -545,8 +540,8 @@ initarm(void *arg)
 	bootconfig.dram[0].pages = SDRAM_SIZE / PAGE_SIZE;
 
 	/*
-	 * Set up the variables that define the availablilty of
-	 * physical memory. 
+	 * Set up the variables that define the availability of
+	 * physical memory.
          * We use the 2MB between the physical start and the kernel to
          * begin with. Allocating from 0x30200000 and downwards
 	 * If we get too close to the bottom of SDRAM, we
@@ -1026,9 +1021,7 @@ s3c2xx0_bus_dma_init(struct arm32_bus_dma_tag *dma_tag_template)
 #if 1
 	dmat = dma_tag_template;
 #else
-	dmat = malloc(sizeof *dmat, M_DEVBUF, M_NOWAIT);
-	if (dmat == NULL)
-		return NULL;
+	dmat = malloc(sizeof *dmat, M_DEVBUF, M_WAITOK);
 	*dmat =  *dma_tag_template;
 #endif
 

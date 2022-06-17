@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_fixup.c,v 1.20 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: mips_fixup.c,v 1.23 2022/01/02 16:03:46 christos Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mips_fixup.c,v 1.20 2019/04/06 03:06:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_fixup.c,v 1.23 2022/01/02 16:03:46 christos Exp $");
 
 #include "opt_mips3_wired.h"
 #include "opt_multiprocessor.h"
@@ -120,6 +120,7 @@ mips_fixup_exceptions(mips_fixup_callback_t callback, void *arg)
 			if (addr <= load_addr
 			    && load_addr < addr + size
 			    && base == lui_reg) {
+#if defined(DIAGNOSTIC) || defined(DEBUG_VERBOSE)
 				KASSERT(rt == _R_K0 || rt == _R_K1);
 #ifdef DEBUG_VERBOSE
 				printf("%s: %#x: insn %08x: %s r%zu, %%lo(%08x)(r%zu)\n",
@@ -129,6 +130,7 @@ mips_fixup_exceptions(mips_fixup_callback_t callback, void *arg)
 					? INSN_LW_P(insn) ? "lw" : "ld"
 					: INSN_SW_P(insn) ? "sw" : "sd",
 				    rt, load_addr, base);
+#endif
 #endif
 				new_insns[0] = lui_insn;
 				new_insns[1] = *insnp;
@@ -286,11 +288,25 @@ mips_fixup_addr(const uint32_t *stubp)
 	 *	dmtc0	at, $22
 	 *	jr	t9
 	 *	nop
+	 *
+	 * A profiled n32/n64 stub will start with:
+	 *	move	ta, ra
+	 *	jal	_mcount
+	 *	 nop
 	 */
 	mips_reg_t regs[32];
 	uint32_t used = 1 |__BIT(_R_A0)|__BIT(_R_A1)|__BIT(_R_A2)|__BIT(_R_A3);
 	size_t n;
 	const char *errstr = "mips";
+
+#ifdef GPROF
+	static uint32_t mcount_addr = 0;
+	extern void _mcount(u_long, u_long);	/* XXX decl */
+
+	if (mcount_addr == 0)
+		mcount_addr = (uint32_t)(uintptr_t)_mcount & 0x0fffffff;
+#endif /* GPROF */
+
 	/*
 	 * This is basically a small MIPS emulator for those instructions
 	 * that might be in a stub routine.
@@ -361,6 +377,14 @@ mips_fixup_addr(const uint32_t *stubp)
 				goto out;
 			}
 			break;
+#ifdef GPROF
+		case OP_JAL:
+			if (insn.JType.target << 2 != mcount_addr) {
+				errstr = "JAL-non-_mcount";
+				goto out;
+			}
+			break;
+#endif /* GPROF */
 		case OP_SPECIAL:
 			switch (insn.RType.func) {
 			case OP_JALR:
@@ -404,6 +428,19 @@ mips_fixup_addr(const uint32_t *stubp)
 					goto out;
 				}
 				break;
+#ifdef GPROF
+			case OP_OR:
+				if (insn.RType.rt != 0) {
+					errstr = "NON-MOVE OR";
+					goto out;
+				}
+				if (insn.RType.rd != 1 ||
+				    insn.RType.rs != 31) {
+					errstr = "NON at,ra MOVE";
+					goto out;
+				}
+				break;
+#endif /* GPROF */
 			case OP_DSLL:
 			default:
 				errstr = "SPECIAL";
@@ -510,7 +547,7 @@ mips_fixup_stubs(uint32_t *start, uint32_t *end)
 void	mips_cpu_switch_resume(struct lwp *)		__stub;
 tlb_asid_t
 	tlb_get_asid(void)				__stub;
-void	tlb_set_asid(uint32_t)				__stub;
+void	tlb_set_asid(uint32_t, struct pmap *)		__stub;
 void	tlb_invalidate_all(void)			__stub;
 void	tlb_invalidate_globals(void)			__stub;
 void	tlb_invalidate_asids(uint32_t, uint32_t)	__stub;
@@ -540,7 +577,7 @@ tlb_get_asid(void)
 }
 
 void
-tlb_set_asid(uint32_t asid)
+tlb_set_asid(uint32_t asid, struct pmap *pm)
 {
 	(*mips_locore_jumpvec.ljv_tlb_set_asid)(asid);
 }

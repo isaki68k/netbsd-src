@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_sig.c,v 1.48 2019/09/08 07:00:20 maxv Exp $	*/
+/*	$NetBSD: sys_sig.c,v 1.56 2022/04/21 21:31:11 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_sig.c,v 1.48 2019/09/08 07:00:20 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_sig.c,v 1.56 2022/04/21 21:31:11 andvar Exp $");
 
 #include "opt_dtrace.h"
 
@@ -81,6 +81,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_sig.c,v 1.48 2019/09/08 07:00:20 maxv Exp $");
 #include <sys/kmem.h>
 #include <sys/module.h>
 #include <sys/sdt.h>
+#include <sys/compat_stub.h>
 
 SDT_PROVIDER_DECLARE(proc);
 SDT_PROBE_DEFINE2(proc, kernel, , signal__clear,
@@ -199,8 +200,8 @@ sys___sigaltstack14(struct lwp *l, const struct sys___sigaltstack14_args *uap,
 		syscallarg(const struct sigaltstack *)	nss;
 		syscallarg(struct sigaltstack *)	oss;
 	} */
-	struct sigaltstack	nss, oss;
-	int			error;
+	stack_t	nss, oss;
+	int	error;
 
 	if (SCARG(uap, nss)) {
 		error = copyin(SCARG(uap, nss), &nss, sizeof(nss));
@@ -246,10 +247,10 @@ kill1(struct lwp *l, pid_t pid, ksiginfo_t *ksi, register_t *retval)
 
 	if (pid > 0) {
 		/* kill single process */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find_raw(pid);
 		if (p == NULL || (p->p_stat != SACTIVE && p->p_stat != SSTOP)) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			/* IEEE Std 1003.1-2001: return success for zombies */
 			return p ? 0 : ESRCH;
 		}
@@ -261,7 +262,7 @@ kill1(struct lwp *l, pid_t pid, ksiginfo_t *ksi, register_t *retval)
 			error = kpsignal2(p, ksi);
 		}
 		mutex_exit(p->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return error;
 	}
 
@@ -393,31 +394,41 @@ sigaction1(struct lwp *l, int signum, const struct sigaction *nsa,
 	ksiginfo_queue_init(&kq);
 
 	/*
-	 * Trampoline ABI version 0 is reserved for the legacy kernel
-	 * provided on-stack trampoline.  Conversely, if we are using a
-	 * non-0 ABI version, we must have a trampoline.  Only validate the
-	 * vers if a new sigaction was supplied and there was an actual
-	 * handler specified (not SIG_IGN or SIG_DFL), which don't require
-	 * a trampoline. Emulations use legacy kernel trampolines with
-	 * version 0, alternatively check for that too.
+	 * Trampoline ABI version __SIGTRAMP_SIGCODE_VERSION (0) is reserved
+	 * for the legacy kernel provided on-stack trampoline.  Conversely,
+	 * if we are using a non-0 ABI version, we must have a trampoline.
+	 * Only validate the vers if a new sigaction was supplied and there
+	 * was an actual handler specified (not SIG_IGN or SIG_DFL), which
+	 * don't require a trampoline. Emulations use legacy kernel
+	 * trampolines with version 0, alternatively check for that too.
 	 *
-	 * If version < 2, we try to autoload the compat module.  Note
-	 * that we interlock with the unload check in compat_modcmd()
-	 * using kernconfig_lock.  If the autoload fails, we don't try it
-	 * again for this process.
+	 * If version < __SIGTRAMP_SIGINFO_VERSION_MIN (usually 2), we try
+	 * to autoload the compat module.  Note that we interlock with the
+	 * unload check in compat_modcmd() using kernconfig_lock.  If the
+	 * autoload fails, we don't try it again for this process.
 	 */
 	if (nsa != NULL && nsa->sa_handler != SIG_IGN
 	    && nsa->sa_handler != SIG_DFL) {
-		if (__predict_false(vers < 2)) {
-			if (p->p_flag & PK_32)
+		if (__predict_false(vers < __SIGTRAMP_SIGINFO_VERSION_MIN)) {
+			if (vers == __SIGTRAMP_SIGCODE_VERSION &&
+			    p->p_sigctx.ps_sigcode != NULL) {
+				/*
+				 * if sigcode is used for this emulation,
+				 * version 0 is allowed.
+				 */
+			}
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+			else if (p->p_flag & PK_32) {
+				/*
+				 * The 32-bit compat module will have
+				 * pre-validated this for us.
+				 */
 				v0v1valid = true;
-			else if ((p->p_lflag & PL_SIGCOMPAT) == 0) {
+			} else if ((p->p_lflag & PL_SIGCOMPAT) == 0) {
 				kernconfig_lock();
-				if (sendsig_sigcontext_vec == NULL) {
-					(void)module_autoload("compat",
-					    MODULE_CLASS_ANY);
-				}
-				if (sendsig_sigcontext_vec != NULL) {
+				(void)module_autoload("compat_16",
+				    MODULE_CLASS_ANY);
+				if (sendsig_sigcontext_16_hook.hooked) {
 					/*
 					 * We need to remember if the
 					 * sigcontext method may be useable,
@@ -426,38 +437,44 @@ sigaction1(struct lwp *l, int signum, const struct sigaction *nsa,
 					 */
 					v0v1valid = true;
 				}
-				mutex_enter(proc_lock);
+				mutex_enter(&proc_lock);
 				/*
 				 * Prevent unload of compat module while
 				 * this process remains.
 				 */
 				p->p_lflag |= PL_SIGCOMPAT;
-				mutex_exit(proc_lock);
+				mutex_exit(&proc_lock);
 				kernconfig_unlock();
 			}
+#endif /* __HAVE_STRUCT_SIGCONTEXT */
 		}
 
 		switch (vers) {
-		case 0:
-			/* sigcontext, kernel supplied trampoline. */
-			if (tramp != NULL || !v0v1valid) {
+		case __SIGTRAMP_SIGCODE_VERSION:
+			/* kernel supplied trampoline. */
+			if (tramp != NULL ||
+			    (p->p_sigctx.ps_sigcode == NULL && !v0v1valid)) {
 				return EINVAL;
 			}
 			break;
-		case 1:
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+		case __SIGTRAMP_SIGCONTEXT_VERSION_MIN ...
+		     __SIGTRAMP_SIGCONTEXT_VERSION_MAX:
 			/* sigcontext, user supplied trampoline. */
 			if (tramp == NULL || !v0v1valid) {
 				return EINVAL;
 			}
 			break;
-		case 2:
-		case 3:
+#endif /* __HAVE_STRUCT_SIGCONTEXT */
+		case __SIGTRAMP_SIGINFO_VERSION_MIN ...
+		     __SIGTRAMP_SIGINFO_VERSION_MAX:
 			/* siginfo, user supplied trampoline. */
 			if (tramp == NULL) {
 				return EINVAL;
 			}
 			break;
 		default:
+			/* Invalid trampoline version. */
 			return EINVAL;
 		}
 	}
@@ -678,8 +695,7 @@ sigsuspend1(struct lwp *l, const sigset_t *ss)
 }
 
 int
-sigaltstack1(struct lwp *l, const struct sigaltstack *nss,
-    struct sigaltstack *oss)
+sigaltstack1(struct lwp *l, const stack_t *nss, stack_t *oss)
 {
 	struct proc *p = l->l_proc;
 	int error = 0;
@@ -822,7 +838,7 @@ sigtimedwait1(struct lwp *l, const struct sys_____sigtimedwait50_args *uap,
 		/* Compute how much time has passed since start. */
 		timespecsub(&tsnow, &tsstart, &tsnow);
 
-		/* Substract passed time from timeout. */
+		/* Subtract passed time from timeout. */
 		timespecsub(&ts, &tsnow, &ts);
 
 		if (ts.tv_sec < 0)

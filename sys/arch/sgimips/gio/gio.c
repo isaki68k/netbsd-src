@@ -1,4 +1,4 @@
-/*	$NetBSD: gio.c,v 1.35 2016/07/20 22:16:37 macallan Exp $	*/
+/*	$NetBSD: gio.c,v 1.38 2021/08/07 16:19:04 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2000 Soren S. Jorvang
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gio.c,v 1.35 2016/07/20 22:16:37 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gio.c,v 1.38 2021/08/07 16:19:04 thorpej Exp $");
 
 #include "opt_ddb.h"
 
@@ -219,8 +219,8 @@ gio_attach(device_t parent, device_t self, void *aux)
 		ga.ga_product = -1;
 
 		
-		if (config_found_sm_loc(self, "gio", NULL, &ga, gio_print,
-		    gio_submatch)) {
+		if (config_found(self, &ga, gio_print,
+				 CFARGS(.submatch = gio_submatch)) != NULL) {
 			if (ngfx == MAXGFX)
 				panic("gio_attach: MAXGFX");
 			gfx[ngfx++] = gfx_bases[i].base;
@@ -267,11 +267,12 @@ gio_attach(device_t parent, device_t self, void *aux)
 
 		ga.ga_product = bus_space_read_4(ga.ga_iot, ga.ga_ioh, 0);
 
-		config_found_sm_loc(self, "gio", NULL, &ga, gio_print,
-		    gio_submatch);
+		config_found(self, &ga, gio_print,
+		    CFARGS(.submatch = gio_submatch));
 	}
 
-	config_search_ia(gio_search, self, "gio", &ga);
+	config_search(self, &ga,
+	    CFARGS(.search = gio_search));
 }
 
 static int
@@ -329,11 +330,11 @@ gio_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 
 		ga->ga_slot = cf->cf_loc[GIOCF_SLOT];
 		ga->ga_addr = cf->cf_loc[GIOCF_ADDR];
-		ga->ga_iot = 0;
+		ga->ga_iot = normal_memt;
 		ga->ga_ioh = MIPS_PHYS_TO_KSEG1(ga->ga_addr);
 
-		if (config_match(parent, cf, ga) > 0)
-			config_attach(parent, cf, ga, gio_print);
+		if (config_probe(parent, cf, ga))
+			config_attach(parent, cf, ga, gio_print, CFARGS_NONE);
 	} while (cf->cf_fstate == FSTATE_STAR);
 
 	return 0;

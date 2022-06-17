@@ -1,4 +1,4 @@
-/*	$NetBSD: inbmphyreg.h,v 1.18 2019/01/31 15:30:23 msaitoh Exp $	*/
+/*	$NetBSD: inbmphyreg.h,v 1.20 2020/09/16 15:04:01 msaitoh Exp $	*/
 /*******************************************************************************
 Copyright (c) 2001-2015, Intel Corporation 
 All rights reserved.
@@ -68,7 +68,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #define BME1000_PSCR_CROSSOVER_MODE_MDI         0x0000 /* 00=Manual MDI configuration */
 #define BME1000_PSCR_CROSSOVER_MODE_MDIX        0x0020 /* 01=Manual MDIX configuration */
 #define BME1000_PSCR_CROSSOVER_MODE_AUTO        0x0060 /* 11=Automatic crossover */
-#define BME1000_PSCR_ENALBE_EXTENDED_DISTANCE   0x0080 /* 1=Enable Extended Distance */
+#define BME1000_PSCR_ENABLE_EXTENDED_DISTANCE   0x0080 /* 1=Enable Extended Distance */
 #define BME1000_PSCR_ENERGY_DETECT_MASK         0x0300
 #define BME1000_PSCR_ENERGY_DETECT_OFF          0x0000 /* 00,01=Off */
 #define BME1000_PSCR_ENERGY_DETECT_RX           0x0200 /* 10=Sense on Rx only (Energy Detect) */
@@ -136,6 +136,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #define	BM_PORT_GEN_CFG		BME1000_REG(BM_PORT_CTRL_PAGE, 17)
 
+#define	I82579_DFT_CTRL		BME1000_REG(BM_PORT_CTRL_PAGE, 20)
+
 #define	CV_SMB_CTRL		BME1000_REG(BM_PORT_CTRL_PAGE, 23)
 #define	CV_SMB_CTRL_FORCE_SMBUS	__BIT(0)
 
@@ -180,7 +182,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #define HV_MUX_DATA_CTRL_FORCE_SPEED	(1 << 2)
 #define HV_MUX_DATA_CTRL_GEN_TO_MAC	(1 << 10)
 
-#define I219_UNKNOWN1		BME1000_REG(776, 20)
+#define I82579_UNKNOWN1		BME1000_REG(776, 20)
+#define I82579_TX_PTR_GAP	0x1f
 
 #define I218_ULP_CONFIG1	BME1000_REG(779, 16)
 #define I218_ULP_CONFIG1_START		__BIT(0)

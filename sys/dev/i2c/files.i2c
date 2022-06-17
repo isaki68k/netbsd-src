@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.103 2019/11/01 09:59:22 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.122 2022/01/17 16:31:23 thorpej Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -14,6 +14,10 @@ defparam opt_i2c.h				I2C_MAX_ADDR
 # Common module for bit-bang'ing an I2C bus
 define	i2c_bitbang
 file	dev/i2c/i2c_bitbang.c			i2c_bitbang
+
+# Common module for i2c mux support
+define	i2cmux
+file	dev/i2c/i2cmux.c			i2cmux
 
 # Auvitek AU8522 decoder
 define	au8522: i2cexec
@@ -55,7 +59,6 @@ define	motoi2c
 file	dev/i2c/motoi2c.c			motoi2c
 define	mvi2c
 file	dev/i2c/gttwsi_core.c			mvi2c
-defflag opt_gttwsi.h				GTTWSI_ALLWINNER
 
 #
 # I2C client devices
@@ -70,8 +73,6 @@ file	dev/i2c/m41t00.c			m41trtc
 device	strtc
 attach	strtc at iic
 file	dev/i2c/m41st84.c			strtc
-defflag	opt_strtc.h				STRTC_NO_USERRAM
-						STRTC_NO_WATCHDOG
 
 # MAX6900 Real Time Clock
 device	maxrtc
@@ -105,7 +106,7 @@ device	lmtemp: sysmon_envsys
 attach	lmtemp at iic
 file	dev/i2c/lm75.c				lmtemp
 
-# IST-AG Humidity and Teperature sensor (P14)
+# IST-AG Humidity and Temperature sensor (P14)
 device	hythygtemp: sysmon_envsys
 attach	hythygtemp at iic
 file	dev/i2c/hytp14.c			hythygtemp
@@ -202,6 +203,10 @@ device	tps65217reg: tps65217pmic
 attach	tps65217pmic at iic
 attach	tps65217reg at tps65217pmic
 file	dev/i2c/tps65217pmic.c 		tps65217pmic	needs-flag
+
+# Microchip MCP23008 / MCP23017 I/O Expander
+attach	mcpgpio at iic with mcpgpio_i2c
+file	dev/i2c/mcp23xxxgpio_i2c.c	mcpgpio_i2c
 
 # Microchip MCP980x
 device	mcp980x: sysmon_envsys
@@ -304,15 +309,15 @@ device	em3027rtc: sysmon_envsys
 attach	em3027rtc at iic
 file	dev/i2c/em3027.c			em3027rtc
 
-# Apple Fan Control Unit found in some G5
-device	fcu: sysmon_envsys
-attach	fcu at iic
-file	dev/i2c/fcu.c				fcu	needs-flag
-
 # Analog Devices AD7417 thermometer and ADC
 device	adadc: sysmon_envsys
 attach	adadc at iic
 file	dev/i2c/adadc.c				adadc
+
+# Apple Sudden Motion Sensor
+device	asms: sysmon_envsys
+attach	asms at iic
+file	dev/i2c/asms.c				asms
 
 # HID over i2c
 # HID "bus"
@@ -336,7 +341,7 @@ file	dev/i2c/imt.c				imt
 # Taos TSL256x ambient light sensor
 device	tsllux: sysmon_envsys
 attach	tsllux at iic
-file	dev/i2c/tsl256x.c			tsllux
+file	dev/i2c/tsllux.c			tsllux
 
 # Philips/NXP TEA5767 
 device tea5767radio : radiodev
@@ -364,6 +369,11 @@ device	anxedp: edid, videomode, drmkms, drmkms_i2c
 attach	anxedp at iic
 file	dev/i2c/anxedp.c			anxedp
 
+# NXP PCA954x / PCA984x I2C switch / mux controllers
+device	pcaiicmux: i2cbus, i2cmux
+attach	pcaiicmux at iic
+file	dev/i2c/pcai2cmux.c			pcaiicmux
+
 # NXP PCA9685 16-channel, 12-bit PWM Fm+ LED controller
 device	pcapwm: pwm
 attach	pcapwm at iic
@@ -373,3 +383,48 @@ file	dev/i2c/pca9685.c			pcapwm
 device	twl
 attach	twl at iic
 file	dev/i2c/twl4030.c			twl
+
+# NXP TDA19988 HDMI encoder
+device	tdahdmi: edid, videomode, drmkms, drmkms_i2c
+attach	tdahdmi at iic
+file	dev/i2c/tda19988.c			tdahdmi
+
+# Everest Semi ES8316 Low Power Audio CODEC
+device	es8316ac
+attach	es8316ac at iic
+file	dev/i2c/es8316ac.c			es8316ac
+
+# CellWise CW2015 Fuel Gauge IC
+device	cwfg: sysmon_envsys
+attach	cwfg at iic
+file	dev/i2c/cwfg.c				cwfg
+
+# Sensirion SHT30/SHT31/SHT35 Temperature and Humidity sensor
+device sht3xtemp
+attach sht3xtemp at iic
+file dev/i2c/sht3x.c				sht3xtemp
+
+# Sensirion SHT40/SHT41/SHT45 Temperature and Humidity sensor
+device sht4xtemp
+attach sht4xtemp at iic
+file dev/i2c/sht4x.c				sht4xtemp
+
+# Sensirion SGP40 MOx gas sensor
+device sgp40mox
+attach sgp40mox at iic
+file dev/i2c/sgp40.c				sgp40mox
+file dev/i2c/sensirion_voc_algorithm.c		sgp40mox
+
+# Philips PCA955x GPIO
+device	pcagpio: leds
+attach	pcagpio at iic
+file	dev/i2c/pcagpio.c			pcagpio
+
+# Philips PCF8574 IO expander
+device	pcf8574io: leds, sysmon_envsys
+attach	pcf8574io at iic
+file	dev/i2c/pcf8574.c			pcf8574io
+
+# Sparkfun Serial motor controller
+attach  scmd at iic with scmdi2c
+file	dev/i2c/scmdi2c.c			scmdi2c

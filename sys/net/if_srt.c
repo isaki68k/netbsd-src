@@ -1,8 +1,8 @@
-/* $NetBSD: if_srt.c,v 1.30 2019/04/27 06:18:15 pgoyette Exp $ */
+/* $NetBSD: if_srt.c,v 1.32 2021/06/16 00:21:19 riastradh Exp $ */
 /* This file is in the public domain. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_srt.c,v 1.30 2019/04/27 06:18:15 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_srt.c,v 1.32 2021/06/16 00:21:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -246,9 +246,9 @@ srt_if_output(
 	}
 	/* XXX Do we need to bpf_tap?  Or do higher layers now handle that? */
 	/* if_gif.c seems to imply the latter. */
-	ifp->if_opackets ++;
+	if_statinc(ifp, if_opackets);
 	if (! r) {
-		ifp->if_oerrors ++;
+		if_statinc(ifp, if_oerrors);
 		m_freem(m);
 		return 0;
 	}
@@ -257,7 +257,7 @@ srt_if_output(
 		m_freem(m);
 		return 0;
 	}
-	ifp->if_obytes += m->m_pkthdr.len;
+	if_statadd(ifp, if_obytes, m->m_pkthdr.len);
 	if (! (r->u.dstifp->if_flags & IFF_UP)) {
 		m_freem(m);
 		return 0; /* XXX ENETDOWN? */
@@ -272,7 +272,6 @@ static int
 srt_clone_create(struct if_clone *cl, int unit)
 {
 	struct srt_softc *sc;
-	int rv;
 
 	if (unit < 0 || unit > SRT_MAXUNIT)
 		return ENXIO;
@@ -292,13 +291,7 @@ srt_clone_create(struct if_clone *cl, int unit)
 	sc->intf.if_ioctl = &srt_if_ioctl;
 	sc->intf.if_output = &srt_if_output;
 	sc->intf.if_dlt = DLT_RAW;
-	rv = if_attach(&sc->intf);
-	if (rv != 0) {
-		aprint_error("%s: if_initialize failed(%d)\n",
-		    sc->intf.if_xname, rv);
-		free(sc, M_DEVBUF);
-		return rv;
-	}
+	if_attach(&sc->intf);
 	if_alloc_sadl(&sc->intf);
 #ifdef BPFILTER_NOW_AVAILABLE
 	bpf_attach(&sc->intf, 0, 0);

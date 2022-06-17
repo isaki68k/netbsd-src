@@ -1,4 +1,4 @@
-/*	$NetBSD: socketvar.h,v 1.160 2019/03/07 12:29:14 maxv Exp $	*/
+/*	$NetBSD: socketvar.h,v 1.165 2022/04/09 23:52:23 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -74,6 +74,7 @@ struct uio;
 struct lwp;
 struct uidinfo;
 #else
+#include <sys/atomic.h>
 #include <sys/uidinfo.h>
 #endif
 
@@ -197,13 +198,12 @@ struct socket {
 #define	SS_RCVATMARK		0x040	/* at mark on input */
 #define	SS_ISABORTING		0x080	/* aborting fd references - close() */
 #define	SS_RESTARTSYS		0x100	/* restart blocked system calls */
-#define	SS_ISDISCONNECTED	0x800	/* socket disconnected from peer */
-
-#define	SS_ASYNC		0x100	/* async i/o notify */
+#define	SS_POLLRDBAND		0x200	/* poll should return POLLRDBAND */
 #define	SS_MORETOCOME		0x400	/*
 					 * hint from sosend to lower layer;
 					 * more data coming
 					 */
+#define	SS_ISDISCONNECTED	0x800	/* socket disconnected from peer */
 #define	SS_ISAPIPE 		0x1000	/* socket is implementing a pipe */
 #define	SS_NBIO			0x2000	/* socket is in non blocking I/O */
 
@@ -425,6 +425,17 @@ sbspace_oob(const struct sockbuf *sb)
 	return lmin(hiwat - sb->sb_cc, sb->sb_mbmax - sb->sb_mbcnt);
 }
 
+/*
+ * How much socket buffer space has been used?
+ */
+static __inline u_long
+sbused(const struct sockbuf *sb)
+{
+
+	KASSERT(solocked(sb->sb_so));
+	return sb->sb_cc;
+}
+
 /* do we have to send all at once on a socket? */
 static __inline int
 sosendallatonce(const struct socket *so)
@@ -442,7 +453,7 @@ soreadable(const struct socket *so)
 
 	return so->so_rcv.sb_cc >= so->so_rcv.sb_lowat ||
 	    (so->so_state & SS_CANTRCVMORE) != 0 ||
-	    so->so_qlen != 0 || so->so_error != 0;
+	    so->so_qlen != 0 || so->so_error != 0 || so->so_rerror != 0;
 }
 
 /* can we write something to so? */
@@ -510,12 +521,12 @@ solock(struct socket *so)
 {
 	kmutex_t *lock;
 
-	lock = so->so_lock;
+	lock = atomic_load_consume(&so->so_lock);
 	mutex_enter(lock);
-	if (__predict_false(lock != so->so_lock))
+	if (__predict_false(lock != atomic_load_relaxed(&so->so_lock)))
 		solockretry(so, lock);
 }
-	
+
 static __inline void
 sounlock(struct socket *so)
 {

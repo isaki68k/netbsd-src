@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_turnstile.c,v 1.32 2012/06/15 13:51:40 yamt Exp $	*/
+/*	$NetBSD: kern_turnstile.c,v 1.43 2022/05/28 22:08:46 andvar Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2006, 2007, 2009, 2019, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -56,11 +57,11 @@
  * grabs a free turnstile off the free list.  Otherwise, it can take back
  * the active turnstile from the lock (thus deactivating the turnstile).
  *
- * Turnstiles are the place to do priority inheritence.
+ * Turnstiles are where we do priority inheritence.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.32 2012/06/15 13:51:40 yamt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.43 2022/05/28 22:08:46 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/lockdebug.h>
@@ -69,16 +70,23 @@ __KERNEL_RCSID(0, "$NetBSD: kern_turnstile.c,v 1.32 2012/06/15 13:51:40 yamt Exp
 #include <sys/sleepq.h>
 #include <sys/systm.h>
 
-#define	TS_HASH_SIZE	64
+/*
+ * Shift of 6 aligns to typical cache line size of 64 bytes;  there's no
+ * point having two turnstile locks to back two lock objects that share one
+ * cache line.
+ */
+#define	TS_HASH_SIZE	128
 #define	TS_HASH_MASK	(TS_HASH_SIZE - 1)
-#define	TS_HASH(obj)	(((uintptr_t)(obj) >> 3) & TS_HASH_MASK)
+#define	TS_HASH(obj)	(((uintptr_t)(obj) >> 6) & TS_HASH_MASK)
 
-static tschain_t	turnstile_tab[TS_HASH_SIZE]	__cacheline_aligned;
-pool_cache_t		turnstile_cache			__read_mostly;
-
-static int		turnstile_ctor(void *, void *, int);
-
+static tschain_t	turnstile_chains[TS_HASH_SIZE] __cacheline_aligned;
+struct pool		turnstile_pool;
 extern turnstile_t	turnstile0;
+
+static union {
+	kmutex_t	lock;
+	uint8_t		pad[COHERENCY_UNIT];
+} turnstile_locks[TS_HASH_SIZE] __cacheline_aligned;
 
 /*
  * turnstile_init:
@@ -88,20 +96,17 @@ extern turnstile_t	turnstile0;
 void
 turnstile_init(void)
 {
-	tschain_t *tc;
 	int i;
 
 	for (i = 0; i < TS_HASH_SIZE; i++) {
-		tc = &turnstile_tab[i];
-		LIST_INIT(&tc->tc_chain);
-		tc->tc_mutex = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SCHED);
+		LIST_INIT(&turnstile_chains[i]);
+		mutex_init(&turnstile_locks[i].lock, MUTEX_DEFAULT, IPL_SCHED);
 	}
 
-	turnstile_cache = pool_cache_init(sizeof(turnstile_t), 0, 0, 0,
-	    "tstilepl", NULL, IPL_NONE, turnstile_ctor, NULL, NULL);
-	KASSERT(turnstile_cache != NULL);
+	pool_init(&turnstile_pool, sizeof(turnstile_t), coherency_unit,
+	    0, 0, "tstile", NULL, IPL_NONE);
 
-	(void)turnstile_ctor(NULL, &turnstile0, 0);
+	turnstile_ctor(&turnstile0);
 }
 
 /*
@@ -109,15 +114,13 @@ turnstile_init(void)
  *
  *	Constructor for turnstiles.
  */
-static int
-turnstile_ctor(void *arg, void *obj, int flags)
+void
+turnstile_ctor(turnstile_t *ts)
 {
-	turnstile_t *ts = obj;
 
 	memset(ts, 0, sizeof(*ts));
 	sleepq_init(&ts->ts_sleepq[TS_READER_Q]);
 	sleepq_init(&ts->ts_sleepq[TS_WRITER_Q]);
-	return (0);
 }
 
 /*
@@ -165,11 +168,13 @@ turnstile_lookup(wchan_t obj)
 {
 	turnstile_t *ts;
 	tschain_t *tc;
+	u_int hash;
 
-	tc = &turnstile_tab[TS_HASH(obj)];
-	mutex_spin_enter(tc->tc_mutex);
+	hash = TS_HASH(obj);
+	tc = &turnstile_chains[hash];
+	mutex_spin_enter(&turnstile_locks[hash].lock);
 
-	LIST_FOREACH(ts, &tc->tc_chain, ts_chain)
+	LIST_FOREACH(ts, tc, ts_chain)
 		if (ts->ts_obj == obj)
 			return (ts);
 
@@ -188,10 +193,8 @@ turnstile_lookup(wchan_t obj)
 void
 turnstile_exit(wchan_t obj)
 {
-	tschain_t *tc;
 
-	tc = &turnstile_tab[TS_HASH(obj)];
-	mutex_spin_exit(tc->tc_mutex);
+	mutex_spin_exit(&turnstile_locks[TS_HASH(obj)].lock);
 }
 
 /*
@@ -240,7 +243,7 @@ turnstile_lendpri(lwp_t *cur)
 		if (cur == owner) {
 			/*
 			 * We own the lock: stop here, sleepq_block()
-			 * should wake up immediatly.
+			 * should wake up immediately.
 			 */
 			break;
 		}
@@ -249,14 +252,14 @@ turnstile_lendpri(lwp_t *cur)
 		 * Because we already have another LWP lock (l->l_mutex) held,
 		 * we need to play a try lock dance to avoid deadlock.
 		 */
-		dolock = l->l_mutex != owner->l_mutex;
+		dolock = l->l_mutex != atomic_load_relaxed(&owner->l_mutex);
 		if (l == owner || (dolock && !lwp_trylock(owner))) {
 			/*
 			 * The owner was changed behind us or trylock failed.
 			 * Restart from curlwp.
 			 *
 			 * Note that there may be a livelock here:
-			 * the owner may try grabing cur's lock (which is the
+			 * the owner may try grabbing cur's lock (which is the
 			 * tc lock) while we're trying to grab the owner's lock.
 			 */
 			lwp_unlock(l);
@@ -296,7 +299,7 @@ turnstile_lendpri(lwp_t *cur)
 		l = owner;
 	}
 	LOCKDEBUG_BARRIER(l->l_mutex, 1);
-	if (cur->l_mutex != l->l_mutex) {
+	if (cur->l_mutex != atomic_load_relaxed(&l->l_mutex)) {
 		lwp_unlock(l);
 		lwp_lock(cur);
 	}
@@ -319,7 +322,8 @@ turnstile_unlendpri(turnstile_t *ts)
 
 	KASSERT(ts->ts_inheritor != NULL);
 	ts->ts_inheritor = NULL;
-	dolock = l->l_mutex == l->l_cpu->ci_schedstate.spc_lwplock;
+	dolock = (atomic_load_relaxed(&l->l_mutex) ==
+	    l->l_cpu->ci_schedstate.spc_lwplock);
 	if (dolock) {
 		lwp_lock(l);
 	}
@@ -370,13 +374,17 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 	lwp_t * const l = curlwp; /* cached curlwp */
 	turnstile_t *ots;
 	tschain_t *tc;
+	kmutex_t *lock;
 	sleepq_t *sq;
 	pri_t obase;
+	u_int hash;
 
-	tc = &turnstile_tab[TS_HASH(obj)];
+	hash = TS_HASH(obj);
+	tc = &turnstile_chains[hash];
+	lock = &turnstile_locks[hash].lock;
 
 	KASSERT(q == TS_READER_Q || q == TS_WRITER_Q);
-	KASSERT(mutex_owned(tc->tc_mutex));
+	KASSERT(mutex_owned(lock));
 	KASSERT(l != NULL && l->l_ts != NULL);
 
 	if (ts == NULL) {
@@ -386,11 +394,11 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 		 */
 		ts = l->l_ts;
 		KASSERT(TS_ALL_WAITERS(ts) == 0);
-		KASSERT(TAILQ_EMPTY(&ts->ts_sleepq[TS_READER_Q]) &&
-			TAILQ_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
+		KASSERT(LIST_EMPTY(&ts->ts_sleepq[TS_READER_Q]) &&
+			LIST_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
 		ts->ts_obj = obj;
 		ts->ts_inheritor = NULL;
-		LIST_INSERT_HEAD(&tc->tc_chain, ts, ts_chain);
+		LIST_INSERT_HEAD(tc, ts, ts_chain);
 	} else {
 		/*
 		 * Object already has a turnstile.  Put our turnstile
@@ -405,19 +413,19 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 
 		KASSERT(ts->ts_obj == obj);
 		KASSERT(TS_ALL_WAITERS(ts) != 0);
-		KASSERT(!TAILQ_EMPTY(&ts->ts_sleepq[TS_READER_Q]) ||
-			!TAILQ_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
+		KASSERT(!LIST_EMPTY(&ts->ts_sleepq[TS_READER_Q]) ||
+			!LIST_EMPTY(&ts->ts_sleepq[TS_WRITER_Q]));
 	}
 
 	sq = &ts->ts_sleepq[q];
 	ts->ts_waiters[q]++;
-	sleepq_enter(sq, l, tc->tc_mutex);
-	LOCKDEBUG_BARRIER(tc->tc_mutex, 1);
+	sleepq_enter(sq, l, lock);
+	LOCKDEBUG_BARRIER(lock, 1);
 	l->l_kpriority = true;
 	obase = l->l_kpribase;
 	if (obase < PRI_KTHREAD)
 		l->l_kpribase = PRI_KTHREAD;
-	sleepq_enqueue(sq, obj, "tstile", sobj);
+	sleepq_enqueue(sq, obj, "tstile", sobj, false);
 
 	/*
 	 * Disable preemption across this entire block, as we may drop
@@ -425,7 +433,7 @@ turnstile_block(turnstile_t *ts, int q, wchan_t obj, syncobj_t *sobj)
 	 * to be interrupted while in a state of flux.
 	 */
 	KPREEMPT_DISABLE(l);
-	KASSERT(tc->tc_mutex == l->l_mutex);
+	KASSERT(lock == l->l_mutex);
 	turnstile_lendpri(l);
 	sleepq_block(0, false);
 	l->l_kpribase = obase;
@@ -442,15 +450,17 @@ void
 turnstile_wakeup(turnstile_t *ts, int q, int count, lwp_t *nl)
 {
 	sleepq_t *sq;
-	tschain_t *tc;
+	kmutex_t *lock;
+	u_int hash;
 	lwp_t *l;
 
-	tc = &turnstile_tab[TS_HASH(ts->ts_obj)];
+	hash = TS_HASH(ts->ts_obj);
+	lock = &turnstile_locks[hash].lock;
 	sq = &ts->ts_sleepq[q];
 
 	KASSERT(q == TS_READER_Q || q == TS_WRITER_Q);
 	KASSERT(count > 0 && count <= TS_WAITERS(ts, q));
-	KASSERT(mutex_owned(tc->tc_mutex));
+	KASSERT(mutex_owned(lock));
 	KASSERT(ts->ts_inheritor == curlwp || ts->ts_inheritor == NULL);
 
 	/*
@@ -463,7 +473,7 @@ turnstile_wakeup(turnstile_t *ts, int q, int count, lwp_t *nl)
 
 	if (nl != NULL) {
 #if defined(DEBUG) || defined(LOCKDEBUG)
-		TAILQ_FOREACH(l, sq, l_sleepchain) {
+		LIST_FOREACH(l, sq, l_sleepchain) {
 			if (l == nl)
 				break;
 		}
@@ -473,12 +483,12 @@ turnstile_wakeup(turnstile_t *ts, int q, int count, lwp_t *nl)
 		turnstile_remove(ts, nl, q);
 	} else {
 		while (count-- > 0) {
-			l = TAILQ_FIRST(sq);
+			l = LIST_FIRST(sq);
 			KASSERT(l != NULL);
 			turnstile_remove(ts, l, q);
 		}
 	}
-	mutex_spin_exit(tc->tc_mutex);
+	mutex_spin_exit(lock);
 }
 
 /*
@@ -523,33 +533,33 @@ turnstile_print(volatile void *obj, void (*pr)(const char *, ...))
 	turnstile_t *ts;
 	tschain_t *tc;
 	sleepq_t *rsq, *wsq;
+	u_int hash;
 	lwp_t *l;
 
-	tc = &turnstile_tab[TS_HASH(obj)];
+	hash = TS_HASH(obj);
+	tc = &turnstile_chains[hash];
 
-	LIST_FOREACH(ts, &tc->tc_chain, ts_chain)
+	LIST_FOREACH(ts, tc, ts_chain)
 		if (ts->ts_obj == obj)
 			break;
 
-	(*pr)("Turnstile chain at %p.\n", tc);
 	if (ts == NULL) {
-		(*pr)("=> No active turnstile for this lock.\n");
+		(*pr)("Turnstile: no active turnstile for this lock.\n");
 		return;
 	}
 
 	rsq = &ts->ts_sleepq[TS_READER_Q];
 	wsq = &ts->ts_sleepq[TS_WRITER_Q];
 
-	(*pr)("=> Turnstile at %p (wrq=%p, rdq=%p).\n", ts, rsq, wsq);
-
+	(*pr)("Turnstile:\n");
 	(*pr)("=> %d waiting readers:", TS_WAITERS(ts, TS_READER_Q));
-	TAILQ_FOREACH(l, rsq, l_sleepchain) {
+	LIST_FOREACH(l, rsq, l_sleepchain) {
 		(*pr)(" %p", l);
 	}
 	(*pr)("\n");
 
 	(*pr)("=> %d waiting writers:", TS_WAITERS(ts, TS_WRITER_Q));
-	TAILQ_FOREACH(l, wsq, l_sleepchain) {
+	LIST_FOREACH(l, wsq, l_sleepchain) {
 		(*pr)(" %p", l);
 	}
 	(*pr)("\n");

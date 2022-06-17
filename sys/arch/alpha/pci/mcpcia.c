@@ -1,4 +1,4 @@
-/* $NetBSD: mcpcia.c,v 1.29 2012/02/06 02:14:14 matt Exp $ */
+/* $NetBSD: mcpcia.c,v 1.35 2021/08/07 16:18:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -67,12 +67,12 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: mcpcia.c,v 1.29 2012/02/06 02:14:14 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mcpcia.c,v 1.35 2021/08/07 16:18:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/autoconf.h>
 #include <machine/rpb.h>
@@ -82,7 +82,6 @@ __KERNEL_RCSID(0, "$NetBSD: mcpcia.c,v 1.29 2012/02/06 02:14:14 matt Exp $");
 #include <alpha/mcbus/mcbusvar.h>
 #include <alpha/pci/mcpciareg.h>
 #include <alpha/pci/mcpciavar.h>
-#include <alpha/pci/pci_kn300.h>
 
 #define KV(_addr)	((void *)ALPHA_PHYS_TO_K0SEG((_addr)))
 #define	MCPCIA_SYSBASE(mc)	\
@@ -111,8 +110,8 @@ void	mcpcia_init0(struct mcpcia_config *, int);
  */
 struct mcpcia_config mcpcia_console_configuration;
 
-int	mcpcia_bus_get_window(int, int,
-	    struct alpha_bus_space_translation *abst);
+static int	mcpcia_bus_get_window(int, int,
+		    struct alpha_bus_space_translation *abst);
 
 static int
 mcpciamatch(device_t parent, cfdata_t cf, void *aux)
@@ -126,7 +125,6 @@ mcpciamatch(device_t parent, cfdata_t cf, void *aux)
 static void
 mcpciaattach(device_t parent, device_t self, void *aux)
 {
-	static int first = 1;
 	struct mcbus_dev_attach_args *ma = aux;
 	struct mcpcia_softc *mcp = device_private(self);
 	struct mcpcia_config *ccp;
@@ -150,9 +148,7 @@ mcpciaattach(device_t parent, device_t self, void *aux)
 	    ma->ma_gid == mcpcia_console_configuration.cc_gid)
 		ccp = &mcpcia_console_configuration;
 	else {
-		ccp = malloc(sizeof(struct mcpcia_config), M_DEVBUF, M_WAITOK);
-		memset(ccp, 0, sizeof(struct mcpcia_config));
-
+		ccp = kmem_zalloc(sizeof(struct mcpcia_config), KM_SLEEP);
 		ccp->cc_mid = ma->ma_mid;
 		ccp->cc_gid = ma->ma_gid;
 	}
@@ -176,8 +172,7 @@ mcpciaattach(device_t parent, device_t self, void *aux)
 	/*
 	 * Set up interrupts
 	 */
-	pci_kn300_pickintr(ccp, first);
-	first = 0;
+	alpha_pci_intr_init(ccp, &ccp->cc_iot, &ccp->cc_memt, &ccp->cc_pc);
 
 	/*
 	 * Attach PCI bus
@@ -192,7 +187,7 @@ mcpciaattach(device_t parent, device_t self, void *aux)
 	pba.pba_bridgetag = NULL;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY |
 	    PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
-	(void) config_found_ia(self, "pcibus", &pba, pcibusprint);
+	config_found(self, &pba, pcibusprint, CFARGS_NONE);
 
 	/*
 	 * Clear any errors that may have occurred during the probe
@@ -334,8 +329,9 @@ mcpcia_config_cleanup(void)
 #endif
 }
 
-int
-mcpcia_bus_get_window(int type, int window, struct alpha_bus_space_translation *abst)
+static int
+mcpcia_bus_get_window(int type, int window,
+    struct alpha_bus_space_translation *abst)
 {
 	struct mcpcia_config *ccp = &mcpcia_console_configuration;
 	bus_space_tag_t st;

@@ -1,4 +1,4 @@
-/*	$NetBSD: process_machdep.c,v 1.21 2016/11/02 00:11:59 pgoyette Exp $	*/
+/*	$NetBSD: process_machdep.c,v 1.25 2020/10/19 17:47:37 christos Exp $	*/
 
 /*
  * Copyright (c) 1993 The Regents of the University of California.
@@ -77,7 +77,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.21 2016/11/02 00:11:59 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.25 2020/10/19 17:47:37 christos Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_compat_netbsd.h"
+#include "opt_ptrace.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -90,18 +95,12 @@ __KERNEL_RCSID(0, "$NetBSD: process_machdep.c,v 1.21 2016/11/02 00:11:59 pgoyett
 #include <machine/psl.h>
 #include <machine/reg.h>
 
-#include "opt_compat_netbsd.h"
-#include "opt_coredump.h"
-#include "opt_ptrace.h"
-
 #ifdef COMPAT_40
 static int process_machdep_doregs40(struct lwp *, struct lwp *, struct uio *);
 static int process_machdep_read_regs40(struct lwp *l, struct __reg40 *);
 static int process_machdep_write_regs40(struct lwp *l, struct __reg40 *);
 #endif /* COMPAT_40 */
 
-
-#if defined(PTRACE_HOOKS) || defined(COREDUMP)
 
 static inline struct trapframe *
 process_frame(struct lwp *l)
@@ -140,9 +139,6 @@ process_read_regs(struct lwp *l, struct reg *regs)
 
 	return (0);
 }
-
-#endif /* PTRACE_HOOKS || COREDUMP */
-
 
 #ifdef PTRACE_HOOKS
 
@@ -189,12 +185,12 @@ process_write_regs(struct lwp *l, const struct reg *regs)
 #ifdef __HAVE_PTRACE_MACHDEP
 
 int
-ptrace_machdep_dorequest(struct lwp *l, struct lwp *lt,
+ptrace_machdep_dorequest(struct lwp *l, struct lwp **lt,
 			 int req, void *addr, int data)
 {
 	struct uio uio;
 	struct iovec iov;
-	int write = 0;
+	int write = 0, error;
 
 	switch (req) {
 	default:
@@ -206,7 +202,9 @@ ptrace_machdep_dorequest(struct lwp *l, struct lwp *lt,
 		/* FALLTHROUGH*/
 
 	case PT___GETREGS40:
-		if (!process_validregs(lt))
+		if ((error = ptrace_update_lwp((*lt)->l_proc, lt, data)) != 0)
+			return error;
+		if (!process_validregs(*lt))
 			return EINVAL;
 		iov.iov_base = addr;
 		iov.iov_len = sizeof(struct __reg40);
@@ -216,7 +214,7 @@ ptrace_machdep_dorequest(struct lwp *l, struct lwp *lt,
 		uio.uio_resid = sizeof(struct __reg40);
 		uio.uio_rw = write ? UIO_WRITE : UIO_READ;
 		uio.uio_vmspace = l->l_proc->p_vmspace;
-		return process_machdep_doregs40(l, lt, &uio);
+		return process_machdep_doregs40(l, *lt, &uio);
 #endif	/* COMPAT_40 */
 	}
 }

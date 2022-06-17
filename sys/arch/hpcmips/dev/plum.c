@@ -1,4 +1,4 @@
-/*	$NetBSD: plum.c,v 1.16 2015/10/02 09:05:33 msaitoh Exp $ */
+/*	$NetBSD: plum.c,v 1.20 2021/08/07 16:18:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -30,12 +30,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plum.c,v 1.16 2015/10/02 09:05:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plum.c,v 1.20 2021/08/07 16:18:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -103,11 +103,7 @@ plum_attach(device_t parent, device_t self, void *aux)
 		printf(": Plum2 #2\n");
 		break;
 	}
-	if (!(sc->sc_pc = malloc(sizeof(struct plum_chipset_tag),
-	    M_DEVBUF, M_NOWAIT))) {
-		panic("no memory");
-	}
-	memset(sc->sc_pc, 0, sizeof(struct plum_chipset_tag));
+	sc->sc_pc = kmem_zalloc(sizeof(struct plum_chipset_tag), KM_SLEEP);
 	sc->sc_pc->pc_tc = ca->ca_tc;
 	
 	/* Attach Plum devices */
@@ -116,12 +112,15 @@ plum_attach(device_t parent, device_t self, void *aux)
 	 * attach first.
 	 */
 	sc->sc_pri = 2;
-	config_search_ia(plum_search, self, "plumif", plum_print);
+	config_search(self, NULL,
+	    CFARGS(.search = plum_search));
+
 	/* 
 	 * Other plum module.
 	 */
 	sc->sc_pri = 1;
-	config_search_ia(plum_search, self, "plumif", plum_print);
+	config_search(self, NULL,
+	    CFARGS(.search = plum_search));
 }
 
 plumreg_t
@@ -160,8 +159,8 @@ plum_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	pa.pa_memt	= sc->sc_csmemt;
 	pa.pa_irq	= sc->sc_irq;
 
-	if (config_match(parent, cf, &pa) == sc->sc_pri) {
-		config_attach(parent, cf, &pa, plum_print);
+	if (/*XXX*/config_probe(parent, cf, &pa) == sc->sc_pri) {
+		config_attach(parent, cf, &pa, plum_print, CFARGS_NONE);
 	}
 
 	return 0;

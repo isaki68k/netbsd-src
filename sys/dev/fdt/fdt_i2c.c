@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_i2c.c,v 1.7 2019/04/24 06:03:02 thorpej Exp $ */
+/* $NetBSD: fdt_i2c.c,v 1.12 2022/02/23 07:55:55 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_i2c.c,v 1.7 2019/04/24 06:03:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_i2c.c,v 1.12 2022/02/23 07:55:55 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -38,9 +38,8 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_i2c.c,v 1.7 2019/04/24 06:03:02 thorpej Exp $");
 #include <dev/fdt/fdtvar.h>
 
 struct fdtbus_i2c_controller {
-	device_t i2c_dev;
+	i2c_tag_t i2c_tag;
 	int i2c_phandle;
-	const struct fdtbus_i2c_controller_func *i2c_funcs;
 
 	LIST_ENTRY(fdtbus_i2c_controller) i2c_next;
 };
@@ -49,15 +48,13 @@ static LIST_HEAD(, fdtbus_i2c_controller) fdtbus_i2c_controllers =
     LIST_HEAD_INITIALIZER(fdtbus_i2c_controllers);
 
 int
-fdtbus_register_i2c_controller(device_t dev, int phandle,
-    const struct fdtbus_i2c_controller_func *funcs)
+fdtbus_register_i2c_controller(i2c_tag_t tag, int phandle)
 {
 	struct fdtbus_i2c_controller *i2c;
 
 	i2c = kmem_alloc(sizeof(*i2c), KM_SLEEP);
-	i2c->i2c_dev = dev;
+	i2c->i2c_tag = tag;
 	i2c->i2c_phandle = phandle;
-	i2c->i2c_funcs = funcs;
 
 	LIST_INSERT_HEAD(&fdtbus_i2c_controllers, i2c, i2c_next);
 
@@ -78,7 +75,7 @@ fdtbus_get_i2c_controller(int phandle)
 }
 
 i2c_tag_t
-fdtbus_get_i2c_tag(int phandle)
+fdtbus_i2c_get_tag(int phandle)
 {
 	struct fdtbus_i2c_controller *i2c;
 
@@ -86,7 +83,7 @@ fdtbus_get_i2c_tag(int phandle)
 	if (i2c == NULL)
 		return NULL;
 
-	return i2c->i2c_funcs->get_tag(i2c->i2c_dev);
+	return i2c->i2c_tag;
 }
 
 i2c_tag_t
@@ -98,7 +95,7 @@ fdtbus_i2c_acquire(int phandle, const char *prop)
 	if (i2c_phandle == -1)
 		return NULL;
 
-	return fdtbus_get_i2c_tag(i2c_phandle);
+	return fdtbus_i2c_get_tag(i2c_phandle);
 }
 
 device_t
@@ -123,9 +120,10 @@ fdtbus_attach_i2cbus(device_t dev, int phandle, i2c_tag_t tag, cfprint_t print)
 	prop_object_release(devs);
 
 	props = device_properties(dev);
-	prop_dictionary_set_bool(props, "i2c-indirect-config", false);
+	prop_dictionary_set_bool(props, "i2c-no-indirect-config", true);
 
-	ret = config_found_ia(dev, "i2cbus", &iba, print);
+	ret = config_found(dev, &iba, print,
+	    CFARGS(.iattr = "i2cbus"));
 	if (iba.iba_child_devices)
 		prop_object_release(iba.iba_child_devices);
 

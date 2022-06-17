@@ -1,4 +1,4 @@
-/*	$NetBSD: cs89x0.c,v 1.47 2019/05/29 10:07:29 msaitoh Exp $	*/
+/*	$NetBSD: cs89x0.c,v 1.51 2021/07/31 20:29:37 andvar Exp $	*/
 
 /*
  * Copyright (c) 2004 Christopher Gilbert
@@ -138,7 +138,7 @@
 **     to start transmitting after 381 bytes have been fed to it.  if that
 **     gets transmit underruns, ramp down to 1021 bytes then "whole
 **     packet."  If successful at a given level for a while, try the next
-**     more agressive level.  This code doesn't ever try to start
+**     more aggressive level.  This code doesn't ever try to start
 **     transmitting after 5 bytes have been sent to the NIC, because
 **     that underruns rather regularly.  The back-off and ramp-up mechanism
 **     could probably be tuned a little bit, but this works well enough to
@@ -175,7 +175,7 @@
 **       infrequent event.  It could have been used in the IFF_PROMISCUOUS
 **       address check above, but the benefit of it vs. memcmp would be
 **       inconsequential, there.)  Use memcmp() instead.
-**     * restructure csStartOuput to avoid the following bugs in the case where
+**     * restructure csStartOutput to avoid the following bugs in the case where
 **       txWait was being set:
 **         * it would accidentally drop the outgoing packet if told to wait
 **           but the outgoing packet queue was empty.
@@ -212,7 +212,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.47 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.51 2021/07/31 20:29:37 andvar Exp $");
 
 #include "opt_inet.h"
 
@@ -383,7 +383,7 @@ cs_attach(struct cs_softc *sc, uint8_t *enaddr, int *media,
 	/* Start out not transmitting */
 	sc->sc_txbusy = FALSE;
 
-	/* Set up early transmit threshhold */
+	/* Set up early transmit threshold */
 	sc->sc_xe_ent = 0;
 	sc->sc_xe_togo = cs_xmit_early_table[sc->sc_xe_ent].better_count;
 
@@ -517,6 +517,7 @@ cs_detach(struct cs_softc *sc)
 		rnd_detach_source(&sc->rnd_source);
 		ether_ifdetach(ifp);
 		if_detach(ifp);
+		ifmedia_fini(&sc->sc_media);
 		sc->sc_cfgflags &= ~CFGFLG_ATTACHED;
 	}
 
@@ -1462,7 +1463,7 @@ cs_counter_event(struct cs_softc *sc, uint16_t cntEvent)
 		 * Increment the input error count, the first 6bits are the
 		 * register id.
 		 */
-		ifp->if_ierrors += ((errorCount & 0xffC0) >> 6);
+		if_statadd(ifp, if_ierrors, (errorCount & 0xffC0) >> 6);
 		break;
 	default:
 		/* Do nothing */
@@ -1528,7 +1529,7 @@ cs_transmit_event(struct cs_softc *sc, uint16_t txEvent)
 	if (txEvent & (TX_EVENT_LOSS_CRS | TX_EVENT_SQE_ERR |
 	    TX_EVENT_OUT_WIN | TX_EVENT_JABBER | TX_EVENT_16_COLL)) {
 		/* Increment the output error count */
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 		/* Note carrier loss. */
 		if (txEvent & TX_EVENT_LOSS_CRS)
@@ -1562,12 +1563,15 @@ cs_transmit_event(struct cs_softc *sc, uint16_t txEvent)
 	}
 
 	/* Add the number of collisions for this frame */
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 	if (txEvent & TX_EVENT_16_COLL)
-		ifp->if_collisions += 16;
+		if_statadd_ref(nsr, if_collisions, 16);
 	else
-		ifp->if_collisions += ((txEvent & TX_EVENT_COLL_MASK) >> 11);
+		if_statadd_ref(nsr, if_collisions,
+		    ((txEvent & TX_EVENT_COLL_MASK) >> 11));
 
-	ifp->if_opackets++;
+	if_statinc_ref(nsr, if_opackets);
+	IF_STAT_PUTREF(ifp);
 
 	/* Transmission is no longer in progress */
 	sc->sc_txbusy = FALSE;
@@ -1605,7 +1609,7 @@ cs_receive_event(struct cs_softc *sc, uint16_t rxEvent)
 	/* If the frame was not received OK */
 	if (!(rxEvent & RX_EVENT_RX_OK)) {
 		/* Increment the input error count */
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 
 		/* If debugging is enabled then log error messages. */
 		if (ifp->if_flags & IFF_DEBUG) {
@@ -1691,7 +1695,7 @@ cs_process_receive(struct cs_softc *sc)
 	if (m == 0) {
 		aprint_error_dev(sc->sc_dev,
 		    "cs_process_receive: unable to allocate mbuf\n");
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		/*
 		 * Couldn't allocate an mbuf so things are not good, may as
 		 * well drop the packet I think.
@@ -1773,7 +1777,7 @@ cs_process_rx_early(struct cs_softc *sc)
 	if (m == 0) {
 		aprint_error_dev(sc->sc_dev,
 		    "cs_process_rx_early: unable to allocate mbuf\n");
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		/*
 		 * Couldn't allocate an mbuf so things are not good, may as
 		 * well drop the packet I think.
@@ -1848,7 +1852,7 @@ cs_process_rx_early(struct cs_softc *sc)
 		cs_ether_input(sc, m);
 	} else {
 		m_freem(m);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 	}
 }
 
@@ -1942,7 +1946,7 @@ cs_start_output(struct ifnet *ifp)
 
 				/* Discard the bad mbuf chain */
 				m_freem(pMbufChain);
-				sc->sc_ethercom.ec_if.if_oerrors++;
+				if_statinc(&sc->sc_ethercom.ec_if, if_oerrors);
 
 				/* Loop up to transmit the next chain */
 				txLoop = 0;
@@ -1983,7 +1987,7 @@ cs_start_output(struct ifnet *ifp)
 						 * Increment the output error
 						 * count
 						 */
-						ifp->if_oerrors++;
+						if_statinc(ifp, if_oerrors);
 						/*
 						 * exit the routine and drop
 						 * the packet.

@@ -1,4 +1,4 @@
-/* $NetBSD: db_instruction.h,v 1.9 2012/02/06 02:14:10 matt Exp $ */
+/* $NetBSD: db_instruction.h,v 1.13 2021/07/20 02:42:10 thorpej Exp $ */
 
 /*
  * Copyright (c) 1999 Christopher G. Demetriou.  All rights reserved.
@@ -357,9 +357,9 @@ typedef union {
 #define	op_msklh	0x62
 #define	op_inslh	0x67
 #define	op_extlh	0x6a
-#define	op_extqh	0x7a
-#define	op_insqh	0x77
 #define	op_mskqh	0x72
+#define	op_insqh	0x77
+#define	op_extqh	0x7a
 
 		/* MUL, "function" opcodes (bits 5..11)  */
 
@@ -445,6 +445,11 @@ typedef union {
 #define	op_cvtql_v	0x130
 #define	op_cvtql_sv	0x530
 
+		/* FIX FLOAT, "function" opcodes (bits 5..11)  */
+
+#define	op_itofs	0x004
+#define	op_itoff	0x014
+#define	op_itoft	0x024
 
 		/* ieee FLOAT, "function" opcodes (bits 5..11)  */
 
@@ -741,5 +746,16 @@ typedef union {
 #define	op_cvtgd_su	0x5ad
 #define	op_cvtgqg_sv	0x5af
 
+#ifdef _KERNEL
+struct alpha_print_instruction_context {
+	unsigned long pc;	/* address of insn */
+	alpha_instruction insn;	/* instruction bits */
+	char	*buf;		/* output buffer (if not DDB) */
+	size_t	bufsize;	/* size of output buffer */
+	size_t	cursor;		/* current next output location */
+};
+
+int	alpha_print_instruction(struct alpha_print_instruction_context *);
+#endif /* _KERNEL */
 
 #endif	/* _ALPHA_INSTRUCTION_H_ */

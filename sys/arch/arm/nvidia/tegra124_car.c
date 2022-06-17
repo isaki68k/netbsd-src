@@ -1,4 +1,4 @@
-/* $NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp $ */
+/* $NetBSD: tegra124_car.c,v 1.24 2022/03/19 11:37:17 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.24 2022/03/19 11:37:17 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp 
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 #include <sys/atomic.h>
 #include <sys/kmem.h>
@@ -152,6 +151,7 @@ static struct tegra124_car_clock_id {
 	{ 127, "se" },
 	{ 128, "hda2hdmi" },
 	{ 129, "sata_cold" },
+	{ 136, "cec" },
 	{ 144, "cilab" },
 	{ 145, "cilcd" },
 	{ 146, "cile" },
@@ -632,6 +632,7 @@ static struct tegra_clk tegra124_car_clocks[] = {
 	CLK_GATE_V("hda2codec_2x", "div_hda2codec_2x", CAR_DEV_V_HDA2CODEC_2X),
 	CLK_GATE_V("hda", "div_hda", CAR_DEV_V_HDA),
 	CLK_GATE_W("hda2hdmi", "clk_m", CAR_DEV_W_HDA2HDMICODEC),
+	CLK_GATE_W("cec", "clk_m", CAR_DEV_W_CEC),
 	CLK_GATE_H("fuse", "clk_m", CAR_DEV_H_FUSE),
 	CLK_GATE_U("soc_therm", "div_soc_therm", CAR_DEV_U_SOC_THERM),
 	CLK_GATE_V("mselect", "div_mselect", CAR_DEV_V_MSELECT),
@@ -707,7 +708,6 @@ struct tegra124_car_softc {
 	u_int			sc_clock_cells;
 	u_int			sc_reset_cells;
 
-	kmutex_t		sc_rndlock;
 	krndsource_t		sc_rndsource;
 };
 
@@ -723,19 +723,20 @@ static void	tegra124_car_rnd_callback(size_t, void *);
 CFATTACH_DECL_NEW(tegra124_car, sizeof(struct tegra124_car_softc),
 	tegra124_car_match, tegra124_car_attach, NULL, NULL);
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "nvidia,tegra124-car" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 tegra124_car_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = { "nvidia,tegra124-car", NULL };
 	struct fdt_attach_args * const faa = aux;
 
 #if 0
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 #else
-	if (of_match_compatible(faa->faa_phandle, compatible) == 0)
-		return 0;
-
-	return 999;
+	return of_compatible_match(faa->faa_phandle, compat_data) ? 999 : 0;
 #endif
 }
 
@@ -784,7 +785,7 @@ tegra124_car_attach(device_t parent, device_t self, void *aux)
 
 	tegra124_car_init(sc);
 
-	config_interrupts(self, tegra124_car_rnd_attach);
+	tegra124_car_rnd_attach(self);
 }
 
 static void
@@ -915,11 +916,9 @@ tegra124_car_rnd_attach(device_t self)
 {
 	struct tegra124_car_softc * const sc = device_private(self);
 
-	mutex_init(&sc->sc_rndlock, MUTEX_DEFAULT, IPL_VM);
 	rndsource_setcb(&sc->sc_rndsource, tegra124_car_rnd_callback, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(sc->sc_dev),
 	    RND_TYPE_RNG, RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-	tegra124_car_rnd_callback(RND_POOLBITS / NBBY, sc);
 }
 
 static void
@@ -929,7 +928,6 @@ tegra124_car_rnd_callback(size_t bytes_wanted, void *priv)
 	uint16_t buf[512];
 	uint32_t cnt;
 
-	mutex_enter(&sc->sc_rndlock);
 	while (bytes_wanted) {
 		const u_int nbytes = MIN(bytes_wanted, 1024);
 		for (cnt = 0; cnt < bytes_wanted / 2; cnt++) {
@@ -941,7 +939,6 @@ tegra124_car_rnd_callback(size_t bytes_wanted, void *priv)
 		bytes_wanted -= MIN(bytes_wanted, nbytes);
 	}
 	explicit_memset(buf, 0, sizeof(buf));
-	mutex_exit(&sc->sc_rndlock);
 }
 
 static struct tegra_clk *

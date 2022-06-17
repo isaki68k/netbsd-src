@@ -1,4 +1,4 @@
-/*	$NetBSD: can.c,v 1.8 2019/08/19 03:24:38 ozaki-r Exp $	*/
+/*	$NetBSD: can.c,v 1.11 2021/12/31 14:24:51 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: can.c,v 1.8 2019/08/19 03:24:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: can.c,v 1.11 2021/12/31 14:24:51 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -132,10 +132,10 @@ can_set_netlink(struct ifnet *ifp, struct ifdrv *ifd)
 	if (ifp->if_dlt != DLT_CAN_SOCKETCAN || csc == NULL)
 		return EOPNOTSUPP;
 
-	error = kauth_authorize_network(curlwp->l_cred,
-		    KAUTH_NETWORK_INTERFACE,
-		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp,
-	            (void *)SIOCSDRVSPEC, NULL);
+	error = kauth_authorize_network(kauth_cred_get(),
+	    KAUTH_NETWORK_INTERFACE,
+	    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp,
+	    (void *)SIOCSDRVSPEC, NULL);
 	if (error != 0)
 		return error;
 
@@ -187,7 +187,7 @@ can_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 	default:
 		if (ifp->if_ioctl == 0)
 			return (EOPNOTSUPP);
-		return ((*ifp->if_ioctl)(ifp, cmd, data));
+		return (if_ioctl(ifp, cmd, data));
 	}
 	return (0);
 }
@@ -249,7 +249,7 @@ can_output(struct mbuf *m, struct canpcb *canp)
 		
 	sotag = m_tag_get(PACKET_TAG_SO, sizeof(struct socket *), PR_NOWAIT);
 	if (sotag == NULL) {
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		return ENOMEM;
 	}
 	mutex_enter(&canp->canp_mtx);
@@ -307,8 +307,7 @@ can_input(struct ifnet *ifp, struct mbuf *m)
 	} else {
 		IF_ENQUEUE(inq, m);
 		IFQ_UNLOCK(inq);
-		ifp->if_ipackets++;
-		ifp->if_ibytes += m->m_pkthdr.len;
+		if_statadd2(ifp, if_ipackets, 1, if_ibytes, m->m_pkthdr.len);
 		schednetisr(NETISR_CAN);
 	}
 }

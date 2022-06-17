@@ -1,4 +1,4 @@
-/* $NetBSD: omap_edma.c,v 1.4 2017/03/14 15:11:41 skrll Exp $ */
+/* $NetBSD: omap_edma.c,v 1.7 2022/06/08 23:12:27 andvar Exp $ */
 
 /*-
  * Copyright (c) 2014 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omap_edma.c,v 1.4 2017/03/14 15:11:41 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omap_edma.c,v 1.7 2022/06/08 23:12:27 andvar Exp $");
 
 #include "opt_omap.h"
 
@@ -146,7 +146,7 @@ edma_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 	if (bus_space_map(sc->sc_iot, mb->mb_iobase, mb->mb_iosize,
 	    0, &sc->sc_ioh) != 0) {
-		aprint_error(": couldn't map address spcae\n");
+		aprint_error(": couldn't map address space\n");
 		return;
 	}
 
@@ -383,7 +383,7 @@ edma_channel_free(struct edma_channel *ch)
 }
 
 /*
- * Allocate a PaRAM entry. The driver artifically restricts the number
+ * Allocate a PaRAM entry. The driver artificially restricts the number
  * of PaRAM entries available for each channel to MAX_PARAM_PER_CHANNEL.
  * If the number of entries for the channel has been exceeded, or there
  * are no entries available, 0xffff is returned.
@@ -494,7 +494,7 @@ edma_transfer_start(struct edma_channel *ch)
 }
 
 /*
- * Halt a DMA transfer. Called after successfull transfer, or to abort
+ * Halt a DMA transfer. Called after successful transfer, or to abort
  * a transfer.
  */
 void

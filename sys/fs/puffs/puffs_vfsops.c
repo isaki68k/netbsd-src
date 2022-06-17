@@ -1,4 +1,4 @@
-/*	$NetBSD: puffs_vfsops.c,v 1.123 2019/09/27 22:36:57 christos Exp $	*/
+/*	$NetBSD: puffs_vfsops.c,v 1.126 2021/04/01 19:00:33 christos Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006  Antti Kantee.  All Rights Reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: puffs_vfsops.c,v 1.123 2019/09/27 22:36:57 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: puffs_vfsops.c,v 1.126 2021/04/01 19:00:33 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -452,7 +452,7 @@ puffs_vfsop_unmount(struct mount *mp, int mntflags)
  * This doesn't need to travel to userspace
  */
 int
-puffs_vfsop_root(struct mount *mp, struct vnode **vpp)
+puffs_vfsop_root(struct mount *mp, int lktype, struct vnode **vpp)
 {
 	struct puffs_mount *pmp = MPTOPUFFSMP(mp);
 	int rv;
@@ -461,7 +461,7 @@ puffs_vfsop_root(struct mount *mp, struct vnode **vpp)
 	KASSERT(rv != PUFFS_NOSUCHCOOKIE);
 	if (rv != 0)
 		return rv;
-	rv = vn_lock(*vpp, LK_EXCLUSIVE);
+	rv = vn_lock(*vpp, lktype);
 	if (rv != 0) {
 		vrele(*vpp);
 		*vpp = NULL;
@@ -501,6 +501,9 @@ puffs_vfsop_statvfs(struct mount *mp, struct statvfs *sbp)
 	 *
 	 * XXX: cache the copy in non-error case
 	 */
+	if (!error) {
+		puffs_statvfs_to_statvfs(&statvfs_msg->pvfsr_sb, sbp);
+	}
 	copy_statvfs_info(sbp, mp);
 	if (!error) {
 		statvfs_to_puffs_statvfs(sbp, &statvfs_msg->pvfsr_sb);
@@ -517,7 +520,9 @@ pageflush_selector(void *cl, struct vnode *vp)
 	KASSERT(mutex_owned(vp->v_interlock));
 
 	return vp->v_type == VREG &&
-	    !(LIST_EMPTY(&vp->v_dirtyblkhd) && UVM_OBJ_IS_CLEAN(&vp->v_uobj));
+	    !(LIST_EMPTY(&vp->v_dirtyblkhd) &&
+	    (vp->v_iflag & VI_ONWORKLST) == 0);
+
 }
 
 static int
@@ -608,7 +613,8 @@ puffs_vfsop_sync(struct mount *mp, int waitfor, struct kauth_cred *cred)
 }
 
 int
-puffs_vfsop_fhtovp(struct mount *mp, struct fid *fhp, struct vnode **vpp)
+puffs_vfsop_fhtovp(struct mount *mp, struct fid *fhp, int lktype,
+    struct vnode **vpp)
 {
 	PUFFS_MSG_VARS(vfs, fhtonode);
 	struct puffs_mount *pmp = MPTOPUFFSMP(mp);
@@ -652,7 +658,7 @@ puffs_vfsop_fhtovp(struct mount *mp, struct fid *fhp, struct vnode **vpp)
 	    fhtonode_msg->pvfsr_rdev, &vp);
 	if (error)
 		goto out;
-	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	vn_lock(vp, lktype | LK_RETRY);
 
 	*vpp = vp;
  out:

@@ -1,4 +1,4 @@
-/*	$NetBSD: uhidev.c,v 1.75 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: uhidev.c,v 1.93 2022/03/28 12:44:45 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2012 The NetBSD Foundation, Inc.
@@ -35,21 +35,26 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhidev.c,v 1.75 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhidev.c,v 1.93 2022/03/28 12:44:45 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
 #endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/kmem.h>
-#include <sys/signalvar.h>
+#include <sys/types.h>
+
+#include <sys/atomic.h>
+#include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/ioctl.h>
-#include <sys/conf.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/lwp.h>
 #include <sys/rndsource.h>
+#include <sys/signalvar.h>
+#include <sys/systm.h>
+#include <sys/xcall.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbhid.h>
@@ -71,6 +76,57 @@ __KERNEL_RCSID(0, "$NetBSD: uhidev.c,v 1.75 2019/05/05 03:17:54 mrg Exp $");
 
 #include "locators.h"
 
+struct uhidev_softc {
+	device_t sc_dev;		/* base device */
+	struct usbd_device *sc_udev;
+	struct usbd_interface *sc_iface;	/* interface */
+	int sc_iep_addr;
+	int sc_oep_addr;
+	u_int sc_isize;
+
+	int sc_repdesc_size;
+	void *sc_repdesc;
+
+	u_int sc_nrepid;
+	struct uhidev {
+		struct uhidev_softc *sc_parent;
+		device_t	sc_dev;
+		void		(*sc_intr)(void *, void *, u_int);
+		void		*sc_cookie;
+		krndsource_t	sc_rndsource;
+		int		sc_in_rep_size;
+		uint8_t		sc_report_id;
+		uint8_t		sc_state;
+#define	UHIDEV_OPEN	0x01	/* device is open */
+#define	UHIDEV_STOPPED	0x02	/* xfers are stopped */
+	} *sc_subdevs;
+
+	kmutex_t sc_lock;
+	kcondvar_t sc_cv;
+
+	/* Read/written under sc_lock.  */
+	struct lwp *sc_writelock;
+	struct lwp *sc_configlock;
+	int sc_refcnt;
+	int sc_writereportid;
+	int sc_stopreportid;
+
+	/*
+	 * - Read under sc_lock, provided sc_refcnt > 0.
+	 * - Written under sc_configlock only when transitioning to and
+	 *   from sc_refcnt = 0.
+	 */
+	u_char *sc_ibuf;
+	struct usbd_pipe *sc_ipipe;	/* input interrupt pipe */
+	struct usbd_pipe *sc_opipe;	/* output interrupt pipe */
+	struct usbd_xfer *sc_oxfer;	/* write request */
+	usbd_callback sc_writecallback;	/* async write request callback */
+	void *sc_writecookie;
+
+	u_int sc_flags;
+#define UHIDEV_F_XB1	0x0001	/* Xbox 1 controller */
+};
+
 #ifdef UHIDEV_DEBUG
 #define DPRINTF(x)	if (uhidevdebug) printf x
 #define DPRINTFN(n,x)	if (uhidevdebug>(n)) printf x
@@ -80,21 +136,20 @@ int	uhidevdebug = 0;
 #define DPRINTFN(n,x)
 #endif
 
-Static void uhidev_intr(struct usbd_xfer *, void *, usbd_status);
+static void uhidev_intr(struct usbd_xfer *, void *, usbd_status);
 
-Static int uhidev_maxrepid(void *, int);
-Static int uhidevprint(void *, const char *);
+static int uhidev_maxrepid(void *, int);
+static int uhidevprint(void *, const char *);
 
-int uhidev_match(device_t, cfdata_t, void *);
-void uhidev_attach(device_t, device_t, void *);
-void uhidev_childdet(device_t, device_t);
-int uhidev_detach(device_t, int);
-int uhidev_activate(device_t, enum devact);
+static int uhidev_match(device_t, cfdata_t, void *);
+static void uhidev_attach(device_t, device_t, void *);
+static void uhidev_childdet(device_t, device_t);
+static int uhidev_detach(device_t, int);
 
 CFATTACH_DECL2_NEW(uhidev, sizeof(struct uhidev_softc), uhidev_match,
-    uhidev_attach, uhidev_detach, uhidev_activate, NULL, uhidev_childdet);
+    uhidev_attach, uhidev_detach, NULL, NULL, uhidev_childdet);
 
-int
+static int
 uhidev_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usbif_attach_arg *uiaa = aux;
@@ -113,7 +168,7 @@ uhidev_match(device_t parent, cfdata_t match, void *aux)
 	return UMATCH_IFACECLASS_GENERIC;
 }
 
-void
+static void
 uhidev_attach(device_t parent, device_t self, void *aux)
 {
 	struct uhidev_softc *sc = device_private(self);
@@ -123,7 +178,6 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	usb_endpoint_descriptor_t *ed;
 	struct uhidev_attach_arg uha;
 	device_t dev;
-	struct uhidev *csc;
 	int maxinpktsize, size, nrepid, repid, repsz;
 	int *repsizes;
 	int i;
@@ -141,6 +195,12 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
+	cv_init(&sc->sc_cv, "uhidev");
+	sc->sc_writelock = NULL;
+	sc->sc_configlock = NULL;
+	sc->sc_refcnt = 0;
+	sc->sc_writereportid = -1;
+	sc->sc_stopreportid = -1;
 
 	id = usbd_get_interface_descriptor(iface);
 
@@ -163,8 +223,16 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	}
 	(void)usbd_set_idle(iface, 0, 0);
 
-	if ((usbd_get_quirks(sc->sc_udev)->uq_flags & UQ_NO_SET_PROTO) == 0)
+#if 0
+	/*
+	 * HID 1.11 says we should do this, but the device firmware is
+	 * supposed to come up in Report Protocol after reset anyway, and
+	 * apparently explicitly requesting it confuses some devices.
+	 */
+	if ((usbd_get_quirks(sc->sc_udev)->uq_flags & UQ_NO_SET_PROTO) == 0 &&
+	    id->bInterfaceSubClass == UISUBCLASS_BOOT)
 		(void)usbd_set_protocol(iface, 1);
+#endif
 
 	maxinpktsize = 0;
 	sc->sc_iep_addr = sc->sc_oep_addr = -1;
@@ -173,7 +241,6 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 		if (ed == NULL) {
 			aprint_error_dev(self,
 			    "could not read endpoint descriptor\n");
-			sc->sc_dying = 1;
 			return;
 		}
 
@@ -204,7 +271,6 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (sc->sc_iep_addr == -1) {
 		aprint_error_dev(self, "no input interrupt endpoint\n");
-		sc->sc_dying = 1;
 		return;
 	}
 
@@ -265,7 +331,6 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	}
 	if (err) {
 		aprint_error_dev(self, "no report descriptor\n");
-		sc->sc_dying = 1;
 		return;
 	}
 
@@ -327,7 +392,7 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 		aprint_normal_dev(self, "%d report ids\n", nrepid);
 	nrepid++;
 	repsizes = kmem_alloc(nrepid * sizeof(*repsizes), KM_SLEEP);
-	sc->sc_subdevs = kmem_zalloc(nrepid * sizeof(device_t),
+	sc->sc_subdevs = kmem_zalloc(nrepid * sizeof(sc->sc_subdevs[0]),
 	    KM_SLEEP);
 
 	/* Just request max packet size for the interrupt pipe */
@@ -344,40 +409,35 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 
 	DPRINTF(("uhidev_attach: isize=%d\n", sc->sc_isize));
 
-	uha.parent = sc;
 	for (repid = 0; repid < nrepid; repid++) {
+		struct uhidev *scd = &sc->sc_subdevs[repid];
+
+		scd->sc_parent = sc;
+		scd->sc_report_id = repid;
+		scd->sc_in_rep_size = repsizes[repid];
+
 		DPRINTF(("uhidev_match: try repid=%d\n", repid));
 		if (hid_report_size(desc, size, hid_input, repid) == 0 &&
 		    hid_report_size(desc, size, hid_output, repid) == 0 &&
 		    hid_report_size(desc, size, hid_feature, repid) == 0) {
 			;	/* already NULL in sc->sc_subdevs[repid] */
 		} else {
+			uha.parent = scd;
 			uha.reportid = repid;
 			locs[UHIDBUSCF_REPORTID] = repid;
 
-			dev = config_found_sm_loc(self,
-				"uhidbus", locs, &uha,
-				uhidevprint, config_stdsubmatch);
-			sc->sc_subdevs[repid] = dev;
-			if (dev != NULL) {
-				csc = device_private(dev);
-				csc->sc_in_rep_size = repsizes[repid];
-#ifdef DIAGNOSTIC
-				DPRINTF(("uhidev_match: repid=%d dev=%p\n",
-					 repid, dev));
-				if (csc->sc_intr == NULL) {
-					kmem_free(repsizes,
-					    nrepid * sizeof(*repsizes));
-					aprint_error_dev(self,
-					    "sc_intr == NULL\n");
-					return;
-				}
-#endif
-				rnd_attach_source(&csc->rnd_source,
-						  device_xname(dev),
-						  RND_TYPE_TTY,
-						  RND_FLAG_DEFAULT);
-			}
+			dev = config_found(self, &uha, uhidevprint,
+			    CFARGS(.submatch = config_stdsubmatch,
+				   .locators = locs));
+			sc->sc_subdevs[repid].sc_dev = dev;
+			if (dev == NULL)
+				continue;
+			/*
+			 * XXXSMP -- could be detached in the middle of
+			 * sleeping for allocation in rnd_attach_source
+			 */
+			rnd_attach_source(&scd->sc_rndsource,
+			    device_xname(dev), RND_TYPE_TTY, RND_FLAG_DEFAULT);
 		}
 	}
 	kmem_free(repsizes, nrepid * sizeof(*repsizes));
@@ -385,7 +445,7 @@ uhidev_attach(device_t parent, device_t self, void *aux)
 	return;
 }
 
-int
+static int
 uhidev_maxrepid(void *buf, int len)
 {
 	struct hid_data *d;
@@ -398,10 +458,10 @@ uhidev_maxrepid(void *buf, int len)
 		if ((int)h.report_ID > maxid)
 			maxid = h.report_ID;
 	hid_end_parse(d);
-	return maxid;
+	return MIN(maxid, UHIDEV_MAXREPID);
 }
 
-int
+static int
 uhidevprint(void *aux, const char *pnp)
 {
 	struct uhidev_attach_arg *uha = aux;
@@ -413,72 +473,79 @@ uhidevprint(void *aux, const char *pnp)
 	return UNCONF;
 }
 
-int
-uhidev_activate(device_t self, enum devact act)
-{
-	struct uhidev_softc *sc = device_private(self);
-
-	switch (act) {
-	case DVACT_DEACTIVATE:
-		sc->sc_dying = 1;
-		return 0;
-	default:
-		return EOPNOTSUPP;
-	}
-}
-
-void
+static void
 uhidev_childdet(device_t self, device_t child)
 {
 	int i;
 	struct uhidev_softc *sc = device_private(self);
 
 	for (i = 0; i < sc->sc_nrepid; i++) {
-		if (sc->sc_subdevs[i] == child)
+		if (sc->sc_subdevs[i].sc_dev == child)
 			break;
 	}
 	KASSERT(i < sc->sc_nrepid);
-	sc->sc_subdevs[i] = NULL;
+	sc->sc_subdevs[i].sc_dev = NULL;
+	/*
+	 * XXXSMP -- could be reattached in the middle of sleeping for
+	 * lock on sources to delete this in rnd_attach_source
+	 *
+	 * (Actually this can't happen right now because there's no
+	 * rescan method, but if there were, it could.)
+	 */
+	rnd_detach_source(&sc->sc_subdevs[i].sc_rndsource);
 }
 
-int
+static int
 uhidev_detach(device_t self, int flags)
 {
 	struct uhidev_softc *sc = device_private(self);
-	int i, rv;
-	struct uhidev *csc;
+	int rv;
 
 	DPRINTF(("uhidev_detach: sc=%p flags=%d\n", sc, flags));
 
-	sc->sc_dying = 1;
-	if (sc->sc_ipipe != NULL)
-		usbd_abort_pipe(sc->sc_ipipe);
+	/*
+	 * Try to detach all our children.  If anything fails, bail.
+	 * Failure can happen if this is from drvctl -d; of course, if
+	 * this is a USB device being yanked, flags will have
+	 * DETACH_FORCE and the children will not have the option of
+	 * refusing detachment.  If they do detach, the pipes can no
+	 * longer be in use.
+	 */
+	rv = config_detach_children(self, flags);
+	if (rv)
+		return rv;
 
-	if (sc->sc_repdesc != NULL)
+	KASSERTMSG(sc->sc_refcnt == 0,
+	    "%s: %d refs remain", device_xname(sc->sc_dev), sc->sc_refcnt);
+	KASSERT(sc->sc_opipe == NULL);
+	KASSERT(sc->sc_ipipe == NULL);
+	KASSERT(sc->sc_ibuf == NULL);
+
+	if (sc->sc_repdesc != NULL) {
 		kmem_free(sc->sc_repdesc, sc->sc_repdesc_size);
-
-	rv = 0;
-	for (i = 0; i < sc->sc_nrepid; i++) {
-		if (sc->sc_subdevs[i] != NULL) {
-			csc = device_private(sc->sc_subdevs[i]);
-			rnd_detach_source(&csc->rnd_source);
-			rv |= config_detach(sc->sc_subdevs[i], flags);
-		}
+		sc->sc_repdesc = NULL;
+	}
+	if (sc->sc_subdevs != NULL) {
+		int nrepid = sc->sc_nrepid;
+		kmem_free(sc->sc_subdevs, nrepid * sizeof(sc->sc_subdevs[0]));
+		sc->sc_subdevs = NULL;
 	}
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->sc_udev, sc->sc_dev);
 
 	pmf_device_deregister(self);
+	KASSERT(sc->sc_configlock == NULL);
+	KASSERT(sc->sc_writelock == NULL);
+	cv_destroy(&sc->sc_cv);
 	mutex_destroy(&sc->sc_lock);
 
 	return rv;
 }
 
-void
+static void
 uhidev_intr(struct usbd_xfer *xfer, void *addr, usbd_status status)
 {
 	struct uhidev_softc *sc = addr;
-	device_t cdev;
 	struct uhidev *scd;
 	u_char *p;
 	u_int rep;
@@ -517,13 +584,10 @@ uhidev_intr(struct usbd_xfer *xfer, void *addr, usbd_status status)
 		printf("uhidev_intr: bad repid %d\n", rep);
 		return;
 	}
-	cdev = sc->sc_subdevs[rep];
-	if (!cdev)
-		return;
-	scd = device_private(cdev);
-	DPRINTFN(5,("uhidev_intr: rep=%d, scd=%p state=0x%x\n",
-		    rep, scd, scd ? scd->sc_state : 0));
-	if (!(scd->sc_state & UHIDEV_OPEN))
+	scd = &sc->sc_subdevs[rep];
+	DPRINTFN(5,("uhidev_intr: rep=%d, scd=%p state=%#x\n",
+		    rep, scd, scd->sc_state));
+	if (!(atomic_load_acquire(&scd->sc_state) & UHIDEV_OPEN))
 		return;
 #ifdef UHIDEV_DEBUG
 	if (scd->sc_in_rep_size != cc) {
@@ -536,45 +600,118 @@ uhidev_intr(struct usbd_xfer *xfer, void *addr, usbd_status status)
 			device_xname(sc->sc_dev)));
 		return;
 	}
-	rnd_add_uint32(&scd->rnd_source, (uintptr_t)(sc->sc_ibuf));
-	scd->sc_intr(scd, p, cc);
+	rnd_add_uint32(&scd->sc_rndsource, (uintptr_t)(sc->sc_ibuf));
+	scd->sc_intr(scd->sc_cookie, p, cc);
 }
 
 void
-uhidev_get_report_desc(struct uhidev_softc *sc, void **desc, int *size)
+uhidev_get_report_desc(struct uhidev *scd, void **desc, int *size)
 {
+	struct uhidev_softc *sc = scd->sc_parent;
+
 	*desc = sc->sc_repdesc;
 	*size = sc->sc_repdesc_size;
 }
 
-int
-uhidev_open(struct uhidev *scd)
+static int
+uhidev_config_enter(struct uhidev_softc *sc)
 {
-	struct uhidev_softc *sc = scd->sc_parent;
+	int error;
+
+	KASSERT(mutex_owned(&sc->sc_lock));
+
+	for (;;) {
+		if (sc->sc_configlock == NULL)
+			break;
+		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
+		if (error)
+			return error;
+	}
+
+	sc->sc_configlock = curlwp;
+	return 0;
+}
+
+static void
+uhidev_config_enter_nointr(struct uhidev_softc *sc)
+{
+
+	KASSERT(mutex_owned(&sc->sc_lock));
+
+	while (sc->sc_configlock)
+		cv_wait(&sc->sc_cv, &sc->sc_lock);
+	sc->sc_configlock = curlwp;
+}
+
+static void
+uhidev_config_exit(struct uhidev_softc *sc)
+{
+
+	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERTMSG(sc->sc_configlock == curlwp, "%s: migrated from %p to %p",
+	    device_xname(sc->sc_dev), curlwp, sc->sc_configlock);
+
+	sc->sc_configlock = NULL;
+	cv_broadcast(&sc->sc_cv);
+}
+
+/*
+ * uhidev_open_pipes(sc)
+ *
+ *	Ensure the pipes of the softc are open.  Caller must hold
+ *	sc_lock, which may be released and reacquired.
+ */
+static int
+uhidev_open_pipes(struct uhidev_softc *sc)
+{
 	usbd_status err;
 	int error;
 
-	DPRINTF(("uhidev_open: open pipe, state=%d\n", scd->sc_state));
+	KASSERT(mutex_owned(&sc->sc_lock));
 
-	mutex_enter(&sc->sc_lock);
-	if (scd->sc_state & UHIDEV_OPEN) {
-		mutex_exit(&sc->sc_lock);
-		return EBUSY;
-	}
-	scd->sc_state |= UHIDEV_OPEN;
-	if (sc->sc_refcnt++) {
-		mutex_exit(&sc->sc_lock);
+	/*
+	 * If the pipes are already open, just increment the reference
+	 * count.  The reference count is limited by the number of
+	 * report ids, so this can't overflow.
+	 */
+	if (sc->sc_refcnt) {
+		KASSERT(sc->sc_refcnt < UHIDEV_MAXREPID);
+		sc->sc_refcnt++;
 		return 0;
 	}
-	mutex_exit(&sc->sc_lock);
 
+	/*
+	 * If there's no input data to prepare, don't bother with the
+	 * pipes.  We assume any device that does output also does
+	 * input; if you have a device where this is wrong, then
+	 * uhidev_write will fail gracefully (it checks sc->sc_opipe),
+	 * and you can use that device to test the changes needed to
+	 * open the output pipe here.
+	 */
 	if (sc->sc_isize == 0)
 		return 0;
 
+	/*
+	 * Lock the configuration and release sc_lock -- we may sleep
+	 * to allocate.  If someone else got in first, we're done;
+	 * otherwise open the pipes.
+	 */
+	error = uhidev_config_enter(sc);
+	if (error)
+		goto out;
+	if (sc->sc_refcnt) {
+		KASSERT(sc->sc_refcnt < UHIDEV_MAXREPID);
+		sc->sc_refcnt++;
+		error = 0;
+		goto out0;
+	}
+	mutex_exit(&sc->sc_lock);
+
+	/* Allocate an input buffer.  */
 	sc->sc_ibuf = kmem_alloc(sc->sc_isize, KM_SLEEP);
 
 	/* Set up input interrupt pipe. */
-	DPRINTF(("uhidev_open: isize=%d, ep=0x%02x\n", sc->sc_isize,
+	DPRINTF(("%s: isize=%d, ep=0x%02x\n", __func__, sc->sc_isize,
 		 sc->sc_iep_addr));
 
 	err = usbd_open_pipe_intr(sc->sc_iface, sc->sc_iep_addr,
@@ -626,82 +763,282 @@ uhidev_open(struct uhidev *scd)
 		}
 	}
 
-	return 0;
-out4:
-	/* Free output xfer */
-	if (sc->sc_oxfer != NULL)
-		usbd_destroy_xfer(sc->sc_oxfer);
-out3:
-	/* Abort output pipe */
-	usbd_close_pipe(sc->sc_opipe);
-out2:
-	/* Abort input pipe */
-	usbd_close_pipe(sc->sc_ipipe);
-out1:
-	DPRINTF(("uhidev_open: failed in someway"));
-	kmem_free(sc->sc_ibuf, sc->sc_isize);
+	/* Success!  */
 	mutex_enter(&sc->sc_lock);
-	scd->sc_state &= ~UHIDEV_OPEN;
-	sc->sc_refcnt = 0;
+	KASSERTMSG(sc->sc_refcnt == 0, "%d refs spuriously acquired",
+	    sc->sc_refcnt);
+	sc->sc_refcnt++;
+	goto out0;
+
+out4:	if (sc->sc_oxfer) {
+		usbd_abort_pipe(sc->sc_opipe);
+		usbd_destroy_xfer(sc->sc_oxfer);
+		sc->sc_oxfer = NULL;
+	}
+out3:	if (sc->sc_opipe) {
+		usbd_close_pipe(sc->sc_opipe);
+		sc->sc_opipe = NULL;
+	}
+out2:	if (sc->sc_ipipe) {
+		usbd_abort_pipe(sc->sc_ipipe);
+		usbd_close_pipe(sc->sc_ipipe);
+		sc->sc_ipipe = NULL;
+	}
+out1:	kmem_free(sc->sc_ibuf, sc->sc_isize);
 	sc->sc_ibuf = NULL;
-	sc->sc_ipipe = NULL;
-	sc->sc_opipe = NULL;
-	sc->sc_oxfer = NULL;
+	mutex_enter(&sc->sc_lock);
+out0:	KASSERT(mutex_owned(&sc->sc_lock));
+	uhidev_config_exit(sc);
+out:	KASSERT(mutex_owned(&sc->sc_lock));
+	return error;
+}
+
+static void
+uhidev_close_pipes(struct uhidev_softc *sc)
+{
+
+	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERTMSG(sc->sc_refcnt > 0, "%s: refcnt fouled: %d",
+	    device_xname(sc->sc_dev), sc->sc_refcnt);
+
+	/* If this isn't the last reference, just decrement.  */
+	if (sc->sc_refcnt > 1) {
+		sc->sc_refcnt--;
+		return;
+	}
+
+	/*
+	 * Lock the configuration and release sc_lock so we may sleep
+	 * to free memory.  We're not waiting for anyone to allocate or
+	 * free anything.
+	 */
+	uhidev_config_enter_nointr(sc);
+
+	/*
+	 * If someone else acquired a reference while we were waiting
+	 * for the config lock, nothing more for us to do.
+	 */
+	if (sc->sc_refcnt > 1) {
+		sc->sc_refcnt--;
+		uhidev_config_exit(sc);
+		return;
+	}
+
+	/*
+	 * We're the last reference and committed to closing the pipes.
+	 * Decrement the reference count before we release the lock --
+	 * access to the pipes is allowed as long as the reference
+	 * count is positive, so this forces all new opens to wait
+	 * until the config lock is released.
+	 */
+	KASSERTMSG(sc->sc_refcnt == 1, "%s: refcnt fouled: %d",
+	    device_xname(sc->sc_dev), sc->sc_refcnt);
+	sc->sc_refcnt--;
+	mutex_exit(&sc->sc_lock);
+
+	if (sc->sc_oxfer) {
+		usbd_abort_pipe(sc->sc_opipe);
+		usbd_destroy_xfer(sc->sc_oxfer);
+		sc->sc_oxfer = NULL;
+	}
+	if (sc->sc_opipe) {
+		usbd_close_pipe(sc->sc_opipe);
+		sc->sc_opipe = NULL;
+	}
+	if (sc->sc_ipipe) {
+		usbd_abort_pipe(sc->sc_ipipe);
+		usbd_close_pipe(sc->sc_ipipe);
+		sc->sc_ipipe = NULL;
+	}
+	kmem_free(sc->sc_ibuf, sc->sc_isize);
+	sc->sc_ibuf = NULL;
+
+	mutex_enter(&sc->sc_lock);
+	uhidev_config_exit(sc);
+	KASSERTMSG(sc->sc_refcnt == 0, "%s: refcnt fouled: %d",
+	    device_xname(sc->sc_dev), sc->sc_refcnt);
+}
+
+int
+uhidev_open(struct uhidev *scd, void (*intr)(void *, void *, u_int),
+    void *cookie)
+{
+	struct uhidev_softc *sc = scd->sc_parent;
+	int error;
+
+	mutex_enter(&sc->sc_lock);
+
+	DPRINTF(("uhidev_open(%s, report %d = %s): state=%x refcnt=%d\n",
+		device_xname(sc->sc_dev),
+		scd->sc_report_id,
+		device_xname(scd->sc_dev),
+		scd->sc_state,
+		sc->sc_refcnt));
+
+	/* Mark the report id open.  This is an exclusive lock.  */
+	if (scd->sc_state & UHIDEV_OPEN) {
+		error = EBUSY;
+		goto out;
+	}
+	scd->sc_intr = intr;
+	scd->sc_cookie = cookie;
+	atomic_store_release(&scd->sc_state, scd->sc_state | UHIDEV_OPEN);
+
+	/* Open the pipes which are shared by all report ids.  */
+	error = uhidev_open_pipes(sc);
+	if (error)
+		goto out;
+
+	/* Success!  */
+	error = 0;
+
+out:	if (error) {
+		KASSERTMSG(scd->sc_state & UHIDEV_OPEN,
+		    "%s: report id %d: closed while opening",
+		    device_xname(sc->sc_dev), scd->sc_report_id);
+		atomic_store_relaxed(&scd->sc_state,
+		    scd->sc_state & ~UHIDEV_OPEN);
+	}
 	mutex_exit(&sc->sc_lock);
 	return error;
 }
 
+/*
+ * uhidev_stop(scd)
+ *
+ *	Make all current and future output reports or xfers by scd to
+ *	the output pipe to fail.  Caller must then ensure no more will
+ *	be submitted and then call uhidev_close.
+ *
+ *	Side effect: If uhidev_write was in progress for this scd,
+ *	blocks all other uhidev_writes until uhidev_close on this scd.
+ *
+ *	May sleep but only for a short duration to wait for USB
+ *	transfer completion callbacks to run.
+ */
 void
 uhidev_stop(struct uhidev *scd)
 {
 	struct uhidev_softc *sc = scd->sc_parent;
 
-	/* Disable interrupts. */
-	if (sc->sc_opipe != NULL) {
-		usbd_abort_pipe(sc->sc_opipe);
-		usbd_close_pipe(sc->sc_opipe);
-		sc->sc_opipe = NULL;
-	}
+	mutex_enter(&sc->sc_lock);
 
-	if (sc->sc_ipipe != NULL) {
-		usbd_abort_pipe(sc->sc_ipipe);
-		usbd_close_pipe(sc->sc_ipipe);
-		sc->sc_ipipe = NULL;
-	}
+	/* Prevent further writes on this report from starting.  */
+	atomic_store_relaxed(&scd->sc_state, scd->sc_state | UHIDEV_STOPPED);
 
-	if (sc->sc_ibuf != NULL) {
-		kmem_free(sc->sc_ibuf, sc->sc_isize);
-		sc->sc_ibuf = NULL;
-	}
+	/* If there's no output pipe at all, nothing to do.  */
+	if (sc->sc_opipe == NULL)
+		goto out;
+
+	/*
+	 * If there's no write on this report in progress, nothing to
+	 * do -- any subsequent attempts will be prevented by
+	 * UHIDEV_STOPPED.
+	 */
+	if (sc->sc_writereportid != scd->sc_report_id)
+		goto out;
+
+	/*
+	 * Caller must wait for uhidev_open to succeed before calling
+	 * uhidev_write, and must wait for all uhidev_writes to return
+	 * before calling uhidev_close, so neither on can be in flight
+	 * right now.
+	 *
+	 * Suspend the pipe, but hold up uhidev_write from any report
+	 * until we confirm this one has finished.  We will resume the
+	 * pipe only after all uhidev_writes on this report have
+	 * finished -- when the caller calls uhidev_close.
+	 */
+	KASSERTMSG(sc->sc_stopreportid == -1, "%d", sc->sc_stopreportid);
+	sc->sc_stopreportid = scd->sc_report_id;
+	mutex_exit(&sc->sc_lock);
+
+	usbd_suspend_pipe(sc->sc_opipe);
+
+	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_stopreportid == scd->sc_report_id);
+	sc->sc_stopreportid = scd->sc_report_id;
+	cv_broadcast(&sc->sc_cv);
+out:	mutex_exit(&sc->sc_lock);
 }
 
+/*
+ * uhidev_close(scd)
+ *
+ *	Close a uhidev previously opened with uhidev_open.  If writes
+ *	had been stopped with uhidev_stop, allow writes at other report
+ *	ids again.
+ */
 void
 uhidev_close(struct uhidev *scd)
 {
 	struct uhidev_softc *sc = scd->sc_parent;
 
 	mutex_enter(&sc->sc_lock);
-	if (!(scd->sc_state & UHIDEV_OPEN)) {
+
+	DPRINTF(("uhidev_close(%s, report %d = %s): state=%x refcnt=%d\n",
+		device_xname(sc->sc_dev),
+		scd->sc_report_id,
+		device_xname(scd->sc_dev),
+		scd->sc_state,
+		sc->sc_refcnt));
+
+	KASSERTMSG(scd->sc_state & UHIDEV_OPEN,
+	    "%s: report id %d: unpaired close",
+	    device_xname(sc->sc_dev), scd->sc_report_id);
+
+	/*
+	 * If the caller had issued uhidev_stop to interrupt a write
+	 * for this report, then resume the pipe now that no further
+	 * uhidev_write on the same report is possible, and wake anyone
+	 * trying to write on other reports.
+	 */
+	if (sc->sc_stopreportid == scd->sc_report_id) {
+		KASSERT(scd->sc_state & UHIDEV_STOPPED);
 		mutex_exit(&sc->sc_lock);
-		return;
+
+		usbd_resume_pipe(sc->sc_opipe);
+
+		mutex_enter(&sc->sc_lock);
+		KASSERT(sc->sc_stopreportid == scd->sc_report_id);
+		KASSERT(scd->sc_state & UHIDEV_STOPPED);
+		sc->sc_stopreportid = -1;
+		cv_broadcast(&sc->sc_cv);
 	}
-	scd->sc_state &= ~UHIDEV_OPEN;
-	if (--sc->sc_refcnt) {
-		mutex_exit(&sc->sc_lock);
-		return;
-	}
+
+	/*
+	 * Close our reference to the pipes, and mark our report as no
+	 * longer open.  If it was stopped, clear that too -- drivers
+	 * are forbidden from issuing writes after uhidev_close anyway.
+	 */
+	KASSERT(scd->sc_state & UHIDEV_OPEN);
+	uhidev_close_pipes(sc);
+	KASSERT(scd->sc_state & UHIDEV_OPEN);
+	atomic_store_relaxed(&scd->sc_state,
+	    scd->sc_state & ~(UHIDEV_OPEN | UHIDEV_STOPPED));
+
+	/*
+	 * Make sure the next uhidev_intr (which runs in softint, like
+	 * XC_HIGHPRI) notices that UHIDEV_OPEN is cleared, and wait
+	 * for any current one to finish, in case the pipe is still
+	 * open for other report ids.
+	 *
+	 * We must drop the lock while doing this, because
+	 * uhidev_write_callback takes the lock in softint context and
+	 * it could deadlock with the xcall softint.
+	 *
+	 * It is safe to drop the lock now before zeroing sc_intr and
+	 * sc_cookie because the driver is obligated not to reopen
+	 * until after uhidev_close returns.
+	 */
 	mutex_exit(&sc->sc_lock);
+	xc_barrier(XC_HIGHPRI);
+	mutex_enter(&sc->sc_lock);
+	KASSERT((scd->sc_state & UHIDEV_OPEN) == 0);
+	scd->sc_intr = NULL;
+	scd->sc_cookie = NULL;
 
-	DPRINTF(("uhidev_close: close pipe\n"));
-
-	if (sc->sc_oxfer != NULL) {
-		usbd_destroy_xfer(sc->sc_oxfer);
-		sc->sc_oxfer = NULL;
-	}
-
-
-	/* Possibly redundant, but properly handled */
-	uhidev_stop(scd);
+	mutex_exit(&sc->sc_lock);
 }
 
 usbd_status
@@ -734,13 +1071,34 @@ uhidev_get_report(struct uhidev *scd, int type, void *data, int len)
 }
 
 usbd_status
-uhidev_write(struct uhidev_softc *sc, void *data, int len)
+uhidev_write(struct uhidev *scd, void *data, int len)
 {
+	struct uhidev_softc *sc = scd->sc_parent;
+	usbd_status err;
 
 	DPRINTF(("uhidev_write: data=%p, len=%d\n", data, len));
 
 	if (sc->sc_opipe == NULL)
 		return USBD_INVAL;
+
+	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_refcnt);
+	KASSERT(scd->sc_state & UHIDEV_OPEN);
+	for (;;) {
+		if (scd->sc_state & UHIDEV_STOPPED) {
+			err = USBD_CANCELLED;
+			goto out;
+		}
+		if (sc->sc_writelock == NULL && sc->sc_stopreportid == -1)
+			break;
+		if (cv_wait_sig(&sc->sc_cv, &sc->sc_lock)) {
+			err = USBD_INTERRUPTED;
+			goto out;
+		}
+	}
+	sc->sc_writelock = curlwp;
+	sc->sc_writereportid = scd->sc_report_id;
+	mutex_exit(&sc->sc_lock);
 
 #ifdef UHIDEV_DEBUG
 	if (uhidevdebug > 50) {
@@ -754,6 +1112,92 @@ uhidev_write(struct uhidev_softc *sc, void *data, int len)
 		DPRINTF(("\n"));
 	}
 #endif
-	return usbd_intr_transfer(sc->sc_oxfer, sc->sc_opipe, 0, USBD_NO_TIMEOUT,
-	    data, &len);
+	err = usbd_intr_transfer(sc->sc_oxfer, sc->sc_opipe, 0,
+	    USBD_NO_TIMEOUT, data, &len);
+
+	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_refcnt);
+	KASSERT(scd->sc_state & UHIDEV_OPEN);
+	KASSERTMSG(sc->sc_writelock == curlwp, "%s: migrated from %p to %p",
+	    device_xname(sc->sc_dev), curlwp, sc->sc_writelock);
+	KASSERTMSG(sc->sc_writereportid == scd->sc_report_id,
+	    "%s: changed write report ids from %d to %d",
+	    device_xname(sc->sc_dev), scd->sc_report_id, sc->sc_writereportid);
+	sc->sc_writereportid = -1;
+	sc->sc_writelock = NULL;
+	cv_broadcast(&sc->sc_cv);
+out:	mutex_exit(&sc->sc_lock);
+	return err;
+}
+
+static void
+uhidev_write_callback(struct usbd_xfer *xfer, void *cookie, usbd_status err)
+{
+	struct uhidev_softc *sc = cookie;
+	usbd_callback writecallback;
+	void *writecookie;
+
+	if (err) {
+		if (err != USBD_CANCELLED)
+			usbd_clear_endpoint_stall_async(sc->sc_opipe);
+	}
+
+	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_writelock == (void *)1);
+	writecallback = sc->sc_writecallback;
+	writecookie = sc->sc_writecookie;
+	sc->sc_writereportid = -1;
+	sc->sc_writelock = NULL;
+	sc->sc_writecallback = NULL;
+	sc->sc_writecookie = NULL;
+	cv_broadcast(&sc->sc_cv);
+	mutex_exit(&sc->sc_lock);
+
+	(*writecallback)(xfer, writecookie, err);
+}
+
+usbd_status
+uhidev_write_async(struct uhidev *scd, void *data, int len, int flags,
+    int timo, usbd_callback writecallback, void *writecookie)
+{
+	struct uhidev_softc *sc = scd->sc_parent;
+	usbd_status err;
+
+	DPRINTF(("%s: data=%p, len=%d\n", __func__, data, len));
+
+	if (sc->sc_opipe == NULL)
+		return USBD_INVAL;
+
+	mutex_enter(&sc->sc_lock);
+	KASSERT(sc->sc_refcnt);
+	KASSERT(scd->sc_state & UHIDEV_OPEN);
+	if (scd->sc_state & UHIDEV_STOPPED) {
+		err = USBD_CANCELLED;
+		goto out;
+	}
+	if (sc->sc_writelock != NULL || sc->sc_stopreportid != -1) {
+		err = USBD_IN_USE;
+		goto out;
+	}
+	sc->sc_writelock = (void *)1; /* XXX no lwp to attribute async xfer */
+	sc->sc_writereportid = scd->sc_report_id;
+	sc->sc_writecallback = writecallback;
+	sc->sc_writecookie = writecookie;
+	usbd_setup_xfer(sc->sc_oxfer, sc, data, len, flags, timo,
+	    uhidev_write_callback);
+	err = usbd_transfer(sc->sc_oxfer);
+	switch (err) {
+	case USBD_IN_PROGRESS:
+		break;
+	case USBD_NORMAL_COMPLETION:
+		panic("unexpected normal completion of async xfer under lock");
+	default:		/* error */
+		sc->sc_writelock = NULL;
+		sc->sc_writereportid = -1;
+		sc->sc_writecallback = NULL;
+		sc->sc_writecookie = NULL;
+		cv_broadcast(&sc->sc_cv);
+	}
+out:	mutex_exit(&sc->sc_lock);
+	return err;
 }

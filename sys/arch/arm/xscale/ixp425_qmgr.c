@@ -1,4 +1,4 @@
-/*	$NetBSD: ixp425_qmgr.c,v 1.8 2019/06/03 06:04:20 msaitoh Exp $	*/
+/*	$NetBSD: ixp425_qmgr.c,v 1.11 2021/12/10 20:36:02 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2006 Sam Leffler, Errno Consulting
@@ -60,7 +60,7 @@
 */
 #include <sys/cdefs.h>
 /*__FBSDID("$FreeBSD: src/sys/arm/xscale/ixp425/ixp425_qmgr.c,v 1.1 2006/11/19 23:55:23 sam Exp $");*/
-__KERNEL_RCSID(0, "$NetBSD: ixp425_qmgr.c,v 1.8 2019/06/03 06:04:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixp425_qmgr.c,v 1.11 2021/12/10 20:36:02 andvar Exp $");
 
 /*
  * Intel XScale Queue Manager support.
@@ -229,10 +229,7 @@ ixpqmgr_init(bus_space_tag_t iot)
 	sc->sc_dev = dev;
 	sc->sc_iot = sa->sc_iot;
 #else
-	sc = malloc(sizeof(*sc), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (sc == NULL)
-		return (NULL);
-
+	sc = malloc(sizeof(*sc), M_DEVBUF, M_WAITOK | M_ZERO);
 	sc->sc_iot = iot;
 #endif
 
@@ -334,7 +331,7 @@ ixpqmgr_init(bus_space_tag_t iot)
 	
 	sc->aqmFreeSramAddress = 0x100;	/* Q buffer space starts at 0x2100 */
 
-	ixpqmgr_rebuild(sc);		/* build inital priority table */
+	ixpqmgr_rebuild(sc);		/* build initial priority table */
 	aqm_reset(sc);			/* reset h/w */
 
 	return (sc);
@@ -439,7 +436,7 @@ ixpqmgr_qwrite(int qId, uint32_t entry)
 		    return ENOSPC;
 		}
 		/*
-		 * No overflow occured : someone is draining the queue
+		 * No overflow occurred : someone is draining the queue
 		 * and the current counter needs to be
 		 * updated from the current number of entries in the queue
 		 */

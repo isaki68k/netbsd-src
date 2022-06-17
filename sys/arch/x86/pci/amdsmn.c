@@ -1,7 +1,7 @@
-/*	$NetBSD: amdsmn.c,v 1.6 2019/08/06 05:32:44 msaitoh Exp $	*/
+/*	$NetBSD: amdsmn.c,v 1.13 2022/04/27 06:59:25 msaitoh Exp $	*/
 
 /*-
- * Copyright (c) 2017 Conrad Meyer <cem@FreeBSD.org>
+ * Copyright (c) 2017, 2019 Conrad Meyer <cem@FreeBSD.org>
  * All rights reserved.
  *
  * NetBSD port by Ian Clark <mrrooster@gmail.com>
@@ -29,10 +29,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amdsmn.c,v 1.6 2019/08/06 05:32:44 msaitoh Exp $ ");
+__KERNEL_RCSID(0, "$NetBSD: amdsmn.c,v 1.13 2022/04/27 06:59:25 msaitoh Exp $ ");
 
 /*
- * Driver for the AMD Family 17h CPU System Management Network.
+ * Driver for the AMD Family 15h (model 60+) and 17h CPU
+ * System Management Network.
  */
 
 #include <sys/param.h>
@@ -52,11 +53,15 @@ __KERNEL_RCSID(0, "$NetBSD: amdsmn.c,v 1.6 2019/08/06 05:32:44 msaitoh Exp $ ");
 #include "amdsmn.h"
 #include "ioconf.h"
 
-#define	SMN_ADDR_REG	0x60
-#define	SMN_DATA_REG	0x64
+#define	F15H_SMN_ADDR_REG	0xb8
+#define	F15H_SMN_DATA_REG	0xbc
+#define	F17H_SMN_ADDR_REG	0x60
+#define	F17H_SMN_DATA_REG	0x64
 
 struct amdsmn_softc {
 	kmutex_t smn_lock;
+	uint8_t smn_addr_reg;
+	uint8_t smn_data_reg;
 	struct pci_attach_args pa;
 	pci_chipset_tag_t pc;
 	pcitag_t pcitag;
@@ -64,10 +69,29 @@ struct amdsmn_softc {
 
 static const struct pciid {
 	uint16_t	amdsmn_deviceid;
+	uint8_t		amdsmn_addr_reg;
+	uint8_t		amdsmn_data_reg;
 } amdsmn_ids[] = {
-	{ PCI_PRODUCT_AMD_F17_RC },
-	{ PCI_PRODUCT_AMD_F17_1X_RC },
-	{ PCI_PRODUCT_AMD_F17_7X_RC },
+	{
+		.amdsmn_deviceid = PCI_PRODUCT_AMD_F15_6X_RC,
+		.amdsmn_addr_reg = F15H_SMN_ADDR_REG,
+		.amdsmn_data_reg = F15H_SMN_DATA_REG,
+	},
+	{
+		.amdsmn_deviceid = PCI_PRODUCT_AMD_F17_RC,
+		.amdsmn_addr_reg = F17H_SMN_ADDR_REG,
+		.amdsmn_data_reg = F17H_SMN_DATA_REG,
+	},
+	{
+		.amdsmn_deviceid = PCI_PRODUCT_AMD_F17_1X_RC,
+		.amdsmn_addr_reg = F17H_SMN_ADDR_REG,
+		.amdsmn_data_reg = F17H_SMN_DATA_REG,
+	},
+	{
+		.amdsmn_deviceid = PCI_PRODUCT_AMD_F17_7X_RC,
+		.amdsmn_addr_reg = F17H_SMN_ADDR_REG,
+		.amdsmn_data_reg = F17H_SMN_DATA_REG,
+	},
 };
 
 static int amdsmn_match(device_t, cfdata_t, void *);
@@ -83,7 +107,7 @@ static int
 amdsmn_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct pci_attach_args *pa = aux;
-	unsigned int i;
+	size_t i;
 
 	if (PCI_VENDOR(pa->pa_id) != PCI_VENDOR_AMD)
 		return 0;
@@ -98,8 +122,9 @@ amdsmn_match(device_t parent, cfdata_t match, void *aux)
 static int
 amdsmn_misc_search(device_t parent, cfdata_t cf, const int *locs, void *aux)
 {
-	if (config_match(parent, cf, aux))
-		config_attach_loc(parent, cf, locs, aux, NULL);
+	if (config_probe(parent, cf, aux))
+		config_attach(parent, cf, aux, NULL,
+		    CFARGS(.locators = locs));
 
 	return 0;
 }
@@ -109,22 +134,31 @@ amdsmn_attach(device_t parent, device_t self, void *aux)
 {
 	struct amdsmn_softc *sc = device_private(self);
 	struct pci_attach_args *pa = aux;
-	int flags = 0;
+	size_t i;
 
 	mutex_init(&sc->smn_lock, MUTEX_DEFAULT, IPL_NONE);
 	sc->pa = *pa;
 	sc->pc = pa->pa_pc;
 	sc->pcitag = pa->pa_tag;
-	aprint_normal(": AMD Family 17h System Management Network\n");
-	amdsmn_rescan(self, "amdsmnbus", &flags);
+
+	for (i = 0; i < __arraycount(amdsmn_ids); i++)
+		if (PCI_PRODUCT(pa->pa_id) == amdsmn_ids[i].amdsmn_deviceid) {
+			sc->smn_addr_reg = amdsmn_ids[i].amdsmn_addr_reg;
+			sc->smn_data_reg = amdsmn_ids[i].amdsmn_data_reg;
+		}
+
+	// aprint_normal(": AMD Family 17h System Management Network\n");
+	aprint_normal(": AMD System Management Network\n");
+	amdsmn_rescan(self, NULL, NULL);
 }
 
 static int
-amdsmn_rescan(device_t self, const char *ifattr, const int *flags)
+amdsmn_rescan(device_t self, const char *ifattr, const int *locators)
 {
 	struct amdsmn_softc *sc = device_private(self);
 
-	config_search_loc(amdsmn_misc_search, self, ifattr, NULL, &sc->pa);
+	config_search(self, &sc->pa,
+	    CFARGS(.search = amdsmn_misc_search));
 
 	return 0;
 }
@@ -146,8 +180,8 @@ amdsmn_read(device_t dev, uint32_t addr, uint32_t *value)
 	struct amdsmn_softc *sc = device_private(dev);
 
 	mutex_enter(&sc->smn_lock);
-	pci_conf_write(sc->pc, sc->pcitag, SMN_ADDR_REG, addr);
-	*value = pci_conf_read(sc->pc, sc->pcitag, SMN_DATA_REG);
+	pci_conf_write(sc->pc, sc->pcitag, sc->smn_addr_reg, addr);
+	*value = pci_conf_read(sc->pc, sc->pcitag, sc->smn_data_reg);
 	mutex_exit(&sc->smn_lock);
 
 	return 0;
@@ -159,8 +193,8 @@ amdsmn_write(device_t dev, uint32_t addr, uint32_t value)
 	struct amdsmn_softc *sc = device_private(dev);
 
 	mutex_enter(&sc->smn_lock);
-	pci_conf_write(sc->pc, sc->pcitag, SMN_ADDR_REG, addr);
-	pci_conf_write(sc->pc, sc->pcitag, SMN_DATA_REG, value);
+	pci_conf_write(sc->pc, sc->pcitag, sc->smn_addr_reg, addr);
+	pci_conf_write(sc->pc, sc->pcitag, sc->smn_data_reg, value);
 	mutex_exit(&sc->smn_lock);
 
 	return 0;

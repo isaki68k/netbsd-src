@@ -1,4 +1,4 @@
-/*	$NetBSD: lcg.c,v 1.4 2018/06/06 01:49:08 maya Exp $ */
+/*	$NetBSD: lcg.c,v 1.9 2022/02/12 17:09:43 riastradh Exp $ */
 /*
  * LCG accelerated framebuffer driver
  * Copyright (c) 2003, 2004 Blaz Antonic
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.4 2018/06/06 01:49:08 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.9 2022/02/12 17:09:43 riastradh Exp $");
 
 #define LCG_NO_ACCEL
 
@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.4 2018/06/06 01:49:08 maya Exp $");
 #include <sys/systm.h>
 #include <sys/callout.h>
 #include <sys/time.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/conf.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
@@ -105,7 +105,6 @@ static	int lcg_match(struct device *, struct cfdata *, void *);
 static	void lcg_attach(struct device *, struct device *, void *);
 
 struct	lcg_softc {
-	struct	device ss_dev;
 	bus_dmamap_t sc_dm;
 };
 
@@ -472,7 +471,7 @@ lcg_attach(struct device *parent, struct device *self, void *aux)
 	callout_init(&lcg_cursor_ch, 0);
 	callout_reset(&lcg_cursor_ch, hz / 2, lcg_crsr_blink, NULL);
 
-	config_found(self, &aa, wsemuldisplaydevprint);
+	config_found(self, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static void
@@ -789,7 +788,7 @@ lcg_alloc_screen(void *v, const struct wsscreen_descr *type, void **cookiep,
 	int i;
 	struct lcg_screen *ss;
 
-	*cookiep = malloc(sizeof(struct lcg_screen), M_DEVBUF, M_WAITOK);
+	*cookiep = kmem_alloc(sizeof(struct lcg_screen), KM_SLEEP);
 	bzero(*cookiep, sizeof(struct lcg_screen));
 	*curxp = *curyp = 0;
 	*defattrp = (LCG_BG_COLOR << 4) | LCG_FG_COLOR;
@@ -991,7 +990,8 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 	if (self != NULL) {
 		regaddr = (long*)vax_map_physmem(LCG_REG_ADDR, (LCG_REG_SIZE/VAX_NBPG));
 		if (regaddr == 0) {
-			printf("%s: Couldn't allocate register memory.\n", self->dv_xname);
+			device_printf(self,
+			    "Couldn't allocate register memory.\n");
 			return;
 		}
 	} else {
@@ -1061,8 +1061,9 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 		panic("LCG model not supported");
 	}
 	if (self != NULL)
-		aprint_normal("%s: framebuffer size %dx%d, depth %d (magic 0x%x)\n",
-			self->dv_xname, lcg_xsize, lcg_ysize, lcg_depth, magic);
+		aprint_normal_dev(self,
+		    "framebuffer size %dx%d, depth %d (magic 0x%x)\n",
+		    lcg_xsize, lcg_ysize, lcg_depth, magic);
 
 	wsfont_init();
 	cookie = wsfont_find(NULL, 12, 22, 0, WSDISPLAY_FONTORDER_R2L,
@@ -1079,8 +1080,9 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 	lcg_cols = lcg_xsize / lcg_font.fontwidth;
 	lcg_rows = lcg_ysize / lcg_font.fontheight;
 	if (self != NULL) {
-		aprint_normal("%s: using font %s (%dx%d), ", self->dv_xname, lcg_font.name,
-				lcg_font.fontwidth, lcg_font.fontheight);
+		aprint_normal_dev(self, "using font %s (%dx%d), ",
+		    lcg_font.name,
+		    lcg_font.fontwidth, lcg_font.fontheight);
 		aprint_normal("console size: %dx%d\n", lcg_cols, lcg_rows);
 	}
 	lcg_onerow = lcg_xsize * lcg_font.fontheight;
@@ -1098,7 +1100,8 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 		lcgaddr = (void *)vax_map_physmem(va->va_paddr,
 					((lcg_fb_size + LCG_FONT_STORAGE_SIZE)/VAX_NBPG));
 		if (lcgaddr == 0) {
-			printf("%s: unable to allocate framebuffer memory.\n", self->dv_xname);
+			device_printf(self,
+			    "unable to allocate framebuffer memory.\n");
 			return;
 		}
 #ifndef LCG_NO_ACCEL
@@ -1120,12 +1123,13 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 
 		lutaddr = (void *)vax_map_physmem(LCG_LUT_ADDR, (LCG_LUT_SIZE/VAX_NBPG));
 		if (lutaddr == 0) {
-			printf("%s: unable to allocate LUT memory.\n", self->dv_xname);
+			device_printf(self,
+			    "unable to allocate LUT memory.\n");
 			return;
 		}
 		fifoaddr = (long*)vax_map_physmem(LCG_FIFO_WIN_ADDR, (LCG_FIFO_WIN_SIZE/VAX_NBPG));
 		if (regaddr == 0) {
-			printf("%s: unable to map FIFO window\n", self->dv_xname);
+			device_printf(self, "unable to map FIFO window\n");
 			return;
 		}
 
@@ -1133,16 +1137,18 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 		err = bus_dmamem_alloc(va->va_dmat, LCG_FIFO_SIZE, 
 			LCG_FIFO_ALIGN, 0, &seg, 1, &rseg, BUS_DMA_NOWAIT);
 		if (err) {
-			printf("%s: unable to allocate FIFO memory block, err = %d\n", 
-				self->dv_xname, err);
+			device_printf(self,
+			    "unable to allocate FIFO memory block, err = %d\n",
+			    err);
 			return;
 		}
 
 		err = bus_dmamem_map(va->va_dmat, &seg, rseg, LCG_FIFO_SIZE,
 			&fifo_mem_vaddr, BUS_DMA_NOWAIT);
 		if (err) {
-			printf("%s: unable to map FIFO memory block, err = %d\n", 
-				self->dv_xname, err);
+			device_printf(self,
+			    "unable to map FIFO memory block, err = %d\n",
+			    err);
 			bus_dmamem_free(va->va_dmat, &seg, rseg);
 			return;
 		}
@@ -1150,7 +1156,9 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 		err = bus_dmamap_create(va->va_dmat, LCG_FIFO_SIZE, rseg,
 			LCG_FIFO_SIZE, 0, BUS_DMA_NOWAIT, &sc->sc_dm);
 		if (err) {
-			printf("%s: unable to create DMA map, err = %d\n", self->dv_xname, err);
+			device_printf(self,
+			    "unable to create DMA map, err = %d\n",
+			    err);
 			bus_dmamem_unmap(va->va_dmat, fifo_mem_vaddr, LCG_FIFO_SIZE);
 			bus_dmamem_free(va->va_dmat, &seg, rseg);
 			return;
@@ -1159,7 +1167,9 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 		err = bus_dmamap_load(va->va_dmat, sc->sc_dm, fifo_mem_vaddr, 
 			LCG_FIFO_SIZE, NULL, BUS_DMA_NOWAIT);
 		if (err) {
-			printf("%s: unable to load DMA map, err = %d\n", self->dv_xname, err);
+			device_printf(self,
+			    "unable to load DMA map, err = %d\n",
+			    err);
 			bus_dmamap_destroy(va->va_dmat, sc->sc_dm);
 			bus_dmamem_unmap(va->va_dmat, fifo_mem_vaddr, LCG_FIFO_SIZE);
 			bus_dmamem_free(va->va_dmat, &seg, rseg);
@@ -1288,6 +1298,7 @@ lcg_init_common(struct device *self, struct vsbus_attach_args *va)
 
 #ifdef LCG_DEBUG
 	if (self != NULL)
-		printf("%s: video config register set 0x%08lx\n", video_conf, self->dv_xname);
+		device_printf(self, "video config register set 0x%08lx\n",
+		    video_conf);
 #endif
 }

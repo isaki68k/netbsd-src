@@ -1,4 +1,4 @@
-/*	$NetBSD: mtrr_i686.c,v 1.30 2018/03/04 10:02:10 jdolecek Exp $ */
+/*	$NetBSD: mtrr_i686.c,v 1.32 2021/10/07 12:52:27 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2000, 2011 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mtrr_i686.c,v 1.30 2018/03/04 10:02:10 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mtrr_i686.c,v 1.32 2021/10/07 12:52:27 msaitoh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -124,7 +124,7 @@ static struct mtrr_state *mtrr_fixed_raw;
 static struct mtrr *mtrr_fixed;
 static struct mtrr *mtrr_var;
 
-struct mtrr_funcs i686_mtrr_funcs = {
+const struct mtrr_funcs i686_mtrr_funcs = {
 	i686_mtrr_init_cpu,
 	i686_mtrr_reload_cpu,
 	i686_mtrr_clean,
@@ -490,8 +490,8 @@ i686_mtrr_validate(struct mtrr *mtrrp, struct proc *p)
 	    || mtrrp->type > MTRR_TYPE_WB) && (mtrrp->flags & MTRR_VALID))
 		return EINVAL;
 
-	/* 
-	 * If write-combining is requested, make sure that the WC feature   
+	/*
+	 * If write-combining is requested, make sure that the WC feature
 	 * is supported by the processor.
 	 */
 	if (mtrrp->type == MTRR_TYPE_WC &&
@@ -639,9 +639,9 @@ i686_mtrr_setone(struct mtrr *mtrrp, struct proc *p)
 		}
 		if (((high >= curlow && high < curhigh) ||
 		    (low >= curlow && low < curhigh)) &&
-	 	    (i686_mtrr_conflict(mtrr_var[i].type, mtrrp->type) ||
+		    (i686_mtrr_conflict(mtrr_var[i].type, mtrrp->type) ||
 		     ((mtrr_var[i].flags & MTRR_PRIVATE) &&
- 		      (!(mtrrp->flags & MTRR_PRIVATE) || (p == NULL) ||
+		      (!(mtrrp->flags & MTRR_PRIVATE) || (p == NULL) ||
 		       (mtrr_var[i].owner != p->p_pid))))) {
 			return EBUSY;
 		}

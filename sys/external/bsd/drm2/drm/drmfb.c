@@ -1,4 +1,4 @@
-/*	$NetBSD: drmfb.c,v 1.7 2019/05/31 20:25:58 jmcneill Exp $	*/
+/*	$NetBSD: drmfb.c,v 1.14 2022/02/18 18:31:18 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drmfb.c,v 1.7 2019/05/31 20:25:58 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drmfb.c,v 1.14 2022/02/18 18:31:18 wiz Exp $");
 
 #ifdef _KERNEL_OPT
 #include "vga.h"
@@ -65,7 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: drmfb.c,v 1.7 2019/05/31 20:25:58 jmcneill Exp $");
 
 #include <dev/wsfb/genfbvar.h>
 
-#include <drm/drmP.h>
+#include <drm/drm_device.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drmfb.h>
 
@@ -84,6 +84,8 @@ int
 drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 {
 	const struct drm_fb_helper_surface_size *const sizes = da->da_fb_sizes;
+	struct drm_connector_list_iter conn_iter;
+	struct drm_connector *connector;
 	const prop_dictionary_t dict = device_properties(da->da_dev);
 #if NVGA > 0
 	struct drm_device *const dev = da->da_fb_helper->dev;
@@ -92,7 +94,7 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	struct genfb_ops genfb_ops = zero_genfb_ops;
 	enum { CONS_VGA, CONS_GENFB, CONS_NONE } what_was_cons;
 	bool is_console;
-	int error, n;
+	int error;
 
 	/* genfb requires this.  */
 	KASSERTMSG((void *)&sc->sc_genfb == device_private(da->da_dev),
@@ -136,18 +138,16 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	}
 
 	/* Make the first EDID we find available to wsfb */
-	for (n = 0; n < da->da_fb_helper->connector_count; n++) {
-		struct drm_connector *connector =
-		    da->da_fb_helper->connector_info[n]->connector;
+	drm_connector_list_iter_begin(da->da_fb_helper->dev, &conn_iter);
+	drm_client_for_each_connector_iter(connector, &conn_iter) {
 		struct drm_property_blob *edid = connector->edid_blob_ptr;
 		if (edid && edid->length) {
-			prop_data_t edid_data =
-			    prop_data_create_data(edid->data, edid->length);
-			prop_dictionary_set(dict, "EDID", edid_data);
-			prop_object_release(edid_data);
+			prop_dictionary_set_data(dict, "EDID", edid->data,
+			    edid->length);
 			break;
 		}
 	}
+	drm_connector_list_iter_end(&conn_iter);
 
 	sc->sc_genfb.sc_dev = sc->sc_da.da_dev;
 	genfb_init(&sc->sc_genfb);
@@ -156,7 +156,9 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	genfb_ops.genfb_enable_polling = drmfb_genfb_enable_polling;
 	genfb_ops.genfb_disable_polling = drmfb_genfb_disable_polling;
 
+	KERNEL_LOCK(1, NULL);
 	error = genfb_attach(&sc->sc_genfb, &genfb_ops);
+	KERNEL_UNLOCK_ONE(NULL);
 	if (error) {
 		aprint_error_dev(sc->sc_da.da_dev,
 		    "failed to attach genfb: %d\n", error);
@@ -225,18 +227,10 @@ drmfb_genfb_ioctl(void *v, void *vs, unsigned long cmd, void *data, int flag,
 		const int on = *(const int *)data;
 		const int dpms_mode = on? DRM_MODE_DPMS_ON : DRM_MODE_DPMS_OFF;
 		struct drm_fb_helper *const fb_helper = sc->sc_da.da_fb_helper;
-		struct drm_device *const dev = fb_helper->dev;
-		unsigned i;
 
-		drm_modeset_lock_all(dev);
-		for (i = 0; i < fb_helper->connector_count; i++) {
-			struct drm_connector *const connector =
-			    fb_helper->connector_info[i]->connector;
-			(*connector->funcs->dpms)(connector, dpms_mode);
-			drm_object_property_set_value(&connector->base,
-			    dev->mode_config.dpms_property, dpms_mode);
-		}
-		drm_modeset_unlock_all(dev);
+		mutex_lock(&fb_helper->lock);
+		drm_client_modeset_dpms(&fb_helper->client, dpms_mode);
+		mutex_unlock(&fb_helper->lock);
 
 		return 0;
 	}

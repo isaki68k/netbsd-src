@@ -1,4 +1,4 @@
-/*	$NetBSD: ncr5380.c,v 1.73 2019/06/29 16:41:19 tsutsui Exp $	*/
+/*	$NetBSD: ncr5380.c,v 1.77 2022/04/07 19:33:37 andvar Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ncr5380.c,v 1.73 2019/06/29 16:41:19 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ncr5380.c,v 1.77 2022/04/07 19:33:37 andvar Exp $");
 
 /*
  * Bit mask of targets you want debugging to be shown
@@ -251,7 +251,7 @@ ncr_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * attach all scsi units on us
 	 */
-	config_found(self, &sc->sc_channel, scsiprint);
+	config_found(self, &sc->sc_channel, scsiprint, CFARGS_NONE);
 }
 
 /*
@@ -1218,7 +1218,7 @@ handle_message(SC_REQ *reqp, u_int msg)
 	case MSG_SAVEDATAPOINTER:
 	case MSG_RESTOREPOINTERS:
 		/*
-		 * We save pointers implicitely at disconnect.
+		 * We save pointers implicitly at disconnect.
 		 * So we can ignore these messages.
 		 */
 		ack_message();
@@ -1842,7 +1842,7 @@ scsi_dmaok(SC_REQ *reqp)
 	}
 
 	/*
-	 * LWP: I think that this restriction is not strictly nessecary.
+	 * LWP: I think that this restriction is not strictly necessary.
 	 */
 	if ((req_len & 0x1) || ((u_int)req_addr & 0x3))
 		return 0;

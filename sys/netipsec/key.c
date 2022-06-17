@@ -1,4 +1,4 @@
-/*	$NetBSD: key.c,v 1.267 2019/09/25 09:53:38 ozaki-r Exp $	*/
+/*	$NetBSD: key.c,v 1.275 2022/05/24 20:50:20 andvar Exp $	*/
 /*	$FreeBSD: key.c,v 1.3.2.3 2004/02/14 22:23:23 bms Exp $	*/
 /*	$KAME: key.c,v 1.191 2001/06/27 10:46:49 sakane Exp $	*/
 
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.267 2019/09/25 09:53:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.275 2022/05/24 20:50:20 andvar Exp $");
 
 /*
  * This code is referred to RFC 2367
@@ -73,6 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: key.c,v 1.267 2019/09/25 09:53:38 ozaki-r Exp $");
 #include <sys/localcount.h>
 #include <sys/pserialize.h>
 #include <sys/hash.h>
+#include <sys/xcall.h>
 
 #include <net/if.h>
 #include <net/route.h>
@@ -699,9 +700,9 @@ static void key_init_sav(struct secasvar *);
 static void key_wait_sav(struct secasvar *);
 static void key_destroy_sav(struct secasvar *);
 static struct secasvar *key_newsav(struct mbuf *,
-	const struct sadb_msghdr *, int *, const char*, int);
-#define	KEY_NEWSAV(m, sadb, e)				\
-	key_newsav(m, sadb, e, __func__, __LINE__)
+	const struct sadb_msghdr *, int *, int, const char*, int);
+#define	KEY_NEWSAV(m, sadb, e, proto)				\
+	key_newsav(m, sadb, e, proto, __func__, __LINE__)
 static void key_delsav (struct secasvar *);
 static struct secashead *key_getsah(const struct secasindex *, int);
 static struct secashead *key_getsah_ref(const struct secasindex *, int);
@@ -1287,8 +1288,11 @@ key_lookup_sa(
 		}
 	}
 	KEYDEBUG_PRINTF(KEYDEBUG_IPSEC_STAMP,
-	    "DP from %s:%u check_spi=%d, check_alg=%d\n",
-	    where, tag, must_check_spi, must_check_alg);
+	    "DP from %s:%u check_spi=%d(%#x), check_alg=%d(%d), proto=%d\n",
+	    where, tag,
+	    must_check_spi, ntohl(spi),
+	    must_check_alg, algo,
+	    proto);
 
 
 	/*
@@ -2509,7 +2513,7 @@ key_api_spddelete(struct socket *so, struct mbuf *m,
 
 	xpl0 = mhp->ext[SADB_X_EXT_POLICY];
 
-	/* checking the directon. */
+	/* checking the direction. */
 	switch (xpl0->sadb_x_policy_dir) {
 	case IPSEC_DIR_INBOUND:
 	case IPSEC_DIR_OUTBOUND:
@@ -3278,7 +3282,7 @@ key_destroy_sah(struct secashead *sah)
  */
 static struct secasvar *
 key_newsav(struct mbuf *m, const struct sadb_msghdr *mhp,
-    int *errp, const char* where, int tag)
+    int *errp, int proto, const char* where, int tag)
 {
 	struct secasvar *newsav;
 	const struct sadb_sa *xsa;
@@ -3338,7 +3342,8 @@ key_newsav(struct mbuf *m, const struct sadb_msghdr *mhp,
 	newsav->pid = mhp->msg->sadb_msg_pid;
 
 	KEYDEBUG_PRINTF(KEYDEBUG_IPSEC_STAMP,
-	    "DP from %s:%u return SA:%p\n", where, tag, newsav);
+	    "DP from %s:%u return SA:%p spi=%#x proto=%d\n",
+	    where, tag, newsav, ntohl(newsav->spi), proto);
 	return newsav;
 
 error:
@@ -3961,7 +3966,8 @@ key_setdumpsa(struct secasvar *sav, u_int8_t type, u_int8_t satype,
 			    time_mono_to_wall(lt.sadb_lifetime_addtime);
 			lt.sadb_lifetime_usetime =
 			    time_mono_to_wall(lt.sadb_lifetime_usetime);
-			percpu_foreach(sav->lft_c_counters_percpu,
+			percpu_foreach_xcall(sav->lft_c_counters_percpu,
+			    XC_HIGHPRI_IPL(IPL_SOFTNET),
 			    key_sum_lifetime_counters, sum);
 			lt.sadb_lifetime_allocations =
 			    sum[LIFETIME_COUNTER_ALLOCATIONS];
@@ -4502,30 +4508,34 @@ key_ismyaddr6(const struct sockaddr_in6 *sin6)
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
 	IN6_ADDRLIST_READER_FOREACH(ia) {
-		bool ingroup;
-
 		if (key_sockaddr_match((const struct sockaddr *)&sin6,
 		    (const struct sockaddr *)&ia->ia_addr, 0)) {
 			pserialize_read_exit(s);
 			goto ours;
 		}
-		ia6_acquire(ia, &psref);
-		pserialize_read_exit(s);
 
-		/*
-		 * XXX Multicast
-		 * XXX why do we care about multlicast here while we don't care
-		 * about IPv4 multicast??
-		 * XXX scope
-		 */
-		ingroup = in6_multi_group(&sin6->sin6_addr, ia->ia_ifp);
-		if (ingroup) {
+		if (IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr)) {
+			bool ingroup;
+
+			ia6_acquire(ia, &psref);
+			pserialize_read_exit(s);
+
+			/*
+			 * XXX Multicast
+			 * XXX why do we care about multlicast here while we don't care
+			 * about IPv4 multicast??
+			 * XXX scope
+			 */
+			ingroup = in6_multi_group(&sin6->sin6_addr, ia->ia_ifp);
+			if (ingroup) {
+				ia6_release(ia, &psref);
+				goto ours;
+			}
+
+			s = pserialize_read_enter();
 			ia6_release(ia, &psref);
-			goto ours;
 		}
 
-		s = pserialize_read_enter();
-		ia6_release(ia, &psref);
 	}
 	pserialize_read_exit(s);
 
@@ -4673,75 +4683,103 @@ key_spidx_match_withmask(
 	if (spidx0->src.sa.sa_family != spidx1->src.sa.sa_family ||
 	    spidx0->dst.sa.sa_family != spidx1->dst.sa.sa_family ||
 	    spidx0->src.sa.sa_len != spidx1->src.sa.sa_len ||
-	    spidx0->dst.sa.sa_len != spidx1->dst.sa.sa_len)
+	    spidx0->dst.sa.sa_len != spidx1->dst.sa.sa_len) {
+		KEYDEBUG_PRINTF(KEYDEBUG_MATCH, ".sa wrong\n");
 		return 0;
+	}
 
 	/* if spidx.ul_proto == IPSEC_ULPROTO_ANY, ignore. */
 	if (spidx0->ul_proto != (u_int16_t)IPSEC_ULPROTO_ANY &&
-	    spidx0->ul_proto != spidx1->ul_proto)
+	    spidx0->ul_proto != spidx1->ul_proto) {
+		KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "proto wrong\n");
 		return 0;
+	}
 
 	switch (spidx0->src.sa.sa_family) {
 	case AF_INET:
 		if (spidx0->src.sin.sin_port != IPSEC_PORT_ANY &&
-		    spidx0->src.sin.sin_port != spidx1->src.sin.sin_port)
+		    spidx0->src.sin.sin_port != spidx1->src.sin.sin_port) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v4 src port wrong\n");
 			return 0;
+		}
 		if (!key_bb_match_withmask(&spidx0->src.sin.sin_addr,
-		    &spidx1->src.sin.sin_addr, spidx0->prefs))
+					   &spidx1->src.sin.sin_addr, spidx0->prefs)) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v4 src addr wrong\n");
 			return 0;
+		}
 		break;
 	case AF_INET6:
 		if (spidx0->src.sin6.sin6_port != IPSEC_PORT_ANY &&
-		    spidx0->src.sin6.sin6_port != spidx1->src.sin6.sin6_port)
+		    spidx0->src.sin6.sin6_port != spidx1->src.sin6.sin6_port) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v6 src port wrong\n");
 			return 0;
+		}
 		/*
 		 * scope_id check. if sin6_scope_id is 0, we regard it
 		 * as a wildcard scope, which matches any scope zone ID.
 		 */
 		if (spidx0->src.sin6.sin6_scope_id &&
 		    spidx1->src.sin6.sin6_scope_id &&
-		    spidx0->src.sin6.sin6_scope_id != spidx1->src.sin6.sin6_scope_id)
+		    spidx0->src.sin6.sin6_scope_id != spidx1->src.sin6.sin6_scope_id) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v6 src scope wrong\n");
 			return 0;
+		}
 		if (!key_bb_match_withmask(&spidx0->src.sin6.sin6_addr,
-		    &spidx1->src.sin6.sin6_addr, spidx0->prefs))
+		    &spidx1->src.sin6.sin6_addr, spidx0->prefs)) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v6 src addr wrong\n");
 			return 0;
+		}
 		break;
 	default:
 		/* XXX */
-		if (memcmp(&spidx0->src, &spidx1->src, spidx0->src.sa.sa_len) != 0)
+		if (memcmp(&spidx0->src, &spidx1->src, spidx0->src.sa.sa_len) != 0) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "src memcmp wrong\n");
 			return 0;
+		}
 		break;
 	}
 
 	switch (spidx0->dst.sa.sa_family) {
 	case AF_INET:
 		if (spidx0->dst.sin.sin_port != IPSEC_PORT_ANY &&
-		    spidx0->dst.sin.sin_port != spidx1->dst.sin.sin_port)
+		    spidx0->dst.sin.sin_port != spidx1->dst.sin.sin_port) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v4 dst port wrong\n");
 			return 0;
+		}
 		if (!key_bb_match_withmask(&spidx0->dst.sin.sin_addr,
-		    &spidx1->dst.sin.sin_addr, spidx0->prefd))
+		    &spidx1->dst.sin.sin_addr, spidx0->prefd)) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v4 dst addr wrong\n");
 			return 0;
+		}
 		break;
 	case AF_INET6:
 		if (spidx0->dst.sin6.sin6_port != IPSEC_PORT_ANY &&
-		    spidx0->dst.sin6.sin6_port != spidx1->dst.sin6.sin6_port)
+		    spidx0->dst.sin6.sin6_port != spidx1->dst.sin6.sin6_port) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v6 dst port wrong\n");
 			return 0;
+		}
 		/*
 		 * scope_id check. if sin6_scope_id is 0, we regard it
 		 * as a wildcard scope, which matches any scope zone ID.
 		 */
 		if (spidx0->src.sin6.sin6_scope_id &&
 		    spidx1->src.sin6.sin6_scope_id &&
-		    spidx0->dst.sin6.sin6_scope_id != spidx1->dst.sin6.sin6_scope_id)
+		    spidx0->dst.sin6.sin6_scope_id != spidx1->dst.sin6.sin6_scope_id) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "DP v6 dst scope wrong\n");
 			return 0;
+		}
 		if (!key_bb_match_withmask(&spidx0->dst.sin6.sin6_addr,
-		    &spidx1->dst.sin6.sin6_addr, spidx0->prefd))
+		    &spidx1->dst.sin6.sin6_addr, spidx0->prefd)) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "v6 dst addr wrong\n");
 			return 0;
+		}
 		break;
 	default:
 		/* XXX */
-		if (memcmp(&spidx0->dst, &spidx1->dst, spidx0->dst.sa.sa_len) != 0)
+		if (memcmp(&spidx0->dst, &spidx1->dst, spidx0->dst.sa.sa_len) != 0) {
+			KEYDEBUG_PRINTF(KEYDEBUG_MATCH, "dst memcmp wrong\n");
 			return 0;
+		}
 		break;
 	}
 
@@ -4764,7 +4802,7 @@ key_portcomp(in_port_t port1, in_port_t port2, int howport)
 	case PORT_STRICT:
 		if (port1 != port2) {
 			KEYDEBUG_PRINTF(KEYDEBUG_MATCH,
-			    "port fail %d != %d\n", port1, port2);
+			    "port fail %d != %d\n", ntohs(port1), ntohs(port2));
 			return 1;
 		}
 		return 0;
@@ -4816,9 +4854,9 @@ key_sockaddr_match(
 		KEYDEBUG_PRINTF(KEYDEBUG_MATCH,
 		    "addr success %s[%d] == %s[%d]\n",
 		    (in_print(s1, sizeof(s1), &sin1->sin_addr), s1),
-		    sin1->sin_port,
+		    ntohs(sin1->sin_port),
 		    (in_print(s2, sizeof(s2), &sin2->sin_addr), s2),
-		    sin2->sin_port);
+		    ntohs(sin2->sin_port));
 		break;
 	case AF_INET6:
 		sin61 = (const struct sockaddr_in6 *)sa1;
@@ -4883,14 +4921,20 @@ key_bb_match_withmask(const void *a1, const void *a2, u_int bits)
 }
 
 static void
-key_timehandler_spd(time_t now)
+key_timehandler_spd(void)
 {
 	u_int dir;
 	struct secpolicy *sp;
+	volatile time_t now;
 
 	for (dir = 0; dir < IPSEC_DIR_MAX; dir++) {
 	    retry:
 		mutex_enter(&key_spd.lock);
+		/*
+		 * To avoid for sp->created to overtake "now" because of
+		 * waiting mutex, set time_uptime here.
+		 */
+		now = time_uptime;
 		SPLIST_WRITER_FOREACH(sp, dir) {
 			KASSERTMSG(sp->state != IPSEC_SPSTATE_DEAD,
 			    "sp->state=%u", sp->state);
@@ -4925,10 +4969,11 @@ key_timehandler_spd(time_t now)
 }
 
 static void
-key_timehandler_sad(time_t now)
+key_timehandler_sad(void)
 {
 	struct secashead *sah;
 	int s;
+	volatile time_t now;
 
 restart:
 	mutex_enter(&key_sad.lock);
@@ -4954,6 +4999,10 @@ restart:
 		/* if LARVAL entry doesn't become MATURE, delete it. */
 		mutex_enter(&key_sad.lock);
 	restart_sav_LARVAL:
+		/*
+		 * Same as key_timehandler_spd(), set time_uptime here.
+		 */
+		now = time_uptime;
 		SAVLIST_WRITER_FOREACH(sav, sah, SADB_SASTATE_LARVAL) {
 			if (now - sav->created > key_larval_lifetime) {
 				key_sa_chgstate(sav, SADB_SASTATE_DEAD);
@@ -4968,6 +5017,10 @@ restart:
 		 */
 	restart_sav_MATURE:
 		mutex_enter(&key_sad.lock);
+		/*
+		 * ditto
+		 */
+		now = time_uptime;
 		SAVLIST_WRITER_FOREACH(sav, sah, SADB_SASTATE_MATURE) {
 			/* we don't need to check. */
 			if (sav->lft_s == NULL)
@@ -5008,7 +5061,8 @@ restart:
 				uint64_t lft_c_bytes = 0;
 				lifetime_counters_t sum = {0};
 
-				percpu_foreach(sav->lft_c_counters_percpu,
+				percpu_foreach_xcall(sav->lft_c_counters_percpu,
+				    XC_HIGHPRI_IPL(IPL_SOFTNET),
 				    key_sum_lifetime_counters, sum);
 				lft_c_bytes = sum[LIFETIME_COUNTER_BYTES];
 
@@ -5032,6 +5086,10 @@ restart:
 		/* check DYING entry to change status to DEAD. */
 		mutex_enter(&key_sad.lock);
 	restart_sav_DYING:
+		/*
+		 * ditto
+		 */
+		now = time_uptime;
 		SAVLIST_WRITER_FOREACH(sav, sah, SADB_SASTATE_DYING) {
 			/* we don't need to check. */
 			if (sav->lft_h == NULL)
@@ -5066,7 +5124,8 @@ restart:
 				uint64_t lft_c_bytes = 0;
 				lifetime_counters_t sum = {0};
 
-				percpu_foreach(sav->lft_c_counters_percpu,
+				percpu_foreach_xcall(sav->lft_c_counters_percpu,
+				    XC_HIGHPRI_IPL(IPL_SOFTNET),
 				    key_sum_lifetime_counters, sum);
 				lft_c_bytes = sum[LIFETIME_COUNTER_BYTES];
 
@@ -5098,13 +5157,18 @@ restart:
 }
 
 static void
-key_timehandler_acq(time_t now)
+key_timehandler_acq(void)
 {
 #ifndef IPSEC_NONBLOCK_ACQUIRE
 	struct secacq *acq, *nextacq;
+	volatile time_t now;
 
     restart:
 	mutex_enter(&key_misc.lock);
+	/*
+	 * Same as key_timehandler_spd(), set time_uptime here.
+	 */
+	now = time_uptime;
 	LIST_FOREACH_SAFE(acq, &key_misc.acqlist, chain, nextacq) {
 		if (now - acq->created > key_blockacq_lifetime) {
 			LIST_REMOVE(acq, chain);
@@ -5118,10 +5182,11 @@ key_timehandler_acq(time_t now)
 }
 
 static void
-key_timehandler_spacq(time_t now)
+key_timehandler_spacq(void)
 {
 #ifdef notyet
 	struct secspacq *acq, *nextacq;
+	time_t now = time_uptime;
 
 	LIST_FOREACH_SAFE(acq, &key_misc.spacqlist, chain, nextacq) {
 		if (now - acq->created > key_blockacq_lifetime) {
@@ -5143,15 +5208,14 @@ static unsigned int key_timehandler_work_enqueued = 0;
 static void
 key_timehandler_work(struct work *wk, void *arg)
 {
-	time_t now = time_uptime;
 
 	/* We can allow enqueuing another work at this point */
 	atomic_swap_uint(&key_timehandler_work_enqueued, 0);
 
-	key_timehandler_spd(now);
-	key_timehandler_sad(now);
-	key_timehandler_acq(now);
-	key_timehandler_spacq(now);
+	key_timehandler_spd();
+	key_timehandler_sad();
+	key_timehandler_acq();
+	key_timehandler_spacq();
 
 	key_acquire_sendup_pending_mbuf();
 
@@ -5370,7 +5434,7 @@ key_api_getspi(struct socket *so, struct mbuf *m,
 
 	/* get a new SA */
 	/* XXX rewrite */
-	newsav = KEY_NEWSAV(m, mhp, &error);
+	newsav = KEY_NEWSAV(m, mhp, &error, proto);
 	if (newsav == NULL) {
 		key_sah_unref(sah);
 		/* XXX don't free new SA index allocated in above. */
@@ -5786,6 +5850,10 @@ key_api_update(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 	newsav->created = sav->created;
 	newsav->pid = sav->pid;
 	newsav->sah = sav->sah;
+ 	KEYDEBUG_PRINTF(KEYDEBUG_IPSEC_STAMP,
+	    "DP from %s:%u update SA:%p to SA:%p spi=%#x proto=%d\n",
+	    __func__, __LINE__, sav, newsav,
+	    ntohl(newsav->spi), proto);
 
 	error = key_setsaval(newsav, m, mhp);
 	if (error) {
@@ -5999,7 +6067,7 @@ key_api_add(struct socket *so, struct mbuf *m,
     }
 
 	/* create new SA entry. */
-	newsav = KEY_NEWSAV(m, mhp, &error);
+	newsav = KEY_NEWSAV(m, mhp, &error, proto);
 	if (newsav == NULL)
 		goto error;
 	newsav->sah = sah;
@@ -6719,7 +6787,7 @@ key_acquire(const struct secasindex *saidx, const struct secpolicy *sp, int mfla
 
 #ifndef IPSEC_NONBLOCK_ACQUIRE
 	/*
-	 * We never do anything about acquirng SA.  There is anather
+	 * We never do anything about acquiring SA.  There is another
 	 * solution that kernel blocks to send SADB_ACQUIRE message until
 	 * getting something message from IKEd.  In later case, to be
 	 * managed with ACQUIRING list.
@@ -7397,8 +7465,8 @@ key_expire(struct secasvar *sav)
 	lt = mtod(m, struct sadb_lifetime *);
 	lt->sadb_lifetime_len = PFKEY_UNIT64(sizeof(struct sadb_lifetime));
 	lt->sadb_lifetime_exttype = SADB_EXT_LIFETIME_CURRENT;
-	percpu_foreach(sav->lft_c_counters_percpu,
-	    key_sum_lifetime_counters, sum);
+	percpu_foreach_xcall(sav->lft_c_counters_percpu,
+	    XC_HIGHPRI_IPL(IPL_SOFTNET), key_sum_lifetime_counters, sum);
 	lt->sadb_lifetime_allocations = sum[LIFETIME_COUNTER_ALLOCATIONS];
 	lt->sadb_lifetime_bytes = sum[LIFETIME_COUNTER_BYTES];
 	lt->sadb_lifetime_addtime =

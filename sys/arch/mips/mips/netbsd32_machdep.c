@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.18 2019/03/01 11:06:55 pgoyette Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.23 2021/11/06 20:42:56 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -30,10 +30,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.18 2019/03/01 11:06:55 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.23 2021/11/06 20:42:56 thorpej Exp $");
 
 #include "opt_compat_netbsd.h"
-#include "opt_coredump.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -68,15 +67,16 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.18 2019/03/01 11:06:55 pgoyet
 #include <uvm/uvm_extern.h>
 
 const char machine32[] = MACHINE;
-const char machine_arch32[] = MACHINE32_ARCH;
+const char machine_archo32[] = MACHINE32_OARCH;
+#ifdef MACHINE32_NARCH
+const char machine_archn32[] = MACHINE32_NARCH;
+#endif
 
 #if 0
 cpu_coredump32
 netbsd32_cpu_upcall
 netbsd32_vm_default_addr
 #endif
-
-int netbsd32_sendsig_siginfo(const ksiginfo_t *, const sigset_t *);
 
 struct sigframe_siginfo32 {
 	siginfo32_t sf_si;
@@ -86,7 +86,7 @@ struct sigframe_siginfo32 {
 /*
  * Send a signal to process.
  */
-int
+void
 netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 {
 	struct lwp * const l = curlwp;
@@ -107,13 +107,13 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 
         /* Build stack frame for signal trampoline. */
         switch (ps->sa_sigdesc[sig].sd_vers) {
-        case 0:         /* handled by sendsig_sigcontext */
-        case 1:         /* handled by sendsig_sigcontext */
+        case __SIGTRAMP_SIGCODE_VERSION:     /* handled by sendsig_sigcontext */
+        case __SIGTRAMP_SIGCONTEXT_VERSION: /* handled by sendsig_sigcontext */
         default:        /* unknown version */
                 printf("%s: bad version %d\n", __func__,
                     ps->sa_sigdesc[sig].sd_vers);
                 sigexit(l, SIGILL);
-        case 2:
+        case __SIGTRAMP_SIGINFO_VERSION:
                 break;
         }
 
@@ -158,8 +158,6 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Remember that we're now on the signal stack. */
 	if (onstack)
 		l->l_sigstk.ss_flags |= SS_ONSTACK;
-
-	return 0;
 }
 
 int
@@ -264,7 +262,6 @@ cpu_setmcontext32(struct lwp *l, const mcontext32_t *mc32, unsigned int flags)
 	return cpu_setmcontext(l, &mc, flags);
 }
 
-#ifdef COREDUMP
 /*
  * Dump the machine specific segment at the start of a core dump.
  */
@@ -298,38 +295,29 @@ cpu_coredump32(struct lwp *l, struct coredump_iostate *iocookie,
 	cseg.c_addr = 0;
 	cseg.c_size = chdr->c_cpusize;
 
-	error = coredump_write(iocookie, UIO_SYSSPACE, &cseg,
-	    chdr->c_seghdrsize);
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &cseg,
+	    chdr->c_seghdrsize), ENOSYS, error);
 	if (error)
 		return error;
 
-	return coredump_write(iocookie, UIO_SYSSPACE, &cpustate,
-	    chdr->c_cpusize);
-}
-#endif
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE,
+	    &cpustate, chdr->c_cpusize), ENOSYS, error);
 
-struct netbsd32_sendsig_hook_t netbsd32_sendsig_hook;
- 
-void
-netbsd32_sendsig(const ksiginfo_t *ksi, const sigset_t *mask)
-{
-
-	MODULE_HOOK_CALL_VOID(netbsd32_sendsig_hook, (ksi, mask),  
-	    netbsd32_sendsig_siginfo(ksi, mask));
+	return error;
 }
 
 static const char *
 netbsd32_machine32(void)
 {
 
-	return machine32;
+	return PROC_MACHINE_ARCH32(curproc);
 }
 
 void 
 netbsd32_machdep_md_init(void) 
 {
 
-	MODULE_HOOK_SET(netbsd32_machine32_hook, "mach32", netbsd32_machine32);
+	MODULE_HOOK_SET(netbsd32_machine32_hook, netbsd32_machine32);
 }
 
 void

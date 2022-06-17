@@ -1,4 +1,4 @@
-/*	$NetBSD: db_sym.c,v 1.65 2017/11/03 09:59:07 maxv Exp $	*/
+/*	$NetBSD: db_sym.c,v 1.69 2021/12/13 03:17:50 kre Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_sym.c,v 1.65 2017/11/03 09:59:07 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_sym.c,v 1.69 2021/12/13 03:17:50 kre Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddbparam.h"
@@ -50,7 +50,6 @@ static void		db_symsplit(char *, char **, char **);
 
 const db_symformat_t *db_symformat;
 static db_forall_func_t db_sift;
-extern db_symformat_t db_symformat_aout;
 extern db_symformat_t db_symformat_elf;
 #endif
 
@@ -225,7 +224,8 @@ db_search_symbol(db_addr_t val, db_strategy_t strategy, db_expr_t *offp)
 		db_expr_t newdiff;
 		db_sym_t ssym;
 
-		newdiff = diff = ~0;
+		diff = ~0u;
+		newdiff = ~0;
 		ssym = (*db_symformat->sym_search)
 		    (NULL, val, strategy, &newdiff);
 		if ((unsigned int) newdiff < diff) {
@@ -347,6 +347,12 @@ db_symstr(char *buf, size_t buflen, db_expr_t off, db_strategy_t strategy)
 	if (ksyms_getname(&mod, &name, (vaddr_t)off,
 	    strategy|KSYMS_CLOSEST) == 0) {
 		(void)ksyms_getval_unlocked(mod, name, NULL, &val, KSYMS_ANY);
+		if (strategy & KSYMS_PROC && val == off) {
+			if (ksyms_getname(&mod, &name, (vaddr_t)off - 1,
+					  strategy|KSYMS_CLOSEST) != 0)
+				goto out;
+			(void)ksyms_getval_unlocked(mod, name, NULL, &val, KSYMS_ANY);
+		}
 		if (((off - val) < db_maxoff) && val) {
 			snprintf(buf, buflen, "%s:%s", mod, name);
 			if (off - val) {
@@ -365,6 +371,7 @@ db_symstr(char *buf, size_t buflen, db_expr_t off, db_strategy_t strategy)
 			return;
 		}
 	}
+out:
 	strlcpy(buf, db_num_to_str(off), buflen);
 #endif
 }
@@ -418,6 +425,12 @@ db_printsym(db_expr_t off, db_strategy_t strategy,
 	if (ksyms_getname(&mod, &name, (vaddr_t)off,
 	    strategy|KSYMS_CLOSEST) == 0) {
 		(void)ksyms_getval_unlocked(mod, name, NULL, &uval, KSYMS_ANY);
+		if (strategy & KSYMS_PROC && uval == off) {
+			if (ksyms_getname(&mod, &name, (vaddr_t)off - 1,
+					  strategy|KSYMS_CLOSEST) != 0)
+				goto out;
+			(void)ksyms_getval_unlocked(mod, name, NULL, &uval, KSYMS_ANY);
+		}
 		val = (long) uval;
 		if (((off - val) < db_maxoff) && val) {
 			(*pr)("%s:%s", mod, name);
@@ -436,6 +449,7 @@ db_printsym(db_expr_t off, db_strategy_t strategy,
 			return;
 		}
 	}
+ out:;
 #endif
 	(*pr)("%s", db_num_to_str(off));
 	return;

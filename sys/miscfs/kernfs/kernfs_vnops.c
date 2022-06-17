@@ -1,4 +1,4 @@
-/*	$NetBSD: kernfs_vnops.c,v 1.161 2019/08/29 06:43:13 hannken Exp $	*/
+/*	$NetBSD: kernfs_vnops.c,v 1.174 2022/03/27 17:10:56 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kernfs_vnops.c,v 1.161 2019/08/29 06:43:13 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kernfs_vnops.c,v 1.174 2022/03/27 17:10:56 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -78,7 +78,7 @@ const struct kern_target kern_targets[] = {
      /*        name            data          tag           type  ro/rw */
      { DT_DIR, N("."),         0,            KFSkern,        VDIR, DIR_MODE   },
      { DT_DIR, N(".."),        0,            KFSroot,        VDIR, DIR_MODE   },
-     { DT_REG, N("boottime"),  &boottime.tv_sec, KFSint,     VREG, READ_MODE  },
+     { DT_REG, N("boottime"),  0,            KFSboottime,    VREG, READ_MODE  },
 			/* XXXUNCONST */
      { DT_REG, N("copyright"), __UNCONST(copyright),
      					     KFSstring,      VREG, READ_MODE  },
@@ -91,8 +91,8 @@ const struct kern_target kern_targets[] = {
 #if 0
      { DT_DIR, N("root"),      0,            KFSnull,        VDIR, DIR_MODE   },
 #endif
-     { DT_BLK, N("rootdev"),   &rootdev,     KFSdevice,      VBLK, READ_MODE  },
-     { DT_CHR, N("rrootdev"),  &rrootdev,    KFSdevice,      VCHR, READ_MODE  },
+     { DT_BLK, N("rootdev"),   &rootdev,     KFSdevice,      VBLK, UREAD_MODE  },
+     { DT_CHR, N("rrootdev"),  &rrootdev,    KFSdevice,      VCHR, UREAD_MODE  },
      { DT_REG, N("time"),      0,            KFStime,        VREG, READ_MODE  },
 			/* XXXUNCONST */
      { DT_REG, N("version"),   __UNCONST(version),
@@ -137,8 +137,6 @@ const struct kernfs_fileop kernfs_default_fileops[] = {
 };
 
 int	kernfs_lookup(void *);
-#define	kernfs_create	genfs_eopnotsupp
-#define	kernfs_mknod	genfs_eopnotsupp
 int	kernfs_open(void *);
 int	kernfs_close(void *);
 int	kernfs_access(void *);
@@ -146,34 +144,13 @@ int	kernfs_getattr(void *);
 int	kernfs_setattr(void *);
 int	kernfs_read(void *);
 int	kernfs_write(void *);
-#define	kernfs_fcntl	genfs_fcntl
 int	kernfs_ioctl(void *);
-#define	kernfs_poll	genfs_poll
-#define kernfs_revoke	genfs_revoke
-#define	kernfs_fsync	genfs_nullop
-#define	kernfs_seek	genfs_nullop
-#define	kernfs_remove	genfs_eopnotsupp
-int	kernfs_link(void *);
-#define	kernfs_rename	genfs_eopnotsupp
-#define	kernfs_mkdir	genfs_eopnotsupp
-#define	kernfs_rmdir	genfs_eopnotsupp
-int	kernfs_symlink(void *);
 int	kernfs_readdir(void *);
-#define	kernfs_readlink	genfs_eopnotsupp
-#define	kernfs_abortop	genfs_abortop
 int	kernfs_inactive(void *);
 int	kernfs_reclaim(void *);
-#define	kernfs_lock	genfs_lock
-#define	kernfs_unlock	genfs_unlock
-#define	kernfs_bmap	genfs_badop
-#define	kernfs_strategy	genfs_badop
 int	kernfs_print(void *);
-#define	kernfs_islocked	genfs_islocked
 int	kernfs_pathconf(void *);
-#define	kernfs_advlock	genfs_einval
-#define	kernfs_bwrite	genfs_eopnotsupp
 int	kernfs_getpages(void *);
-#define	kernfs_putpages	genfs_putpages
 
 static int	kernfs_xread(struct kernfs_node *, int, char **,
 				size_t, size_t *);
@@ -182,50 +159,78 @@ static int	kernfs_xwrite(const struct kernfs_node *, char *, size_t);
 int (**kernfs_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc kernfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
+	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, kernfs_lookup },		/* lookup */
-	{ &vop_create_desc, kernfs_create },		/* create */
-	{ &vop_mknod_desc, kernfs_mknod },		/* mknod */
+	{ &vop_create_desc, genfs_eopnotsupp },		/* create */
+	{ &vop_mknod_desc, genfs_eopnotsupp },		/* mknod */
 	{ &vop_open_desc, kernfs_open },		/* open */
 	{ &vop_close_desc, kernfs_close },		/* close */
 	{ &vop_access_desc, kernfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, kernfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, kernfs_setattr },		/* setattr */
 	{ &vop_read_desc, kernfs_read },		/* read */
 	{ &vop_write_desc, kernfs_write },		/* write */
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
-	{ &vop_fcntl_desc, kernfs_fcntl },		/* fcntl */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
 	{ &vop_ioctl_desc, kernfs_ioctl },		/* ioctl */
-	{ &vop_poll_desc, kernfs_poll },		/* poll */
-	{ &vop_revoke_desc, kernfs_revoke },		/* revoke */
-	{ &vop_fsync_desc, kernfs_fsync },		/* fsync */
-	{ &vop_seek_desc, kernfs_seek },		/* seek */
-	{ &vop_remove_desc, kernfs_remove },		/* remove */
-	{ &vop_link_desc, kernfs_link },		/* link */
-	{ &vop_rename_desc, kernfs_rename },		/* rename */
-	{ &vop_mkdir_desc, kernfs_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, kernfs_rmdir },		/* rmdir */
-	{ &vop_symlink_desc, kernfs_symlink },		/* symlink */
+	{ &vop_poll_desc, genfs_poll },			/* poll */
+	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
+	{ &vop_fsync_desc, genfs_nullop },		/* fsync */
+	{ &vop_seek_desc, genfs_nullop },		/* seek */
+	{ &vop_remove_desc, genfs_eopnotsupp },		/* remove */
+	{ &vop_link_desc, genfs_erofs_link },		/* link */
+	{ &vop_rename_desc, genfs_eopnotsupp },		/* rename */
+	{ &vop_mkdir_desc, genfs_eopnotsupp },		/* mkdir */
+	{ &vop_rmdir_desc, genfs_eopnotsupp },		/* rmdir */
+	{ &vop_symlink_desc, genfs_erofs_symlink },	/* symlink */
 	{ &vop_readdir_desc, kernfs_readdir },		/* readdir */
-	{ &vop_readlink_desc, kernfs_readlink },	/* readlink */
-	{ &vop_abortop_desc, kernfs_abortop },		/* abortop */
+	{ &vop_readlink_desc, genfs_eopnotsupp },	/* readlink */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, kernfs_inactive },	/* inactive */
 	{ &vop_reclaim_desc, kernfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, kernfs_lock },		/* lock */
-	{ &vop_unlock_desc, kernfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, kernfs_bmap },		/* bmap */
-	{ &vop_strategy_desc, kernfs_strategy },	/* strategy */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
+	{ &vop_bmap_desc, genfs_eopnotsupp },		/* bmap */
+	{ &vop_strategy_desc, genfs_eopnotsupp },	/* strategy */
 	{ &vop_print_desc, kernfs_print },		/* print */
-	{ &vop_islocked_desc, kernfs_islocked },	/* islocked */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, kernfs_pathconf },	/* pathconf */
-	{ &vop_advlock_desc, kernfs_advlock },		/* advlock */
-	{ &vop_bwrite_desc, kernfs_bwrite },		/* bwrite */
+	{ &vop_advlock_desc, genfs_einval },		/* advlock */
+	{ &vop_bwrite_desc, genfs_eopnotsupp },		/* bwrite */
 	{ &vop_getpages_desc, kernfs_getpages },	/* getpages */
-	{ &vop_putpages_desc, kernfs_putpages },	/* putpages */
+	{ &vop_putpages_desc, genfs_putpages },		/* putpages */
 	{ NULL, NULL }
 };
 const struct vnodeopv_desc kernfs_vnodeop_opv_desc =
 	{ &kernfs_vnodeop_p, kernfs_vnodeop_entries };
+
+int (**kernfs_specop_p)(void *);
+const struct vnodeopv_entry_desc kernfs_specop_entries[] = {
+	{ &vop_default_desc, vn_default_error },
+	GENFS_SPECOP_ENTRIES,
+	{ &vop_close_desc, spec_close },		/* close */
+	{ &vop_access_desc, kernfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
+	{ &vop_getattr_desc, kernfs_getattr },		/* getattr */
+	{ &vop_setattr_desc, kernfs_setattr },		/* setattr */
+	{ &vop_read_desc, spec_read },			/* read */
+	{ &vop_write_desc, spec_write },		/* write */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
+	{ &vop_fsync_desc, spec_fsync },		/* fsync */
+	{ &vop_inactive_desc, kernfs_inactive },	/* inactive */
+	{ &vop_reclaim_desc, kernfs_reclaim },		/* reclaim */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
+	{ &vop_print_desc, kernfs_print },		/* print */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
+	{ &vop_bwrite_desc, vn_bwrite },		/* bwrite */
+	{ NULL, NULL }
+};
+const struct vnodeopv_desc kernfs_specop_opv_desc =
+	{ &kernfs_specop_p, kernfs_specop_entries };
 
 static inline int
 kernfs_fileop_compare(struct kernfs_fileop *a, struct kernfs_fileop *b)
@@ -359,6 +364,17 @@ kernfs_xread(struct kernfs_node *kfs, int off, char **bufp, size_t len, size_t *
 		microtime(&tv);
 		snprintf(*bufp, len, "%lld %ld\n", (long long)tv.tv_sec,
 		    (long)tv.tv_usec);
+		break;
+	}
+
+	case KFSboottime: {
+		struct timeval tv;
+
+		/*
+		 * Historically, /kern/boottime only contained seconds.
+		 */
+		getmicroboottime(&tv);
+		snprintf(*bufp, len, "%lld\n", (long long)tv.tv_sec);
 		break;
 	}
 
@@ -581,7 +597,7 @@ kernfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vattr va;
@@ -591,9 +607,9 @@ kernfs_access(void *v)
 		return (error);
 
 	return kauth_authorize_vnode(ap->a_cred,
-	    KAUTH_ACCESS_ACTION(ap->a_mode, ap->a_vp->v_type, va.va_mode),
-	    ap->a_vp, NULL, genfs_can_access(va.va_type, va.va_mode,
-	    va.va_uid, va.va_gid, ap->a_mode, ap->a_cred));
+	    KAUTH_ACCESS_ACTION(ap->a_accmode, ap->a_vp->v_type, va.va_mode),
+	    ap->a_vp, NULL, genfs_can_access(ap->a_vp, ap->a_cred,
+	    va.va_uid, va.va_gid, va.va_mode, NULL, ap->a_accmode));
 }
 
 static int
@@ -639,7 +655,7 @@ kernfs_getattr(void *v)
 	/* Make all times be current TOD, except for the "boottime" node. */
 	if (kfs->kfs_kt->kt_namlen == 8 &&
 	    !memcmp(kfs->kfs_kt->kt_name, "boottime", 8)) {
-		vap->va_ctime = boottime;
+		getnanoboottime(&vap->va_ctime);
 	} else {
 		getnanotime(&vap->va_ctime);
 	}
@@ -673,6 +689,7 @@ kernfs_getattr(void *v)
 
 	case KFSnull:
 	case KFStime:
+	case KFSboottime:
 	case KFSint:
 	case KFSstring:
 	case KFShostname:
@@ -934,15 +951,6 @@ kernfs_readdir(void *v)
 					break;
 				kt = &dkt->dkt_kt;
 			}
-			if (kt->kt_tag == KFSdevice) {
-				dev_t *dp = kt->kt_data;
-				struct vnode *fvp;
-
-				if (*dp == NODEV ||
-				    !vfinddev(*dp, kt->kt_vtype, &fvp))
-					continue;
-				vrele(fvp);
-			}
 			if (kt->kt_tag == KFSmsgbuf) {
 				if (!logenabled(msgbufp)) {
 					continue;
@@ -1015,15 +1023,6 @@ kernfs_readdir(void *v)
 					break;
 				kt = &dkt->dkt_kt;
 				dkt = SIMPLEQ_NEXT(dkt, dkt_queue);
-			}
-			if (kt->kt_tag == KFSdevice) {
-				dev_t *dp = kt->kt_data;
-				struct vnode *fvp;
-
-				if (*dp == NODEV ||
-				    !vfinddev(*dp, kt->kt_vtype, &fvp))
-					continue;
-				vrele(fvp);
 			}
 			d.d_namlen = kt->kt_namlen;
 			if ((error = kernfs_setdirentfileno(&d, i, kfs,
@@ -1127,7 +1126,7 @@ kernfs_pathconf(void *v)
 		*ap->a_retval = 1;
 		return (0);
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 	/* NOTREACHED */
 }
@@ -1145,34 +1144,6 @@ kernfs_print(void *v)
 }
 
 int
-kernfs_link(void *v)
-{
-	struct vop_link_v2_args /* {
-		struct vnode *a_dvp;
-		struct vnode *a_vp;
-		struct componentname *a_cnp;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
-}
-
-int
-kernfs_symlink(void *v)
-{
-	struct vop_symlink_v3_args /* {
-		struct vnode *a_dvp;
-		struct vnode **a_vpp;
-		struct componentname *a_cnp;
-		struct vattr *a_vap;
-		char *a_target;
-	} */ *ap = v;
-
-	VOP_ABORTOP(ap->a_dvp, ap->a_cnp);
-	return (EROFS);
-}
- 
-int
 kernfs_getpages(void *v)
 {
 	struct vop_getpages_args /* {
@@ -1187,7 +1158,7 @@ kernfs_getpages(void *v)
 	} */ *ap = v;
 
 	if ((ap->a_flags & PGO_LOCKED) == 0)
-		mutex_exit(ap->a_vp->v_interlock);
+		rw_exit(ap->a_vp->v_uobj.vmobjlock);
 
 	return (EFAULT);
 }

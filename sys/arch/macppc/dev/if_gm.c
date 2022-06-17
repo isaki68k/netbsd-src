@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gm.c,v 1.55 2019/05/28 07:41:47 msaitoh Exp $	*/
+/*	$NetBSD: if_gm.c,v 1.58 2021/03/05 07:15:53 rin Exp $	*/
 
 /*-
  * Copyright (c) 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gm.c,v 1.55 2019/05/28 07:41:47 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gm.c,v 1.58 2021/03/05 07:15:53 rin Exp $");
 
 #include "opt_inet.h"
 
@@ -41,8 +41,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_gm.c,v 1.55 2019/05/28 07:41:47 msaitoh Exp $");
 #include <sys/callout.h>
 
 #include <sys/rndsource.h>
-
-#include <uvm/uvm_extern.h>
 
 #include <net/if.h>
 #include <net/if_ether.h>
@@ -65,6 +63,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_gm.c,v 1.55 2019/05/28 07:41:47 msaitoh Exp $");
 #include <dev/ofw/openfirm.h>
 #include <macppc/dev/if_gmreg.h>
 #include <machine/pio.h>
+#include <powerpc/oea/spr.h>
 
 #define NTXBUF 4
 #define NRXBUF 32
@@ -174,7 +173,8 @@ gmac_attach(device_t parent, device_t self, void *aux)
 	}
 	intrstr = pci_intr_string(pa->pa_pc, ih, buf, sizeof(buf));
 
-	if (pci_intr_establish(pa->pa_pc, ih, IPL_NET, gmac_intr, sc) == NULL) {
+	if (pci_intr_establish_xname(pa->pa_pc, ih, IPL_NET, gmac_intr, sc,
+	    device_xname(self)) == NULL) {
 		printf(": unable to establish interrupt");
 		if (intrstr)
 			printf(" at %s", intrstr);
@@ -183,11 +183,7 @@ gmac_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Setup packet buffers and DMA descriptors. */
-	p = malloc((NRXBUF + NTXBUF) * 2048 + 3 * 0x800, M_DEVBUF, M_NOWAIT);
-	if (p == NULL) {
-		printf(": cannot malloc buffers\n");
-		return;
-	}
+	p = malloc((NRXBUF + NTXBUF) * 2048 + 3 * 0x800, M_DEVBUF, M_WAITOK);
 	p = (void *)roundup((vaddr_t)p, 0x800);
 	memset(p, 0, 2048 * (NRXBUF + NTXBUF) + 2 * 0x800);
 
@@ -367,13 +363,13 @@ gmac_rint(struct gmac_softc *sc)
 		len -= 4;	/* CRC */
 
 		if (le32toh(dp->cmd_hi) & 0x40000000) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
 		m = gmac_get(sc, sc->sc_rxbuf[i], len);
 		if (m == NULL) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next;
 		}
 
@@ -430,9 +426,9 @@ gmac_get(struct gmac_softc *sc, void *pkt, int totlen)
 			}
 			len = MCLBYTES;
 		}
-		m->m_len = len = min(totlen, len);
+		m->m_len = len = imin(totlen, len);
 		memcpy(mtod(m, void *), pkt, len);
-		pkt += len;
+		pkt = (char *)pkt + len;
 		totlen -= len;
 		*mp = m;
 		mp = &m->m_next;
@@ -463,7 +459,7 @@ gmac_start(struct ifnet *ifp)
 
 		/* 5 seconds to watch for failing to transmit */
 		ifp->if_timer = 5;
-		ifp->if_opackets++;		/* # of pkts */
+		if_statinc(ifp, if_opackets);		/* # of pkts */
 
 		i = sc->sc_txnext;
 		buff = sc->sc_txbuf[i];
@@ -509,7 +505,7 @@ gmac_put(struct gmac_softc *sc, void *buff, struct mbuf *m)
 		if (len == 0)
 			continue;
 		memcpy(buff, mtod(m, void *), len);
-		buff += len;
+		buff = (char *)buff + len;
 		tlen += len;
 	}
 	if (tlen > 2048)
@@ -590,7 +586,7 @@ gmac_init_mac(struct gmac_softc *sc)
 
 	/* init-mii */
 	gmac_write_reg(sc, GMAC_DATAPATHMODE, 4);
-	gmac_mii_writereg(&sc->sc_dev, 0, 0, 0x1000);
+	gmac_mii_writereg(sc->sc_dev, 0, 0, 0x1000);
 
 	gmac_write_reg(sc, GMAC_TXDMACONFIG, 0xffc00);
 	gmac_write_reg(sc, GMAC_RXDMACONFIG, 0);
@@ -749,7 +745,6 @@ gmac_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 {
 	struct gmac_softc *sc = ifp->if_softc;
 	struct ifaddr *ifa = (struct ifaddr *)data;
-	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
@@ -829,7 +824,7 @@ gmac_watchdog(struct ifnet *ifp)
 	struct gmac_softc *sc = ifp->if_softc;
 
 	printf("%s: device timeout\n", ifp->if_xname);
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	gmac_reset(sc);
 	gmac_init(sc);

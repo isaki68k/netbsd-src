@@ -1,4 +1,4 @@
-/*	$NetBSD: sb.c,v 1.91 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: sb.c,v 1.93 2021/08/07 16:19:12 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1991-1993 Regents of the University of California.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sb.c,v 1.91 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sb.c,v 1.93 2021/08/07 16:19:12 thorpej Exp $");
 
 #include "midi.h"
 
@@ -263,7 +263,8 @@ sbattach(struct sbdsp_softc *sc)
 		arg.type = AUDIODEV_TYPE_MPU;
 		arg.hwif = 0;
 		arg.hdl = 0;
-		sc->sc_mpudev = config_found_ia(sc->sc_dev, "sbdsp", &arg, audioprint);
+		sc->sc_mpudev = config_found(sc->sc_dev, &arg, audioprint,
+		    CFARGS(.iattr = "sbdsp"));
 		break;
 	}
 #endif
@@ -271,7 +272,8 @@ sbattach(struct sbdsp_softc *sc)
 		arg.type = AUDIODEV_TYPE_OPL;
 		arg.hwif = 0;
 		arg.hdl = 0;
-		(void)config_found_ia(sc->sc_dev, "sbdsp", &arg, audioprint);
+		config_found(sc->sc_dev, &arg, audioprint,
+		    CFARGS(.iattr = "sbdsp"));
 	}
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_vm.c,v 1.10 2018/08/27 15:10:26 riastradh Exp $	*/
+/*	$NetBSD: drm_vm.c,v 1.12 2021/12/19 09:52:59 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_vm.c,v 1.10 2018/08/27 15:10:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_vm.c,v 1.12 2021/12/19 09:52:59 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/conf.h>
@@ -39,7 +39,10 @@ __KERNEL_RCSID(0, "$NetBSD: drm_vm.c,v 1.10 2018/08/27 15:10:26 riastradh Exp $"
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_device.h>
 
-#include <drm/drmP.h>
+#include <linux/capability.h>
+
+#include <drm/drm_device.h>
+#include <drm/drm_file.h>
 #include <drm/drm_legacy.h>
 
 static paddr_t	drm_legacy_mmap_paddr_locked(struct drm_device *, off_t, int);
@@ -116,7 +119,7 @@ drm_legacy_mmap_paddr_locked(struct drm_device *dev, off_t byte_offset,
 	 * what guarantees the map will continue to exist.
 	 */
 
-	if (ISSET(map->flags, _DRM_RESTRICTED) && !DRM_SUSER())
+	if (ISSET(map->flags, _DRM_RESTRICTED) && !capable(CAP_SYS_ADMIN))
 		return -1;
 
 	if (!(map->offset <= byte_offset))

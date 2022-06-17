@@ -1,4 +1,4 @@
-/*	$NetBSD: radeon_ring.c,v 1.3 2018/08/27 04:58:36 riastradh Exp $	*/
+/*	$NetBSD: radeon_ring.c,v 1.5 2021/12/18 23:45:43 riastradh Exp $	*/
 
 /*
  * Copyright 2008 Advanced Micro Devices, Inc.
@@ -28,11 +28,14 @@
  *          Jerome Glisse
  *          Christian König
  */
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeon_ring.c,v 1.3 2018/08/27 04:58:36 riastradh Exp $");
 
-#include <linux/jiffies.h>
-#include <drm/drmP.h>
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: radeon_ring.c,v 1.5 2021/12/18 23:45:43 riastradh Exp $");
+
+#include <drm/drm_debugfs.h>
+#include <drm/drm_device.h>
+#include <drm/drm_file.h>
+
 #include "radeon.h"
 
 /*
@@ -320,7 +323,7 @@ unsigned radeon_ring_backup(struct radeon_device *rdev, struct radeon_ring *ring
 	}
 
 	/* and then save the content of the ring */
-	*data = drm_malloc_ab(size, sizeof(uint32_t));
+	*data = kvmalloc_array(size, sizeof(uint32_t), GFP_KERNEL);
 	if (!*data) {
 		mutex_unlock(&rdev->ring_lock);
 		return 0;
@@ -362,7 +365,7 @@ int radeon_ring_restore(struct radeon_device *rdev, struct radeon_ring *ring,
 	}
 
 	radeon_ring_unlock_commit(rdev, ring, false);
-	drm_free_large(data);
+	kvfree(data);
 	return 0;
 }
 

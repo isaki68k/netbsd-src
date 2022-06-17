@@ -1,4 +1,4 @@
-/*	$NetBSD: epclk.c,v 1.21 2014/03/06 19:46:27 maxv Exp $	*/
+/*	$NetBSD: epclk.c,v 1.23 2021/11/21 08:25:26 skrll Exp $	*/
 
 /*
  * Copyright (c) 2004 Jesse Off
@@ -31,7 +31,7 @@
  *
  * We use the 64Hz RTC interrupt as its the only thing that allows for timekeeping
  * of a second (crystal error only).  There are two general purpose timers
- * on the ep93xx, but they run at a frequency that makes a perfect integer 
+ * on the ep93xx, but they run at a frequency that makes a perfect integer
  * number of ticks per second impossible.  Note that there was an errata with
  * the ep93xx processor and many early boards (including the Cirrus eval board) have
  * a broken crystal oscillator input that may make this 64Hz unreliable.  However,
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: epclk.c,v 1.21 2014/03/06 19:46:27 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: epclk.c,v 1.23 2021/11/21 08:25:26 skrll Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -55,9 +55,9 @@ __KERNEL_RCSID(0, "$NetBSD: epclk.c,v 1.21 2014/03/06 19:46:27 maxv Exp $");
 
 #include <arm/cpufunc.h>
 
-#include <arm/ep93xx/epsocvar.h> 
-#include <arm/ep93xx/epclkreg.h> 
-#include <arm/ep93xx/ep93xxreg.h> 
+#include <arm/ep93xx/epsocvar.h>
+#include <arm/ep93xx/epclkreg.h>
+#include <arm/ep93xx/ep93xxreg.h>
 #include <arm/ep93xx/ep93xxvar.h>
 #include <dev/clock_subr.h>
 
@@ -85,14 +85,11 @@ struct epclk_softc {
 };
 
 static struct timecounter epclk_timecounter = {
-	epclk_get_timecount,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	TIMER_FREQ,		/* frequency */
-	"epclk",		/* name */
-	100,			/* quality */
-	NULL,			/* prev */
-	NULL,			/* next */
+	.tc_get_timecount = epclk_get_timecount,
+	.tc_counter_mask = ~0u,
+	.tc_frequency = TIMER_FREQ,
+	.tc_name = "epclk",
+	.tc_quality = 100,
 };
 
 static struct epclk_softc *epclk_sc = NULL;
@@ -142,11 +139,11 @@ epclk_attach(device_t parent, device_t self, void *aux)
 	} else
 		first_run = false;
 
-	if (bus_space_map(sa->sa_iot, sa->sa_addr, sa->sa_size, 
+	if (bus_space_map(sa->sa_iot, sa->sa_addr, sa->sa_size,
 		0, &sc->sc_ioh))
 		panic("%s: Cannot map registers", device_xname(self));
 #if defined(HZ) && (HZ == 64)
-	if (bus_space_map(sa->sa_iot, EP93XX_APB_HWBASE + EP93XX_APB_SYSCON + 
+	if (bus_space_map(sa->sa_iot, EP93XX_APB_HWBASE + EP93XX_APB_SYSCON +
 		EP93XX_SYSCON_TEOI, 4, 0, &sc->sc_teoi_ioh))
 		panic("%s: Cannot map registers", device_xname(self));
 #endif

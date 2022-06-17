@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_device.h,v 1.13 2014/12/14 23:48:58 chs Exp $	*/
+/*	$NetBSD: uvm_device.h,v 1.15 2021/12/18 16:31:53 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -30,11 +30,24 @@
 #ifndef _UVM_UVM_DEVICE_H_
 #define _UVM_UVM_DEVICE_H_
 
+#include <sys/types.h>
+#include <sys/queue.h>
+
+#include <uvm/uvm_object.h>
+#include <uvm/uvm_param.h>
+#include <uvm/uvm_prot.h>
+
 /*
  * uvm_device.h
  *
  * device handle into the VM system.
  */
+
+#include <sys/types.h>
+
+#include <sys/queue.h>
+
+#include <uvm/uvm_object.h>
 
 /*
  * the uvm_device structure.   object is put at the top of the data structure.
@@ -57,6 +70,9 @@ struct uvm_device {
 #define UVM_DEVICE_WANTED	0x2	/* someone wants to put a "hold" on */
 
 #ifdef _KERNEL
+
+#include <uvm/uvm_param.h>
+#include <uvm/uvm_prot.h>
 
 /*
  * prototypes

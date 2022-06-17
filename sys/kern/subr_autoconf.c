@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.301 2022/03/28 12:38:59 riastradh Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.301 2022/03/28 12:38:59 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -86,6 +86,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh 
 
 #include <sys/param.h>
 #include <sys/device.h>
+#include <sys/device_impl.h>
 #include <sys/disklabel.h>
 #include <sys/conf.h>
 #include <sys/kauth.h>
@@ -107,6 +108,8 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh 
 #include <sys/devmon.h>
 #include <sys/cpu.h>
 #include <sys/sysctl.h>
+#include <sys/stdarg.h>
+#include <sys/localcount.h>
 
 #include <sys/disk.h>
 
@@ -121,7 +124,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.265 2018/12/01 02:08:16 msaitoh 
 /*
  * Device autoconfiguration timings are mixed into the entropy pool.
  */
-extern krndsource_t rnd_autoconf_source;
+static krndsource_t rnd_autoconf_source;
 
 /*
  * ioconf.c exports exactly two names: cfdata and cfroots.  All system
@@ -165,9 +168,22 @@ struct alldevs_foray {
 	struct devicelist	af_garbage;
 };
 
+/*
+ * Internal version of the cfargs structure; all versions are
+ * canonicalized to this.
+ */
+struct cfargs_internal {
+	union {
+		cfsubmatch_t	submatch;/* submatch function (direct config) */
+		cfsearch_t	search;	 /* search function (indirect config) */
+	};
+	const char *	iattr;		/* interface attribute */
+	const int *	locators;	/* locators array */
+	devhandle_t	devhandle;	/* devhandle_t (by value) */
+};
+
 static char *number(char *, int);
 static void mapply(struct matchinfo *, cfdata_t);
-static device_t config_devalloc(const device_t, const cfdata_t, const int *);
 static void config_devdelete(device_t);
 static void config_devunlink(device_t, struct devicelist *);
 static void config_makeroom(int, struct cfdriver *);
@@ -175,6 +191,8 @@ static void config_devlink(device_t);
 static void config_alldevs_enter(struct alldevs_foray *);
 static void config_alldevs_exit(struct alldevs_foray *);
 static void config_add_attrib_dict(device_t);
+static device_t	config_attach_internal(device_t, cfdata_t, void *,
+		    cfprint_t, const struct cfargs_internal *);
 
 static void config_collect_garbage(struct devicelist *);
 static void config_dump_garbage(struct devicelist *);
@@ -224,7 +242,8 @@ static int alldevs_nread = 0;
 static int alldevs_nwrite = 0;
 static bool alldevs_garbage = false;
 
-static int config_pending;		/* semaphore for mountroot */
+static struct devicelist config_pending =
+    TAILQ_HEAD_INITIALIZER(config_pending);
 static kmutex_t config_misc_lock;
 static kcondvar_t config_misc_cv;
 
@@ -356,6 +375,9 @@ config_init(void)
 	initcftable.ct_cfdata = cfdata;
 	TAILQ_INSERT_TAIL(&allcftables, &initcftable, ct_list);
 
+	rnd_attach_source(&rnd_autoconf_source, "autoconf", RND_TYPE_UNKNOWN,
+	    RND_FLAG_COLLECT_TIME);
+
 	config_initialized = true;
 }
 
@@ -371,25 +393,31 @@ config_init_component(struct cfdriver * const *cfdriverv,
 {
 	int error;
 
+	KERNEL_LOCK(1, NULL);
+
 	if ((error = frob_cfdrivervec(cfdriverv,
 	    config_cfdriver_attach, config_cfdriver_detach, "init", false))!= 0)
-		return error;
+		goto out;
 	if ((error = frob_cfattachvec(cfattachv,
 	    config_cfattach_attach, config_cfattach_detach,
 	    "init", false)) != 0) {
 		frob_cfdrivervec(cfdriverv,
 	            config_cfdriver_detach, NULL, "init rollback", true);
-		return error;
+		goto out;
 	}
 	if ((error = config_cfdata_attach(cfdatav, 1)) != 0) {
 		frob_cfattachvec(cfattachv,
 		    config_cfattach_detach, NULL, "init rollback", true);
 		frob_cfdrivervec(cfdriverv,
 	            config_cfdriver_detach, NULL, "init rollback", true);
-		return error;
+		goto out;
 	}
 
-	return 0;
+	/* Success!  */
+	error = 0;
+
+out:	KERNEL_UNLOCK_ONE(NULL);
+	return error;
 }
 
 int
@@ -398,14 +426,16 @@ config_fini_component(struct cfdriver * const *cfdriverv,
 {
 	int error;
 
+	KERNEL_LOCK(1, NULL);
+
 	if ((error = config_cfdata_detach(cfdatav)) != 0)
-		return error;
+		goto out;
 	if ((error = frob_cfattachvec(cfattachv,
 	    config_cfattach_detach, config_cfattach_attach,
 	    "fini", false)) != 0) {
 		if (config_cfdata_attach(cfdatav, 0) != 0)
 			panic("config_cfdata fini rollback failed");
-		return error;
+		goto out;
 	}
 	if ((error = frob_cfdrivervec(cfdriverv,
 	    config_cfdriver_detach, config_cfdriver_attach,
@@ -414,10 +444,14 @@ config_fini_component(struct cfdriver * const *cfdriverv,
 	            config_cfattach_attach, NULL, "fini rollback", true);
 		if (config_cfdata_attach(cfdatav, 0) != 0)
 			panic("config_cfdata fini rollback failed");
-		return error;
+		goto out;
 	}
 
-	return 0;
+	/* Success!  */
+	error = 0;
+
+out:	KERNEL_UNLOCK_ONE(NULL);
+	return error;
 }
 
 void
@@ -433,6 +467,9 @@ config_init_mi(void)
 void
 config_deferred(device_t dev)
 {
+
+	KASSERT(KERNEL_LOCKED_P());
+
 	config_process_deferred(&deferred_config_queue, dev);
 	config_process_deferred(&interrupt_config_queue, dev);
 	config_process_deferred(&mountroot_config_queue, dev);
@@ -442,17 +479,25 @@ static void
 config_interrupts_thread(void *cookie)
 {
 	struct deferred_config *dc;
+	device_t dev;
 
+	mutex_enter(&config_misc_lock);
 	while ((dc = TAILQ_FIRST(&interrupt_config_queue)) != NULL) {
 		TAILQ_REMOVE(&interrupt_config_queue, dc, dc_queue);
-		(*dc->dc_func)(dc->dc_dev);
-		dc->dc_dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
-		if (!device_pmf_is_registered(dc->dc_dev))
-			aprint_debug_dev(dc->dc_dev,
+		mutex_exit(&config_misc_lock);
+
+		dev = dc->dc_dev;
+		(*dc->dc_func)(dev);
+		if (!device_pmf_is_registered(dev))
+			aprint_debug_dev(dev,
 			    "WARNING: power management not supported\n");
-		config_pending_decr(dc->dc_dev);
+		config_pending_decr(dev);
 		kmem_free(dc, sizeof(*dc));
+
+		mutex_enter(&config_misc_lock);
 	}
+	mutex_exit(&config_misc_lock);
+
 	kthread_exit(0);
 }
 
@@ -462,7 +507,7 @@ config_create_interruptthreads(void)
 	int i;
 
 	for (i = 0; i < interrupt_config_threads; i++) {
-		(void)kthread_create(PRI_NONE, 0, NULL,
+		(void)kthread_create(PRI_NONE, 0/*XXXSMP */, NULL,
 		    config_interrupts_thread, NULL, NULL, "configintr");
 	}
 }
@@ -472,11 +517,18 @@ config_mountroot_thread(void *cookie)
 {
 	struct deferred_config *dc;
 
+	mutex_enter(&config_misc_lock);
 	while ((dc = TAILQ_FIRST(&mountroot_config_queue)) != NULL) {
 		TAILQ_REMOVE(&mountroot_config_queue, dc, dc_queue);
+		mutex_exit(&config_misc_lock);
+
 		(*dc->dc_func)(dc->dc_dev);
 		kmem_free(dc, sizeof(*dc));
+
+		mutex_enter(&config_misc_lock);
 	}
+	mutex_exit(&config_misc_lock);
+
 	kthread_exit(0);
 }
 
@@ -495,8 +547,8 @@ config_create_mountrootthreads(void)
 	KASSERT(mountroot_config_lwpids);
 	for (i = 0; i < mountroot_config_threads; i++) {
 		mountroot_config_lwpids[i] = 0;
-		(void)kthread_create(PRI_NONE, KTHREAD_MUSTJOIN, NULL,
-				     config_mountroot_thread, NULL,
+		(void)kthread_create(PRI_NONE, KTHREAD_MUSTJOIN/* XXXSMP */,
+				     NULL, config_mountroot_thread, NULL,
 				     &mountroot_config_lwpids[i],
 				     "configroot");
 	}
@@ -533,9 +585,10 @@ no_devmon_insert(const char *name, prop_dictionary_t p)
 static void
 devmon_report_device(device_t dev, bool isattach)
 {
-	prop_dictionary_t ev;
+	prop_dictionary_t ev, dict = device_properties(dev);
 	const char *parent;
 	const char *what;
+	const char *where;
 	device_t pdev = device_parent(dev);
 
 	/* If currently no drvctl device, just return */
@@ -548,8 +601,13 @@ devmon_report_device(device_t dev, bool isattach)
 
 	what = (isattach ? "device-attach" : "device-detach");
 	parent = (pdev == NULL ? "root" : device_xname(pdev));
-	if (!prop_dictionary_set_cstring(ev, "device", device_xname(dev)) ||
-	    !prop_dictionary_set_cstring(ev, "parent", parent)) {
+	if (prop_dictionary_get_string(dict, "location", &where)) {
+		prop_dictionary_set_string(ev, "location", where);
+		aprint_debug("ev: %s %s at %s in [%s]\n",
+		    what, device_xname(dev), parent, where); 
+	}
+	if (!prop_dictionary_set_string(ev, "device", device_xname(dev)) ||
+	    !prop_dictionary_set_string(ev, "parent", parent)) {
 		prop_object_release(ev);
 		return;
 	}
@@ -782,6 +840,21 @@ cfdriver_get_iattr(const struct cfdriver *cd, const char *ia)
 	return 0;
 }
 
+static int __diagused
+cfdriver_iattr_count(const struct cfdriver *cd)
+{
+	const struct cfiattrdata * const *cpp;
+	int i;
+
+	if (cd->cd_attrs == NULL)
+		return 0;
+
+	for (i = 0, cpp = cd->cd_attrs; *cpp; cpp++) {
+		i++;
+	}
+	return i;
+}
+
 /*
  * Lookup an interface attribute description by name.
  * If the driver is given, consider only its supported attributes.
@@ -861,6 +934,7 @@ rescan_with_cfdata(const struct cfdata *cf)
 	const struct cfdata *cf1;
 	deviter_t di;
 
+	KASSERT(KERNEL_LOCKED_P());
 
 	/*
 	 * "alldevs" is likely longer than a modules's cfdata, so make it
@@ -894,12 +968,16 @@ config_cfdata_attach(cfdata_t cf, int scannow)
 {
 	struct cftable *ct;
 
+	KERNEL_LOCK(1, NULL);
+
 	ct = kmem_alloc(sizeof(*ct), KM_SLEEP);
 	ct->ct_cfdata = cf;
 	TAILQ_INSERT_TAIL(&allcftables, ct, ct_list);
 
 	if (scannow)
 		rescan_with_cfdata(cf);
+
+	KERNEL_UNLOCK_ONE(NULL);
 
 	return 0;
 }
@@ -932,6 +1010,8 @@ config_cfdata_detach(cfdata_t cf)
 	struct cftable *ct;
 	deviter_t di;
 
+	KERNEL_LOCK(1, NULL);
+
 	for (d = deviter_first(&di, DEVITER_F_RW); d != NULL;
 	     d = deviter_next(&di)) {
 		if (!dev_in_cfdata(d, cf))
@@ -942,29 +1022,35 @@ config_cfdata_detach(cfdata_t cf)
 	deviter_release(&di);
 	if (error) {
 		aprint_error_dev(d, "unable to detach instance\n");
-		return error;
+		goto out;
 	}
 
 	TAILQ_FOREACH(ct, &allcftables, ct_list) {
 		if (ct->ct_cfdata == cf) {
 			TAILQ_REMOVE(&allcftables, ct, ct_list);
 			kmem_free(ct, sizeof(*ct));
-			return 0;
+			error = 0;
+			goto out;
 		}
 	}
 
 	/* not found -- shouldn't happen */
-	return EINVAL;
+	error = EINVAL;
+
+out:	KERNEL_UNLOCK_ONE(NULL);
+	return error;
 }
 
 /*
  * Invoke the "match" routine for a cfdata entry on behalf of
- * an external caller, usually a "submatch" routine.
+ * an external caller, usually a direct config "submatch" routine.
  */
 int
 config_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct cfattach *ca;
+
+	KASSERT(KERNEL_LOCKED_P());
 
 	ca = config_cfattach_lookup(cf->cf_name, cf->cf_atname);
 	if (ca == NULL) {
@@ -973,6 +1059,68 @@ config_match(device_t parent, cfdata_t cf, void *aux)
 	}
 
 	return (*ca->ca_match)(parent, cf, aux);
+}
+
+/*
+ * Invoke the "probe" routine for a cfdata entry on behalf of
+ * an external caller, usually an indirect config "search" routine.
+ */
+int
+config_probe(device_t parent, cfdata_t cf, void *aux)
+{
+	/*
+	 * This is currently a synonym for config_match(), but this
+	 * is an implementation detail; "match" and "probe" routines
+	 * have different behaviors.
+	 *
+	 * XXX config_probe() should return a bool, because there is
+	 * XXX no match score for probe -- it's either there or it's
+	 * XXX not, but some ports abuse the return value as a way
+	 * XXX to attach "critical" devices before "non-critical"
+	 * XXX devices.
+	 */
+	return config_match(parent, cf, aux);
+}
+
+static struct cfargs_internal *
+cfargs_canonicalize(const struct cfargs * const cfargs,
+    struct cfargs_internal * const store)
+{
+	struct cfargs_internal *args = store;
+
+	memset(args, 0, sizeof(*args));
+
+	/* If none specified, are all-NULL pointers are good. */
+	if (cfargs == NULL) {
+		return args;
+	}
+
+	/*
+	 * Only one arguments version is recognized at this time.
+	 */
+	if (cfargs->cfargs_version != CFARGS_VERSION) {
+		panic("cfargs_canonicalize: unknown version %lu\n",
+		    (unsigned long)cfargs->cfargs_version);
+	}
+
+	/*
+	 * submatch and search are mutually-exclusive.
+	 */
+	if (cfargs->submatch != NULL && cfargs->search != NULL) {
+		panic("cfargs_canonicalize: submatch and search are "
+		      "mutually-exclusive");
+	}
+	if (cfargs->submatch != NULL) {
+		args->submatch = cfargs->submatch;
+	} else if (cfargs->search != NULL) {
+		args->search = cfargs->search;
+	}
+
+	args->iattr = cfargs->iattr;
+	args->locators = cfargs->locators;
+	args->devhandle = cfargs->devhandle;
+
+	return args;
 }
 
 /*
@@ -986,20 +1134,23 @@ config_match(device_t parent, cfdata_t cf, void *aux)
  * an arbitrary function to all potential children (its return value
  * can be ignored).
  */
-cfdata_t
-config_search_loc(cfsubmatch_t fn, device_t parent,
-		  const char *ifattr, const int *locs, void *aux)
+static cfdata_t
+config_search_internal(device_t parent, void *aux,
+    const struct cfargs_internal * const args)
 {
 	struct cftable *ct;
 	cfdata_t cf;
 	struct matchinfo m;
 
 	KASSERT(config_initialized);
-	KASSERT(!ifattr || cfdriver_get_iattr(parent->dv_cfdriver, ifattr));
+	KASSERT(!args->iattr ||
+		cfdriver_get_iattr(parent->dv_cfdriver, args->iattr));
+	KASSERT(args->iattr ||
+		cfdriver_iattr_count(parent->dv_cfdriver) < 2);
 
-	m.fn = fn;
+	m.fn = args->submatch;		/* N.B. union */
 	m.parent = parent;
-	m.locs = locs;
+	m.locs = args->locators;
 	m.aux = aux;
 	m.match = NULL;
 	m.pri = 0;
@@ -1027,22 +1178,28 @@ config_search_loc(cfsubmatch_t fn, device_t parent,
 			 * consider only children which attach to
 			 * that attribute.
 			 */
-			if (ifattr && !STREQ(ifattr, cfdata_ifattr(cf)))
+			if (args->iattr != NULL &&
+			    !STREQ(args->iattr, cfdata_ifattr(cf)))
 				continue;
 
 			if (cfparent_match(parent, cf->cf_pspec))
 				mapply(&m, cf);
 		}
 	}
+	rnd_add_uint32(&rnd_autoconf_source, 0);
 	return m.match;
 }
 
 cfdata_t
-config_search_ia(cfsubmatch_t fn, device_t parent, const char *ifattr,
-    void *aux)
+config_search(device_t parent, void *aux, const struct cfargs *cfargs)
 {
+	cfdata_t cf;
+	struct cfargs_internal store;
 
-	return config_search_loc(fn, parent, ifattr, NULL, aux);
+	cf = config_search_internal(parent, aux,
+	    cfargs_canonicalize(cfargs, &store));
+
+	return cf;
 }
 
 /*
@@ -1077,7 +1234,11 @@ config_rootsearch(cfsubmatch_t fn, const char *rootname, void *aux)
 	return m.match;
 }
 
-static const char * const msgs[3] = { "", " not configured\n", " unsupported\n" };
+static const char * const msgs[] = {
+[QUIET]		=	"",
+[UNCONF]	=	" not configured\n",
+[UNSUPP]	=	" unsupported\n",
+};
 
 /*
  * The given `aux' argument describes a device that has been found
@@ -1088,44 +1249,31 @@ static const char * const msgs[3] = { "", " not configured\n", " unsupported\n" 
  * not configured, call the given `print' function and return NULL.
  */
 device_t
-config_found_sm_loc(device_t parent,
-		const char *ifattr, const int *locs, void *aux,
-		cfprint_t print, cfsubmatch_t submatch)
+config_found(device_t parent, void *aux, cfprint_t print,
+    const struct cfargs * const cfargs)
 {
 	cfdata_t cf;
+	struct cfargs_internal store;
+	const struct cfargs_internal * const args =
+	    cfargs_canonicalize(cfargs, &store);
 
-	if ((cf = config_search_loc(submatch, parent, ifattr, locs, aux)))
-		return(config_attach_loc(parent, cf, locs, aux, print));
+	cf = config_search_internal(parent, aux, args);
+	if (cf != NULL) {
+		return config_attach_internal(parent, cf, aux, print, args);
+	}
+
 	if (print) {
 		if (config_do_twiddle && cold)
 			twiddle();
-		aprint_normal("%s", msgs[(*print)(aux, device_xname(parent))]);
+
+		const int pret = (*print)(aux, device_xname(parent));
+		KASSERT(pret >= 0);
+		KASSERT(pret < __arraycount(msgs));
+		KASSERT(msgs[pret] != NULL);
+		aprint_normal("%s", msgs[pret]);
 	}
 
-	/*
-	 * This has the effect of mixing in a single timestamp to the
-	 * entropy pool.  Experiments indicate the estimator will almost
-	 * always attribute one bit of entropy to this sample; analysis
-	 * of device attach/detach timestamps on FreeBSD indicates 4
-	 * bits of entropy/sample so this seems appropriately conservative.
-	 */
-	rnd_add_uint32(&rnd_autoconf_source, 0);
 	return NULL;
-}
-
-device_t
-config_found_ia(device_t parent, const char *ifattr, void *aux,
-    cfprint_t print)
-{
-
-	return config_found_sm_loc(parent, ifattr, NULL, aux, print, NULL);
-}
-
-device_t
-config_found(device_t parent, void *aux, cfprint_t print)
-{
-
-	return config_found_sm_loc(parent, NULL, NULL, aux, print, NULL);
 }
 
 /*
@@ -1135,11 +1283,15 @@ device_t
 config_rootfound(const char *rootname, void *aux)
 {
 	cfdata_t cf;
+	device_t dev = NULL;
 
+	KERNEL_LOCK(1, NULL);
 	if ((cf = config_rootsearch(NULL, rootname, aux)) != NULL)
-		return config_attach(ROOT, cf, aux, NULL);
-	aprint_error("root device %s not configured\n", rootname);
-	return NULL;
+		dev = config_attach(ROOT, cf, aux, NULL, CFARGS_NONE);
+	else
+		aprint_error("root device %s not configured\n", rootname);
+	KERNEL_UNLOCK_ONE(NULL);
+	return dev;
 }
 
 /* just like sprintf(buf, "%d") except that it works from the end */
@@ -1188,7 +1340,7 @@ config_makeroom(int n, struct cfdriver *cd)
 		 * sleep.
 		 */
 		mutex_exit(&alldevs_lock);
-		nsp = kmem_alloc(sizeof(device_t[nndevs]), KM_SLEEP);
+		nsp = kmem_alloc(sizeof(device_t) * nndevs, KM_SLEEP);
 		mutex_enter(&alldevs_lock);
 
 		/*
@@ -1197,20 +1349,20 @@ config_makeroom(int n, struct cfdriver *cd)
 		 */
 		if (cd->cd_devs != osp) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(nsp, sizeof(device_t[nndevs]));
+			kmem_free(nsp, sizeof(device_t) * nndevs);
 			mutex_enter(&alldevs_lock);
 			continue;
 		}
 
-		memset(nsp + ondevs, 0, sizeof(device_t[nndevs - ondevs]));
+		memset(nsp + ondevs, 0, sizeof(device_t) * (nndevs - ondevs));
 		if (ondevs != 0)
-			memcpy(nsp, cd->cd_devs, sizeof(device_t[ondevs]));
+			memcpy(nsp, cd->cd_devs, sizeof(device_t) * ondevs);
 
 		cd->cd_ndevs = nndevs;
 		cd->cd_devs = nsp;
 		if (ondevs != 0) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(osp, sizeof(device_t[ondevs]));
+			kmem_free(osp, sizeof(device_t) * ondevs);
 			mutex_enter(&alldevs_lock);
 		}
 	}
@@ -1240,12 +1392,13 @@ config_devlink(device_t dev)
 static void
 config_devfree(device_t dev)
 {
-	int priv = (dev->dv_flags & DVF_PRIV_ALLOC);
+
+	KASSERT(dev->dv_flags & DVF_PRIV_ALLOC);
+	KASSERTMSG(dev->dv_pending == 0, "%d", dev->dv_pending);
 
 	if (dev->dv_cfattach->ca_devsize > 0)
 		kmem_free(dev->dv_private, dev->dv_cfattach->ca_devsize);
-	if (priv)
-		kmem_free(dev, sizeof(*dev));
+	kmem_free(dev, sizeof(*dev));
 }
 
 /*
@@ -1259,6 +1412,7 @@ config_devunlink(device_t dev, struct devicelist *garbage)
 	int i;
 
 	KASSERT(mutex_owned(&alldevs_lock));
+	KASSERTMSG(dev->dv_pending == 0, "%d", dev->dv_pending);
 
  	/* Unlink from device list.  Link to garbage list. */
 	TAILQ_REMOVE(&alldevs, dev, dv_list);
@@ -1289,8 +1443,13 @@ config_devdelete(device_t dev)
 	struct device_garbage *dg = &dev->dv_garbage;
 	device_lock_t dvl = device_getlock(dev);
 
+	KASSERTMSG(dev->dv_pending == 0, "%d", dev->dv_pending);
+
 	if (dg->dg_devs != NULL)
-		kmem_free(dg->dg_devs, sizeof(device_t[dg->dg_ndevs]));
+		kmem_free(dg->dg_devs, sizeof(device_t) * dg->dg_ndevs);
+
+	localcount_fini(dev->dv_localcount);
+	kmem_free(dev->dv_localcount, sizeof(*dev->dv_localcount));
 
 	cv_destroy(&dvl->dvl_cv);
 	mutex_destroy(&dvl->dvl_mtx);
@@ -1312,10 +1471,12 @@ config_devdelete(device_t dev)
 static int
 config_unit_nextfree(cfdriver_t cd, cfdata_t cf)
 {
-	int unit;
+	int unit = cf->cf_unit;
 
+	if (unit < 0)
+		return -1;
 	if (cf->cf_fstate == FSTATE_STAR) {
-		for (unit = cf->cf_unit; unit < cd->cd_ndevs; unit++)
+		for (; unit < cd->cd_ndevs; unit++)
 			if (cd->cd_devs[unit] == NULL)
 				break;
 		/*
@@ -1323,7 +1484,6 @@ config_unit_nextfree(cfdriver_t cd, cfdata_t cf)
 		 * or max(cd->cd_ndevs,cf->cf_unit).
 		 */
 	} else {
-		unit = cf->cf_unit;
 		if (unit < cd->cd_ndevs && cd->cd_devs[unit] != NULL)
 			unit = -1;
 	}
@@ -1354,7 +1514,8 @@ config_unit_alloc(device_t dev, cfdriver_t cd, cfdata_t cf)
 }
 
 static device_t
-config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
+config_devalloc(const device_t parent, const cfdata_t cf,
+    const struct cfargs_internal * const args)
 {
 	cfdriver_t cd;
 	cfattach_t ca;
@@ -1376,26 +1537,16 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		return NULL;
 
 	/* get memory for all device vars */
-	KASSERTMSG((ca->ca_flags & DVF_PRIV_ALLOC)
-	    || ca->ca_devsize >= sizeof(struct device),
-	    "%s: %s (%zu < %zu)", __func__, cf->cf_atname, ca->ca_devsize,
-	    sizeof(struct device));
+	KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 	if (ca->ca_devsize > 0) {
 		dev_private = kmem_zalloc(ca->ca_devsize, KM_SLEEP);
 	} else {
-		KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 		dev_private = NULL;
 	}
+	dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
 
-	if ((ca->ca_flags & DVF_PRIV_ALLOC) != 0) {
-		dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
-	} else {
-		dev = dev_private;
-#ifdef DIAGNOSTIC
-		printf("%s has not been converted to device_t\n", cd->cd_name);
-#endif
-		KASSERT(dev != NULL);
-	}
+	dev->dv_handle = args->devhandle;
+
 	dev->dv_class = cd->cd_class;
 	dev->dv_cfdata = cf;
 	dev->dv_cfdriver = cd;
@@ -1404,6 +1555,7 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 	dev->dv_activity_handlers = NULL;
 	dev->dv_private = dev_private;
 	dev->dv_flags = ca->ca_flags;	/* inherit flags from class */
+	dev->dv_attaching = curlwp;
 
 	myunit = config_unit_alloc(dev, cd, cf);
 	if (myunit == -1) {
@@ -1431,25 +1583,30 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 	else
 		dev->dv_depth = 0;
 	dev->dv_flags |= DVF_ACTIVE;	/* always initially active */
-	if (locs) {
+	if (args->locators) {
 		KASSERT(parent); /* no locators at root */
 		ia = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver);
 		dev->dv_locators =
-		    kmem_alloc(sizeof(int [ia->ci_loclen + 1]), KM_SLEEP);
-		*dev->dv_locators++ = sizeof(int [ia->ci_loclen + 1]);
-		memcpy(dev->dv_locators, locs, sizeof(int [ia->ci_loclen]));
+		    kmem_alloc(sizeof(int) * (ia->ci_loclen + 1), KM_SLEEP);
+		*dev->dv_locators++ = sizeof(int) * (ia->ci_loclen + 1);
+		memcpy(dev->dv_locators, args->locators,
+		    sizeof(int) * ia->ci_loclen);
 	}
 	dev->dv_properties = prop_dictionary_create();
 	KASSERT(dev->dv_properties != NULL);
 
-	prop_dictionary_set_cstring_nocopy(dev->dv_properties,
+	prop_dictionary_set_string_nocopy(dev->dv_properties,
 	    "device-driver", dev->dv_cfdriver->cd_name);
 	prop_dictionary_set_uint16(dev->dv_properties,
 	    "device-unit", dev->dv_unit);
 	if (parent != NULL) {
-		prop_dictionary_set_cstring(dev->dv_properties,
+		prop_dictionary_set_string(dev->dv_properties,
 		    "device-parent", device_xname(parent));
 	}
+
+	dev->dv_localcount = kmem_zalloc(sizeof(*dev->dv_localcount),
+	    KM_SLEEP);
+	localcount_init(dev->dv_localcount);
 
 	if (dev->dv_cfdriver->cd_attrs != NULL)
 		config_add_attrib_dict(dev);
@@ -1501,7 +1658,7 @@ config_add_attrib_dict(device_t dev)
 			break;
 		if ((attr_dict = prop_dictionary_create()) == NULL)
 			break;
-		prop_dictionary_set_cstring_nocopy(attr_dict, "attribute-name",
+		prop_dictionary_set_string_nocopy(attr_dict, "attribute-name",
 		    ci->ci_name);
 
 		/* Create an array of the locator names and defaults */
@@ -1512,10 +1669,10 @@ config_add_attrib_dict(device_t dev)
 				loc_dict = prop_dictionary_create();
 				if (loc_dict == NULL)
 					continue;
-				prop_dictionary_set_cstring_nocopy(loc_dict,
+				prop_dictionary_set_string_nocopy(loc_dict,
 				    "loc-name", ci->ci_locdesc[j].cld_name);
 				if (ci->ci_locdesc[j].cld_defaultstr != NULL)
-					prop_dictionary_set_cstring_nocopy(
+					prop_dictionary_set_string_nocopy(
 					    loc_dict, "default",
 					    ci->ci_locdesc[j].cld_defaultstr);
 				prop_array_set(loc_array, j, loc_dict);
@@ -1539,15 +1696,18 @@ config_add_attrib_dict(device_t dev)
 /*
  * Attach a found device.
  */
-device_t
-config_attach_loc(device_t parent, cfdata_t cf,
-	const int *locs, void *aux, cfprint_t print)
+static device_t
+config_attach_internal(device_t parent, cfdata_t cf, void *aux, cfprint_t print,
+    const struct cfargs_internal * const args)
 {
 	device_t dev;
 	struct cftable *ct;
 	const char *drvname;
+	bool deferred;
 
-	dev = config_devalloc(parent, cf, locs);
+	KASSERT(KERNEL_LOCKED_P());
+
+	dev = config_devalloc(parent, cf, args);
 	if (!dev)
 		panic("config_attach: allocation of device softc failed");
 
@@ -1599,24 +1759,56 @@ config_attach_loc(device_t parent, cfdata_t cf,
 	/* Let userland know */
 	devmon_report_device(dev, true);
 
+	/*
+	 * Prevent detach until the driver's attach function, and all
+	 * deferred actions, have finished.
+	 */
+	config_pending_incr(dev);
+
+	/* Call the driver's attach function.  */
 	(*dev->dv_cfattach->ca_attach)(parent, dev, aux);
 
-	if (((dev->dv_flags & DVF_ATTACH_INPROGRESS) == 0)
-	    && !device_pmf_is_registered(dev))
+	/*
+	 * Allow other threads to acquire references to the device now
+	 * that the driver's attach function is done.
+	 */
+	mutex_enter(&config_misc_lock);
+	KASSERT(dev->dv_attaching == curlwp);
+	dev->dv_attaching = NULL;
+	cv_broadcast(&config_misc_cv);
+	mutex_exit(&config_misc_lock);
+
+	/*
+	 * Synchronous parts of attach are done.  Allow detach, unless
+	 * the driver's attach function scheduled deferred actions.
+	 */
+	config_pending_decr(dev);
+
+	mutex_enter(&config_misc_lock);
+	deferred = (dev->dv_pending != 0);
+	mutex_exit(&config_misc_lock);
+
+	if (!deferred && !device_pmf_is_registered(dev))
 		aprint_debug_dev(dev,
 		    "WARNING: power management not supported\n");
 
 	config_process_deferred(&deferred_config_queue, dev);
 
 	device_register_post_config(dev, aux);
+	rnd_add_uint32(&rnd_autoconf_source, 0);
 	return dev;
 }
 
 device_t
-config_attach(device_t parent, cfdata_t cf, void *aux, cfprint_t print)
+config_attach(device_t parent, cfdata_t cf, void *aux, cfprint_t print,
+    const struct cfargs *cfargs)
 {
+	struct cfargs_internal store;
 
-	return config_attach_loc(parent, cf, NULL, aux, print);
+	KASSERT(KERNEL_LOCKED_P());
+
+	return config_attach_internal(parent, cf, aux, print,
+	    cfargs_canonicalize(cfargs, &store));
 }
 
 /*
@@ -1633,9 +1825,12 @@ config_attach_pseudo(cfdata_t cf)
 {
 	device_t dev;
 
-	dev = config_devalloc(ROOT, cf, NULL);
+	KERNEL_LOCK(1, NULL);
+
+	struct cfargs_internal args = { };
+	dev = config_devalloc(ROOT, cf, &args);
 	if (!dev)
-		return NULL;
+		goto out;
 
 	/* XXX mark busy in cfdata */
 
@@ -1653,9 +1848,34 @@ config_attach_pseudo(cfdata_t cf)
 	/* Let userland know */
 	devmon_report_device(dev, true);
 
+	/*
+	 * Prevent detach until the driver's attach function, and all
+	 * deferred actions, have finished.
+	 */
+	config_pending_incr(dev);
+
+	/* Call the driver's attach function.  */
 	(*dev->dv_cfattach->ca_attach)(ROOT, dev, NULL);
 
+	/*
+	 * Allow other threads to acquire references to the device now
+	 * that the driver's attach function is done.
+	 */
+	mutex_enter(&config_misc_lock);
+	KASSERT(dev->dv_attaching == curlwp);
+	dev->dv_attaching = NULL;
+	cv_broadcast(&config_misc_cv);
+	mutex_exit(&config_misc_lock);
+
+	/*
+	 * Synchronous parts of attach are done.  Allow detach, unless
+	 * the driver's attach function scheduled deferred actions.
+	 */
+	config_pending_decr(dev);
+
 	config_process_deferred(&deferred_config_queue, dev);
+
+out:	KERNEL_UNLOCK_ONE(NULL);
 	return dev;
 }
 
@@ -1696,6 +1916,56 @@ config_dump_garbage(struct devicelist *garbage)
 	}
 }
 
+static int
+config_detach_enter(device_t dev)
+{
+	int error = 0;
+
+	mutex_enter(&config_misc_lock);
+
+	/*
+	 * Wait until attach has fully completed, and until any
+	 * concurrent detach (e.g., drvctl racing with USB event
+	 * thread) has completed.
+	 *
+	 * Caller must hold alldevs_nread or alldevs_nwrite (e.g., via
+	 * deviter) to ensure the winner of the race doesn't free the
+	 * device leading the loser of the race into use-after-free.
+	 *
+	 * XXX Not all callers do this!
+	 */
+	while (dev->dv_pending || dev->dv_detaching) {
+		KASSERTMSG(dev->dv_detaching != curlwp,
+		    "recursively detaching %s", device_xname(dev));
+		error = cv_wait_sig(&config_misc_cv, &config_misc_lock);
+		if (error)
+			goto out;
+	}
+
+	/*
+	 * Attach has completed, and no other concurrent detach is
+	 * running.  Claim the device for detaching.  This will cause
+	 * all new attempts to acquire references to block.
+	 */
+	KASSERT(dev->dv_attaching == NULL);
+	KASSERT(dev->dv_detaching == NULL);
+	dev->dv_detaching = curlwp;
+
+out:	mutex_exit(&config_misc_lock);
+	return error;
+}
+
+static void
+config_detach_exit(device_t dev)
+{
+
+	mutex_enter(&config_misc_lock);
+	KASSERT(dev->dv_detaching == curlwp);
+	dev->dv_detaching = NULL;
+	cv_broadcast(&config_misc_cv);
+	mutex_exit(&config_misc_lock);
+}
+
 /*
  * Detach a device.  Optionally forced (e.g. because of hardware
  * removal) and quiet.  Returns zero if successful, non-zero
@@ -1716,6 +1986,8 @@ config_detach(device_t dev, int flags)
 	device_t d __diagused;
 	int rv = 0;
 
+	KERNEL_LOCK(1, NULL);
+
 	cf = dev->dv_cfdata;
 	KASSERTMSG((cf == NULL || cf->cf_fstate == FSTATE_FOUND ||
 		cf->cf_fstate == FSTATE_STAR),
@@ -1728,6 +2000,16 @@ config_detach(device_t dev, int flags)
 	ca = dev->dv_cfattach;
 	KASSERT(ca != NULL);
 
+	/*
+	 * Only one detach at a time, please -- and not until fully
+	 * attached.
+	 */
+	rv = config_detach_enter(dev);
+	if (rv) {
+		KERNEL_UNLOCK_ONE(NULL);
+		return rv;
+	}
+
 	mutex_enter(&alldevs_lock);
 	if (dev->dv_del_gen != 0) {
 		mutex_exit(&alldevs_lock);
@@ -1735,11 +2017,18 @@ config_detach(device_t dev, int flags)
 		printf("%s: %s is already detached\n", __func__,
 		    device_xname(dev));
 #endif /* DIAGNOSTIC */
+		config_detach_exit(dev);
+		KERNEL_UNLOCK_ONE(NULL);
 		return ENOENT;
 	}
 	alldevs_nwrite++;
 	mutex_exit(&alldevs_lock);
 
+	/*
+	 * Call the driver's .ca_detach function, unless it has none or
+	 * we are skipping it because it's unforced shutdown time and
+	 * the driver didn't ask to detach on shutdown.
+	 */
 	if (!detachall &&
 	    (flags & (DETACH_SHUTDOWN|DETACH_FORCE)) == DETACH_SHUTDOWN &&
 	    (dev->dv_flags & DVF_DETACH_SHUTDOWN) == 0) {
@@ -1752,22 +2041,52 @@ config_detach(device_t dev, int flags)
 	/*
 	 * If it was not possible to detach the device, then we either
 	 * panic() (for the forced but failed case), or return an error.
-	 *
-	 * If it was possible to detach the device, ensure that the
-	 * device is deactivated.
 	 */
-	if (rv == 0)
-		dev->dv_flags &= ~DVF_ACTIVE;
-	else if ((flags & DETACH_FORCE) == 0)
+	if (rv) {
+		/*
+		 * Detach failed -- likely EOPNOTSUPP or EBUSY.  Driver
+		 * must not have called config_detach_commit.
+		 */
+		KASSERTMSG(!dev->dv_detached,
+		    "%s committed to detaching and then backed out",
+		    device_xname(dev));
+		if (flags & DETACH_FORCE) {
+			panic("config_detach: forced detach of %s failed (%d)",
+			    device_xname(dev), rv);
+		}
 		goto out;
-	else {
-		panic("config_detach: forced detach of %s failed (%d)",
-		    device_xname(dev), rv);
 	}
 
 	/*
 	 * The device has now been successfully detached.
 	 */
+
+	/*
+	 * If .ca_detach didn't commit to detach, then do that for it.
+	 * This wakes any pending device_lookup_acquire calls so they
+	 * will fail.
+	 */
+	config_detach_commit(dev);
+
+	/*
+	 * If it was possible to detach the device, ensure that the
+	 * device is deactivated.
+	 */
+	dev->dv_flags &= ~DVF_ACTIVE; /* XXXSMP */
+
+	/*
+	 * Wait for all device_lookup_acquire references -- mostly, for
+	 * all attempts to open the device -- to drain.  It is the
+	 * responsibility of .ca_detach to ensure anything with open
+	 * references will be interrupted and release them promptly,
+	 * not block indefinitely.  All new attempts to acquire
+	 * references will fail, as config_detach_commit has arranged
+	 * by now.
+	 */
+	mutex_enter(&config_misc_lock);
+	localcount_drain(dev->dv_localcount,
+	    &config_misc_cv, &config_misc_lock);
+	mutex_exit(&config_misc_lock);
 
 	/* Let userland know */
 	devmon_report_device(dev, false);
@@ -1779,6 +2098,7 @@ config_detach(device_t dev, int flags)
 	 * after parents, we only need to search the latter part of
 	 * the list.)
 	 */
+	mutex_enter(&alldevs_lock);
 	for (d = TAILQ_NEXT(dev, dv_list); d != NULL;
 	    d = TAILQ_NEXT(d, dv_list)) {
 		if (d->dv_parent == dev && d->dv_del_gen == 0) {
@@ -1788,6 +2108,7 @@ config_detach(device_t dev, int flags)
 			panic("config_detach");
 		}
 	}
+	mutex_exit(&alldevs_lock);
 #endif
 
 	/* notify the parent that the child is gone */
@@ -1814,6 +2135,8 @@ config_detach(device_t dev, int flags)
 		aprint_normal_dev(dev, "detached\n");
 
 out:
+	config_detach_exit(dev);
+
 	config_alldevs_enter(&af);
 	KASSERT(alldevs_nwrite != 0);
 	--alldevs_nwrite;
@@ -1827,7 +2150,33 @@ out:
 	}
 	config_alldevs_exit(&af);
 
+	KERNEL_UNLOCK_ONE(NULL);
+
 	return rv;
+}
+
+/*
+ * config_detach_commit(dev)
+ *
+ *	Issued by a driver's .ca_detach routine to notify anyone
+ *	waiting in device_lookup_acquire that the driver is committed
+ *	to detaching the device, which allows device_lookup_acquire to
+ *	wake up and fail immediately.
+ *
+ *	Safe to call multiple times -- idempotent.  Must be called
+ *	during config_detach_enter/exit.  Safe to use with
+ *	device_lookup because the device is not actually removed from
+ *	the table until after config_detach_exit.
+ */
+void
+config_detach_commit(device_t dev)
+{
+
+	mutex_enter(&config_misc_lock);
+	KASSERT(dev->dv_detaching == curlwp);
+	dev->dv_detached = true;
+	cv_broadcast(&config_misc_cv);
+	mutex_exit(&config_misc_lock);
 }
 
 int
@@ -1836,6 +2185,8 @@ config_detach_children(device_t parent, int flags)
 	device_t dv;
 	deviter_t di;
 	int error = 0;
+
+	KASSERT(KERNEL_LOCKED_P());
 
 	for (dv = deviter_first(&di, DEVITER_F_RW); dv != NULL;
 	     dv = deviter_next(&di)) {
@@ -1880,8 +2231,10 @@ config_detach_all(int how)
 	bool progress = false;
 	int flags;
 
+	KERNEL_LOCK(1, NULL);
+
 	if ((how & (RB_NOSYNC|RB_DUMP)) != 0)
-		return false;
+		goto out;
 
 	if ((how & RB_POWERDOWN) == RB_POWERDOWN)
 		flags = DETACH_SHUTDOWN | DETACH_POWEROFF;
@@ -1897,6 +2250,8 @@ config_detach_all(int how)
 		} else
 			aprint_debug("failed.");
 	}
+
+out:	KERNEL_UNLOCK_ONE(NULL);
 	return progress;
 }
 
@@ -1958,18 +2313,22 @@ config_defer(device_t dev, void (*func)(device_t))
 	if (dev->dv_parent == NULL)
 		panic("config_defer: can't defer config of a root device");
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	config_pending_incr(dev);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &deferred_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &deferred_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("config_defer: deferred twice");
 	}
 #endif
-
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&deferred_config_queue, dc, dc_queue);
-	config_pending_incr(dev);
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -1989,19 +2348,22 @@ config_interrupts(device_t dev, void (*func)(device_t))
 		return;
 	}
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	config_pending_incr(dev);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &interrupt_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &interrupt_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("config_interrupts: deferred twice");
 	}
 #endif
-
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&interrupt_config_queue, dc, dc_queue);
-	config_pending_incr(dev);
-	dev->dv_flags |= DVF_ATTACH_INPROGRESS;
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2021,17 +2383,21 @@ config_mountroot(device_t dev, void (*func)(device_t))
 		return;
 	}
 
+	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
+
+	mutex_enter(&config_misc_lock);
 #ifdef DIAGNOSTIC
-	TAILQ_FOREACH(dc, &mountroot_config_queue, dc_queue) {
-		if (dc->dc_dev == dev)
+	struct deferred_config *odc;
+	TAILQ_FOREACH(odc, &mountroot_config_queue, dc_queue) {
+		if (odc->dc_dev == dev)
 			panic("%s: deferred twice", __func__);
 	}
 #endif
 
-	dc = kmem_alloc(sizeof(*dc), KM_SLEEP);
 	dc->dc_dev = dev;
 	dc->dc_func = func;
 	TAILQ_INSERT_TAIL(&mountroot_config_queue, dc, dc_queue);
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2040,17 +2406,29 @@ config_mountroot(device_t dev, void (*func)(device_t))
 static void
 config_process_deferred(struct deferred_config_head *queue, device_t parent)
 {
-	struct deferred_config *dc, *ndc;
+	struct deferred_config *dc;
 
-	for (dc = TAILQ_FIRST(queue); dc != NULL; dc = ndc) {
-		ndc = TAILQ_NEXT(dc, dc_queue);
+	KASSERT(KERNEL_LOCKED_P());
+
+	mutex_enter(&config_misc_lock);
+	dc = TAILQ_FIRST(queue);
+	while (dc) {
 		if (parent == NULL || dc->dc_dev->dv_parent == parent) {
 			TAILQ_REMOVE(queue, dc, dc_queue);
+			mutex_exit(&config_misc_lock);
+
 			(*dc->dc_func)(dc->dc_dev);
 			config_pending_decr(dc->dc_dev);
 			kmem_free(dc, sizeof(*dc));
+
+			mutex_enter(&config_misc_lock);
+			/* Restart, queue might have changed */
+			dc = TAILQ_FIRST(queue);
+		} else {
+			dc = TAILQ_NEXT(dc, dc_queue);
 		}
 	}
+	mutex_exit(&config_misc_lock);
 }
 
 /*
@@ -2061,9 +2439,12 @@ config_pending_incr(device_t dev)
 {
 
 	mutex_enter(&config_misc_lock);
-	config_pending++;
+	KASSERTMSG(dev->dv_pending < INT_MAX,
+	    "%s: excess config_pending_incr", device_xname(dev));
+	if (dev->dv_pending++ == 0)
+		TAILQ_INSERT_TAIL(&config_pending, dev, dv_pending_list);
 #ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
 #endif
 	mutex_exit(&config_misc_lock);
 }
@@ -2072,14 +2453,16 @@ void
 config_pending_decr(device_t dev)
 {
 
-	KASSERT(0 < config_pending);
 	mutex_enter(&config_misc_lock);
-	config_pending--;
-#ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
-#endif
-	if (config_pending == 0)
+	KASSERTMSG(dev->dv_pending > 0,
+	    "%s: excess config_pending_decr", device_xname(dev));
+	if (--dev->dv_pending == 0) {
+		TAILQ_REMOVE(&config_pending, dev, dv_pending_list);
 		cv_broadcast(&config_misc_cv);
+	}
+#ifdef DEBUG_AUTOCONF
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
+#endif
 	mutex_exit(&config_misc_lock);
 }
 
@@ -2093,6 +2476,9 @@ int
 config_finalize_register(device_t dev, int (*fn)(device_t))
 {
 	struct finalize_hook *f;
+	int error = 0;
+
+	KERNEL_LOCK(1, NULL);
 
 	/*
 	 * If finalization has already been done, invoke the
@@ -2101,13 +2487,15 @@ config_finalize_register(device_t dev, int (*fn)(device_t))
 	if (config_finalize_done) {
 		while ((*fn)(dev) != 0)
 			/* loop */ ;
-		return 0;
+		goto out;
 	}
 
 	/* Ensure this isn't already on the list. */
 	TAILQ_FOREACH(f, &config_finalize_list, f_list) {
-		if (f->f_func == fn && f->f_dev == dev)
-			return EEXIST;
+		if (f->f_func == fn && f->f_dev == dev) {
+			error = EEXIST;
+			goto out;
+		}
 	}
 
 	f = kmem_alloc(sizeof(*f), KM_SLEEP);
@@ -2115,7 +2503,11 @@ config_finalize_register(device_t dev, int (*fn)(device_t))
 	f->f_dev = dev;
 	TAILQ_INSERT_TAIL(&config_finalize_list, f, f_list);
 
-	return 0;
+	/* Success!  */
+	error = 0;
+
+out:	KERNEL_UNLOCK_ONE(NULL);
+	return error;
 }
 
 void
@@ -2131,8 +2523,19 @@ config_finalize(void)
 	 * them to finish any deferred autoconfiguration.
 	 */
 	mutex_enter(&config_misc_lock);
-	while (config_pending != 0)
-		cv_wait(&config_misc_cv, &config_misc_lock);
+	while (!TAILQ_EMPTY(&config_pending)) {
+		device_t dev;
+		int error;
+
+		error = cv_timedwait(&config_misc_cv, &config_misc_lock,
+		    mstohz(1000));
+		if (error == EWOULDBLOCK) {
+			aprint_debug("waiting for devices:");
+			TAILQ_FOREACH(dev, &config_pending, dv_pending_list)
+				aprint_debug(" %s", device_xname(dev));
+			aprint_debug("\n");
+		}
+	}
 	mutex_exit(&config_misc_lock);
 
 	KERNEL_LOCK(1, NULL);
@@ -2216,6 +2619,17 @@ config_alldevs_exit(struct alldevs_foray *af)
  * device_lookup:
  *
  *	Look up a device instance for a given driver.
+ *
+ *	Caller is responsible for ensuring the device's state is
+ *	stable, either by holding a reference already obtained with
+ *	device_lookup_acquire or by otherwise ensuring the device is
+ *	attached and can't be detached (e.g., holding an open device
+ *	node and ensuring *_detach calls vdevgone).
+ *
+ *	XXX Find a way to assert this.
+ *
+ *	Safe for use up to and including interrupt context at IPL_VM.
+ *	Never sleeps.
  */
 device_t
 device_lookup(cfdriver_t cd, int unit)
@@ -2242,6 +2656,74 @@ device_lookup_private(cfdriver_t cd, int unit)
 {
 
 	return device_private(device_lookup(cd, unit));
+}
+
+/*
+ * device_lookup_acquire:
+ *
+ *	Look up a device instance for a given driver, and return a
+ *	reference to it that must be released by device_release.
+ *
+ *	=> If the device is still attaching, blocks until *_attach has
+ *	   returned.
+ *
+ *	=> If the device is detaching, blocks until *_detach has
+ *	   returned.  May succeed or fail in that case, depending on
+ *	   whether *_detach has backed out (EBUSY) or committed to
+ *	   detaching.
+ *
+ *	May sleep.
+ */
+device_t
+device_lookup_acquire(cfdriver_t cd, int unit)
+{
+	device_t dv;
+
+	ASSERT_SLEEPABLE();
+
+	/* XXX This should have a pserialized fast path -- TBD.  */
+	mutex_enter(&config_misc_lock);
+	mutex_enter(&alldevs_lock);
+retry:	if (unit < 0 || unit >= cd->cd_ndevs ||
+	    (dv = cd->cd_devs[unit]) == NULL ||
+	    dv->dv_del_gen != 0 ||
+	    dv->dv_detached) {
+		dv = NULL;
+	} else {
+		/*
+		 * Wait for the device to stabilize, if attaching or
+		 * detaching.  Either way we must wait for *_attach or
+		 * *_detach to complete, and either way we must retry:
+		 * even if detaching, *_detach might fail (EBUSY) so
+		 * the device may still be there.
+		 */
+		if ((dv->dv_attaching != NULL && dv->dv_attaching != curlwp) ||
+		    dv->dv_detaching != NULL) {
+			mutex_exit(&alldevs_lock);
+			cv_wait(&config_misc_cv, &config_misc_lock);
+			mutex_enter(&alldevs_lock);
+			goto retry;
+		}
+		localcount_acquire(dv->dv_localcount);
+	}
+	mutex_exit(&alldevs_lock);
+	mutex_exit(&config_misc_lock);
+
+	return dv;
+}
+
+/*
+ * device_release:
+ *
+ *	Release a reference to a device acquired with
+ *	device_lookup_acquire.
+ */
+void
+device_release(device_t dv)
+{
+
+	localcount_release(dv->dv_localcount,
+	    &config_misc_cv, &config_misc_lock);
 }
 
 /*
@@ -2280,43 +2762,316 @@ device_find_by_driver_unit(const char *name, int unit)
 	return device_lookup(cd, unit);
 }
 
-/*
- * device_compatible_match:
- *
- *	Match a driver's "compatible" data against a device's
- *	"compatible" strings.  If a match is found, we return
- *	a weighted match result, and optionally the matching
- *	entry.
- */
-int
-device_compatible_match(const char **device_compats, int ndevice_compats,
-			const struct device_compatible_entry *driver_compats,
-			const struct device_compatible_entry **matching_entryp)
+static bool
+match_strcmp(const char * const s1, const char * const s2)
+{
+	return strcmp(s1, s2) == 0;
+}
+
+static bool
+match_pmatch(const char * const s1, const char * const s2)
+{
+	return pmatch(s1, s2, NULL) == 2;
+}
+
+static bool
+strarray_match_internal(const char ** const strings,
+    unsigned int const nstrings, const char * const str,
+    unsigned int * const indexp,
+    bool (*match_fn)(const char *, const char *))
+{
+	unsigned int i;
+
+	if (strings == NULL || nstrings == 0) {
+		return false;
+	}
+
+	for (i = 0; i < nstrings; i++) {
+		if ((*match_fn)(strings[i], str)) {
+			*indexp = i;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int
+strarray_match(const char ** const strings, unsigned int const nstrings,
+    const char * const str)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, str, &idx,
+				    match_strcmp)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+strarray_pmatch(const char ** const strings, unsigned int const nstrings,
+    const char * const pattern)
+{
+	unsigned int idx;
+
+	if (strarray_match_internal(strings, nstrings, pattern, &idx,
+				    match_pmatch)) {
+		return (int)(nstrings - idx);
+	}
+	return 0;
+}
+
+static int
+device_compatible_match_strarray_internal(
+    const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char **, unsigned int, const char *))
 {
 	const struct device_compatible_entry *dce = NULL;
-	int i, match_weight;
+	int rv;
 
 	if (ndevice_compats == 0 || device_compats == NULL ||
 	    driver_compats == NULL)
 		return 0;
-	
-	/*
-	 * We take the first match because we start with the most-specific
-	 * device compatible string.
-	 */
-	for (i = 0, match_weight = ndevice_compats - 1;
-	     i < ndevice_compats;
-	     i++, match_weight--) {
-		for (dce = driver_compats; dce->compat != NULL; dce++) {
-			if (strcmp(dce->compat, device_compats[i]) == 0) {
-				KASSERT(match_weight >= 0);
-				if (matching_entryp)
-					*matching_entryp = dce;
-				return 1 + match_weight;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, ndevice_compats, dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
 			}
+			return rv;
 		}
 	}
 	return 0;
+}
+
+/*
+ * device_compatible_match:
+ *
+ *	Match a driver's "compatible" data against a device's
+ *	"compatible" strings.  Returns resulted weighted by
+ *	which device "compatible" string was matched.
+ */
+int
+device_compatible_match(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_match);
+}
+
+/*
+ * device_compatible_pmatch:
+ *
+ *	Like device_compatible_match(), but uses pmatch(9) to compare
+ *	the device "compatible" strings against patterns in the
+ *	driver's "compatible" data.
+ */
+int
+device_compatible_pmatch(const char **device_compats, int ndevice_compats,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, NULL, strarray_pmatch);
+}
+
+static int
+device_compatible_match_strlist_internal(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp,
+    int (*match_fn)(const char *, size_t, const char *))
+{
+	const struct device_compatible_entry *dce = NULL;
+	int rv;
+
+	if (device_compats == NULL || device_compatsize == 0 ||
+	    driver_compats == NULL)
+		return 0;
+
+	for (dce = driver_compats; dce->compat != NULL; dce++) {
+		rv = (*match_fn)(device_compats, device_compatsize,
+		    dce->compat);
+		if (rv != 0) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return rv;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_strlist:
+ *
+ *	Like device_compatible_match(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_match_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_match);
+}
+
+/*
+ * device_compatible_pmatch_strlist:
+ *
+ *	Like device_compatible_pmatch(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+int
+device_compatible_pmatch_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, NULL, strlist_pmatch);
+}
+
+static int
+device_compatible_match_id_internal(
+    uintptr_t const id, uintptr_t const mask, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats,
+    const struct device_compatible_entry **matching_entryp)
+{
+	const struct device_compatible_entry *dce = NULL;
+
+	if (mask == 0)
+		return 0;
+
+	for (dce = driver_compats; dce->id != sentinel_id; dce++) {
+		if ((id & mask) == dce->id) {
+			if (matching_entryp != NULL) {
+				*matching_entryp = dce;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * device_compatible_match_id:
+ *
+ *	Like device_compatible_match(), but takes a single
+ *	unsigned integer device ID.
+ */
+int
+device_compatible_match_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	return device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, NULL);
+}
+
+/*
+ * device_compatible_lookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_match().
+ */
+const struct device_compatible_entry *
+device_compatible_lookup(const char **device_compats, int ndevice_compats,
+			 const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup:
+ *
+ *	Look up and return the device_compatible_entry, using the
+ *	same matching criteria used by device_compatible_pmatch().
+ */
+const struct device_compatible_entry *
+device_compatible_plookup(const char **device_compats, int ndevice_compats,
+			  const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strarray_internal(device_compats,
+	    ndevice_compats, driver_compats, &dce, strarray_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_strlist:
+ *
+ *	Like device_compatible_lookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_match)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_plookup_strlist:
+ *
+ *	Like device_compatible_plookup(), but take the device
+ *	"compatible" strings as an OpenFirmware-style string
+ *	list.
+ */
+const struct device_compatible_entry *
+device_compatible_plookup_strlist(
+    const char * const device_compats, size_t const device_compatsize,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_strlist_internal(device_compats,
+	    device_compatsize, driver_compats, &dce, strlist_pmatch)) {
+		return dce;
+	}
+	return NULL;
+}
+
+/*
+ * device_compatible_lookup_id:
+ *
+ *	Like device_compatible_lookup(), but takes a single
+ *	unsigned integer device ID.
+ */
+const struct device_compatible_entry *
+device_compatible_lookup_id(
+    uintptr_t const id, uintptr_t const sentinel_id,
+    const struct device_compatible_entry *driver_compats)
+{
+	const struct device_compatible_entry *dce;
+
+	if (device_compatible_match_id_internal(id, (uintptr_t)-1,
+	    sentinel_id, driver_compats, &dce)) {
+		return dce;
+	}
+	return NULL;
 }
 
 /*
@@ -2384,15 +3139,6 @@ device_pmf_driver_register(device_t dev,
 	return true;
 }
 
-static const char *
-curlwp_name(void)
-{
-	if (curlwp->l_name != NULL)
-		return curlwp->l_name;
-	else
-		return curlwp->l_proc->p_comm;
-}
-
 void
 device_pmf_driver_deregister(device_t dev)
 {
@@ -2437,11 +3183,19 @@ device_pmf_driver_set_child_register(device_t dev,
 static void
 pmflock_debug(device_t dev, const char *func, int line)
 {
+#ifdef PMFLOCK_DEBUG
 	device_lock_t dvl = device_getlock(dev);
+	const char *curlwp_name;
+
+	if (curlwp->l_name != NULL)
+		curlwp_name = curlwp->l_name;
+	else
+		curlwp_name = curlwp->l_proc->p_comm;
 
 	aprint_debug_dev(dev,
 	    "%s.%d, %s dvl_nlock %d dvl_nwait %d dv_flags %x\n", func, line,
-	    curlwp_name(), dvl->dvl_nlock, dvl->dvl_nwait, dev->dv_flags);
+	    curlwp_name, dvl->dvl_nlock, dvl->dvl_nwait, dev->dv_flags);
+#endif	/* PMFLOCK_DEBUG */
 }
 
 static bool
@@ -2676,7 +3430,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	}
 
 	new_size = old_size + 4;
-	new_handlers = kmem_alloc(sizeof(void *[new_size]), KM_SLEEP);
+	new_handlers = kmem_alloc(sizeof(void *) * new_size, KM_SLEEP);
 
 	for (i = 0; i < old_size; ++i)
 		new_handlers[i] = old_handlers[i];
@@ -2690,7 +3444,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	splx(s);
 
 	if (old_size > 0)
-		kmem_free(old_handlers, sizeof(void * [old_size]));
+		kmem_free(old_handlers, sizeof(void *) * old_size);
 
 	return true;
 }
@@ -2724,7 +3478,7 @@ device_active_deregister(device_t dev, void (*handler)(device_t, devactive_t))
 			dev->dv_activity_count = 0;
 			dev->dv_activity_handlers = NULL;
 			splx(s);
-			kmem_free(old_handlers, sizeof(void *[old_size]));
+			kmem_free(old_handlers, sizeof(void *) * old_size);
 		}
 		return;
 	}

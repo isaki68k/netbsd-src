@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mvgbe.c,v 1.58 2019/09/13 07:55:07 msaitoh Exp $	*/
+/*	$NetBSD: if_mvgbe.c,v 1.66 2022/05/21 10:33:05 rin Exp $	*/
 /*
  * Copyright (c) 2007, 2008, 2013 KIYOHARA Takashi
  * All rights reserved.
@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mvgbe.c,v 1.58 2019/09/13 07:55:07 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mvgbe.c,v 1.66 2022/05/21 10:33:05 rin Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -470,8 +470,8 @@ mvgbec_attach(device_t parent, device_t self, void *aux)
 			gbea.mva_unit = j;
 			gbea.mva_dmat = mva->mva_dmat;
 			gbea.mva_irq = mvgbe_ports[i].irqs[j];
-			child = config_found_sm_loc(csc->sc_dev, "mvgbec", NULL,
-			    &gbea, mvgbec_print, mvgbec_search);
+			child = config_found(csc->sc_dev, &gbea, mvgbec_print,
+			    CFARGS(.submatch = mvgbec_search));
 			if (child) {
 				port = device_private(child);
 				mii  = LIST_FIRST(&port->sc_mii.mii_phys);
@@ -1254,7 +1254,7 @@ mvgbe_init(struct ifnet *ifp)
 	/* Set SDC register except IPGINT bits */
 	MVGBE_WRITE(sc, MVGBE_SDC,
 	    MVGBE_SDC_RXBSZ_16_64BITWORDS |
-#if BYTE_ORDER == LITTLE_ENDIAN
+#ifndef MVGBE_BIG_ENDIAN
 	    MVGBE_SDC_BLMR |	/* Big/Little Endian Receive Mode: No swap */
 	    MVGBE_SDC_BLMT |	/* Big/Little Endian Transmit Mode: No swap */
 #endif
@@ -1455,7 +1455,7 @@ mvgbe_watchdog(struct ifnet *ifp)
 		} else {
 			aprint_error_ifnet(ifp, "watchdog timeout\n");
 
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 
 			mvgbe_init(ifp);
 		}
@@ -1517,12 +1517,12 @@ mvgbe_init_rx_ring(struct mvgbe_softc *sc)
 			cd->mvgbe_rx_chain[i].mvgbe_next =
 			    &cd->mvgbe_rx_chain[0];
 			rd->mvgbe_rx_ring[i].nextdescptr =
-			    MVGBE_RX_RING_ADDR(sc, 0);
+			    H2MVGBE32(MVGBE_RX_RING_ADDR(sc, 0));
 		} else {
 			cd->mvgbe_rx_chain[i].mvgbe_next =
 			    &cd->mvgbe_rx_chain[i + 1];
 			rd->mvgbe_rx_ring[i].nextdescptr =
-			    MVGBE_RX_RING_ADDR(sc, i + 1);
+			    H2MVGBE32(MVGBE_RX_RING_ADDR(sc, i + 1));
 		}
 	}
 
@@ -1557,14 +1557,15 @@ mvgbe_init_tx_ring(struct mvgbe_softc *sc)
 			cd->mvgbe_tx_chain[i].mvgbe_next =
 			    &cd->mvgbe_tx_chain[0];
 			rd->mvgbe_tx_ring[i].nextdescptr =
-			    MVGBE_TX_RING_ADDR(sc, 0);
+			    H2MVGBE32(MVGBE_TX_RING_ADDR(sc, 0));
 		} else {
 			cd->mvgbe_tx_chain[i].mvgbe_next =
 			    &cd->mvgbe_tx_chain[i + 1];
 			rd->mvgbe_tx_ring[i].nextdescptr =
-			    MVGBE_TX_RING_ADDR(sc, i + 1);
+			    H2MVGBE32(MVGBE_TX_RING_ADDR(sc, i + 1));
 		}
-		rd->mvgbe_tx_ring[i].cmdsts = MVGBE_BUFFER_OWNED_BY_HOST;
+		rd->mvgbe_tx_ring[i].cmdsts =
+		    H2MVGBE32(MVGBE_BUFFER_OWNED_BY_HOST);
 	}
 
 	sc->sc_cdata.mvgbe_tx_prod = 0;
@@ -1586,6 +1587,7 @@ mvgbe_newbuf(struct mvgbe_softc *sc, int i, struct mbuf *m,
 	struct mvgbe_rx_desc *r;
 	int align;
 	vaddr_t offset;
+	uint16_t bufsize;
 
 	if (m == NULL) {
 		void *buf = NULL;
@@ -1629,12 +1631,14 @@ mvgbe_newbuf(struct mvgbe_softc *sc, int i, struct mbuf *m,
 	r = c->mvgbe_desc;
 	c->mvgbe_mbuf = m_new;
 	offset = (vaddr_t)m_new->m_data - (vaddr_t)sc->sc_cdata.mvgbe_jumbo_buf;
-	r->bufptr = dmamap->dm_segs[0].ds_addr + offset;
-	r->bufsize = MVGBE_JLEN & ~MVGBE_RXBUF_MASK;
-	r->cmdsts = MVGBE_BUFFER_OWNED_BY_DMA | MVGBE_RX_ENABLE_INTERRUPT;
+	r->bufptr = H2MVGBE32(dmamap->dm_segs[0].ds_addr + offset);
+	bufsize = MVGBE_JLEN & ~MVGBE_RXBUF_MASK;
+	r->bufsize = H2MVGBE16(bufsize);
+	r->cmdsts =
+	    H2MVGBE32(MVGBE_BUFFER_OWNED_BY_DMA | MVGBE_RX_ENABLE_INTERRUPT);
 
 	/* Invalidate RX buffer */
-	bus_dmamap_sync(sc->sc_dmat, dmamap, offset, r->bufsize,
+	bus_dmamap_sync(sc->sc_dmat, dmamap, offset, bufsize,
 	    BUS_DMASYNC_PREREAD);
 
 	MVGBE_CDRXSYNC(sc, i, BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
@@ -1823,8 +1827,10 @@ do_defrag:
 		/* A small unaligned segment was detected. */
 		struct mbuf *m_new;
 		m_new = m_defrag(m_head, M_DONTWAIT);
-		if (m_new == NULL)
+		if (m_new == NULL) {
+			DPRINTFN(2, ("mvgbe_encap: defrag failed\n"));
 			return EFBIG;
+		}
 		m_head = m_new;
 	}
 
@@ -1869,14 +1875,14 @@ do_defrag:
 	}
 
 
-	DPRINTFN(2, ("mvgbe_encap: dm_nsegs=%d\n", txmap->dm_nsegs));
+	DPRINTFN(3, ("mvgbe_encap: dm_nsegs=%d\n", txmap->dm_nsegs));
 
 	for (i = 0; i < txmap->dm_nsegs; i++) {
 		f = &sc->sc_rdata->mvgbe_tx_ring[current];
-		f->bufptr = txseg[i].ds_addr;
-		f->bytecnt = txseg[i].ds_len;
+		f->bufptr = H2MVGBE32(txseg[i].ds_addr);
+		f->bytecnt = H2MVGBE16(txseg[i].ds_len);
 		if (i != 0)
-			f->cmdsts = MVGBE_BUFFER_OWNED_BY_DMA;
+			f->cmdsts = H2MVGBE32(MVGBE_BUFFER_OWNED_BY_DMA);
 		last = current;
 		current = MVGBE_TX_RING_NEXT(current);
 	}
@@ -1897,21 +1903,21 @@ do_defrag:
 		    MVGBE_TX_IP_HEADER_LEN(iphdr_unitlen);	/* unit is 4B */
 	}
 	if (txmap->dm_nsegs == 1)
-		f->cmdsts = cmdsts		|
+		f->cmdsts = H2MVGBE32(cmdsts	|
 		    MVGBE_TX_ENABLE_INTERRUPT	|
 		    MVGBE_TX_ZERO_PADDING	|
 		    MVGBE_TX_FIRST_DESC		|
-		    MVGBE_TX_LAST_DESC;
+		    MVGBE_TX_LAST_DESC);
 	else {
 		f = &sc->sc_rdata->mvgbe_tx_ring[first];
-		f->cmdsts = cmdsts | MVGBE_TX_FIRST_DESC;
+		f->cmdsts = H2MVGBE32(cmdsts | MVGBE_TX_FIRST_DESC);
 
 		f = &sc->sc_rdata->mvgbe_tx_ring[last];
-		f->cmdsts =
+		f->cmdsts = H2MVGBE32(
 		    MVGBE_BUFFER_OWNED_BY_DMA	|
 		    MVGBE_TX_ENABLE_INTERRUPT	|
 		    MVGBE_TX_ZERO_PADDING	|
-		    MVGBE_TX_LAST_DESC;
+		    MVGBE_TX_LAST_DESC);
 
 		/* Sync descriptors except first */
 		MVGBE_CDTXSYNC(sc,
@@ -1926,7 +1932,7 @@ do_defrag:
 
 	/* Finally, sync first descriptor */
 	sc->sc_rdata->mvgbe_tx_ring[first].cmdsts |=
-	    MVGBE_BUFFER_OWNED_BY_DMA;
+	    H2MVGBE32(MVGBE_BUFFER_OWNED_BY_DMA);
 	MVGBE_CDTXSYNC(sc, *txidx, 1,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
@@ -1963,7 +1969,8 @@ mvgbe_rxeof(struct mvgbe_softc *sc)
 
 		cur_rx = &sc->sc_rdata->mvgbe_rx_ring[idx];
 
-		if ((cur_rx->cmdsts & MVGBE_BUFFER_OWNED_MASK) ==
+		rxstat = MVGBE2H32(cur_rx->cmdsts);
+		if ((rxstat & MVGBE_BUFFER_OWNED_MASK) ==
 		    MVGBE_BUFFER_OWNED_BY_DMA) {
 			/* Invalidate the descriptor -- it's not ready yet */
 			MVGBE_CDRXSYNC(sc, idx, BUS_DMASYNC_PREREAD);
@@ -1971,7 +1978,7 @@ mvgbe_rxeof(struct mvgbe_softc *sc)
 			break;
 		}
 #ifdef DIAGNOSTIC
-		if ((cur_rx->cmdsts &
+		if ((rxstat &
 		    (MVGBE_RX_LAST_DESC | MVGBE_RX_FIRST_DESC)) !=
 		    (MVGBE_RX_LAST_DESC | MVGBE_RX_FIRST_DESC))
 			panic(
@@ -1985,9 +1992,8 @@ mvgbe_rxeof(struct mvgbe_softc *sc)
 
 		m = cdata->mvgbe_rx_chain[idx].mvgbe_mbuf;
 		cdata->mvgbe_rx_chain[idx].mvgbe_mbuf = NULL;
-		total_len = cur_rx->bytecnt - ETHER_CRC_LEN;
-		rxstat = cur_rx->cmdsts;
-		bufsize = cur_rx->bufsize;
+		total_len = MVGBE2H16(cur_rx->bytecnt) - ETHER_CRC_LEN;
+		bufsize = MVGBE2H16(cur_rx->bufsize);
 
 		cdata->mvgbe_rx_map[idx] = NULL;
 
@@ -1998,15 +2004,15 @@ mvgbe_rxeof(struct mvgbe_softc *sc)
 			int err = rxstat & MVGBE_RX_ERROR_CODE_MASK;
 
 			if (err == MVGBE_RX_CRC_ERROR)
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 			if (err == MVGBE_RX_OVERRUN_ERROR)
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 			if (err == MVGBE_RX_MAX_FRAME_LEN_ERROR)
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 			if (err == MVGBE_RX_RESOURCE_ERROR)
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 #else
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 #endif
 			mvgbe_newbuf(sc, cur, m, dmamap);
 			continue;
@@ -2059,7 +2065,7 @@ mvgbe_rxeof(struct mvgbe_softc *sc)
 				aprint_error_ifnet(ifp,
 				    "no receive buffers available --"
 				    " packet dropped!\n");
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				continue;
 			}
 			m = m0;
@@ -2083,6 +2089,7 @@ mvgbe_txeof(struct mvgbe_softc *sc)
 	struct mvgbe_tx_desc *cur_tx;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct mvgbe_txmap_entry *entry;
+	uint32_t txstat;
 	int idx;
 
 	DPRINTFN(3, ("mvgbe_txeof\n"));
@@ -2101,33 +2108,35 @@ mvgbe_txeof(struct mvgbe_softc *sc)
 		if (mvgbe_debug >= 3)
 			mvgbe_dump_txdesc(cur_tx, idx);
 #endif
-		if ((cur_tx->cmdsts & MVGBE_BUFFER_OWNED_MASK) ==
+		txstat = MVGBE2H32(cur_tx->cmdsts);
+		if ((txstat & MVGBE_BUFFER_OWNED_MASK) ==
 		    MVGBE_BUFFER_OWNED_BY_DMA) {
 			MVGBE_CDTXSYNC(sc, idx, 1, BUS_DMASYNC_PREREAD);
 			break;
 		}
-		if (cur_tx->cmdsts & MVGBE_TX_LAST_DESC)
-			ifp->if_opackets++;
-		if (cur_tx->cmdsts & MVGBE_ERROR_SUMMARY) {
-			int err = cur_tx->cmdsts & MVGBE_TX_ERROR_CODE_MASK;
+		if (txstat & MVGBE_TX_LAST_DESC)
+			if_statinc(ifp, if_opackets);
+		if (txstat & MVGBE_ERROR_SUMMARY) {
+			int err = txstat & MVGBE_TX_ERROR_CODE_MASK;
 
 			if (err == MVGBE_TX_LATE_COLLISION_ERROR)
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 			if (err == MVGBE_TX_UNDERRUN_ERROR)
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 			if (err == MVGBE_TX_EXCESSIVE_COLLISION_ERRO)
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 		}
 		if (cdata->mvgbe_tx_chain[idx].mvgbe_mbuf != NULL) {
 			entry = cdata->mvgbe_tx_map[idx];
-
-			m_freem(cdata->mvgbe_tx_chain[idx].mvgbe_mbuf);
-			cdata->mvgbe_tx_chain[idx].mvgbe_mbuf = NULL;
 
 			bus_dmamap_sync(sc->sc_dmat, entry->dmamap, 0,
 			    entry->dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
 
 			bus_dmamap_unload(sc->sc_dmat, entry->dmamap);
+
+			m_freem(cdata->mvgbe_tx_chain[idx].mvgbe_mbuf);
+			cdata->mvgbe_tx_chain[idx].mvgbe_mbuf = NULL;
+
 			SIMPLEQ_INSERT_TAIL(&sc->sc_txmap_head, entry, link);
 			cdata->mvgbe_tx_map[idx] = NULL;
 		}
@@ -2256,18 +2265,18 @@ mvgbe_dump_txdesc(struct mvgbe_tx_desc *desc, int idx)
 	if (X)						\
 		printf("txdesc[%d]." #X "=%#x\n", idx, X);
 
-#if BYTE_ORDER == BIG_ENDIAN
+#ifdef MVGBE_BIG_ENDIAN
        DESC_PRINT(desc->bytecnt);
        DESC_PRINT(desc->l4ichk);
        DESC_PRINT(desc->cmdsts);
        DESC_PRINT(desc->nextdescptr);
        DESC_PRINT(desc->bufptr);
-#else	/* LITTLE_ENDIAN */
-       DESC_PRINT(desc->cmdsts);
-       DESC_PRINT(desc->l4ichk);
-       DESC_PRINT(desc->bytecnt);
-       DESC_PRINT(desc->bufptr);
-       DESC_PRINT(desc->nextdescptr);
+#else
+       DESC_PRINT(MVGBE2H32(desc->cmdsts));
+       DESC_PRINT(MVGBE2H16(desc->l4ichk));
+       DESC_PRINT(MVGBE2H16(desc->bytecnt));
+       DESC_PRINT(MVGBE2H32(desc->bufptr));
+       DESC_PRINT(MVGBE2H32(desc->nextdescptr));
 #endif
 #undef DESC_PRINT
 }

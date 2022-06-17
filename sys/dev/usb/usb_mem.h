@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_mem.h,v 1.31 2016/04/23 10:15:32 skrll Exp $	*/
+/*	$NetBSD: usb_mem.h,v 1.37 2022/03/03 06:09:11 riastradh Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_mem.h,v 1.9 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -31,6 +31,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef	_DEV_USB_USB_MEM_H_
+#define	_DEV_USB_USB_MEM_H_
+
+#include <sys/types.h>
+
+#include <sys/bus.h>
+#include <sys/queue.h>
+
+#include <dev/usb/usbdivar.h>
+
 typedef struct usb_dma_block {
 	bus_dma_tag_t tag;
 	bus_dmamap_t map;
@@ -41,20 +51,24 @@ typedef struct usb_dma_block {
 	size_t size;
 	size_t align;
 	int flags;
-#define USB_DMA_FULLBLOCK	0x0001
+#define USB_DMA_FULLBLOCK	__BIT(0)
+#define USB_DMA_COHERENT	__BIT(1)
+
 	LIST_ENTRY(usb_dma_block) next;
 } usb_dma_block_t;
 
-#define USBMALLOC_MULTISEG	1
+#define USBMALLOC_MULTISEG	__BIT(0)
+#define USBMALLOC_COHERENT	__BIT(1)
+#define USBMALLOC_ZERO		__BIT(2)
 
-usbd_status	usb_allocmem(struct usbd_bus *, size_t, size_t, usb_dma_t *);
-usbd_status	usb_allocmem_flags(struct usbd_bus *, size_t, size_t, usb_dma_t *,
-			int);
-void		usb_freemem(struct usbd_bus *, usb_dma_t *);
+int		usb_allocmem(bus_dma_tag_t, size_t, size_t, u_int, usb_dma_t *);
+void		usb_freemem(usb_dma_t *);
 void		usb_syncmem(usb_dma_t *, bus_addr_t, bus_size_t, int);
 
 bus_addr_t	usb_dmaaddr(usb_dma_t *, unsigned int);
 
-#define DMAADDR(dma, o) usb_dmaaddr((dma), (o))
+#define DMAADDR(dma, o)	usb_dmaaddr((dma), (o))
 #define KERNADDR(dma, o) \
 	((void *)((char *)(dma)->udma_block->kaddr + (dma)->udma_offs + (o)))
+
+#endif	/* _DEV_USB_USB_MEM_H_ */

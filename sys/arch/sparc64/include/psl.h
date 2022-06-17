@@ -1,4 +1,4 @@
-/*	$NetBSD: psl.h,v 1.60 2019/04/06 21:40:15 nakayama Exp $ */
+/*	$NetBSD: psl.h,v 1.62 2021/11/02 11:26:04 ryo Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -322,13 +322,11 @@ static __inline void set##name(type _val)				\
 	__asm volatile(#wr " %0,0,%" #reg : : "r" (_val) : "memory");	\
 }
 
-/*
- * XXX: clang's "r" constraint cannot handle 64-bit,
- * so use 32-bit kernel code as a workaround.
- */
-#if defined(__arch64__) && !defined(__clang__)
+#ifdef __arch64__
 #define SPARC64_RDCONST64_DEF(rd, name, reg) \
 	SPARC64_RDCONST_DEF(rd, name, reg, uint64_t)
+#define SPARC64_RD64_DEF(rd, name, reg) SPARC64_RD_DEF(rd, name, reg, uint64_t)
+#define SPARC64_WR64_DEF(wr, name, reg) SPARC64_WR_DEF(wr, name, reg, uint64_t)
 #else
 #define SPARC64_RDCONST64_DEF(rd, name, reg)				\
 static __inline __constfunc uint64_t get##name(void)			\
@@ -338,12 +336,6 @@ static __inline __constfunc uint64_t get##name(void)			\
 		: "=r" (_hi), "=r" (_lo) : : constasm_clobbers);	\
 	return ((uint64_t)_hi << 32) | _lo;				\
 }
-#endif
-
-#ifdef __arch64__
-#define SPARC64_RD64_DEF(rd, name, reg) SPARC64_RD_DEF(rd, name, reg, uint64_t)
-#define SPARC64_WR64_DEF(wr, name, reg) SPARC64_WR_DEF(wr, name, reg, uint64_t)
-#else
 #define SPARC64_RD64_DEF(rd, name, reg)					\
 static __inline uint64_t get##name(void)				\
 {									\
@@ -462,7 +454,7 @@ static __inline int name##X(const char* file, int line) \
 #else
 #define SPLPRINT(x)	
 #define	SPL(name, newpil) \
-static __inline int name(void) \
+static __inline __always_inline int name(void) \
 { \
 	int oldpil; \
 	__asm volatile("rdpr %%pil,%0" : "=r" (oldpil)); \
@@ -471,7 +463,7 @@ static __inline int name(void) \
 }
 /* A non-priority-decreasing version of SPL */
 #define	SPLHOLD(name, newpil) \
-static __inline int name(void) \
+static __inline __always_inline int name(void) \
 { \
 	int oldpil; \
 	__asm volatile("rdpr %%pil,%0" : "=r" (oldpil)); \
@@ -555,7 +547,7 @@ SPLHOLD(splhigh, PIL_HIGH)
 
 static __inline void splxX(int newpil, const char *file, int line)
 #else
-static __inline void splx(int newpil)
+static __inline __always_inline void splx(int newpil)
 #endif
 {
 #ifdef SPLDEBUG

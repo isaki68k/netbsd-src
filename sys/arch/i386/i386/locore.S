@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.173 2019/10/18 01:38:28 manu Exp $	*/
+/*	$NetBSD: locore.S,v 1.189 2022/06/12 11:36:42 bouyer Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.173 2019/10/18 01:38:28 manu Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.189 2022/06/12 11:36:42 bouyer Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -243,37 +243,48 @@ __KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.173 2019/10/18 01:38:28 manu Exp $");
 
 
 #ifdef XEN
-/*
- * Unfortunately, the Xen codebase uses nonstandard preprocessing tools.
- * See: https://xenbits.xen.org/gitweb/?p=xen.git&a=search&h=HEAD&st=grep&s=__UnDeF__
- * for a fine selection of examples.
- *
- * What this means for us here is that we can't include the standard
- * xen.h header in assembler code.
- *
- * So we have to manually define, and keep track of the values we need, ourselves.
- */
-#define __HYPERVISOR_xen_version          17
-#endif	/* XEN */
+#define __ASSEMBLY__
+#include <xen/include/public/elfnote.h>
+#include <xen/include/public/xen.h>
 
-#ifdef XENPV
+#define ELFNOTE(name, type, desctype, descdata...) \
+.pushsection .note.name			;	\
+  .align 4				;	\
+  .long 2f - 1f		/* namesz */	;	\
+  .long 4f - 3f		/* descsz */	;	\
+  .long type				;	\
+1:.asciz #name				;	\
+2:.align 4				;	\
+3:desctype descdata			;	\
+4:.align 4				;	\
+.popsection
+
 /*
  * Xen guest identifier and loader selection
  */
 .section __xen_guest
-	.ascii	"GUEST_OS=netbsd,GUEST_VER=3.0,XEN_VER=xen-3.0"
-	.ascii	",VIRT_BASE=0xc0000000" /* KERNBASE */
-	.ascii	",ELF_PADDR_OFFSET=0xc0000000" /* KERNBASE */
-	.ascii	",VIRT_ENTRY=0xc0100000" /* KERNTEXTOFF */
-	.ascii	",HYPERCALL_PAGE=0x00000101"
-		/* (???+HYPERCALL_PAGE_OFFSET)/PAGE_SIZE) */
-	.ascii	",PAE=yes[extended-cr3]"
-	.ascii	",LOADER=generic"
-#if (NKSYMS || defined(DDB) || defined(MODULAR)) && !defined(makeoptions_COPY_SYMTAB)
-	.ascii	",BSD_SYMTAB=yes"
+	ELFNOTE(Xen, XEN_ELFNOTE_GUEST_OS,       .asciz, "NetBSD")
+	ELFNOTE(Xen, XEN_ELFNOTE_GUEST_VERSION,  .asciz, "4.99")
+	ELFNOTE(Xen, XEN_ELFNOTE_XEN_VERSION,    .asciz, "xen-3.0")
+	ELFNOTE(Xen, XEN_ELFNOTE_VIRT_BASE,      .long,  KERNBASE)
+#ifdef XENPV
+	ELFNOTE(Xen, XEN_ELFNOTE_PADDR_OFFSET,   .long,  KERNBASE)
+	ELFNOTE(Xen, XEN_ELFNOTE_ENTRY,          .long,  start)
+#else
+	ELFNOTE(Xen, XEN_ELFNOTE_PADDR_OFFSET,   .long,  0)
+	ELFNOTE(Xen, XEN_ELFNOTE_PHYS32_ENTRY,   .long,  RELOC(start_xenpvh))
+#endif /* XENPV */
+	ELFNOTE(Xen, XEN_ELFNOTE_HYPERCALL_PAGE, .long,  hypercall_page)
+	ELFNOTE(Xen, XEN_ELFNOTE_HV_START_LOW,   .long,  HYPERVISOR_VIRT_START)
+	ELFNOTE(Xen, XEN_ELFNOTE_FEATURES,       .asciz, "writable_descriptor_tables|auto_translated_physmap|supervisor_mode_kernel|hvm_callback_vector")
+	ELFNOTE(Xen, XEN_ELFNOTE_PAE_MODE,       .asciz, "yes")
+	ELFNOTE(Xen, XEN_ELFNOTE_L1_MFN_VALID,   .quad,  PTE_P, PTE_P)\
+	ELFNOTE(Xen, XEN_ELFNOTE_LOADER,         .asciz, "generic")     
+	ELFNOTE(Xen, XEN_ELFNOTE_SUSPEND_CANCEL, .long,  0)
+#if NKSYMS > 0 || defined(DDB) || defined(MODULAR)
+	ELFNOTE(Xen, XEN_ELFNOTE_BSD_SYMTAB,     .asciz, "yes")
 #endif
-	.byte	0
-#endif	/* XENPV */
+#endif  /* XEN */
 
 /*
  * Initialization
@@ -315,6 +326,7 @@ LABEL(PDPpaddr)		.long	0	/* paddr of PDP, for libkvm */
 END(PDPpaddr)
 
 	/* Space for the temporary stack */
+	.globl	_C_LABEL(tmpstk)
 	.size	tmpstk, tmpstk - .
 	.space	512
 tmpstk:
@@ -580,7 +592,7 @@ multiboot2_loader:
 	pushl	%ebx		/* Address of Multiboot information */
 	call	_C_LABEL(multiboot2_pre_reloc)
 	addl	$4,%esp
-	jmp	2f
+	jmp	.Lstart_common
 #endif /* MULTIBOOT */
 
 1:
@@ -597,7 +609,7 @@ multiboot2_loader:
 	call	_C_LABEL(native_loader)
 	addl	$24,%esp
 
-2:
+.Lstart_common:
 	/* First, reset the PSL. */
 	pushl	$PSL_MBO
 	popfl
@@ -1071,6 +1083,9 @@ begin:
 	pushl	$0	/* init386() expects a 64 bits paddr_t with PAE */
 #endif
 	pushl	%eax
+#if defined(XEN) && !defined(XENPV)
+        call    _C_LABEL(init_xen_early)
+#endif
 	call	_C_LABEL(init_bootspace)
 	call	_C_LABEL(init386)
 	addl	$PDE_SIZE,%esp		/* pop paddr_t */
@@ -1115,6 +1130,8 @@ begin:
 	cpuid
 	movl	%eax,RELOC(cpuid_level)
 
+	movl    $VM_GUEST_XENPV, RELOC(vm_guest)
+
 	/*
 	 * Use a temporary GDT page. We'll re-add it to uvm(9) once we're done
 	 * using it.
@@ -1149,6 +1166,74 @@ begin:
 END(start)
 
 #if defined(XEN)
+#ifndef XENPV
+/* entry point for Xen PVH */
+ENTRY(start_xenpvh)
+	/* Xen doesn't start us with a valid gdt */
+	movl    $RELOC(gdtdesc_xenpvh), %eax
+	lgdt    (%eax)
+	jmp     $GSEL(GCODE_SEL, SEL_KPL), $RELOC(.Lreload_cs)
+
+.Lreload_cs:
+	movw    $GSEL(GDATA_SEL, SEL_KPL), %ax          
+	movw    %ax, %ds
+	movw    %ax, %es
+	movw    %ax, %ss   
+
+	/* we need a valid stack */
+	movl	$RELOC(tmpstk),%esp
+
+	/* clear BSS */
+        xorl    %eax,%eax
+	movl    $RELOC(__bss_start),%edi
+	movl    $RELOC(_end),%ecx
+	subl    %edi,%ecx
+	rep
+	stosb
+
+	/*
+	 * save addr of the hvm_start_info structure. This is also the end
+	 * of the symbol table
+	 */
+	movl	%ebx, RELOC(hvm_start_paddr)
+	movl	%ebx, %eax
+	addl	$KERNBASE,%eax
+	movl	$RELOC(esym),%ebp
+	movl	%eax,(%ebp)
+	/* get a page for HYPERVISOR_shared_info */
+	addl	$PAGE_SIZE, %ebx
+	addl	$PGOFSET,%ebx
+	andl	$~PGOFSET,%ebx
+	movl	$RELOC(HYPERVISOR_shared_info_pa),%ebp
+	movl	%ebx,(%ebp)
+	/* XXX assume hvm_start_info+dependant structure fits in a single page */
+	addl	$PAGE_SIZE, %ebx
+	addl	$PGOFSET,%ebx
+	andl	$~PGOFSET,%ebx
+	addl	$KERNBASE,%ebx
+	movl	$RELOC(eblob),%ebp
+	movl	%ebx,(%ebp)
+	/* announce ourself */
+	movl	$VM_GUEST_XENPVH, RELOC(vm_guest)
+	jmp	.Lstart_common
+END(start_xenpvh)
+	.align 8
+gdtdesc_xenpvh:
+	.word	gdt_xenpvhend - gdt_xenpvh
+	.long	RELOC(gdt_xenpvh)
+	.word	0
+gdt_xenpvh:
+	.long   0			# null descriptor
+	.long   0
+	.long   0x0000ffff		# %cs
+	.long   0x00cf9a00
+	.long   0x0000ffff		# %ds, %es, %ss
+	.long   0x00cf9200
+gdt_xenpvhend:
+	.align 4
+#endif /* !XENPV */
+
+
 /* space for the hypercall call page */
 #define HYPERCALL_PAGE_OFFSET 0x1000
 .align HYPERCALL_PAGE_OFFSET
@@ -1289,8 +1374,8 @@ END(dumpsys)
  * struct lwp *cpu_switchto(struct lwp *oldlwp, struct lwp *newlwp,
  *     bool returning)
  *
- *	1. if (oldlwp != NULL), save its context.
- *	2. then, restore context of newlwp.
+ *	1. save context of oldlwp.
+ *	2. restore context of newlwp.
  *
  * Note that the stack frame layout is known to "struct switchframe" in
  * <machine/frame.h> and to the code in cpu_lwp_fork() which initializes
@@ -1301,29 +1386,14 @@ ENTRY(cpu_switchto)
 	pushl	%esi
 	pushl	%edi
 
-#if defined(DIAGNOSTIC) && !defined(XENPV)
-	cmpl	$IPL_SCHED,CPUVAR(ILEVEL)
-	jbe	0f
-	pushl	CPUVAR(ILEVEL)
-	pushl	$.Lstr
-	call	_C_LABEL(panic)
-	addl	$8,%esp
-.Lstr:	.string	"cpu_switchto: switching above IPL_SCHED (%d)\0"
-0:
-#endif
-
 	movl	16(%esp),%esi		/* oldlwp */
 	movl	20(%esp),%edi		/* newlwp */
 	movl	24(%esp),%edx		/* returning */
-
-	testl	%esi,%esi		/* oldlwp = NULL ? */
-	jz	skip_save
 
 	/* Save old context. */
 	movl	L_PCB(%esi),%eax
 	movl	%esp,PCB_ESP(%eax)
 	movl	%ebp,PCB_EBP(%eax)
-skip_save:
 
 	/* Switch to newlwp's stack. */
 	movl	L_PCB(%edi),%ebx
@@ -1336,6 +1406,15 @@ skip_save:
 	 */
 	movl	%edi,%ecx
 	xchgl	%ecx,CPUVAR(CURLWP)
+
+#ifdef XENPV
+	/* if we are there, we're obviously not in user context.
+	 * reset ci_xen_clockf_* in case the splx() at the end of mi_switch()
+	 * triggers a deffered call do xen_timer_handler()
+	 */
+	movb	$0, CPUVAR(XEN_CLOCKF_USERMODE)
+	movl	$_C_LABEL(cpu_switchto), CPUVAR(XEN_CLOCKF_PC)
+#endif
 
 	/* Skip the rest if returning to a pinned LWP. */
 	testl	%edx,%edx
@@ -1412,10 +1491,6 @@ no_RAS:
 	pushl	%edi
 	call	_C_LABEL(i386_tls_switch)
 	addl	$4,%esp
-#else
-	/* Raise the IPL to IPL_HIGH. Dropping the priority is deferred until
-	 * mi_switch(), when cpu_switchto() returns. XXX Still needed? */
-	movl	$IPL_HIGH,CPUVAR(ILEVEL)
 #endif
 
 switch_return:
@@ -1495,7 +1570,9 @@ IDTVEC(syscall)
 	orl	CPUVAR(WANT_PMAPLOAD), %eax
 	jnz	9f
 
-#ifdef XEN
+	HANDLE_DEFERRED_FPU
+
+#ifdef XENPV
 	STIC(%eax)
 	jz	14f
 	call	_C_LABEL(stipending)
@@ -1507,24 +1584,22 @@ IDTVEC(syscall)
 	movl	$.Lsyscall_resume, %esi /* address to resume loop at */
 .Lsyscall_resume:
 	movl	%ebx,%eax		/* get cpl */
-	movl	CPUVAR(XUNMASK)(,%eax,4),%eax
-	andl	CPUVAR(XPENDING),%eax	/* any non-masked bits left? */
+	movl	CPUVAR(IUNMASK)(,%eax,4),%eax
+	andl	CPUVAR(IPENDING),%eax	/* any non-masked bits left? */
 	jz	17f
 	bsrl	%eax,%eax
-	btrl	%eax,CPUVAR(XPENDING)
-	movl	CPUVAR(XSOURCES)(,%eax,4),%eax
+	btrl	%eax,CPUVAR(IPENDING)
+	movl	CPUVAR(ISOURCES)(,%eax,4),%eax
 	jmp	*IS_RESUME(%eax)
 17:	movl	%ebx, CPUVAR(ILEVEL)	/* restore cpl  */
 	jmp	.Lsyscall_checkast
 14:
-#endif /* XEN */
+#endif /* XENPV */
 
 #ifdef DIAGNOSTIC
 	cmpl	$IPL_NONE,CPUVAR(ILEVEL)
 	jne	3f
 #endif
-
-	HANDLE_DEFERRED_FPU
 
 	INTRFASTEXIT
 
@@ -1576,43 +1651,6 @@ ENTRY(npx586bug1)
 	ret
 END(npx586bug1)
 
-/*
- * void sse2_idlezero_page(void *pg)
- *
- * Zero a page without polluting the cache.  Preemption must be
- * disabled by the caller. Abort if a preemption is pending.
- */
-ENTRY(sse2_idlezero_page)
-	pushl	%ebp
-	movl	%esp,%ebp
-	movl	8(%esp), %edx
-	movl	$(PAGE_SIZE/32), %ecx
-	xorl	%eax, %eax
-	.align	16
-1:
-	testl	$RESCHED_KPREEMPT, CPUVAR(RESCHED)
-	jnz	2f
-	movnti	%eax, 0(%edx)
-	movnti	%eax, 4(%edx)
-	movnti	%eax, 8(%edx)
-	movnti	%eax, 12(%edx)
-	movnti	%eax, 16(%edx)
-	movnti	%eax, 20(%edx)
-	movnti	%eax, 24(%edx)
-	movnti	%eax, 28(%edx)
-	addl	$32, %edx
-	decl	%ecx
-	jnz	1b
-	sfence
-	incl	%eax
-	pop	%ebp
-	ret
-2:
-	sfence
-	popl	%ebp
-	ret
-END(sse2_idlezero_page)
-
 ENTRY(intrfastexit)
 	movw	TF_GS(%esp),%gs
 	movw	TF_FS(%esp),%fs
@@ -1629,3 +1667,24 @@ ENTRY(intrfastexit)
 	iret
 END(intrfastexit)
 
+	.section .rodata
+
+	/*
+	 * Hotpatch templates.
+	 */
+
+LABEL(hp_nolock)
+	nop
+LABEL(hp_nolock_end)
+
+LABEL(hp_retfence)
+	lfence
+LABEL(hp_retfence_end)
+
+LABEL(hp_clac)
+	clac
+LABEL(hp_clac_end)
+
+LABEL(hp_stac)
+	stac
+LABEL(hp_stac_end)

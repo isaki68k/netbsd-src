@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.45 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.54 2022/04/09 12:07:00 riastradh Exp $	*/
 
 #ifndef _AMD64_MACHINE_FRAMEASM_H
 #define _AMD64_MACHINE_FRAMEASM_H
@@ -6,6 +6,8 @@
 #ifdef _KERNEL_OPT
 #include "opt_xen.h"
 #include "opt_svs.h"
+#include "opt_kcov.h"
+#include "opt_kmsan.h"
 #endif
 
 /*
@@ -29,12 +31,24 @@
  	movq CPUVAR(VCPU),%r ## temp_reg ;			\
 	movb $0,EVTCHN_UPCALL_MASK(%r ## temp_reg);
 
+#define PUSHF(temp_reg) \
+ 	movq CPUVAR(VCPU),%r ## temp_reg ;			\
+	movzbl EVTCHN_UPCALL_MASK(%r ## temp_reg), %e ## temp_reg; \
+	pushq %r ## temp_reg
+
+#define POPF \
+	popq %rdi; \
+	call _C_LABEL(xen_write_psl)
+
+
 #else /* XENPV */
 #define	XEN_ONLY2(x,y)
 #define	NOT_XEN(x)	x
 #define CLI(temp_reg) cli
 #define STI(temp_reg) sti
-#endif	/* XEN */
+#define PUSHF(temp_reg) pushf
+#define POPL popl
+#endif	/* XENPV */
 
 #define HP_NAME_CLAC		1
 #define HP_NAME_STAC		2
@@ -49,6 +63,7 @@
 #define HP_NAME_SVS_ENTER_NMI	11
 #define HP_NAME_SVS_LEAVE_NMI	12
 #define HP_NAME_MDS_LEAVE	13
+#define HP_NAME_SSE2_MFENCE	14
 
 #define HOTPATCH(name, size) \
 123:						; \
@@ -205,6 +220,78 @@
 #define SVS_LEAVE_ALTSTACK	/* nothing */
 #endif
 
+#ifdef KMSAN
+/* XXX this belongs somewhere else. */
+#define KMSAN_ENTER	\
+	movq	%rsp,%rdi		; \
+	movq	$TF_REGSIZE+16+40,%rsi	; \
+	xorq	%rdx,%rdx		; \
+	callq	kmsan_mark		; \
+	callq	kmsan_intr_enter
+#define KMSAN_LEAVE	\
+	pushq	%rbp			; \
+	movq	%rsp,%rbp		; \
+	callq	kmsan_intr_leave	; \
+	popq	%rbp
+#define KMSAN_INIT_ARG(sz)	\
+	pushq	%rax			; \
+	pushq	%rcx			; \
+	pushq	%rdx			; \
+	pushq	%rsi			; \
+	pushq	%rdi			; \
+	pushq	%r8			; \
+	pushq	%r9			; \
+	pushq	%r10			; \
+	pushq	%r11			; \
+	movq	$sz,%rdi		; \
+	callq	_C_LABEL(kmsan_init_arg); \
+	popq	%r11			; \
+	popq	%r10			; \
+	popq	%r9			; \
+	popq	%r8			; \
+	popq	%rdi			; \
+	popq	%rsi			; \
+	popq	%rdx			; \
+	popq	%rcx			; \
+	popq	%rax
+#define KMSAN_INIT_RET(sz)	\
+	pushq	%rax			; \
+	pushq	%rcx			; \
+	pushq	%rdx			; \
+	pushq	%rsi			; \
+	pushq	%rdi			; \
+	pushq	%r8			; \
+	pushq	%r9			; \
+	pushq	%r10			; \
+	pushq	%r11			; \
+	movq	$sz,%rdi		; \
+	callq	_C_LABEL(kmsan_init_ret); \
+	popq	%r11			; \
+	popq	%r10			; \
+	popq	%r9			; \
+	popq	%r8			; \
+	popq	%rdi			; \
+	popq	%rsi			; \
+	popq	%rdx			; \
+	popq	%rcx			; \
+	popq	%rax
+#else
+#define KMSAN_ENTER		/* nothing */
+#define KMSAN_LEAVE		/* nothing */
+#define KMSAN_INIT_ARG(sz)	/* nothing */
+#define KMSAN_INIT_RET(sz)	/* nothing */
+#endif
+
+#ifdef KCOV
+#define KCOV_DISABLE			\
+	incl	CPUVAR(IDEPTH)
+#define KCOV_ENABLE			\
+	decl	CPUVAR(IDEPTH)
+#else
+#define KCOV_DISABLE		/* nothing */
+#define KCOV_ENABLE		/* nothing */
+#endif
+
 #define	INTRENTRY \
 	subq	$TF_REGSIZE,%rsp	; \
 	INTR_SAVE_GPRS			; \
@@ -219,7 +306,7 @@
 	movw	%fs,TF_FS(%rsp)		; \
 	movw	%es,TF_ES(%rsp)		; \
 	movw	%ds,TF_DS(%rsp)		; \
-98:
+98:	KMSAN_ENTER
 
 #define INTRFASTEXIT \
 	jmp	intrfastexit
@@ -238,7 +325,8 @@
 #define INTR_RECURSE_ENTRY \
 	subq	$TF_REGSIZE,%rsp	; \
 	INTR_SAVE_GPRS			; \
-	cld
+	cld				; \
+	KMSAN_ENTER
 
 #define	CHECK_DEFERRED_SWITCH \
 	cmpl	$0, CPUVAR(WANT_PMAPLOAD)

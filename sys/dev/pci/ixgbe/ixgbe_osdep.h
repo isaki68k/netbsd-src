@@ -1,9 +1,9 @@
-/* $NetBSD: ixgbe_osdep.h,v 1.23 2018/07/31 09:19:34 msaitoh Exp $ */
+/* $NetBSD: ixgbe_osdep.h,v 1.31 2021/12/24 05:02:11 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -54,7 +54,7 @@
 #include <net/if.h>
 #include <net/if_ether.h>
 
-#define ASSERT(x) if(!(x)) panic("IXGBE: x")
+#define ASSERT(x) if (!(x)) panic("IXGBE: x")
 #define EWARN(H, W) printf(W)
 
 enum {
@@ -66,9 +66,9 @@ enum {
 	IXGBE_ERROR_CAUTION,
 };
 
-/* The happy-fun DELAY macro is defined in /usr/src/sys/i386/include/clock.h */
-#define usec_delay(x) DELAY(x)
-#define msec_delay(x) DELAY(1000*(x))
+#define usec_delay(x) ixgbe_delay(x)
+#define msec_delay(x) ixgbe_delay((x) * 1000)
+void ixgbe_delay(unsigned int);
 
 #define DBG 0
 #define MSGOUT(S, A, B)     printf(S "\n", A, B)
@@ -139,7 +139,7 @@ enum {
 #define IXGBE_CPU_TO_LE16 htole16
 #define IXGBE_CPU_TO_LE32 htole32
 #define IXGBE_LE32_TO_CPU le32toh
-#define IXGBE_LE32_TO_CPUS(x)
+#define IXGBE_LE32_TO_CPUS(x) (*(x) = le32toh(*(x)))
 #define IXGBE_CPU_TO_BE16 htobe16
 #define IXGBE_CPU_TO_BE32 htobe32
 #define IXGBE_BE32_TO_CPU be32toh
@@ -152,22 +152,10 @@ typedef uint32_t	u32;
 typedef int32_t		s32;
 typedef uint64_t	u64;
 
-#define le16_to_cpu 
+#define le16_to_cpu
 
 /* This device driver's max interrupt numbers. */
 #define IXG_MAX_NINTR		64
-
-#if __FreeBSD_version < 800000
-#if defined(__i386__) || defined(__amd64__)
-#define mb()	__asm volatile("mfence" ::: "memory")
-#define wmb()	__asm volatile("sfence" ::: "memory")
-#define rmb()	__asm volatile("lfence" ::: "memory")
-#else
-#define mb()
-#define rmb()
-#define wmb()
-#endif
-#endif
 
 #if defined(__i386__) || defined(__amd64__)
 static __inline
@@ -179,25 +167,6 @@ void prefetch(void *x)
 #define prefetch(x)
 #endif
 
-/*
- * Optimized bcopy thanks to Luigi Rizzo's investigative work.  Assumes
- * non-overlapping regions and 32-byte padding on both src and dst.
- */
-static __inline int
-ixgbe_bcopy(void *restrict _src, void *restrict _dst, int l)
-{
-	uint64_t *src = _src;
-	uint64_t *dst = _dst;
-
-	for (; l > 0; l -= 32) {
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-	}
-	return (0);
-}
-
 struct ixgbe_osdep
 {
 	struct ethercom    ec;
@@ -207,11 +176,11 @@ struct ixgbe_osdep
 	bus_space_handle_t mem_bus_space_handle;
 	bus_size_t         mem_size;
 	bus_dma_tag_t      dmat;
-	u16                last_rx_mbuf_sz;
 	pci_intr_handle_t  *intrs;
 	int		   nintrs;
 	void               *ihs[IXG_MAX_NINTR];
 	bool		   attached;
+	bool		   detaching;
 };
 
 /* These routines need struct ixgbe_hw declared */
@@ -240,5 +209,9 @@ extern u32 ixgbe_read_reg_array(struct ixgbe_hw *, u32, u32);
 extern void ixgbe_write_reg_array(struct ixgbe_hw *, u32, u32, u32);
 #define IXGBE_WRITE_REG_ARRAY(a, reg, offset, val) \
     ixgbe_write_reg_array(a, reg, offset, val)
+
+extern void ixgbe_write_barrier(struct ixgbe_hw *);
+#define IXGBE_WRITE_BARRIER(a) \
+    ixgbe_write_barrier(a)
 
 #endif /* _IXGBE_OSDEP_H_ */

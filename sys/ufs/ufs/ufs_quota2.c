@@ -1,4 +1,4 @@
-/* $NetBSD: ufs_quota2.c,v 1.42 2017/03/01 10:42:45 hannken Exp $ */
+/* $NetBSD: ufs_quota2.c,v 1.45 2022/05/28 22:08:46 andvar Exp $ */
 /*-
   * Copyright (c) 2010 Manuel Bouyer
   * All rights reserved.
@@ -26,7 +26,7 @@
   */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_quota2.c,v 1.42 2017/03/01 10:42:45 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_quota2.c,v 1.45 2022/05/28 22:08:46 andvar Exp $");
 
 #include <sys/buf.h>
 #include <sys/param.h>
@@ -41,7 +41,6 @@ __KERNEL_RCSID(0, "$NetBSD: ufs_quota2.c,v 1.42 2017/03/01 10:42:45 hannken Exp 
 #include <sys/wapbl.h>
 #include <sys/quota.h>
 #include <sys/quotactl.h>
-#include <sys/timevar.h>
 
 #include <ufs/ufs/quota2.h>
 #include <ufs/ufs/inode.h>
@@ -55,7 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: ufs_quota2.c,v 1.42 2017/03/01 10:42:45 hannken Exp 
  * LOCKING:
  * Data in the entries are protected by the associated struct dquot's
  * dq_interlock (this means we can't read or change a quota entry without
- * grabing a dquot for it).
+ * grabbing a dquot for it).
  * The header and lists (including pointers in the data entries, and q2e_uid)
  * are protected by the global dqlock.
  * the locking order is dq_interlock -> dqlock
@@ -305,7 +304,7 @@ quota2_q2ealloc(struct ufsmount *ump, int type, uid_t uid, struct dquot *dq)
 		struct vnode *vp = ump->um_quotas[type];
 		struct inode *ip = VTOI(vp);
 		uint64_t size = ip->i_size;
-		/* need to alocate a new disk block */
+		/* need to allocate a new disk block */
 		error = UFS_BALLOC(vp, size, ump->umq2_bsize,
 		    ump->um_cred[type], B_CLRBUF | B_SYNC, &bp);
 		if (error) {

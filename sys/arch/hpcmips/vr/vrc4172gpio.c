@@ -1,4 +1,4 @@
-/*	$NetBSD: vrc4172gpio.c,v 1.13 2012/10/27 17:17:55 chs Exp $	*/
+/*	$NetBSD: vrc4172gpio.c,v 1.17 2021/08/07 16:18:54 thorpej Exp $	*/
 /*-
  * Copyright (c) 2001 TAKEMRUA Shin. All rights reserved.
  *
@@ -29,12 +29,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vrc4172gpio.c,v 1.13 2012/10/27 17:17:55 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vrc4172gpio.c,v 1.17 2021/08/07 16:18:54 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/queue.h>
 #include <sys/reboot.h>
 #include <machine/bus.h>
@@ -320,7 +320,7 @@ vrc4172gpio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_haa.haa_sc = sc;
 	sc->sc_haa.haa_getchip = vrc4172gpio_getchip;
 	sc->sc_haa.haa_iot = sc->sc_iot;
-	while (config_found(self, &sc->sc_haa, vrc4172gpio_print)) ;
+	while (config_found(self, &sc->sc_haa, vrc4172gpio_print, CFARGS_NONE)) ;
 	/*
 	 * GIU-ISA bridge
 	 */
@@ -337,7 +337,7 @@ vrc4172gpio_callback(device_t self)
 	struct vrc4172gpio_softc *sc = device_private(self);
 
 	sc->sc_haa.haa_busname = "vrisab";
-	config_found(self, &sc->sc_haa, vrc4172gpio_print);
+	config_found(self, &sc->sc_haa, vrc4172gpio_print, CFARGS_NONE);
 }
 
 int
@@ -498,10 +498,7 @@ vrc4172gpio_intr_establish(
 	mask2 = (1 << (port % 8));
 	intlv_reg = intlv_regs[port/8];
 
-	ih = malloc(sizeof(struct vrc4172gpio_intr_entry), M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		panic("%s: no memory", __func__);
-
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->ih_port = port;
 	ih->ih_fun = ih_fun;
 	ih->ih_arg = ih_arg;
@@ -592,7 +589,7 @@ vrc4172gpio_intr_disestablish(hpcio_chip_t hc, void *arg)
 	TAILQ_FOREACH(ih, &sc->sc_intr_head[port], ih_link) {
 		if (ih == ihe) {
 			TAILQ_REMOVE(&sc->sc_intr_head[port], ih, ih_link);
-			free(ih, M_DEVBUF);
+			kmem_free(ih, sizeof(*ih));
 			if (TAILQ_EMPTY(&sc->sc_intr_head[port])) {
 				/* disable interrupt */
 				sc->sc_intr_mask &= ~(1<<port);

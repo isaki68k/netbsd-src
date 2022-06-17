@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci_pci.c,v 1.21 2019/01/23 06:56:19 msaitoh Exp $	*/
+/*	$NetBSD: xhci_pci.c,v 1.30 2021/08/07 16:19:14 thorpej Exp $	*/
 /*	OpenBSD: xhci_pci.c,v 1.4 2014/07/12 17:38:51 yuo Exp	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.21 2019/01/23 06:56:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.30 2021/08/07 16:19:14 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_xhci_pci.h"
@@ -126,6 +126,7 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	char const *intrstr;
 	pcireg_t csr, memtype, usbrev;
 	uint32_t hccparams;
+	int counts[PCI_INTR_TYPE_SIZE];
 	char intrbuf[PCI_INTRSTR_LEN];
 	bus_addr_t memaddr;
 	int flags, msixoff;
@@ -176,7 +177,7 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 		msixtbl = pci_conf_read(pa->pa_pc, pa->pa_tag,
 		    msixoff + PCI_MSIX_TBLOFFSET);
 		table_offset = msixtbl & PCI_MSIX_TBLOFFSET_MASK;
-		bir = msixtbl & PCI_MSIX_PBABIR_MASK;
+		bir = msixtbl & PCI_MSIX_TBLBIR_MASK;
 		/* Shrink map area for MSI-X table */
 		if (bir == PCI_MAPREG_NUM(PCI_CBMEM))
 			sc->sc_ios = table_offset;
@@ -193,17 +194,36 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 
 	hccparams = bus_space_read_4(sc->sc_iot, sc->sc_ioh, XHCI_HCCPARAMS);
 
-	if (pci_dma64_available(pa) && (XHCI_HCC_AC64(hccparams) != 0))
-		sc->sc_bus.ub_dmatag = pa->pa_dmat64;
-	else
+	if (XHCI_HCC_AC64(hccparams) != 0) {
+		aprint_verbose_dev(self, "64-bit DMA");
+		if (pci_dma64_available(pa)) {
+			sc->sc_bus.ub_dmatag = pa->pa_dmat64;
+			aprint_verbose("\n");
+		} else {
+			aprint_verbose(" - limited\n");
+			sc->sc_bus.ub_dmatag = pa->pa_dmat;
+		}
+	} else {
+		aprint_verbose_dev(self, "32-bit DMA\n");
 		sc->sc_bus.ub_dmatag = pa->pa_dmat;
+	}
 
 	/* Enable the device. */
 	pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG,
 		       csr | PCI_COMMAND_MASTER_ENABLE);
 
+	for (int i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
+		counts[i] = 1;
+	}
+#ifdef XHCI_DISABLE_MSI
+	counts[PCI_INTR_TYPE_MSI] = 0;
+#endif
+#ifdef XHCI_DISABLE_MSIX
+	counts[PCI_INTR_TYPE_MSIX] = 0;
+#endif
+
 	/* Allocate and establish the interrupt. */
-	if (pci_intr_alloc(pa, &psc->sc_pihp, NULL, 0)) {
+	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
 		aprint_error_dev(self, "can't allocate handler\n");
 		goto fail;
 	}
@@ -213,7 +233,7 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	    xhci_intr, sc, device_xname(sc->sc_dev));
 	if (psc->sc_ih == NULL) {
 		pci_intr_release(pc, psc->sc_pihp, 1);
-		psc->sc_ih = NULL;
+		psc->sc_pihp = NULL;
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);
@@ -267,9 +287,10 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
 	/* Attach usb buses. */
-	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint);
+	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint, CFARGS_NONE);
 
- 	sc->sc_child2 = config_found(self, &sc->sc_bus2, usbctlprint);
+ 	sc->sc_child2 = config_found(self, &sc->sc_bus2, usbctlprint,
+ 	    CFARGS_NONE);
 
 	return;
 

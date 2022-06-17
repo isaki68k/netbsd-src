@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smap.c,v 1.30 2019/05/29 06:21:57 msaitoh Exp $	*/
+/*	$NetBSD: if_smap.c,v 1.34 2022/02/11 23:49:19 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.30 2019/05/29 06:21:57 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.34 2022/02/11 23:49:19 riastradh Exp $");
 
 #include "debug_playstation2.h"
 
@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.30 2019/05/29 06:21:57 msaitoh Exp $")
 #include <sys/ioctl.h>
 #include <sys/rndsource.h>
 #include <sys/socket.h>
+#include <sys/kmem.h>
 
 #include <playstation2/ee/eevar.h>
 
@@ -107,7 +108,7 @@ struct smap_softc {
 	krndsource_t rnd_source;
 };
 
-#define DEVNAME		(sc->emac3.dev.dv_xname)
+#define DEVNAME		(device_xname(sc->emac3.dev))
 #define ROUND4(x)	(((x) + 3) & ~3)
 #define ROUND16(x)	(((x) + 15) & ~15)
 
@@ -146,7 +147,7 @@ void
 smap_attach(struct device *parent, struct device *self, void *aux)
 {
 	struct spd_attach_args *spa = aux;
-	struct smap_softc *sc = (void *)self;
+	struct smap_softc *sc = device_private(self);
 	struct emac3_softc *emac3 = &sc->emac3;
 	struct ifnet *ifp = &sc->ethercom.ec_if;
 	struct mii_data *mii = &emac3->mii;
@@ -156,6 +157,8 @@ smap_attach(struct device *parent, struct device *self, void *aux)
 #ifdef SMAP_DEBUG
 	__sc = sc;
 #endif
+
+	sc->dev = self;
 
 	printf(": %s\n", spa->spa_product_name);
 
@@ -192,21 +195,9 @@ smap_attach(struct device *parent, struct device *self, void *aux)
 	smap_desc_init(sc);
 
 	/* allocate temporary buffer */
-	txbuf = malloc(ETHER_MAX_LEN - ETHER_CRC_LEN + SMAP_FIFO_ALIGN + 16,
-	    M_DEVBUF, M_NOWAIT);
-	if (txbuf == NULL) {
-		printf("%s: no memory.\n", DEVNAME);
-		return;
-	}
-
-	rxbuf = malloc(ETHER_MAX_LEN + SMAP_FIFO_ALIGN + 16,
-	    M_DEVBUF, M_NOWAIT);
-	if (rxbuf == NULL) {
-		printf("%s: no memory.\n", DEVNAME);
-		free(txbuf, M_DEVBUF);
-		return;
-	}
-
+	txbuf = kmem_alloc(ETHER_MAX_LEN - ETHER_CRC_LEN + SMAP_FIFO_ALIGN + 16,
+	    KM_SLEEP);
+	rxbuf = kmem_alloc(ETHER_MAX_LEN + SMAP_FIFO_ALIGN + 16, KM_SLEEP);
 	sc->tx_buf = (u_int32_t *)ROUND16((vaddr_t)txbuf);
 	sc->rx_buf = (u_int32_t *)ROUND16((vaddr_t)rxbuf);
 
@@ -230,7 +221,7 @@ smap_attach(struct device *parent, struct device *self, void *aux)
 	mii->mii_statchg	= emac3_phy_statchg;
 	sc->ethercom.ec_mii = mii;
 	ifmedia_init(&mii->mii_media, 0, ether_mediachange, ether_mediastatus);
-	mii_attach(&emac3->dev, mii, 0xffffffff, MII_PHY_ANY,
+	mii_attach(emac3->dev, mii, 0xffffffff, MII_PHY_ANY,
 	    MII_OFFSET_ANY, 0);
 
 	/* Choose a default media. */
@@ -347,7 +338,7 @@ smap_rxeof(void *arg)
 		if ((stat & SMAP_RXDESC_EMPTY) != 0) {
 			break;
 		} else if (stat & 0x7fff) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next_packet;
 		}
 
@@ -368,7 +359,7 @@ smap_rxeof(void *arg)
 		MGETHDR(m, M_DONTWAIT, MT_DATA);
 		if (m == NULL) {
 			printf("%s: unable to allocate Rx mbuf\n", DEVNAME);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto next_packet;
 		}
 
@@ -379,7 +370,7 @@ smap_rxeof(void *arg)
 				    DEVNAME);
 				m_freem(m);
 				m = NULL;
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				goto next_packet;
 			}
 		}
@@ -437,11 +428,11 @@ smap_txeof(void *arg)
 		} else if (stat & 0x7fff) {
 			if (stat & (SMAP_TXDESC_ECOLL | SMAP_TXDESC_LCOLL |
 			    SMAP_TXDESC_MCOLL | SMAP_TXDESC_SCOLL))
-				ifp->if_collisions++;
+				if_statinc(ifp, if_collisions);
 			else
-				ifp->if_oerrors++;
+				if_statinc(ifp, if_oerrors);
 		} else {
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		}
 
 		if (sc->tx_desc_cnt == 0)
@@ -557,7 +548,7 @@ smap_watchdog(struct ifnet *ifp)
 	struct smap_softc *sc = ifp->if_softc;
 
 	printf("%s: watchdog timeout\n", DEVNAME);
-	sc->ethercom.ec_if.if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	smap_fifo_init(sc);
 	smap_desc_init(sc);

@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_machdep.c,v 1.15 2012/10/27 17:18:03 chs Exp $	*/
+/*	$NetBSD: isa_machdep.c,v 1.19 2021/08/07 16:19:00 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,12 +30,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.15 2012/10/27 17:18:03 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.19 2021/08/07 16:19:00 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/queue.h>
 
 #include <machine/sysconf.h>
@@ -144,7 +144,7 @@ isabusattach(device_t parent, device_t self, void *aux)
 	(*platform.intr_establish)(SYS_INTR_ATBUS, isa_intr, ic);
 
 	printf("\n");
-	config_found_ia(self, "isabus", &iba, mipscoisabusprint);
+	config_found(self, &iba, mipscoisabusprint, CFARGS_NONE);
 }
 
 int
@@ -179,10 +179,7 @@ isa_intr_establish(isa_chipset_tag_t ic, int intr, int type, int level, int (*ih
 {
 	struct mipsco_intrhand *ih;
 
-	ih = malloc(sizeof *ih, M_DEVBUF, M_NOWAIT);
-	if (ih == NULL)
-		panic("isa_intr_establish: malloc failed");
-
+	ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 	ih->ih_fun = ih_fun;
 	ih->ih_arg  = ih_arg;
 	LIST_INSERT_HEAD(&ic->intr_q, ih, ih_q);
@@ -195,7 +192,7 @@ isa_intr_disestablish(isa_chipset_tag_t ic, void *cookie)
 	struct mipsco_intrhand *ih = cookie;
 
 	LIST_REMOVE(ih, ih_q);
-	free(ih, M_DEVBUF);
+	kmem_free(ih, sizeof(*ih));
 }
 
 int

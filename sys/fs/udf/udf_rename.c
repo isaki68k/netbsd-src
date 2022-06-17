@@ -1,4 +1,4 @@
-/* $NetBSD: udf_rename.c,v 1.12 2014/11/10 19:44:08 riz Exp $ */
+/* $NetBSD: udf_rename.c,v 1.14 2021/10/20 03:08:17 thorpej Exp $ */
 
 /*
  * Copyright (c) 2013 Reinoud Zandijk
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udf_rename.c,v 1.12 2014/11/10 19:44:08 riz Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_rename.c,v 1.14 2021/10/20 03:08:17 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/errno.h>
@@ -322,7 +322,7 @@ udf_gro_rename(struct mount *mp, kauth_cred_t cred,
     struct vnode *fdvp, struct componentname *fcnp,
     void *fde, struct vnode *fvp,
     struct vnode *tdvp, struct componentname *tcnp,
-    void *tde, struct vnode *tvp)
+    void *tde, struct vnode *tvp, nlink_t *tvp_nlinkp)
 {
 	struct udf_node *fnode, *fdnode, *tnode, *tdnode;
 	struct vattr fvap;
@@ -364,8 +364,15 @@ udf_gro_rename(struct mount *mp, kauth_cred_t cred,
 		return error;
 
 	/* remove existing entry if present */
-	if (tvp) 
+	if (tvp) {
 		udf_dir_detach(tdnode->ump, tdnode, tnode, tcnp);
+		if (tnode->fe) {
+			*tvp_nlinkp = udf_rw16(tnode->fe->link_cnt);
+		} else {
+			KASSERT(tnode->efe != NULL);
+			*tvp_nlinkp = udf_rw16(tnode->efe->link_cnt);
+		}
+	}
 
 	/* create new directory entry for the node */
 	error = udf_dir_attach(tdnode->ump, tdnode, fnode, &fvap, tcnp);
@@ -384,7 +391,6 @@ udf_gro_rename(struct mount *mp, kauth_cred_t cred,
 			goto rollback;
 	}
 
-	VN_KNOTE(fvp, NOTE_RENAME);
 	genfs_rename_cache_purge(fdvp, fvp, tdvp, tvp);
 	return 0;
 
@@ -404,7 +410,8 @@ rollback_attach:
  */
 static int
 udf_gro_remove(struct mount *mp, kauth_cred_t cred,
-    struct vnode *dvp, struct componentname *cnp, void *de, struct vnode *vp)
+    struct vnode *dvp, struct componentname *cnp, void *de, struct vnode *vp,
+    nlink_t *tvp_nlinkp)
 {
 	struct udf_node *dir_node, *udf_node;
 
@@ -425,6 +432,13 @@ udf_gro_remove(struct mount *mp, kauth_cred_t cred,
 	dir_node = VTOI(dvp);
 	udf_node = VTOI(vp);
 	udf_dir_detach(dir_node->ump, dir_node, udf_node, cnp);
+
+	if (udf_node->fe) {
+		*tvp_nlinkp = udf_rw16(udf_node->fe->link_cnt);
+	} else {
+		KASSERT(udf_node->efe != NULL);
+		*tvp_nlinkp = udf_rw16(udf_node->efe->link_cnt);
+	}
 
 	return 0;
 }
@@ -465,7 +479,7 @@ udf_gro_lookup(struct mount *mp, struct vnode *dvp,
 		return ENOENT;
 
 	DPRINTF(LOOKUP, ("udf_gro_lookup found '%s'\n", name));
-	error = udf_get_node(dir_node->ump, &icb_loc, &res_node);
+	error = udf_get_node(dir_node->ump, &icb_loc, &res_node, LK_EXCLUSIVE);
 	if (error)
 		return error;
 	*vp_ret = res_node->vnode;
@@ -598,7 +612,8 @@ udf_gro_genealogy(struct mount *mp, kauth_cred_t cred,
 		 */
 		DPRINTF(NODE, ("\tgetting the parent node\n"));
 		VOP_UNLOCK(vp);
-		error = udf_get_node(ump, &parent_loc, &parent_node);
+		error = udf_get_node(ump, &parent_loc, &parent_node,
+		    LK_EXCLUSIVE);
 		vrele(vp);
 		if (error) 
 			return error;

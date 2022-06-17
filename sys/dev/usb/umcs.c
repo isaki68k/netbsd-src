@@ -1,4 +1,4 @@
-/* $NetBSD: umcs.c,v 1.14 2019/09/14 12:38:40 maxv Exp $ */
+/* $NetBSD: umcs.c,v 1.19 2022/04/19 01:35:28 riastradh Exp $ */
 /* $FreeBSD: head/sys/dev/usb/serial/umcs.c 260559 2014-01-12 11:44:28Z hselasky $ */
 
 /*-
@@ -41,7 +41,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umcs.c,v 1.14 2019/09/14 12:38:40 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umcs.c,v 1.19 2022/04/19 01:35:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -125,7 +125,7 @@ static int umcs7840_param(void *, int, struct termios *);
 static int umcs7840_port_open(void *, int);
 static void umcs7840_port_close(void *, int);
 
-struct ucom_methods umcs7840_methods = {
+static const struct ucom_methods umcs7840_methods = {
 	.ucom_get_status = umcs7840_get_status,
 	.ucom_set = umcs7840_set,
 	.ucom_param = umcs7840_param,
@@ -226,8 +226,8 @@ umcs7840_attach(device_t parent, device_t self, void *aux)
 	 *
 	 * Also, see notes in header file for these constants.
 	 */
-	umcs7840_get_reg(sc, MCS7840_DEV_REG_GPIO, &data);
-	if (data & MCS7840_DEV_GPIO_4PORTS) {
+	error = umcs7840_get_reg(sc, MCS7840_DEV_REG_GPIO, &data);
+	if (error == 0 && (data & MCS7840_DEV_GPIO_4PORTS) != 0) {
 		sc->sc_numports = 4;
 		/* physical port no are : 0, 1, 2, 3 */
 	} else {
@@ -283,7 +283,7 @@ umcs7840_attach(device_t parent, device_t self, void *aux)
 		    sc->sc_intr_buflen, umcs7840_intr, 100);
 	if (error) {
 		aprint_error_dev(self, "cannot open interrupt pipe "
-		    "(addr %d)\n", intr_addr);
+		    "(addr %d): error %d\n", intr_addr, error);
 		sc->sc_dying = true;
 		return;
 	}
@@ -340,8 +340,8 @@ umcs7840_attach(device_t parent, device_t self, void *aux)
 
 		sc->sc_ports[i].sc_port_phys = phyport;
 		sc->sc_ports[i].sc_port_ucom =
-		    config_found_sm_loc(self, "ucombus", NULL, &ucaa,
-					    ucomprint, ucomsubmatch);
+		    config_found(self, &ucaa, ucomprint,
+				 CFARGS(.submatch = ucomsubmatch));
 	}
 }
 

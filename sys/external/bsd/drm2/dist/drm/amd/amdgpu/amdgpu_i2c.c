@@ -1,4 +1,4 @@
-/*	$NetBSD: amdgpu_i2c.c,v 1.3 2018/08/27 14:04:50 riastradh Exp $	*/
+/*	$NetBSD: amdgpu_i2c.c,v 1.6 2021/12/18 23:44:58 riastradh Exp $	*/
 
 /*
  * Copyright 2007-8 Advanced Micro Devices, Inc.
@@ -25,13 +25,13 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amdgpu_i2c.c,v 1.3 2018/08/27 14:04:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amdgpu_i2c.c,v 1.6 2021/12/18 23:44:58 riastradh Exp $");
 
 #include <linux/export.h>
-#include <linux/module.h>
+#include <linux/pci.h>
 
-#include <drm/drmP.h>
 #include <drm/drm_edid.h>
 #include <drm/amdgpu_drm.h>
 #include "amdgpu.h"
@@ -40,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: amdgpu_i2c.c,v 1.3 2018/08/27 14:04:50 riastradh Exp
 #include "atom.h"
 #include "atombios_dp.h"
 #include "atombios_i2c.h"
+
+#include <linux/nbsd-namespace.h>
 
 /* bit banging i2c */
 static int amdgpu_i2c_pre_xfer(struct i2c_adapter *i2c_adap)
@@ -164,8 +166,8 @@ static const struct i2c_algorithm amdgpu_atombios_i2c_algo = {
 };
 
 struct amdgpu_i2c_chan *amdgpu_i2c_create(struct drm_device *dev,
-					    struct amdgpu_i2c_bus_rec *rec,
-					    const char *name)
+					  const struct amdgpu_i2c_bus_rec *rec,
+					  const char *name)
 {
 	struct amdgpu_i2c_chan *i2c;
 	int ret;
@@ -184,11 +186,7 @@ struct amdgpu_i2c_chan *amdgpu_i2c_create(struct drm_device *dev,
 	i2c->adapter.dev.parent = dev->dev;
 	i2c->dev = dev;
 	i2c_set_adapdata(&i2c->adapter, i2c);
-#ifdef __NetBSD__
-	linux_mutex_init(&i2c->mutex);
-#else
 	mutex_init(&i2c->mutex);
-#endif
 	if (rec->hw_capable &&
 	    amdgpu_hw_i2c) {
 		/* hw i2c using atom */
@@ -196,10 +194,8 @@ struct amdgpu_i2c_chan *amdgpu_i2c_create(struct drm_device *dev,
 			 "AMDGPU i2c hw bus %s", name);
 		i2c->adapter.algo = &amdgpu_atombios_i2c_algo;
 		ret = i2c_add_adapter(&i2c->adapter);
-		if (ret) {
-			DRM_ERROR("Failed to register hw i2c %s\n", name);
+		if (ret)
 			goto out_free;
-		}
 	} else {
 		/* set the amdgpu bit adapter */
 		snprintf(i2c->adapter.name, sizeof(i2c->adapter.name),
@@ -223,11 +219,7 @@ struct amdgpu_i2c_chan *amdgpu_i2c_create(struct drm_device *dev,
 
 	return i2c;
 out_free:
-#ifdef __NetBSD__
-	linux_mutex_destroy(&i2c->mutex);
-#else
 	mutex_destroy(&i2c->mutex);
-#endif
 	kfree(i2c);
 	return NULL;
 
@@ -237,12 +229,9 @@ void amdgpu_i2c_destroy(struct amdgpu_i2c_chan *i2c)
 {
 	if (!i2c)
 		return;
+	WARN_ON(i2c->has_aux);
 	i2c_del_adapter(&i2c->adapter);
-#ifdef __NetBSD__
-	linux_mutex_destroy(&i2c->mutex);
-#else
 	mutex_destroy(&i2c->mutex);
-#endif
 	kfree(i2c);
 }
 
@@ -252,8 +241,7 @@ void amdgpu_i2c_init(struct amdgpu_device *adev)
 	if (amdgpu_hw_i2c)
 		DRM_INFO("hw_i2c forced on, you may experience display detection problems!\n");
 
-	if (adev->is_atom_bios)
-		amdgpu_atombios_i2c_init(adev);
+	amdgpu_atombios_i2c_init(adev);
 }
 
 /* remove all the buses */
@@ -271,8 +259,8 @@ void amdgpu_i2c_fini(struct amdgpu_device *adev)
 
 /* Add additional buses */
 void amdgpu_i2c_add(struct amdgpu_device *adev,
-		     struct amdgpu_i2c_bus_rec *rec,
-		     const char *name)
+		    const struct amdgpu_i2c_bus_rec *rec,
+		    const char *name)
 {
 	struct drm_device *dev = adev->ddev;
 	int i;
@@ -288,7 +276,7 @@ void amdgpu_i2c_add(struct amdgpu_device *adev,
 /* looks up bus based on id */
 struct amdgpu_i2c_chan *
 amdgpu_i2c_lookup(struct amdgpu_device *adev,
-		   struct amdgpu_i2c_bus_rec *i2c_bus)
+		  const struct amdgpu_i2c_bus_rec *i2c_bus)
 {
 	int i;
 
@@ -358,7 +346,7 @@ static void amdgpu_i2c_put_byte(struct amdgpu_i2c_chan *i2c_bus,
 
 /* ddc router switching */
 void
-amdgpu_i2c_router_select_ddc_port(struct amdgpu_connector *amdgpu_connector)
+amdgpu_i2c_router_select_ddc_port(const struct amdgpu_connector *amdgpu_connector)
 {
 	u8 val;
 
@@ -387,7 +375,7 @@ amdgpu_i2c_router_select_ddc_port(struct amdgpu_connector *amdgpu_connector)
 
 /* clock/data router switching */
 void
-amdgpu_i2c_router_select_cd_port(struct amdgpu_connector *amdgpu_connector)
+amdgpu_i2c_router_select_cd_port(const struct amdgpu_connector *amdgpu_connector)
 {
 	u8 val;
 

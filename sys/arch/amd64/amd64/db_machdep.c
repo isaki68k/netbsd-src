@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.c,v 1.6 2018/03/16 08:48:34 maxv Exp $	*/
+/*	$NetBSD: db_machdep.c,v 1.9 2021/12/13 01:25:29 chs Exp $	*/
 
 /*
  * Mach Operating System
@@ -26,7 +26,7 @@
  * rights to redistribute these changes.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.6 2018/03/16 08:48:34 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.9 2021/12/13 01:25:29 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -125,21 +125,22 @@ db_nextframe(long **nextframe, long **retaddr, long **arg0, db_addr_t *ip,
 		*arg0 = (long *)&fp->f_arg0;
 		break;
 
-	    case TRAP:
 	    case SYSCALL:
+		tf = (struct trapframe *)argp;
+		(*pr)("--- syscall (number %"DDB_EXPR_FMT"u) ---\n",
+		    db_get_value((long)&tf->tf_rax, 8, false));
+		return 0;
+
+	    case TRAP:
 	    case INTERRUPT:
 	    default:
 
-		/* The only argument to trap() or syscall() is the trapframe. */
+		/* The only argument to trap() is the trapframe. */
 		tf = (struct trapframe *)argp;
 		switch (is_trap) {
 		case TRAP:
 			(*pr)("--- trap (number %"DDB_EXPR_FMT"u) ---\n",
 				db_get_value((long)&tf->tf_trapno, 8, false));
-			break;
-		case SYSCALL:
-			(*pr)("--- syscall (number %"DDB_EXPR_FMT"u) ---\n",
-				db_get_value((long)&tf->tf_rax, 8, false));
 			break;
 		case INTERRUPT:
 			(*pr)("--- interrupt ---\n");
@@ -149,6 +150,8 @@ db_nextframe(long **nextframe, long **retaddr, long **arg0, db_addr_t *ip,
 		fp = (struct x86_64_frame *)
 			db_get_value((long)&tf->tf_rbp, 8, false);
 		if (fp == NULL)
+			return 0;
+		if (((uintptr_t)fp & 7) != 0)
 			return 0;
 		*nextframe = (long *)&fp->f_frame;
 		*retaddr = (long *)&fp->f_retaddr;
@@ -197,6 +200,10 @@ db_frame_info(long *frame, db_addr_t callpc, const char **namep,
 	const char *name;
 
 	sym = db_search_symbol(callpc, DB_STGY_ANY, &offset);
+	if (sym != 0 && offset == 0) {
+		sym = db_search_symbol(callpc - 1, DB_STGY_ANY, &offset);
+		offset++;
+	}
 	db_symbol_values(sym, &name, NULL);
 	if (sym == (db_sym_t)0)
 		return (db_sym_t)0;

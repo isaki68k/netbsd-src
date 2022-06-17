@@ -1,4 +1,4 @@
-/* $NetBSD: rk3328_cru.c,v 1.5 2019/05/15 01:24:43 mrg Exp $ */
+/* $NetBSD: rk3328_cru.c,v 1.9 2021/11/12 22:02:08 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk3328_cru.c,v 1.5 2019/05/15 01:24:43 mrg Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3328_cru.c,v 1.9 2021/11/12 22:02:08 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -52,9 +52,9 @@ __KERNEL_RCSID(1, "$NetBSD: rk3328_cru.c,v 1.5 2019/05/15 01:24:43 mrg Exp $");
 static int rk3328_cru_match(device_t, cfdata_t, void *);
 static void rk3328_cru_attach(device_t, device_t, void *);
 
-static const char * const compatible[] = {
-	"rockchip,rk3328-cru",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3328-cru" },
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(rk3328_cru, sizeof(struct rk_cru_softc),
@@ -152,6 +152,12 @@ static const char * mux_2plls_parents[] = { "cpll", "gpll" };
 static const char * mux_2plls_hdmiphy_parents[] = { "cpll", "gpll", "dummy_hdmiphy" };
 static const char * comp_uart_parents[] = { "cpll", "gpll", "usb480m" };
 static const char * pclk_gmac_parents[] = { "aclk_gmac" };
+static const char * mux_i2s0_parents[] = { "clk_i2s0_div", "clk_i2s0_frac", "xin12m" };
+static const char * mux_i2s1_parents[] = { "clk_i2s1_div", "clk_i2s1_frac", "xin12m" };
+static const char * mux_i2s2_parents[] = { "clk_i2s2_div", "clk_i2s2_frac", "xin12m" };
+static const char * mux_spdif_parents[] = { "clk_spdif_div", "clk_spdif_frac", "xin12m" };
+static const char * mux_i2s1out_parents[] = { "clk_i2s1", "xin12m" };
+static const char * mux_i2s2out_parents[] = { "clk_i2s2", "xin12m" };
 
 static struct rk_cru_clk rk3328_cru_clks[] = {
 	RK_PLL(RK3328_PLL_APLL, "apll", pll_parents,
@@ -212,6 +218,20 @@ static struct rk_cru_clk rk3328_cru_clks[] = {
 		     CLKGATE_CON(8),	/* gate_reg */
 		     __BIT(2),		/* gate_mask */
 		     0),
+	RK_COMPOSITE(RK3328_SCLK_SPI, "clk_spi", mux_2plls_parents,
+		     CLKSEL_CON(24),	/* muxdiv_reg */
+		     __BIT(7),		/* mux_mask */
+		     __BITS(6,0),	/* div_mask */
+		     CLKGATE_CON(2),	/* gate_reg */
+		     __BIT(7),		/* gate_mask */
+		     0),
+	RK_COMPOSITE(RK3328_SCLK_PWM, "clk_pwm", mux_2plls_parents,
+		     CLKSEL_CON(24),	/* muxdiv_reg */
+		     __BIT(15),		/* mux_mask */
+		     __BITS(14,8),	/* div_mask */
+		     CLKGATE_CON(2),	/* gate_reg */
+		     __BIT(8),		/* gate_mask */
+		     0),
 	RK_COMPOSITE(RK3328_ACLK_PERI_PRE, "aclk_peri_pre", aclk_peri_pre_parents,
 		     CLKSEL_CON(28),	/* muxdiv_reg */
 		     __BITS(7,6),	/* mux_mask */
@@ -233,7 +253,7 @@ static struct rk_cru_clk rk3328_cru_clks[] = {
 		     __BIT(1),		/* gate_mask */
 		     0),
 	RK_COMPOSITE(RK3328_SCLK_SDMMC, "clk_sdmmc", mmc_parents,
-		     CLKSEL_CON(30),		/* muxdiv_reg */
+		     CLKSEL_CON(30),	/* muxdiv_reg */
 		     __BITS(9,8),	/* mux_mask */
 		     __BITS(7,0),	/* div_mask */
 		     CLKGATE_CON(4),	/* gate_reg */
@@ -354,6 +374,8 @@ static struct rk_cru_clk rk3328_cru_clks[] = {
 	RK_GATE(RK3328_PCLK_I2C1, "pclk_i2c1", "pclk_bus", CLKGATE_CON(16), 0),
 	RK_GATE(RK3328_PCLK_I2C2, "pclk_i2c2", "pclk_bus", CLKGATE_CON(16), 1),
 	RK_GATE(RK3328_PCLK_I2C3, "pclk_i2c3", "pclk_bus", CLKGATE_CON(16), 2),
+	RK_GATE(RK3328_PCLK_SPI, "pclk_spi", "pclk_bus", CLKGATE_CON(16), 5),
+	RK_GATE(RK3328_PCLK_PWM, "pclk_rk_pwm", "pclk_bus", CLKGATE_CON(16), 6),
 	RK_GATE(RK3328_PCLK_GPIO0, "pclk_gpio0", "pclk_bus", CLKGATE_CON(16), 7),
 	RK_GATE(RK3328_PCLK_GPIO1, "pclk_gpio1", "pclk_bus", CLKGATE_CON(16), 8),
 	RK_GATE(RK3328_PCLK_GPIO2, "pclk_gpio2", "pclk_bus", CLKGATE_CON(16), 9),
@@ -388,6 +410,74 @@ static struct rk_cru_clk rk3328_cru_clks[] = {
 	RK_MUX(RK3328_SCLK_UART2, "sclk_uart2", mux_uart2_parents, CLKSEL_CON(18), __BITS(9,8)),
 	RK_MUXGRF(RK3328_SCLK_MAC2IO, "clk_mac2io", mux_mac2io_src_parents, GRF_MAC_CON1, __BIT(10)),
 	RK_MUXGRF(RK3328_SCLK_MAC2IO_EXT, "clk_mac2io_ext", mux_mac2io_ext_parents, GRF_SOC_CON4, __BIT(14)),
+
+	/* I2S */
+	RK_COMPOSITE(0, "clk_i2s0_div", mux_2plls_parents,
+		     CLKSEL_CON(6),	/* muxdiv_reg */
+		     __BIT(15),		/* mux_mask */
+		     __BITS(6,0),	/* div_mask */
+		     CLKGATE_CON(1),	/* gate_reg */
+		     __BIT(1),		/* gate_mask */
+		     0),
+	RK_COMPOSITE(0, "clk_i2s1_div", mux_2plls_parents,
+		     CLKSEL_CON(8),	/* muxdiv_reg */
+		     __BIT(15),		/* mux_mask */
+		     __BITS(6,0),	/* div_mask */
+		     CLKGATE_CON(1),	/* gate_reg */
+		     __BIT(4),		/* gate_mask */
+		     0),
+	RK_COMPOSITE(0, "clk_i2s2_div", mux_2plls_parents,
+		     CLKSEL_CON(10),	/* muxdiv_reg */
+		     __BIT(15),		/* mux_mask */
+		     __BITS(6,0),	/* div_mask */
+		     CLKGATE_CON(1),	/* gate_reg */
+		     __BIT(8),		/* gate_mask */
+		     0),
+	RK_COMPOSITE(0, "clk_spdif_div", mux_2plls_parents,
+		     CLKSEL_CON(12),	/* muxdiv_reg */
+		     __BIT(15),		/* mux_mask */
+		     __BITS(6,0),	/* div_mask */
+		     CLKGATE_CON(1),	/* gate_reg */
+		     __BIT(12),		/* gate_mask */
+		     0),
+	RK_COMPOSITE_FRAC(0, "clk_i2s0_frac", "clk_i2s0_div",
+			  CLKSEL_CON(7),	/* frac_reg */
+			  RK_COMPOSITE_SET_RATE_PARENT),
+	RK_COMPOSITE_FRAC(0, "clk_i2s1_frac", "clk_i2s1_div",
+			  CLKSEL_CON(9),	/* frac_reg */
+			  RK_COMPOSITE_SET_RATE_PARENT),
+	RK_COMPOSITE_FRAC(0, "clk_i2s2_frac", "clk_i2s2_div",
+			  CLKSEL_CON(11),	/* frac_reg */
+			  RK_COMPOSITE_SET_RATE_PARENT),
+	RK_COMPOSITE_FRAC(0, "clk_spdif_frac", "clk_spdif_div",
+			  CLKSEL_CON(13),	/* frac_reg */
+			  RK_COMPOSITE_SET_RATE_PARENT),
+	RK_MUX(0, "clk_i2s0_mux", mux_i2s0_parents, CLKSEL_CON(6), __BITS(9,8)),
+	RK_MUX(0, "clk_i2s1_mux", mux_i2s1_parents, CLKSEL_CON(8), __BITS(9,8)),
+	RK_MUX(0, "clk_i2s2_mux", mux_i2s2_parents, CLKSEL_CON(10), __BITS(9,8)),
+	RK_MUX(0, "clk_spdif_mux", mux_spdif_parents, CLKSEL_CON(10), __BITS(9,8)),
+	RK_GATE(RK3328_SCLK_I2S0, "clk_i2s0", "clk_i2s0_mux", CLKGATE_CON(1), 3),
+	RK_GATE(RK3328_SCLK_I2S1, "clk_i2s1", "clk_i2s1_mux", CLKGATE_CON(1), 6),
+	RK_GATE(RK3328_SCLK_I2S2, "clk_i2s2", "clk_i2s2_mux", CLKGATE_CON(1), 10),
+	RK_GATE(RK3328_SCLK_SPDIF, "clk_spdif", "clk_spdif_mux", CLKGATE_CON(1), 12),
+	RK_GATE(RK3328_HCLK_I2S0_8CH, "hclk_i2s0", "hclk_bus_pre", CLKGATE_CON(15), 3),
+	RK_GATE(RK3328_HCLK_I2S1_8CH, "hclk_i2s1", "hclk_bus_pre", CLKGATE_CON(15), 4),
+	RK_GATE(RK3328_HCLK_I2S2_2CH, "hclk_i2s2", "hclk_bus_pre", CLKGATE_CON(15), 5),
+	RK_GATE(RK3328_HCLK_SPDIF_8CH, "hclk_spdif", "hclk_bus_pre", CLKGATE_CON(15), 6),
+	RK_COMPOSITE(RK3328_SCLK_I2S1_OUT, "i2s1_out", mux_i2s1out_parents,
+		     CLKSEL_CON(8),	/* muxdiv_reg */
+		     __BIT(12),		/* mux_mask */
+		     0,			/* div_mask */
+		     CLKGATE_CON(7),	/* gate_reg */
+		     __BIT(12),		/* gate_mask */
+		     RK_COMPOSITE_SET_RATE_PARENT),
+	RK_COMPOSITE(RK3328_SCLK_I2S2_OUT, "i2s2_out", mux_i2s2out_parents,
+		     CLKSEL_CON(10),	/* muxdiv_reg */
+		     __BIT(12),		/* mux_mask */
+		     0,			/* div_mask */
+		     CLKGATE_CON(11),	/* gate_reg */
+		     __BIT(12),		/* gate_mask */
+		     RK_COMPOSITE_SET_RATE_PARENT),
 };
 
 static int
@@ -395,7 +485,7 @@ rk3328_cru_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -411,6 +501,7 @@ rk3328_cru_attach(device_t parent, device_t self, void *aux)
 	sc->sc_clks = rk3328_cru_clks;
 	sc->sc_nclks = __arraycount(rk3328_cru_clks);
 
+	sc->sc_grf_soc_status = 0x0480;
 	sc->sc_softrst_base = SOFTRST_CON(0);
 
 	if (rk_cru_attach(sc) != 0)

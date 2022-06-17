@@ -1,4 +1,4 @@
-/*	$NetBSD: if_malo_pcmcia.c,v 1.23 2019/10/11 04:25:11 kre Exp $	*/
+/*	$NetBSD: if_malo_pcmcia.c,v 1.27 2021/11/10 17:19:30 msaitoh Exp $	*/
 /*      $OpenBSD: if_malo.c,v 1.65 2009/03/29 21:53:53 sthen Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_malo_pcmcia.c,v 1.23 2019/10/11 04:25:11 kre Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_malo_pcmcia.c,v 1.27 2021/11/10 17:19:30 msaitoh Exp $");
 
 #ifdef _MODULE
 #include <sys/module.h>
@@ -307,7 +307,7 @@ cmalo_attach(void *arg)
 	struct malo_softc *sc = arg;
 	struct ieee80211com *ic = &sc->sc_ic;
 	struct ifnet *ifp = &sc->sc_if;
-	int i, rv;
+	int i;
 
 	/* disable interrupts */
 	cmalo_intr_mask(sc, 0);
@@ -318,15 +318,15 @@ cmalo_attach(void *arg)
 	    cmalo_fw_load_main(sc) != 0) {
 		/* free firmware */
 		cmalo_fw_free(sc);
-		goto fail_1;
+		goto fail;
 	}
 	sc->sc_flags |= MALO_FW_LOADED;
 
 	/* allocate command buffer */
-	sc->sc_cmd = malloc(MALO_CMD_BUFFER_SIZE, M_DEVBUF, M_NOWAIT);
+	sc->sc_cmd = malloc(MALO_CMD_BUFFER_SIZE, M_DEVBUF, M_WAITOK);
 
 	/* allocate data buffer */
-	sc->sc_data = malloc(MALO_DATA_BUFFER_SIZE, M_DEVBUF, M_NOWAIT);
+	sc->sc_data = malloc(MALO_DATA_BUFFER_SIZE, M_DEVBUF, M_WAITOK);
 
 	/* enable interrupts */
 	cmalo_intr_mask(sc, 1);
@@ -368,11 +368,7 @@ cmalo_attach(void *arg)
 	}
 
 	/* attach interface */
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n", rv);
-		goto fail_2;
-	}
+	if_initialize(ifp);
 	ieee80211_ifattach(ic);
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);
@@ -393,12 +389,7 @@ cmalo_attach(void *arg)
 
 	return;
 
-fail_2:
-	cv_destroy(&sc->sc_cv);
-	mutex_destroy(&sc->sc_mtx);
-	free(sc->sc_cmd, M_DEVBUF);
-	free(sc->sc_data, M_DEVBUF);
-fail_1:
+fail:
 	cmalo_fw_free(sc);
 }
 
@@ -525,7 +516,7 @@ cmalo_start(struct ifnet *ifp)
 	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	if (cmalo_tx(sc, m) != 0)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 }
 
 static int
@@ -1046,7 +1037,7 @@ cmalo_rx(struct malo_softc *sc)
 	    rxdesc->pkglen, ETHER_ALIGN, ifp);
 	if (m == NULL) {
 		DPRINTF(1, "RX m_devget failed\n");
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -1110,7 +1101,7 @@ cmalo_tx_done(struct malo_softc *sc)
 	DPRINTF(2, "%s: TX done\n", device_xname(sc->sc_dev));
 
 	s = splnet();
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;
 	cmalo_start(ifp);
@@ -2010,10 +2001,10 @@ cmalo_cmd_response(struct malo_softc *sc)
 	cmalo_hexdump(sc->sc_cmd, psize);
 
 	/*
-	 * We convert the header values into the machines correct endianess,
+	 * We convert the header values into the machines correct endianness,
 	 * so we don't have to le16toh() all over the code.  The body is
 	 * kept in the cards order, little endian.  We need to take care
-	 * about the body endianess in the corresponding response routines.
+	 * about the body endianness in the corresponding response routines.
 	 */
 	hdr->cmd = le16toh(hdr->cmd);
 	hdr->size = le16toh(hdr->size);

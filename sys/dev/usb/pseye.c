@@ -1,4 +1,4 @@
-/* $NetBSD: pseye.c,v 1.25 2018/09/03 16:29:33 riastradh Exp $ */
+/* $NetBSD: pseye.c,v 1.29 2022/03/03 06:23:25 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2008 Jared D. McNeill <jmcneill@invisible.ca>
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pseye.c,v 1.25 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pseye.c,v 1.29 2022/03/03 06:23:25 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -134,6 +134,8 @@ static int		pseye_enum_format(void *, uint32_t,
 static int		pseye_get_format(void *, struct video_format *);
 static int		pseye_set_format(void *, struct video_format *);
 static int		pseye_try_format(void *, struct video_format *);
+static int		pseye_get_framerate(void *, struct video_fract *);
+static int		pseye_set_framerate(void *, struct video_fract *);
 static int		pseye_start_transfer(void *);
 static int		pseye_stop_transfer(void *);
 
@@ -150,6 +152,8 @@ static const struct video_hw_if pseye_hw_if = {
 	.get_format = pseye_get_format,
 	.set_format = pseye_set_format,
 	.try_format = pseye_try_format,
+	.get_framerate = pseye_get_framerate,
+	.set_framerate = pseye_set_framerate,
 	.start_transfer = pseye_start_transfer,
 	.stop_transfer = pseye_stop_transfer,
 	.control_iter_init = NULL,
@@ -259,7 +263,7 @@ pseye_attach(device_t parent, device_t self, void *opaque)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 
-	sc->sc_videodev = video_attach_mi(&pseye_hw_if, self);
+	sc->sc_videodev = video_attach_mi(&pseye_hw_if, self, sc);
 	if (sc->sc_videodev == NULL) {
 		aprint_error_dev(self, "couldn't attach video layer\n");
 		sc->sc_dying = 1;
@@ -800,6 +804,23 @@ static int
 pseye_try_format(void *opaque, struct video_format *format)
 {
 	return pseye_get_format(opaque, format);
+}
+
+static int
+pseye_get_framerate(void *opaque, struct video_fract *fract)
+{
+	/* Driver only supports 60fps */
+	fract->numerator = 1;
+	fract->denominator = 60;
+
+	return 0;
+}
+
+static int
+pseye_set_framerate(void *opaque, struct video_fract *fract)
+{
+	/* Driver only supports one framerate. Return actual rate. */
+	return pseye_get_framerate(opaque, fract);
 }
 
 static int
