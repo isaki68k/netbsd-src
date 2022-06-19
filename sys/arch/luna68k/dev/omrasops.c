@@ -81,15 +81,8 @@ static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
-static void
-om_fill(int, int,
-	uint8_t *, int, int,
-	uint32_t,
-	int, int);
-static void
-om_fill_color(int,
-	uint8_t *, int, int,
-	int, int);
+static void	om_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
+static void	om_fill_color(int, uint8_t *, int, int, int, int);
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
@@ -98,8 +91,7 @@ om_fill_color(int,
 #define	BYTESDONE	(4)
 
 // XXX アトリビュートの 8bpp 対応も含めて再設計が必要。
-struct rowattr_t
-{
+struct rowattr_t {
 	union {
 		int32_t all;
 		struct {
@@ -195,8 +187,6 @@ om_reset_rowattr(int row, int bg)
 	c_mask = (c_mask & (1 << c_bits)) + 1
 #endif
 
-
-
 /*
  * fill rectangle
  * v は書き込み位置にかかわらず 32 bit の値をそのまま使うため、
@@ -204,9 +194,9 @@ om_reset_rowattr(int row, int bg)
  */
 static void
 om_fill(int planemask, int rop,
-	uint8_t *dstptr, int dstbitofs, int dstspan,
-	uint32_t v,
-	int width, int height)
+    uint8_t *dstptr, int dstbitofs, int dstspan,
+    uint32_t v,
+    int width, int height)
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
@@ -300,7 +290,8 @@ om_fill_color(int color,
 
 		{
 			/* TODO: 中間ならマスクを再設定しない */
-			uint32_t *ropfn = (uint32_t *)(BMAP_FN0 + OMFB_PLANEOFS * lastplane);
+			uint32_t *ropfn = (uint32_t *)
+			    (BMAP_FN0 + OMFB_PLANEOFS * lastplane);
 			int16_t plane = lastplane;
 			int16_t rop;
 
@@ -360,7 +351,8 @@ om_fill_color(int color,
 }
 
 static const uint8_t ropsel[] = {
-	ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE };
+	ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE
+};
 
 /*
  * 指定した色で文字を描画する。
@@ -387,11 +379,11 @@ static const uint8_t ropsel[] = {
  */
 static void
 omfb_drawchar(
-	struct rasops_info *ri,
-	int x, int y,
-	int width, int height,
-	uint8_t *fontptr, int fontstride, int fontx, int heightscale,
-	uint8_t fg, uint8_t bg)
+    struct rasops_info *ri,
+    int x, int y,
+    int width, int height,
+    uint8_t *fontptr, int fontstride, int fontx, int heightscale,
+    uint8_t fg, uint8_t bg)
 {
 	/* ROP アドレスのキャッシュ */
 	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
@@ -429,9 +421,9 @@ omfb_drawchar(
 	dw = 32 - xl;
 
 	__assume(
-		omfb_planecount == 8
-	 || omfb_planecount == 4
-	 || omfb_planecount == 1);
+	    omfb_planecount == 8 ||
+	    omfb_planecount == 4 ||
+	    omfb_planecount == 1);
 
 	do {
 		width -= dw;
@@ -540,8 +532,8 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	om_set_rowattr(row, fg, bg);
 
 	omfb_drawchar(ri, x, y, width, height,
-		fb, fontstride, fontx, heightscale,
-		fg, bg);
+	    fb, fontstride, fontx, heightscale,
+	    fg, bg);
 
 	omfb_resetplanemask_and_ROP();
 }
@@ -575,7 +567,7 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
 		om_fill(omfb_planemask, ROP_ZERO,
-			p, sl, scanspan, 0, width, height);
+		    p, sl, scanspan, 0, width, height);
 	} else {
 		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
@@ -614,7 +606,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
 		om_fill(omfb_planemask, ROP_ZERO,
-			p, sl, scanspan, 0, width, height);
+		    p, sl, scanspan, 0, width, height);
 	} else {
 		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
@@ -674,7 +666,7 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
  */
 static void
 om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
-	uint8_t rop[])
+    uint8_t rop[])
 {
 	int wh;
 	int16_t h;
@@ -739,8 +731,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		dst -= height * step;
 	}
 
-	if (width & 32) {
-
+	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
 		asm volatile(
 		"move.l	%[h],%[hloop];\n\t"
@@ -812,7 +803,6 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 }
 
-
 /*
  * multiple plane raster copy
  * dst0 : destination Plane0 pointer
@@ -846,7 +836,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	dst1 = dst0 + OMFB_PLANEOFS;
 	dst2 = dst1 + OMFB_PLANEOFS;
 	dst3 = dst2 + OMFB_PLANEOFS;
-
 
 	// まず2ロングワード単位の矩形を転送する
 	wh = (width >> 6);
@@ -931,8 +920,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	// rewind はプレーンの巻き戻しなので Y 順序とは関係ない
 	rewind = OMFB_STRIDE - OMFB_PLANEOFS * 3;
 
-	if (width & 32) {
-
+	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
 		asm volatile(
 		"move.l	%[h],%[hloop];\n\t"
@@ -1023,7 +1011,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		);
 
 		omfb_resetplanemask_and_ROP();
-
 	}
 }
 
@@ -1054,11 +1041,10 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		rowstep = -1;
 		rowheight = -rowheight;
 	} else {
-		/* y-forward*/
+		/* y-forward */
 		rowstep = 1;
 	}
 	ptrstep = ri->ri_stride * rowheight;
-
 
 	omfb_setplanemask(omfb_planemask);
 
@@ -1070,15 +1056,16 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	while (nrows > 0) {
 		r = 1;
-		if (rowattr[srcrow].ismulti == false
-		 && rowattr[srcrow].fg == rowattr[srcrow].bg
-		 && rowattr[srcrow].all == rowattr[dstrow].all) {
+		if (rowattr[srcrow].ismulti == false &&
+		    rowattr[srcrow].fg == rowattr[srcrow].bg &&
+		    rowattr[srcrow].all == rowattr[dstrow].all) {
 			goto skip;
 		}
 
 		/* 同じ行状態にある行数を数える */
 		for (; r < nrows; r++) {
-			if (rowattr[srcrow + r * rowstep].all != rowattr[srcrow].all) {
+			if (rowattr[srcrow + r * rowstep].all !=
+			    rowattr[srcrow].all) {
 				break;
 			}
 		}
@@ -1093,6 +1080,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		} else {
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
+
 			srcplane = 0;
 			/* ROP 選択のロジックは putchar と同じ */
 			/* srcplane は fg が立ってて bg が立ってないプレーン */
@@ -1113,7 +1101,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			om_rascopy_solo(dst, srcP, width, rowheight * r, rop);
 		}
 
- skip:
+skip:
 		for (i = 0; i < r; i++) {
 			rowattr[dstrow] = rowattr[srcrow];
 
