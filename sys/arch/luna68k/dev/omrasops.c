@@ -174,7 +174,7 @@ om_reset_rowattr(int row, int bg)
 */
 #if USE_M68K_ASM
 #define FASTMASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	__asm volatile(							\
+	asm volatile(							\
 	"bclr	%[bits],%[mask];\n\t"					\
 	"addq.l	#1,%[mask];\n\t"					\
 	: [mask]"+&d"(c_mask)						\
@@ -296,7 +296,7 @@ om_fill_color(int color,
 			int16_t rop;
 
 #if !USE_M68K_ASM
-			__asm volatile(
+			asm volatile(
 "om_fill_color_rop:\n\t"
 			"btst	%[plane],%[color];\n\t"
 			"seq	%[rop];\n\t"
@@ -327,7 +327,7 @@ om_fill_color(int color,
 			int16_t h = h16;
 
 #if USE_M68K_ASM
-			__asm volatile(
+			asm volatile(
 "om_fill_color_loop_h:\n\t"
 			"clr.l	(%[d]);\n\t"	/* any data to write */
 			"add.l	%[dstspan],%[d];\n\t"
