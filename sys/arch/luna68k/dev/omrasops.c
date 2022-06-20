@@ -183,7 +183,7 @@ om_reset_rowattr(int row, int bg)
 	)
 #else
 #define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	c_mask = (c_mask & (1 << c_bits)) + 1
+	c_mask = (c_mask & ~(1 << c_bits)) + 1
 #endif
 
 /*
