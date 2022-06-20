@@ -1520,7 +1520,7 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 	uint32_t a = 0;
 	uint16_t c = 0;
 
-	if ((flags && WSATTR_BLINK))
+	if ((flags & WSATTR_BLINK))
 		return EINVAL;
 
 	if ((flags & WSATTR_WSCOLORS) == 0) {
