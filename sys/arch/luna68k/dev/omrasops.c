@@ -173,7 +173,7 @@ om_reset_rowattr(int row, int bg)
     mask=0b..1111000 (clear right 3 bit)
 */
 #if USE_M68K_ASM
-#define FASTMASK_CLEAR_RIGHT(c_mask, c_bits)				\
+#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
 	asm volatile(							\
 	"	bclr	%[bits],%[mask]		;\n"			\
 	"	addq.l	#1,%[mask]		;\n"			\
@@ -181,7 +181,6 @@ om_reset_rowattr(int row, int bg)
 	    : [bits] "d" (c_bits)					\
 	    :								\
 	)
-#define MASK_CLEAR_RIGHT	FASTMASK_CLEAR_RIGHT
 #else
 #define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
 	c_mask = (c_mask & (1 << c_bits)) + 1
