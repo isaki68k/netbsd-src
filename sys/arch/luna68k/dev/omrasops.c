@@ -294,7 +294,7 @@ om_fill_color(int color,
 			int16_t plane = lastplane;
 			int16_t rop;
 
-#if !USE_M68K_ASM
+#if USE_M68K_ASM
 			asm volatile(
 			"om_fill_color_rop:\n"
 			"	btst	%[plane],%[color]		;\n"
