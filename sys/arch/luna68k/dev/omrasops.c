@@ -693,6 +693,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.w	%[h],%[hloop]				;\n"
 		"om_rascopy_solo_LL:\n"
@@ -719,6 +720,18 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			uint32_t *s32 = (uint32_t *)src;
+			uint32_t *d32 = (uint32_t *)dst;
+			for (wloop = wh; wloop >= 0; wloop--) {
+				*d32++ = *s32++;
+				*d32++ = *s32++;
+			}
+			src = (uint8_t *)s32 + step8;
+			dst = (uint8_t *)d32 + step8;
+		}
+#endif
 
 		if ((width & 0x3f) == 0) {
 			// 転送完了
@@ -732,6 +745,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om_rascopy_solo_L:\n"
@@ -751,6 +765,13 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			*(uint32_t *)dst = *(uint32_t *)src;
+			dst += step;
+			src += step;
+		}
+#endif
 
 		if ((width & 0x1f) == 0) {
 			// 転送完了
@@ -776,6 +797,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 			omfb_setROP(plane, rop[plane], mask);
 		}
 
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om4_rascopy_solo_bit:\n"
@@ -795,6 +817,13 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			*(uint32_t *)dst = *(uint32_t *)src;
+			dst += step;
+			src += step;
+		}
+#endif
 
 		for (plane = 0; plane < omfb_planecount; plane++) {
 			omfb_setROP(plane, rop[plane], ALL1BITS);
@@ -844,6 +873,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.w	%[h],%[hloop]	;\n"
 		"om4_rascopy_multi_LL:\n"
@@ -908,6 +938,42 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			for (wloop = wh; wloop >= 0; wloop--) {
+				*(uint32_t *)dst0 = *(uint32_t *)src0;
+				dst0 += 4;
+				src0 += OMFB_PLANEOFS;
+				*(uint32_t *)dst1 = *(uint32_t *)src0;
+				dst1 += 4;
+				src0 += OMFB_PLANEOFS;
+				*(uint32_t *)dst2 = *(uint32_t *)src0;
+				dst2 += 4;
+				src0 += OMFB_PLANEOFS;
+				*(uint32_t *)dst3 = *(uint32_t *)src0;
+				dst3 += 4;
+				src0 += 4;
+
+				*(uint32_t *)dst3 = *(uint32_t *)src0;
+				dst3 += 4;
+				src0 -= OMFB_PLANEOFS;
+				*(uint32_t *)dst2 = *(uint32_t *)src0;
+				dst2 += 4;
+				src0 -= OMFB_PLANEOFS;
+				*(uint32_t *)dst1 = *(uint32_t *)src0;
+				dst1 += 4;
+				src0 -= OMFB_PLANEOFS;
+				*(uint32_t *)dst0 = *(uint32_t *)src0;
+				dst0 += 4;
+				src0 += 4;
+			}
+			src0 += step8;
+			dst0 += step8;
+			dst1 += step8;
+			dst2 += step8;
+			dst3 += step8;
+		}
+#endif
 
 		if ((width & 0x3f) == 0) {
 			// 転送完了
@@ -927,6 +993,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om4_rascopy_multi_L:\n"
@@ -960,6 +1027,23 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			*(uint32_t *)dst0 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst1 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst2 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst3 = *(uint32_t *)src0;
+			src0 += rewind;
+
+			dst0 += step;
+			dst1 += step;
+			dst2 += step;
+			dst3 += step;
+		}
+#endif
 
 		if ((width & 0x1f) == 0) {
 			// 転送完了
@@ -983,6 +1067,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		omfb_setplanemask(omfb_planemask);
 		omfb_setROP_curplane(ROP_THROUGH, mask);
 
+#if USE_M68K_ASM
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om4_rascopy_multi_bit:\n"
@@ -1014,6 +1099,23 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		    : /* clobbers */
 		      "memory"
 		);
+#else
+		for (hloop = h; hloop >= 0; hloop--) {
+			*(uint32_t *)dst0 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst1 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst2 = *(uint32_t *)src0;
+			src0 += OMFB_PLANEOFS;
+			*(uint32_t *)dst3 = *(uint32_t *)src0;
+			src0 += rewind;
+
+			dst0 += step;
+			dst1 += step;
+			dst2 += step;
+			dst3 += step;
+		}
+#endif
 
 		omfb_resetplanemask_and_ROP();
 	}
