@@ -1583,8 +1583,10 @@ omfb_unpack_attr(long attr, int *fg, int *bg, int *underline)
 	f = (attr >> 8) & omfb_planemask;
 	b = attr & omfb_planemask;
 
-	if (fg) *fg = f;
-	if (bg) *bg = b;
+	if (fg)
+		*fg = f;
+	if (bg)
+		*bg = b;
 }
 
 /*
