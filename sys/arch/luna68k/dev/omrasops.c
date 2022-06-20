@@ -865,27 +865,27 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			 * (An)+,.. はオーバーラップしないが adda は
 			 * オーバーラップできる。
 			 */
-		"	move.l	(%[src]),(%[dst0])+	;\n"	/* P0 */
-		"	adda.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src]),(%[dst1])+	;\n"	/* P1 */
-		"	adda.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src]),(%[dst2])+	;\n"	/* P2 */
-		"	adda.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src]),(%[dst3])+	;\n"	/* P3 */
+		"	move.l	(%[src0]),(%[dst0])+	;\n"	/* P0 */
+		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0]),(%[dst1])+	;\n"	/* P1 */
+		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0]),(%[dst2])+	;\n"	/* P2 */
+		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
 
-		"	addq.l	#4,%[src]		;\n"	// オーバーラップを期待して ()+ にしない
+		"	addq.l	#4,%[src0]		;\n"	// オーバーラップを期待して ()+ にしない
 
-		"	move.l	(%[src]),(%[dst3])+	;\n"	/* P3 */
-		"	suba.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src]),(%[dst2])+	;\n"	/* P2 */
-		"	suba.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src]),(%[dst1])+	;\n"	/* P1 */
-		"	suba.l	%[PLANEOFS],%[src]	;\n"
-		"	move.l	(%[src])+,(%[dst0])+	;\n"	/* P0 */
+		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
+		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0]),(%[dst2])+	;\n"	/* P2 */
+		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0]),(%[dst1])+	;\n"	/* P1 */
+		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	move.l	(%[src0])+,(%[dst0])+	;\n"	/* P0 */
 
 		"	dbra	%[wloop],om4_rascopy_multi_LL_wloop	;\n"
 
-		"	adda.l	%[step8],%[src]		;\n"
+		"	adda.l	%[step8],%[src0]	;\n"
 		"	adda.l	%[step8],%[dst0]	;\n"
 		"	adda.l	%[step8],%[dst1]	;\n"
 		"	adda.l	%[step8],%[dst2]	;\n"
@@ -893,7 +893,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 		"	dbra	%[hloop],om4_rascopy_multi_LL		;\n"
 		    : /* output */
-		      [src] "+&a" (src0),
+		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
@@ -930,14 +930,14 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om4_rascopy_multi_L:\n"
-		"	move.l	(%[src]),(%[dst0])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst1])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst2])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst3])		;\n"
-		"	adda.l	%[rewind],%[src]		;\n"
+		"	move.l	(%[src0]),(%[dst0])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst1])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst2])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst3])		;\n"
+		"	adda.l	%[rewind],%[src0]		;\n"
 
 		"	adda.l	%[step],%[dst0]			;\n"
 		"	adda.l	%[step],%[dst1]			;\n"
@@ -946,7 +946,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 		"	dbra	%[hloop],om4_rascopy_multi_L	;\n"
 		    : /* output */
-		      [src] "+&a" (src0),
+		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
@@ -986,21 +986,21 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		asm volatile(
 		"	move.l	%[h],%[hloop]			;\n"
 		"om4_rascopy_multi_bit:\n"
-		"	move.l	(%[src]),(%[dst0])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst1])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst2])		;\n"
-		"	adda.l	%[PLANEOFS],%[src]		;\n"
-		"	move.l	(%[src]),(%[dst3])		;\n"
-		"	adda.l	%[rewind],%[src]		;\n"
+		"	move.l	(%[src0]),(%[dst0])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst1])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst2])		;\n"
+		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	move.l	(%[src0]),(%[dst3])		;\n"
+		"	adda.l	%[rewind],%[src0]		;\n"
 
 		"	adda.l	%[step],%[dst0]			;\n"
 		"	adda.l	%[step],%[dst1]			;\n"
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 		    : /* output */
-		      [src] "+&a" (src0),
+		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
