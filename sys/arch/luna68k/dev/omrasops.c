@@ -1178,8 +1178,9 @@ om1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 			sboff = sb + lnum;
 			if (sboff >= 32)
 				sboff -= 32;
-		} else
+		} else {
 			sboff = sb;
+		}
 
 		sq = sp;
 		dq = dp;
@@ -1314,8 +1315,9 @@ om4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 			sboff = sb + lnum;
 			if (sboff >= 32)
 				sboff -= 32;
-		} else
+		} else {
 			sboff = sb;
+		}
 
 		sq = sp;
 		dq = dp;
@@ -1487,8 +1489,8 @@ omfb_cursor(void *cookie, int on, int row, int col)
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
 	om_fill(omfb_planemask, ROP_INV2,
-		p, sl, scanspan,
-		0, width, height);
+	    p, sl, scanspan,
+	    0, width, height);
 
 	ri->ri_flg ^= RI_CURSOR;
 
