@@ -175,11 +175,11 @@ om_reset_rowattr(int row, int bg)
 #if USE_M68K_ASM
 #define FASTMASK_CLEAR_RIGHT(c_mask, c_bits)				\
 	asm volatile(							\
-	"bclr	%[bits],%[mask];\n\t"					\
-	"addq.l	#1,%[mask];\n\t"					\
-	: [mask]"+&d"(c_mask)						\
-	: [bits]"d"(c_bits)						\
-	:								\
+	"	bclr	%[bits],%[mask]		;\n"			\
+	"	addq.l	#1,%[mask]		;\n"			\
+	    : [mask] "+&d" (c_mask)					\
+	    : [bits] "d" (c_bits)					\
+	    :								\
 	)
 #define MASK_CLEAR_RIGHT	FASTMASK_CLEAR_RIGHT
 #else
@@ -233,15 +233,15 @@ om_fill(int planemask, int rop,
 
 #if USE_M68K_ASM
 			asm volatile(
-"om_fill_loop_h:\n\t"
-			"move.l	%[v],(%[d]);\n\t"
-			"add.l	%[dstspan],%[d];\n\t"
-			"dbra	%[h],om_fill_loop_h;\n\t"
-			: [d]"+&a"(d)
-			 ,[h]"+&d"(h)
-			: [v]"d"(v)
-			 ,[dstspan]"r"(dstspan)
-			: "memory"
+			"om_fill_loop_h:\n"
+			"	move.l	%[v],(%[d])		;\n"
+			"	add.l	%[dstspan],%[d]		;\n"
+			"	dbra	%[h],om_fill_loop_h	;\n"
+			    : [d] "+&a" (d),
+			      [h] "+&d" (h)
+			    : [v] "d" (v),
+			      [dstspan] "r" (dstspan)
+			    : "memory"
 			);
 #else
 			do {
@@ -297,19 +297,19 @@ om_fill_color(int color,
 
 #if !USE_M68K_ASM
 			asm volatile(
-"om_fill_color_rop:\n\t"
-			"btst	%[plane],%[color];\n\t"
-			"seq	%[rop];\n\t"
-			"andi.w	#0x3c,%[rop];\n\t"
-			"move.l	%[mask],(%[ropfn],%[rop].w);\n\t"
-			"suba.l	#0x40000,%[ropfn];\n\t"
-			"dbra	%[plane],om_fill_color_rop;\n\t"
-			: [plane]"+&d"(plane)
-			 ,[ropfn]"+&a"(ropfn)
-			 ,[rop]"=&d"(rop)
-			: [color]"d"(color)
-			 ,[mask]"g"(mask)
-			: "memory"
+			"om_fill_color_rop:\n"
+			"	btst	%[plane],%[color]		;\n"
+			"	seq	%[rop]				;\n"
+			"	andi.w	#0x3c,%[rop]			;\n"
+			"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
+			"	suba.l	#0x40000,%[ropfn]		;\n"
+			"	dbra	%[plane],om_fill_color_rop	;\n"
+			    : [plane] "+&d" (plane),
+			      [ropfn] "+&a" (ropfn),
+			      [rop] "=&d" (rop)
+			    : [color] "d" (color),
+			      [mask] "g" (mask)
+			    : "memory"
 			);
 #else
 			do {
@@ -328,14 +328,14 @@ om_fill_color(int color,
 
 #if USE_M68K_ASM
 			asm volatile(
-"om_fill_color_loop_h:\n\t"
-			"clr.l	(%[d]);\n\t"	/* any data to write */
-			"add.l	%[dstspan],%[d];\n\t"
-			"dbra	%[h],om_fill_color_loop_h;\n\t"
-			: [d]"+&a"(d)
-			 ,[h]"+&d"(h)
-			: [dstspan]"r"(dstspan)
-			: "memory"
+			"om_fill_color_loop_h:\n"
+			"	clr.l	(%[d])	;\n"/* any data to write */
+			"	add.l	%[dstspan],%[d]			;\n"
+			"	dbra	%[h],om_fill_color_loop_h	;\n"
+			    : [d] "+&a" (d),
+			      [h] "+&d" (h)
+			    : [dstspan] "r" (dstspan)
+			    : "memory"
 			);
 #else
 			do {
@@ -695,30 +695,30 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		wh--;	/* for dbra */
 
 		asm volatile(
-		"move.w	%[h],%[hloop];\n\t"
-"om_rascopy_solo_LL: ;\n\t"
-		"move.w	%[wh],%[wloop];\n\t"
+		"	move.w	%[h],%[hloop]				;\n"
+		"om_rascopy_solo_LL:\n"
+		"	move.w	%[wh],%[wloop]				;\n"
 
-"om_rascopy_solo_LL_wloop: \n\t"
-		"move.l	(%[src])+,(%[dst])+;\n\t"
-		"move.l	(%[src])+,(%[dst])+;\n\t"
-		"dbra	%[wloop],om_rascopy_solo_LL_wloop;\n\t"
+		"om_rascopy_solo_LL_wloop:\n"
+		"	move.l	(%[src])+,(%[dst])+			;\n"
+		"	move.l	(%[src])+,(%[dst])+			;\n"
+		"	dbra	%[wloop],om_rascopy_solo_LL_wloop	;\n"
 
-		"adda.l	%[step],%[src];\n\t"
-		"adda.l	%[step],%[dst];\n\t"
+		"	adda.l	%[step],%[src]				;\n"
+		"	adda.l	%[step],%[dst]				;\n"
 
-		"dbra	%[hloop],om_rascopy_solo_LL;\n\t"
-		  /* output */
-		: [src]"+&a"(src)
-		 ,[dst]"+&a"(dst)
-		 ,[hloop]"=&d"(hloop)
-		 ,[wloop]"=&d"(wloop)
-		  /* input */
-		: [wh]"r"(wh)
-		 ,[h]"g"(h)
-		 ,[step]"r"(step8)
-		: /* clobbers */
-		  "memory"
+		"	dbra	%[hloop],om_rascopy_solo_LL;\n"
+		    : /* output */
+		      [src] "+&a" (src),
+		      [dst] "+&a" (dst),
+		      [hloop] "=&d" (hloop),
+		      [wloop] "=&d" (wloop)
+		    : /* input */
+		      [wh] "r" (wh),
+		      [h] "g" (h),
+		      [step] "r" (step8)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		if ((width & 0x3f) == 0) {
@@ -734,23 +734,23 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
 		asm volatile(
-		"move.l	%[h],%[hloop];\n\t"
-"om_rascopy_solo_L: \n\t"
-		"move.l	(%[src]),(%[dst]);\n\t"
+		"	move.l	%[h],%[hloop]			;\n"
+		"om_rascopy_solo_L:\n"
+		"	move.l	(%[src]),(%[dst])		;\n"
 
-		"adda.l	%[step],%[src];\n\t"
-		"adda.l	%[step],%[dst];\n\t"
+		"	adda.l	%[step],%[src]			;\n"
+		"	adda.l	%[step],%[dst]			;\n"
 
-		"dbra	%[hloop],om_rascopy_solo_L;\n\t"
-		  /* output */
-		: [src]"+&a"(src)
-		 ,[dst]"+&a"(dst)
-		 ,[hloop]"=&d"(hloop)
-		  /* input */
-		: [h]"g"(h)
-		 ,[step]"r"(step)
-		: /* clobbers */
-		  "memory"
+		"	dbra	%[hloop],om_rascopy_solo_L	;\n"
+		    : /* output */
+		      [src] "+&a" (src),
+		      [dst] "+&a" (dst),
+		      [hloop] "=&d" (hloop)
+		    : /* input */
+		      [h] "g" (h),
+		      [step] "r" (step)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		if ((width & 0x1f) == 0) {
@@ -778,23 +778,23 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		}
 
 		asm volatile(
-		"move.l	%[h],%[hloop];\n\t"
-"om4_rascopy_solo_bit: \n\t"
-		"move.l	(%[src]),(%[dst]);\n\t"
+		"	move.l	%[h],%[hloop]			;\n"
+		"om4_rascopy_solo_bit:\n"
+		"	move.l	(%[src]),(%[dst])		;\n"
 
-		"adda.l	%[step],%[src];\n\t"
-		"adda.l	%[step],%[dst];\n\t"
+		"	adda.l	%[step],%[src]			;\n"
+		"	adda.l	%[step],%[dst]			;\n"
 
-		"dbra	%[hloop],om4_rascopy_solo_bit;\n\t"
-		  /* output */
-		: [src]"+&a"(src)
-		 ,[dst]"+&a"(dst)
-		 ,[hloop]"=&d"(hloop)
-		  /* input */
-		: [h]"g"(h)
-		 ,[step]"r"(step)
-		: /* clobbers */
-		  "memory"
+		"	dbra	%[hloop],om4_rascopy_solo_bit	;\n"
+		    : /* output */
+		      [src] "+&a" (src),
+		      [dst] "+&a" (dst),
+		      [hloop] "=&d" (hloop)
+		    : /* input */
+		      [h] "g" (h),
+		      [step] "r" (step)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		for (plane = 0; plane < omfb_planecount; plane++) {
@@ -846,62 +846,68 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		wh--;	/* for dbra */
 
 		asm volatile(
-		"move.w	%[h],%[hloop];\n\t"
-"om4_rascopy_multi_LL: ;\n\t"
-		"move.w	%[wh],%[wloop];\n\t"
+		"	move.w	%[h],%[hloop]	;\n"
+		"om4_rascopy_multi_LL:\n"
+		"	move.w	%[wh],%[wloop]	;\n"
 
-"om4_rascopy_multi_LL_wloop: \n\t"
-		/* fastest way for MC68030 */
-		/* 命令のオーバーラップとアクセスウェイトの関係で、LUNA では
-		move.l (An)+,(An)+ よりも
-		move.l (An,Dn),(An,Dn) よりも
-		movem.l よりも速い */
-		/* ソースの (An)+ は Head 0 だけど adda は Head 2 なので、
-		前の命令にライトウェイトサイクルがあって Tail が発生すると
-		(An)+,.. はオーバーラップしないが adda はオーバーラップできる。 */
+		"om4_rascopy_multi_LL_wloop:\n"
+			/* fastest way for MC68030 */
+			/*
+			 * 命令のオーバーラップとアクセスウェイトの関係で、
+			 * LUNA では
+			 * move.l (An)+,(An)+ よりも
+			 * move.l (An,Dn),(An,Dn) よりも
+			 * movem.l よりも速い
+			 */
+			/* ソースの (An)+ は Head 0 だけど adda は Head 2
+			 * なので、
+			 * 前の命令にライトウェイトサイクルがあって Tail
+			 * が発生すると
+			 * (An)+,.. はオーバーラップしないが adda は
+			 * オーバーラップできる。
+			 */
+		"	move.l	(%[src]),(%[dst0])+	;\n"	/* P0 */
+		"	adda.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src]),(%[dst1])+	;\n"	/* P1 */
+		"	adda.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src]),(%[dst2])+	;\n"	/* P2 */
+		"	adda.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src]),(%[dst3])+	;\n"	/* P3 */
 
-		"move.l	(%[src]),(%[dst0])+;\n\t"	/* P0 */
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
+		"	addq.l	#4,%[src]		;\n"	// オーバーラップを期待して ()+ にしない
 
-		"addq.l	#4,%[src];\n\t"	// オーバーラップを期待して ()+ にしない
+		"	move.l	(%[src]),(%[dst3])+	;\n"	/* P3 */
+		"	suba.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src]),(%[dst2])+	;\n"	/* P2 */
+		"	suba.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src]),(%[dst1])+	;\n"	/* P1 */
+		"	suba.l	%[PLANEOFS],%[src]	;\n"
+		"	move.l	(%[src])+,(%[dst0])+	;\n"	/* P0 */
 
-		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
-		"suba.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
-		"suba.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
-		"suba.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src])+,(%[dst0])+;\n\t"	/* P0 */
+		"	dbra	%[wloop],om4_rascopy_multi_LL_wloop	;\n"
 
-		"dbra	%[wloop],om4_rascopy_multi_LL_wloop;\n\t"
+		"	adda.l	%[step],%[src]		;\n"
+		"	adda.l	%[step],%[dst0]		;\n"
+		"	adda.l	%[step],%[dst1]		;\n"
+		"	adda.l	%[step],%[dst2]		;\n"
+		"	adda.l	%[step],%[dst3]		;\n"
 
-		"adda.l	%[step],%[src];\n\t"
-		"adda.l	%[step],%[dst0];\n\t"
-		"adda.l	%[step],%[dst1];\n\t"
-		"adda.l	%[step],%[dst2];\n\t"
-		"adda.l	%[step],%[dst3];\n\t"
-
-		"dbra	%[hloop],om4_rascopy_multi_LL;\n\t"
-		  /* output */
-		: [src]"+&a"(src0)
-		 ,[dst0]"+&a"(dst0)
-		 ,[dst1]"+&a"(dst1)
-		 ,[dst2]"+&a"(dst2)
-		 ,[dst3]"+&a"(dst3)
-		 ,[hloop]"=&d"(hloop)
-		 ,[wloop]"=&d"(wloop)
-		  /* input */
-		: [wh]"r"(wh)
-		 ,[h]"g"(h)
-		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
-		 ,[step]"r"(step8)
-		: /* clobbers */
-		  "memory"
+		"	dbra	%[hloop],om4_rascopy_multi_LL		;\n"
+		    : /* output */
+		      [src] "+&a" (src0),
+		      [dst0] "+&a" (dst0),
+		      [dst1] "+&a" (dst1),
+		      [dst2] "+&a" (dst2),
+		      [dst3] "+&a" (dst3),
+		      [hloop] "=&d" (hloop),
+		      [wloop] "=&d" (wloop)
+		    : /* input */
+		      [wh] "r" (wh),
+		      [h] "g" (h),
+		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [step] "r" (step8)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		if ((width & 0x3f) == 0) {
@@ -923,37 +929,37 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
 		asm volatile(
-		"move.l	%[h],%[hloop];\n\t"
-"om4_rascopy_multi_L: \n\t"
-		"move.l	(%[src]),(%[dst0]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst1]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst2]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst3]);\n\t"
-		"adda.l	%[rewind],%[src];\n\t"
+		"	move.l	%[h],%[hloop]			;\n"
+		"om4_rascopy_multi_L:\n"
+		"	move.l	(%[src]),(%[dst0])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst1])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst2])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst3])		;\n"
+		"	adda.l	%[rewind],%[src]		;\n"
 
-		"adda.l	%[step],%[dst0];\n\t"
-		"adda.l	%[step],%[dst1];\n\t"
-		"adda.l	%[step],%[dst2];\n\t"
-		"adda.l	%[step],%[dst3];\n\t"
+		"	adda.l	%[step],%[dst0]			;\n"
+		"	adda.l	%[step],%[dst1]			;\n"
+		"	adda.l	%[step],%[dst2]			;\n"
+		"	adda.l	%[step],%[dst3]			;\n"
 
-		"dbra	%[hloop],om4_rascopy_multi_L;\n\t"
-		  /* output */
-		: [src]"+&a"(src0)
-		 ,[dst0]"+&a"(dst0)
-		 ,[dst1]"+&a"(dst1)
-		 ,[dst2]"+&a"(dst2)
-		 ,[dst3]"+&a"(dst3)
-		 ,[hloop]"=&d"(hloop)
-		  /* input */
-		: [h]"g"(h)
-		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
-		 ,[rewind]"r"(rewind)
-		 ,[step]"r"(step)
-		: /* clobbers */
-		  "memory"
+		"	dbra	%[hloop],om4_rascopy_multi_L	;\n"
+		    : /* output */
+		      [src] "+&a" (src0),
+		      [dst0] "+&a" (dst0),
+		      [dst1] "+&a" (dst1),
+		      [dst2] "+&a" (dst2),
+		      [dst3] "+&a" (dst3),
+		      [hloop] "=&d" (hloop)
+		    : /* input */
+		      [h] "g" (h),
+		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [rewind] "r" (rewind),
+		      [step] "r" (step)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		if ((width & 0x1f) == 0) {
@@ -979,35 +985,35 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		omfb_setROP_curplane(ROP_THROUGH, mask);
 
 		asm volatile(
-		"move.l	%[h],%[hloop];\n\t"
-"om4_rascopy_multi_bit: \n\t"
-		"move.l	(%[src]),(%[dst0]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst1]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst2]);\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"move.l	(%[src]),(%[dst3]);\n\t"
-		"adda.l	%[rewind],%[src];\n\t"
+		"	move.l	%[h],%[hloop]			;\n"
+		"om4_rascopy_multi_bit:\n"
+		"	move.l	(%[src]),(%[dst0])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst1])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst2])		;\n"
+		"	adda.l	%[PLANEOFS],%[src]		;\n"
+		"	move.l	(%[src]),(%[dst3])		;\n"
+		"	adda.l	%[rewind],%[src]		;\n"
 
-		"adda.l	%[step],%[dst0];\n\t"
-		"adda.l	%[step],%[dst1];\n\t"
-		"adda.l	%[step],%[dst2];\n\t"
-		"adda.l	%[step],%[dst3];\n\t"
-
-		: [src]"+&a"(src0)
-		 ,[dst0]"+&a"(dst0)
-		 ,[dst1]"+&a"(dst1)
-		 ,[dst2]"+&a"(dst2)
-		 ,[dst3]"+&a"(dst3)
-		 ,[hloop]"=&d"(hloop)
-		  /* input */
-		: [h]"g"(h)
-		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
-		 ,[rewind]"r"(rewind)
-		 ,[step]"r"(step)
-		: /* clobbers */
-		  "memory"
+		"	adda.l	%[step],%[dst0]			;\n"
+		"	adda.l	%[step],%[dst1]			;\n"
+		"	adda.l	%[step],%[dst2]			;\n"
+		"	adda.l	%[step],%[dst3]			;\n"
+		    : /* output */
+		      [src] "+&a" (src0),
+		      [dst0] "+&a" (dst0),
+		      [dst1] "+&a" (dst1),
+		      [dst2] "+&a" (dst2),
+		      [dst3] "+&a" (dst3),
+		      [hloop] "=&d" (hloop)
+		    : /* input */
+		      [h] "g" (h),
+		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [rewind] "r" (rewind),
+		      [step] "r" (step)
+		    : /* clobbers */
+		      "memory"
 		);
 
 		omfb_resetplanemask_and_ROP();
