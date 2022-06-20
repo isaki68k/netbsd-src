@@ -703,8 +703,8 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		"	move.l	(%[src])+,(%[dst])+			;\n"
 		"	dbra	%[wloop],om_rascopy_solo_LL_wloop	;\n"
 
-		"	adda.l	%[step],%[src]				;\n"
-		"	adda.l	%[step],%[dst]				;\n"
+		"	adda.l	%[step8],%[src]				;\n"
+		"	adda.l	%[step8],%[dst]				;\n"
 
 		"	dbra	%[hloop],om_rascopy_solo_LL;\n"
 		    : /* output */
@@ -715,7 +715,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		    : /* input */
 		      [wh] "r" (wh),
 		      [h] "g" (h),
-		      [step] "r" (step8)
+		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
 		);
@@ -885,11 +885,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 		"	dbra	%[wloop],om4_rascopy_multi_LL_wloop	;\n"
 
-		"	adda.l	%[step],%[src]		;\n"
-		"	adda.l	%[step],%[dst0]		;\n"
-		"	adda.l	%[step],%[dst1]		;\n"
-		"	adda.l	%[step],%[dst2]		;\n"
-		"	adda.l	%[step],%[dst3]		;\n"
+		"	adda.l	%[step8],%[src]		;\n"
+		"	adda.l	%[step8],%[dst0]	;\n"
+		"	adda.l	%[step8],%[dst1]	;\n"
+		"	adda.l	%[step8],%[dst2]	;\n"
+		"	adda.l	%[step8],%[dst3]	;\n"
 
 		"	dbra	%[hloop],om4_rascopy_multi_LL		;\n"
 		    : /* output */
@@ -904,7 +904,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      [wh] "r" (wh),
 		      [h] "g" (h),
 		      [PLANEOFS] "r" (OMFB_PLANEOFS),
-		      [step] "r" (step8)
+		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
 		);
