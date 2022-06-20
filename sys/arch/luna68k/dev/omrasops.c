@@ -244,7 +244,7 @@ om_fill(int planemask, int rop,
 			);
 #else
 			do {
-				*d = v;
+				*(uint32_t *)d = v;
 				d += dstspan;
 			} while (--h >= 0);
 #endif
