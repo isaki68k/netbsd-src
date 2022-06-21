@@ -695,19 +695,20 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
+		"|om_rascopy_solo_LL:\n"
 		"	move.w	%[h],%[hloop]				;\n"
-		"om_rascopy_solo_LL:\n"
+		"1:\n"
 		"	move.w	%[wh],%[wloop]				;\n"
 
-		"om_rascopy_solo_LL_wloop:\n"
+		"2:\n"
 		"	move.l	(%[src])+,(%[dst])+			;\n"
 		"	move.l	(%[src])+,(%[dst])+			;\n"
-		"	dbra	%[wloop],om_rascopy_solo_LL_wloop	;\n"
+		"	dbra	%[wloop],2b				;\n"
 
 		"	adda.l	%[step8],%[src]				;\n"
 		"	adda.l	%[step8],%[dst]				;\n"
 
-		"	dbra	%[hloop],om_rascopy_solo_LL;\n"
+		"	dbra	%[hloop],1b				;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -747,14 +748,15 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
+		"|om_rascopy_solo_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
-		"om_rascopy_solo_L:\n"
+		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[hloop],om_rascopy_solo_L	;\n"
+		"	dbra	%[hloop],1b			;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -799,14 +801,15 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
+		"|om_rascopy_solo_bit:\n"
 		"	move.l	%[h],%[hloop]			;\n"
-		"om4_rascopy_solo_bit:\n"
+		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[hloop],om4_rascopy_solo_bit	;\n"
+		"	dbra	%[hloop],1b			;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -875,11 +878,12 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 #if USE_M68K_ASM
 		asm volatile(
+		"|om4_rascopy_multi_LL:\n"
 		"	move.w	%[h],%[hloop]	;\n"
-		"om4_rascopy_multi_LL:\n"
+		"1:\n"
 		"	move.w	%[wh],%[wloop]	;\n"
 
-		"om4_rascopy_multi_LL_wloop:\n"
+		"2:\n"
 			/* fastest way for MC68030 */
 			/*
 			 * 命令のオーバーラップとアクセスウェイトの関係で、
@@ -913,7 +917,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	suba.l	%[PLANEOFS],%[src0]	;\n"
 		"	move.l	(%[src0])+,(%[dst0])+	;\n"	/* P0 */
 
-		"	dbra	%[wloop],om4_rascopy_multi_LL_wloop	;\n"
+		"	dbra	%[wloop],2b		;\n"
 
 		"	adda.l	%[step8],%[src0]	;\n"
 		"	adda.l	%[step8],%[dst0]	;\n"
@@ -921,7 +925,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step8],%[dst2]	;\n"
 		"	adda.l	%[step8],%[dst3]	;\n"
 
-		"	dbra	%[hloop],om4_rascopy_multi_LL		;\n"
+		"	dbra	%[hloop],1b		;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
@@ -995,8 +999,9 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
+		"|om4_rascopy_multi_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
-		"om4_rascopy_multi_L:\n"
+		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1011,7 +1016,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[hloop],om4_rascopy_multi_L	;\n"
+		"	dbra	%[hloop],1b			;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
@@ -1069,8 +1074,9 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 #if USE_M68K_ASM
 		asm volatile(
+		"|om4_rascopy_multi_bit:\n"
 		"	move.l	%[h],%[hloop]			;\n"
-		"om4_rascopy_multi_bit:\n"
+		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1085,7 +1091,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[hloop],om4_rascopy_multi_bit	;\n"
+		"	dbra	%[hloop],1b			;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
