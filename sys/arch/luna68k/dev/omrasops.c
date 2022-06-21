@@ -1084,6 +1084,8 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst1]			;\n"
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
+
+		"	dbra	%[hloop],om4_rascopy_multi_bit	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
