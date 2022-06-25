@@ -193,7 +193,7 @@ om_reset_rowattr(int row, int bg)
  */
 static void
 om_fill(int planemask, int rop,
-    uint8_t *dstptr, int dstbitofs, int dstspan,
+    uint8_t *dstptr, int dstbitoffs, int dstspan,
     uint32_t v,
     int width, int height)
 {
@@ -202,14 +202,14 @@ om_fill(int planemask, int rop,
 
 	__assume(width > 0);
 	__assume(height > 0);
-	__assume(0 <= dstbitofs && dstbitofs < 32);
+	__assume(0 <= dstbitoffs && dstbitoffs < 32);
 
 	omfb_setplanemask(planemask);
 
 	int16_t h16 = height - 1;
 
-	mask = ALL1BITS >> dstbitofs;
-	dw = 32 - dstbitofs;
+	mask = ALL1BITS >> dstbitoffs;
+	dw = 32 - dstbitoffs;
 
 	/* for loop waste 4 clock */
 	do {
@@ -257,7 +257,7 @@ om_fill(int planemask, int rop,
 
 static void
 om_fill_color(int color,
-	uint8_t *dstptr, int dstbitofs, int dstspan,
+	uint8_t *dstptr, int dstbitoffs, int dstspan,
 	int width, int height)
 {
 	uint32_t mask;
@@ -270,8 +270,8 @@ om_fill_color(int color,
 	/* select all planes */
 	omfb_setplanemask(omfb_planemask);
 
-	mask = ALL1BITS >> dstbitofs;
-	dw = 32 - dstbitofs;
+	mask = ALL1BITS >> dstbitoffs;
+	dw = 32 - dstbitoffs;
 	int16_t h16 = height - 1;
 	int16_t lastplane = omfb_planecount - 1;
 
@@ -288,7 +288,7 @@ om_fill_color(int color,
 		{
 			/* TODO: 中間ならマスクを再設定しない */
 			uint32_t *ropfn = (uint32_t *)
-			    (BMAP_FN0 + OMFB_PLANEOFS * lastplane);
+			    (BMAP_FN0 + OMFB_PLANEOFFS * lastplane);
 			int16_t plane = lastplane;
 			int16_t rop;
 
@@ -313,7 +313,7 @@ om_fill_color(int color,
 				rop = (color & (1 << plane)) ? 0xff: 0;
 				rop &= ROP_ONE;
 				ropfn[rop] = mask;
-				ropfn -= (OMFB_PLANEOFS >> 2);
+				ropfn -= (OMFB_PLANEOFFS >> 2);
 			} while (--plane >= 0);
 #endif
 		}
@@ -862,9 +862,9 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	}
 	h = height - 1;	/* for dbra */
 
-	dst1 = dst0 + OMFB_PLANEOFS;
-	dst2 = dst1 + OMFB_PLANEOFS;
-	dst3 = dst2 + OMFB_PLANEOFS;
+	dst1 = dst0 + OMFB_PLANEOFFS;
+	dst2 = dst1 + OMFB_PLANEOFFS;
+	dst3 = dst2 + OMFB_PLANEOFFS;
 
 	// まず2ロングワード単位の矩形を転送する
 	wh = (width >> 6);
@@ -898,21 +898,21 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			 * オーバーラップできる。
 			 */
 		"	move.l	(%[src0]),(%[dst0])+	;\n"	/* P0 */
-		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst1])+	;\n"	/* P1 */
-		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst2])+	;\n"	/* P2 */
-		"	adda.l	%[PLANEOFS],%[src0]	;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
 
 		"	addq.l	#4,%[src0]		;\n"	// オーバーラップを期待して ()+ にしない
 
 		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
-		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst2])+	;\n"	/* P2 */
-		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst1])+	;\n"	/* P1 */
-		"	suba.l	%[PLANEOFS],%[src0]	;\n"
+		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0])+,(%[dst0])+	;\n"	/* P0 */
 
 		"	dbra	%[wloop],2b		;\n"
@@ -935,7 +935,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		    : /* input */
 		      [wh] "r" (wh),
 		      [h] "g" (h),
-		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
@@ -945,26 +945,26 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			for (wloop = wh; wloop >= 0; wloop--) {
 				*(uint32_t *)dst0 = *(uint32_t *)src0;
 				dst0 += 4;
-				src0 += OMFB_PLANEOFS;
+				src0 += OMFB_PLANEOFFS;
 				*(uint32_t *)dst1 = *(uint32_t *)src0;
 				dst1 += 4;
-				src0 += OMFB_PLANEOFS;
+				src0 += OMFB_PLANEOFFS;
 				*(uint32_t *)dst2 = *(uint32_t *)src0;
 				dst2 += 4;
-				src0 += OMFB_PLANEOFS;
+				src0 += OMFB_PLANEOFFS;
 				*(uint32_t *)dst3 = *(uint32_t *)src0;
 				dst3 += 4;
 				src0 += 4;
 
 				*(uint32_t *)dst3 = *(uint32_t *)src0;
 				dst3 += 4;
-				src0 -= OMFB_PLANEOFS;
+				src0 -= OMFB_PLANEOFFS;
 				*(uint32_t *)dst2 = *(uint32_t *)src0;
 				dst2 += 4;
-				src0 -= OMFB_PLANEOFS;
+				src0 -= OMFB_PLANEOFFS;
 				*(uint32_t *)dst1 = *(uint32_t *)src0;
 				dst1 += 4;
-				src0 -= OMFB_PLANEOFS;
+				src0 -= OMFB_PLANEOFFS;
 				*(uint32_t *)dst0 = *(uint32_t *)src0;
 				dst0 += 4;
 				src0 += 4;
@@ -991,7 +991,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	}
 
 	// rewind はプレーンの巻き戻しなので Y 順序とは関係ない
-	rewind = OMFB_STRIDE - OMFB_PLANEOFS * 3;
+	rewind = OMFB_STRIDE - OMFB_PLANEOFFS * 3;
 
 	if ((width & 32)) {
 		// 奇数ロングワードなので 1 ロングワード転送
@@ -1001,11 +1001,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst2])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst3])		;\n"
 		"	adda.l	%[rewind],%[src0]		;\n"
 
@@ -1024,7 +1024,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      [hloop] "=&d" (hloop)
 		    : /* input */
 		      [h] "g" (h),
-		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [rewind] "r" (rewind),
 		      [step] "r" (step)
 		    : /* clobbers */
@@ -1033,11 +1033,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #else
 		for (hloop = h; hloop >= 0; hloop--) {
 			*(uint32_t *)dst0 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst1 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst2 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst3 = *(uint32_t *)src0;
 			src0 += rewind;
 
@@ -1076,11 +1076,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst2])		;\n"
-		"	adda.l	%[PLANEOFS],%[src0]		;\n"
+		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst3])		;\n"
 		"	adda.l	%[rewind],%[src0]		;\n"
 
@@ -1099,7 +1099,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      [hloop] "=&d" (hloop)
 		    : /* input */
 		      [h] "g" (h),
-		      [PLANEOFS] "r" (OMFB_PLANEOFS),
+		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [rewind] "r" (rewind),
 		      [step] "r" (step)
 		    : /* clobbers */
@@ -1108,11 +1108,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #else
 		for (hloop = h; hloop >= 0; hloop--) {
 			*(uint32_t *)dst0 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst1 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst2 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFS;
+			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst3 = *(uint32_t *)src0;
 			src0 += rewind;
 
@@ -1164,7 +1164,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
 	int i;
-	uint32_t srcplaneofs = 0;
+	uint32_t srcplaneoffs = 0;
 	int r;
 
 	while (nrows > 0) {
@@ -1186,8 +1186,8 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 		if (rowattr[srcrow].ismulti) {
 			// src とdst は共通プレーンを指しているので P0 に変換
-			uint8_t *src0 = src + OMFB_PLANEOFS;
-			uint8_t *dst0 = dst + OMFB_PLANEOFS;
+			uint8_t *src0 = src + OMFB_PLANEOFFS;
+			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
 			omfb_setROP_curplane(ROP_THROUGH, ALL1BITS);
 			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
@@ -1208,10 +1208,11 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				bg >>= 1;
 			}
 
-			srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
+			srcplaneoffs = OMFB_PLANEOFFS +
+			    srcplane * OMFB_PLANEOFFS;
 
 // YYY 宣言
-			uint8_t *srcP = src + srcplaneofs;
+			uint8_t *srcP = src + srcplaneoffs;
 			om_rascopy_single(dst, srcP, width, rowheight * r, rop);
 		}
 

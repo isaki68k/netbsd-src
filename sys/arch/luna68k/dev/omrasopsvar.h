@@ -44,7 +44,7 @@ BMSEL は共通ビットマッププレーンへの書き込みがどのプレ�
 #define OMFB_FB_RADDR	(BMAP_BMAP0)	/* plane #0 */
 
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
-#define OMFB_PLANEOFS	(0x40000)	/* plane offset */
+#define OMFB_PLANEOFFS	(0x40000)	/* plane offset */
 
 #define OMFB_RASTERBYTES	(2048/8) /* bytes in VRAM raster */
 
@@ -74,10 +74,10 @@ extern int hwplanecount;
 #define W(addr)  ((uint32_t *)(addr))
 
 /* obsoleted */
-#define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 1))
-#define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 2))
-#define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 3))
-#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 4))
+#define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 1))
+#define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 2))
+#define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 3))
+#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 4))
 
 /*
  * ROP function
@@ -137,14 +137,14 @@ omfb_setplanemask(int planemask)
 static inline void
 omfb_setROP(int plane, int rop, uint32_t mask)
 {
-	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFS * plane))[rop] = mask;
+	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] = mask;
 }
 
 /* get ROP address */
 static inline uint32_t *
 omfb_ROPaddr(int plane, int rop)
 {
-	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFS * plane + rop * 4);
+	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
 }
 
 /* set ROP and ROP's mask for current setplanemask-ed plane(s) */
