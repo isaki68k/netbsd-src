@@ -275,8 +275,6 @@ om_fill_color(int color,
 	int16_t h16 = height - 1;
 	int16_t lastplane = omfb_planecount - 1;
 
-#define MAX_PLANES	(8)
-
 	do {
 		width -= dw;
 		if (width < 0) {
