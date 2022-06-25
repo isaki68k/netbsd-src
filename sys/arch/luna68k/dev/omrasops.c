@@ -653,7 +653,7 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 }
 
 /*
- * solo plane raster copy
+ * single plane raster copy
  * dst : destination plane pointer
  * src : source plane pointer
  *    if y-forward, src > dst, point to Left-Top.
@@ -664,7 +664,7 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
  * プレーンマスクとROP は破壊される
  */
 static void
-om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
+om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
     uint8_t rop[])
 {
 	int wh;
@@ -682,7 +682,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 	h = height - 1;	/* for dbra */
 
-	// solo では2ロングワード単位の処理をする必然は無いが、
+	// single では2ロングワード単位の処理をする必然は無いが、
 	// 対称性と高速化の両面から考えて、2ロングワード処理を行う。
 
 	// まず2ロングワード単位の矩形を転送する
@@ -695,7 +695,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_solo_LL:\n"
+		"|om_rascopy_single_LL:\n"
 		"	move.w	%[h],%[hloop]				;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]				;\n"
@@ -748,7 +748,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_solo_L:\n"
+		"|om_rascopy_single_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
@@ -801,7 +801,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_solo_bit:\n"
+		"|om_rascopy_single_bit:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
@@ -1212,8 +1212,9 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 			srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
 
+// YYY 宣言
 			uint8_t *srcP = src + srcplaneofs;
-			om_rascopy_solo(dst, srcP, width, rowheight * r, rop);
+			om_rascopy_single(dst, srcP, width, rowheight * r, rop);
 		}
 
 skip:
