@@ -110,14 +110,14 @@ static struct rowattr_t rowattr[43];
 
 /* set planemask for common plane and common ROP */
 static inline void
-omfb_setplanemask(int planemask)
+omfb_set_planemask(int planemask)
 {
 	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
 }
 
 /* set ROP and ROP's mask for individual plane */
 static inline void
-omfb_setROP(int plane, int rop, uint32_t mask)
+omfb_set_rop(int plane, int rop, uint32_t mask)
 {
 	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] = mask;
 }
@@ -131,17 +131,17 @@ omfb_ROPaddr(int plane, int rop)
 
 /* set ROP and ROP's mask for current setplanemask-ed plane(s) */
 static inline void
-omfb_setROP_curplane(int rop, uint32_t mask)
+omfb_set_rop_curplane(int rop, uint32_t mask)
 {
 	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
 }
 
 /* reset planemask and ROP */
 static inline void
-omfb_resetplanemask_and_ROP(void)
+omfb_reset_planemask_and_rop(void)
 {
-	omfb_setplanemask(omfb_planemask);
-	omfb_setROP_curplane(ROP_THROUGH, ~0U);
+	omfb_set_planemask(omfb_planemask);
+	omfb_set_rop_curplane(ROP_THROUGH, ~0U);
 }
 
 static inline void
@@ -244,7 +244,7 @@ om_fill(int planemask, int rop,
 	__assume(height > 0);
 	__assume(0 <= dstbitoffs && dstbitoffs < 32);
 
-	omfb_setplanemask(planemask);
+	omfb_set_planemask(planemask);
 
 	int16_t h16 = height - 1;
 
@@ -263,7 +263,7 @@ om_fill(int planemask, int rop,
 			width = 0;
 		}
 
-		omfb_setROP_curplane(rop, mask);
+		omfb_set_rop_curplane(rop, mask);
 
 		{
 			uint8_t *d = dstptr;
@@ -308,7 +308,7 @@ om_fill_color(int color,
 	__assume(omfb_planecount > 0);
 
 	/* select all planes */
-	omfb_setplanemask(omfb_planemask);
+	omfb_set_planemask(omfb_planemask);
 
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
@@ -452,7 +452,7 @@ omfb_drawchar(
 	dstC = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
 
 	/* select all plane */
-	omfb_setplanemask(omfb_planemask);
+	omfb_set_planemask(omfb_planemask);
 
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
@@ -572,7 +572,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	    fb, fontstride, fontx, heightscale,
 	    fg, bg);
 
-	omfb_resetplanemask_and_ROP();
+	omfb_reset_planemask_and_rop();
 }
 
 static void
@@ -610,7 +610,7 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	}
 
 	/* reset mask value */
-	omfb_resetplanemask_and_ROP();
+	omfb_reset_planemask_and_rop();
 }
 
 static void
@@ -648,7 +648,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
 	/* reset mask value */
-	omfb_resetplanemask_and_ROP();
+	omfb_reset_planemask_and_rop();
 }
 
 static void
@@ -834,7 +834,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		// ROP の状態を保持したたまマスクを設定することがハード的には
 		// できないので、ここでは共通ROPは使えない。
 		for (plane = 0; plane < omfb_planecount; plane++) {
-			omfb_setROP(plane, rop[plane], mask);
+			omfb_set_rop(plane, rop[plane], mask);
 		}
 
 #if USE_M68K_ASM
@@ -867,7 +867,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #endif
 
 		for (plane = 0; plane < omfb_planecount; plane++) {
-			omfb_setROP(plane, rop[plane], ALL1BITS);
+			omfb_set_rop(plane, rop[plane], ALL1BITS);
 		}
 	}
 }
@@ -1107,8 +1107,8 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		uint32_t mask;
 
 		mask = ALL1BITS << (32 - wl);
-		omfb_setplanemask(omfb_planemask);
-		omfb_setROP_curplane(ROP_THROUGH, mask);
+		omfb_set_planemask(omfb_planemask);
+		omfb_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
 		asm volatile(
@@ -1163,7 +1163,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		}
 #endif
 
-		omfb_resetplanemask_and_ROP();
+		omfb_reset_planemask_and_rop();
 	}
 }
 
@@ -1199,7 +1199,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	}
 	ptrstep = ri->ri_stride * rowheight;
 
-	omfb_setplanemask(omfb_planemask);
+	omfb_set_planemask(omfb_planemask);
 
 	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
@@ -1228,7 +1228,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			// src とdst は共通プレーンを指しているので P0 に変換
 			uint8_t *src0 = src + OMFB_PLANEOFFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
-			omfb_setROP_curplane(ROP_THROUGH, ALL1BITS);
+			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
 			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t fg = rowattr[srcrow].fg;
@@ -1240,7 +1240,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			for (i = 0; i < omfb_planecount; i++) {
 				int t = (fg & 1) * 2 + (bg & 1);
 				rop[i] = ropsel[t];
-				omfb_setROP(i, rop[i], ALL1BITS);
+				omfb_set_rop(i, rop[i], ALL1BITS);
 				if (t == 2) {
 					srcplane = i;
 				}
@@ -1644,7 +1644,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
 	ri->ri_flg ^= RI_CURSOR;
 
 	/* reset mask value */
-	omfb_resetplanemask_and_ROP();
+	omfb_reset_planemask_and_rop();
 }
 
 /*
