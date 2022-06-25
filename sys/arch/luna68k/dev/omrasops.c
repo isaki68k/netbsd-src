@@ -112,6 +112,7 @@ static struct rowattr_t rowattr[43];
 static inline void
 omfb_set_planemask(int planemask)
 {
+
 	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
 }
 
@@ -119,13 +120,16 @@ omfb_set_planemask(int planemask)
 static inline void
 omfb_set_rop(int plane, int rop, uint32_t mask)
 {
-	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] = mask;
+
+	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] =
+	    mask;
 }
 
 /* get ROP address */
 static inline uint32_t *
 omfb_ROPaddr(int plane, int rop)
 {
+
 	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
 }
 
@@ -133,6 +137,7 @@ omfb_ROPaddr(int plane, int rop)
 static inline void
 omfb_set_rop_curplane(int rop, uint32_t mask)
 {
+
 	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
 }
 
@@ -140,6 +145,7 @@ omfb_set_rop_curplane(int rop, uint32_t mask)
 static inline void
 omfb_reset_planemask_and_rop(void)
 {
+
 	omfb_set_planemask(omfb_planemask);
 	omfb_set_rop_curplane(ROP_THROUGH, ~0U);
 }
@@ -147,6 +153,7 @@ omfb_reset_planemask_and_rop(void)
 static inline void
 om_set_rowattr(int row, int fg, int bg)
 {
+
 	if (rowattr[row].fg == fg && rowattr[row].bg == bg)
 		return;
 	if (rowattr[row].ismulti)
@@ -171,6 +178,7 @@ om_set_rowattr(int row, int fg, int bg)
 static inline void
 om_reset_rowattr(int row, int bg)
 {
+
 	rowattr[row].ismulti = false;
 	rowattr[row].bg = bg;
 	rowattr[row].fg = bg;	 /* fg sets same value */
