@@ -104,6 +104,46 @@ struct rowattr_t {
 };
 static struct rowattr_t rowattr[43];
 
+/*
+ * planemask and ROP inline functions
+ */
+
+/* set planemask for common plane and common ROP */
+static inline void
+omfb_setplanemask(int planemask)
+{
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+}
+
+/* set ROP and ROP's mask for individual plane */
+static inline void
+omfb_setROP(int plane, int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] = mask;
+}
+
+/* get ROP address */
+static inline uint32_t *
+omfb_ROPaddr(int plane, int rop)
+{
+	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
+}
+
+/* set ROP and ROP's mask for current setplanemask-ed plane(s) */
+static inline void
+omfb_setROP_curplane(int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
+}
+
+/* reset planemask and ROP */
+static inline void
+omfb_resetplanemask_and_ROP(void)
+{
+	omfb_setplanemask(omfb_planemask);
+	omfb_setROP_curplane(ROP_THROUGH, ~0U);
+}
+
 static inline void
 om_set_rowattr(int row, int fg, int bg)
 {
