@@ -437,7 +437,7 @@ omfb_drawchar(
 	uint32_t mask;
 	int plane;
 	int dw;		/* 1 pass width bits */
-	uint8_t *dstC;
+	uint8_t *dstc;
 	int xh, xl;
 
 	if (saved_fg != fg || saved_bg != bg) {
@@ -457,7 +457,7 @@ omfb_drawchar(
 	xl = x & 0x1f;
 
 	/* write to common plane */
-	dstC = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
+	dstc = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
 
 	/* select all plane */
 	omfb_set_planemask(omfb_planemask);
@@ -506,7 +506,7 @@ omfb_drawchar(
 #endif
 
 		if (heightscale == 0) {
-			uint8_t *d = dstC;
+			uint8_t *d = dstc;
 			uint8_t *f = fontptr;
 			int16_t h = height - 1;
 			do {
@@ -518,7 +518,7 @@ omfb_drawchar(
 				f += fontstride;
 			} while (--h >= 0);
 		} else {
-			uint8_t *d = dstC;
+			uint8_t *d = dstc;
 			uint8_t *f = fontptr;
 			int16_t h = height - 1;
 			do {
@@ -533,7 +533,7 @@ omfb_drawchar(
 			} while (--h >= 0);
 		}
 
-		dstC += 4;
+		dstc += 4;
 		fontx += dw;
 		mask = ALL1BITS;
 		dw = 32;
