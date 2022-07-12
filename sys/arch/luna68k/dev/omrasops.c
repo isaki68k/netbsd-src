@@ -57,13 +57,13 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 // gcc でコンパイラに最適化の条件を与える。
 // clang 5 にはあるようだ…
 #if defined(__GNUC__)
-#define __assume(cond)	if (!(cond))__unreachable()
+#define ASSUME(cond)	if (!(cond)) __unreachable()
 #elif defined(__clang__)
 # if __has_builtin(__builtin_assume)
-#  define __assume(cond)	__builtin_assume(cond)
+#  define ASSUME(cond)	__builtin_assume(cond)
 # endif
 #else
-#define __assume(cond)	(void)(cond)
+#define ASSUME(cond)	(void)(cond)
 #endif
 
 /* wscons emulator operations */
@@ -248,9 +248,9 @@ om_fill(int planemask, int rop,
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
 
-	__assume(width > 0);
-	__assume(height > 0);
-	__assume(0 <= dstbitoffs && dstbitoffs < 32);
+	ASSUME(width > 0);
+	ASSUME(height > 0);
+	ASSUME(0 <= dstbitoffs && dstbitoffs < 32);
 
 	omfb_set_planemask(planemask);
 
@@ -311,9 +311,9 @@ om_fill_color(int color,
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
 
-	__assume(width > 0);
-	__assume(height > 0);
-	__assume(omfb_planecount > 0);
+	ASSUME(width > 0);
+	ASSUME(height > 0);
+	ASSUME(omfb_planecount > 0);
 
 	/* select all planes */
 	omfb_set_planemask(omfb_planemask);
@@ -465,7 +465,7 @@ omfb_drawchar(
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
 
-	__assume(
+	ASSUME(
 	    omfb_planecount == 8 ||
 	    omfb_planecount == 4 ||
 	    omfb_planecount == 1);
