@@ -127,7 +127,7 @@ omfb_set_rop(int plane, int rop, uint32_t mask)
 
 /* get ROP address */
 static inline uint32_t *
-omfb_ROPaddr(int plane, int rop)
+omfb_rop_addr(int plane, int rop)
 {
 
 	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
@@ -446,7 +446,7 @@ omfb_drawchar(
 		/* ROP を求める */
 		for (plane = 0; plane < omfb_planecount; plane++) {
 			int t = (fg & 1) * 2 + (bg & 1);
-			ropaddr[plane] = omfb_ROPaddr(plane, ropsel[t]);
+			ropaddr[plane] = omfb_rop_addr(plane, ropsel[t]);
 			fg >>= 1;
 			bg >>= 1;
 		}
