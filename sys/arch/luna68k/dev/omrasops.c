@@ -1260,8 +1260,8 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			    srcplane * OMFB_PLANEOFFS;
 
 // YYY 宣言
-			uint8_t *srcP = src + srcplaneoffs;
-			om_rascopy_single(dst, srcP, width, rowheight * r, rop);
+			uint8_t *srcp = src + srcplaneoffs;
+			om_rascopy_single(dst, srcp, width, rowheight * r, rop);
 		}
 
 skip:
