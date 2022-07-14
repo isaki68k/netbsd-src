@@ -790,7 +790,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		dst -= height * step;
 	}
 
-	if ((width & 32)) {
+	if ((width & 32) != 0) {
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
@@ -1041,7 +1041,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	// rewind はプレーンの巻き戻しなので Y 順序とは関係ない
 	rewind = OMFB_STRIDE - OMFB_PLANEOFFS * 3;
 
-	if ((width & 32)) {
+	if ((width & 32) != 0) {
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
@@ -1685,7 +1685,7 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 	uint32_t a = 0;
 	uint16_t c = 0;
 
-	if ((flags & WSATTR_BLINK))
+	if ((flags & WSATTR_BLINK) != 0)
 		return EINVAL;
 
 	if ((flags & WSATTR_WSCOLORS) == 0) {
@@ -1693,14 +1693,14 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 		bg = WSCOL_BLACK;	/* maybe 0 */
 	}
 
-	if ((flags & WSATTR_REVERSE)) {
+	if ((flags & WSATTR_REVERSE) != 0) {
 		int swap;
 		swap = fg;
 		fg = bg;
 		bg = swap;
 	}
 
-	if ((flags & WSATTR_HILIT)) {
+	if ((flags & WSATTR_HILIT) != 0) {
 		if (omfb_planecount == 1) {
 #if 0
 			a |= OMFB_ATTR_BOLD;
@@ -1712,7 +1712,7 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 		}
 	}
 
-	if ((flags & WSATTR_UNDERLINE)) {
+	if ((flags & WSATTR_UNDERLINE) != 0) {
 #if 0
 		a |= OMFB_ATTR_UNDERLINE;
 #else
