@@ -128,7 +128,7 @@ static int	omrasops_init(struct rasops_info *, int, int);
 	asm("bfins %3,%0{%1:%2}"					\
 	    : "+o" (*(uint32_t *)(pdst))				\
 	    : "di" (x), "di" (w), "d" (src)				\
-	    : "memory" );
+	    : "memory" )
 
 #define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
