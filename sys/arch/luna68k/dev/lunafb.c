@@ -76,6 +76,8 @@ struct bt458 {
 
 #define	OMFB_RFCNT	BMAP_RFCNT	/* video h-origin/v-origin */
 #define	OMFB_RAMDAC	BMAP_PALLET2	/* Bt454/Bt458 RAMDAC */
+#define	OMFB_FB_WADDR	BMAP_BMP	/* common bitmap plane */
+#define	OMFB_FB_RADDR	BMAP_BMAP0	/* bitmap plane #0 */
 
 #define	OMFB_SIZE	(BMAP_FN0 - BMAP_BMP + PAGE_SIZE)
 

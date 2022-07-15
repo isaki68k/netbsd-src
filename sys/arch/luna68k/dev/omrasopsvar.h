@@ -34,15 +34,6 @@ BMSEL は共通ビットマッププレーンへの書き込みがどのプレ�
 
 #define OMFB_PLANEMASK	BMAP_BMSEL	/* BMSEL register */
 
-// XXX: maybe move to lunafb.c
-// these are no mean for users, also omrasops.c
-// XXX もともと 8 バイト足してあったが、これだと
-// VRAM の狙ったアドレスにアクセスできないので、やめてみる。
-//#define OMFB_FB_WADDR	(BMAP_BMP + 8)	/* common plane */
-//#define OMFB_FB_RADDR	(BMAP_BMAP0 + 8)/* plane #0 */
-#define OMFB_FB_WADDR	(BMAP_BMP)		/* common plane */
-#define OMFB_FB_RADDR	(BMAP_BMAP0)	/* plane #0 */
-
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
 #define OMFB_PLANEOFFS	(0x40000)	/* plane offset */
 
