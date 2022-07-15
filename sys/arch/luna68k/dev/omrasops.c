@@ -82,23 +82,23 @@ static struct rowattr_t rowattr[43];
 
 /* wscons emulator operations */
 static void	omfb_cursor(void *, int, int, int);
-static int	om_mapchar(void *, int, u_int *);
+static int	omfb_mapchar(void *, int, u_int *);
 static void	omfb_putchar(void *, int, int, u_int, long);
-static void	om1_copycols(void *, int, int, int, int);
-static void	om4_copycols(void *, int, int, int, int);
-static void	om1_copyrows(void *, int, int, int num);
-static void	om4_copyrows(void *, int, int, int num);
+static void	omfb1_copycols(void *, int, int, int, int);
+static void	omfb4_copycols(void *, int, int, int, int);
+static void	omfb1_copyrows(void *, int, int, int num);
+static void	omfb4_copyrows(void *, int, int, int num);
 static void	omfb_erasecols(void *, int, int, int, long);
 static void	omfb_eraserows(void *, int, int, long);
 static int	omfb_allocattr(void *, int, int, int, long *);
 
-static void	om_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
-static void	om_fill_color(int, uint8_t *, int, int, int, int);
+static void	omfb_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
+static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
 static void	omfb_drawchar(struct rasops_info *, int, int, int, int,
     uint8_t *, int, int, int, uint8_t, uint8_t);
-static void	om_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
+static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
-static void	om4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
+static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
 static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
@@ -192,7 +192,7 @@ omfb_reset_planemask_and_rop(void)
 }
 
 static inline void
-om_set_rowattr(int row, int fg, int bg)
+omfb_set_rowattr(int row, int fg, int bg)
 {
 
 	if (rowattr[row].fg == fg && rowattr[row].bg == bg)
@@ -217,7 +217,7 @@ om_set_rowattr(int row, int fg, int bg)
 }
 
 static inline void
-om_reset_rowattr(int row, int bg)
+omfb_reset_rowattr(int row, int bg)
 {
 
 	rowattr[row].ismulti = false;
@@ -231,7 +231,7 @@ om_reset_rowattr(int row, int bg)
  * 実質 ALL0BITS か ALL1BITS しか想定していない。
  */
 static void
-om_fill(int planemask, int rop,
+omfb_fill(int planemask, int rop,
     uint8_t *dstptr, int dstbitoffs, int dstspan,
     uint32_t v,
     int width, int height)
@@ -271,10 +271,10 @@ om_fill(int planemask, int rop,
 
 #if USE_M68K_ASM
 			asm volatile(
-			"om_fill_loop_h:\n"
+			"omfb_fill_loop_h:\n"
 			"	move.l	%[v],(%[d])		;\n"
 			"	add.l	%[dstspan],%[d]		;\n"
-			"	dbra	%[h],om_fill_loop_h	;\n"
+			"	dbra	%[h],omfb_fill_loop_h	;\n"
 			    : [d] "+&a" (d),
 			      [h] "+&d" (h)
 			    : [v] "d" (v),
@@ -295,7 +295,7 @@ om_fill(int planemask, int rop,
 }
 
 static void
-om_fill_color(int color,
+omfb_fill_color(int color,
 	uint8_t *dstptr, int dstbitoffs, int dstspan,
 	int width, int height)
 {
@@ -333,13 +333,13 @@ om_fill_color(int color,
 
 #if USE_M68K_ASM
 			asm volatile(
-			"om_fill_color_rop:\n"
+			"omfb_fill_color_rop:\n"
 			"	btst	%[plane],%[color]		;\n"
 			"	seq	%[rop]				;\n"
 			"	andi.w	#0x3c,%[rop]			;\n"
 			"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
 			"	suba.l	#0x40000,%[ropfn]		;\n"
-			"	dbra	%[plane],om_fill_color_rop	;\n"
+			"	dbra	%[plane],omfb_fill_color_rop	;\n"
 			    : [plane] "+&d" (plane),
 			      [ropfn] "+&a" (ropfn),
 			      [rop] "=&d" (rop)
@@ -364,10 +364,10 @@ om_fill_color(int color,
 
 #if USE_M68K_ASM
 			asm volatile(
-			"om_fill_color_loop_h:\n"
+			"omfb_fill_color_loop_h:\n"
 			"	clr.l	(%[d])	;\n"/* any data to write */
 			"	add.l	%[dstspan],%[d]			;\n"
-			"	dbra	%[h],om_fill_color_loop_h	;\n"
+			"	dbra	%[h],omfb_fill_color_loop_h	;\n"
 			    : [d] "+&a" (d),
 			      [h] "+&d" (h)
 			    : [dstspan] "r" (dstspan)
@@ -565,7 +565,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	}
 	omfb_unpack_attr(attr, &fg, &bg, NULL);
 
-	om_set_rowattr(row, fg, bg);
+	omfb_set_rowattr(row, fg, bg);
 
 	omfb_drawchar(ri, x, y, width, height,
 	    fb, fontstride, fontx, heightscale,
@@ -598,14 +598,14 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	// 本当はどうなの
-	om_set_rowattr(row, fg, bg);
+	omfb_set_rowattr(row, fg, bg);
 
 	if (bg == 0) {
-		// om_fill のほうが効率がすこし良い
-		om_fill(omfb_planemask, ROP_ZERO,
+		// omfb_fill のほうが効率がすこし良い
+		omfb_fill(omfb_planemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
-		om_fill_color(bg, p, sl, scanspan, width, height);
+		omfb_fill_color(bg, p, sl, scanspan, width, height);
 	}
 
 	/* reset mask value */
@@ -636,22 +636,22 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	for (int row = startrow; row < startrow + nrows; row++) {
-		om_reset_rowattr(row, bg);
+		omfb_reset_rowattr(row, bg);
 	}
 
 	if (bg == 0) {
-		// om_fill のほうが効率がすこし良い
-		om_fill(omfb_planemask, ROP_ZERO,
+		// omfb_fill のほうが効率がすこし良い
+		omfb_fill(omfb_planemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
-		om_fill_color(bg, p, sl, scanspan, width, height);
+		omfb_fill_color(bg, p, sl, scanspan, width, height);
 	}
 	/* reset mask value */
 	omfb_reset_planemask_and_rop();
 }
 
 static void
-om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
+omfb1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *p, *q;
@@ -701,7 +701,7 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
  * プレーンマスクとROP は破壊される
  */
 static void
-om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
+omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
     uint8_t rop[])
 {
 	int wh;
@@ -732,7 +732,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_single_LL:\n"
+		"|omfb_rascopy_single_LL:\n"
 		"	move.w	%[h],%[hloop]				;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]				;\n"
@@ -785,7 +785,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_single_L:\n"
+		"|omfb_rascopy_single_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
@@ -838,7 +838,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om_rascopy_single_bit:\n"
+		"|omfb_rascopy_single_bit:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
@@ -882,7 +882,7 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
  * プレーンマスクとROP は破壊される
  */
 static void
-om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
+omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 {
 	int wh;
 	int16_t h;
@@ -915,7 +915,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om4_rascopy_multi_LL:\n"
+		"|omfb4_rascopy_multi_LL:\n"
 		"	move.w	%[h],%[hloop]	;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]	;\n"
@@ -1036,7 +1036,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
 		asm volatile(
-		"|om4_rascopy_multi_L:\n"
+		"|omfb4_rascopy_multi_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
@@ -1111,7 +1111,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 #if USE_M68K_ASM
 		asm volatile(
-		"|om4_rascopy_multi_bit:\n"
+		"|omfb4_rascopy_multi_bit:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
@@ -1167,7 +1167,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 }
 
 static void
-om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
+omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
 	// dd if=32 0.116sec
 
@@ -1228,7 +1228,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t *src0 = src + OMFB_PLANEOFFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
 			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
-			om4_rascopy_multi(dst0, src0, width, rowheight * r);
+			omfb4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
@@ -1252,7 +1252,8 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 // YYY 宣言
 			uint8_t *srcp = src + srcplaneoffs;
-			om_rascopy_single(dst, srcp, width, rowheight * r, rop);
+			omfb_rascopy_single(dst, srcp, width, rowheight * r,
+			    rop);
 		}
 
 skip:
@@ -1269,7 +1270,7 @@ skip:
 }
 
 static void
-om1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
+omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *sp, *dp, *sq, *dq, *basep;
@@ -1400,7 +1401,7 @@ om1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 }
 
 static void
-om4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
+omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *sp, *dp, *sq, *dq, *basep;
@@ -1576,7 +1577,7 @@ om4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
  * Map a character.
  */
 static int
-om_mapchar(void *cookie, int c, u_int *cp)
+omfb_mapchar(void *cookie, int c, u_int *cp)
 {
 	struct rasops_info *ri = cookie;
 	struct wsdisplay_font *wf = ri->ri_font;
@@ -1636,7 +1637,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
-	om_fill(omfb_planemask, ROP_INV2,
+	omfb_fill(omfb_planemask, ROP_INV2,
 	    p, sl, scanspan,
 	    0, width, height);
 
@@ -1756,11 +1757,11 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 
 	/* fill our own emulops */
 	ri->ri_ops.cursor    = omfb_cursor;
-	ri->ri_ops.mapchar   = om_mapchar;
+	ri->ri_ops.mapchar   = omfb_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
-	ri->ri_ops.copycols  = om1_copycols;
+	ri->ri_ops.copycols  = omfb1_copycols;
 	ri->ri_ops.erasecols = omfb_erasecols;
-	ri->ri_ops.copyrows  = om1_copyrows;
+	ri->ri_ops.copyrows  = omfb1_copyrows;
 	ri->ri_ops.eraserows = omfb_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_REVERSE;
@@ -1778,11 +1779,11 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 
 	/* fill our own emulops */
 	ri->ri_ops.cursor    = omfb_cursor;
-	ri->ri_ops.mapchar   = om_mapchar;
+	ri->ri_ops.mapchar   = omfb_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
-	ri->ri_ops.copycols  = om4_copycols;
+	ri->ri_ops.copycols  = omfb4_copycols;
 	ri->ri_ops.erasecols = omfb_erasecols;
-	ri->ri_ops.copyrows  = om4_copyrows;
+	ri->ri_ops.copyrows  = omfb4_copyrows;
 	ri->ri_ops.eraserows = omfb_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_HILIT | WSSCREEN_WSCOLORS | WSSCREEN_REVERSE;
