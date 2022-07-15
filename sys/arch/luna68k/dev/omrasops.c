@@ -68,7 +68,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 
 /* wscons emulator operations */
 static void	omfb_cursor(void *, int, int, int);
-static int	om_mapchar(void *, int, unsigned int *);
+static int	om_mapchar(void *, int, u_int *);
 static void	omfb_putchar(void *, int, int, u_int, long);
 static void	om1_copycols(void *, int, int, int, int);
 static void	om4_copycols(void *, int, int, int, int);
