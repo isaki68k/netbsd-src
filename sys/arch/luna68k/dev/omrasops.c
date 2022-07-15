@@ -80,6 +80,11 @@ static int	omfb_allocattr(void *, int, int, int, long *);
 
 static void	om_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
 static void	om_fill_color(int, uint8_t *, int, int, int, int);
+static void	omfb_drawchar(struct rasops_info *, int, int, int, int,
+    uint8_t *, int, int, int, uint8_t, uint8_t);
+static void	om_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
+    uint8_t[]);
+static void	om4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
 static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
