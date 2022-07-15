@@ -327,11 +327,11 @@ omfb_fill_color(int color,
 
 		{
 			/* TODO: 中間ならマスクを再設定しない */
-			volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
 			int16_t plane = lastplane;
 			int16_t rop;
 
 #if USE_M68K_ASM
+			volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
 			asm volatile(
 			"omfb_fill_color_rop:\n"
 			"	btst	%[plane],%[color]		;\n"
@@ -349,10 +349,9 @@ omfb_fill_color(int color,
 			);
 #else
 			do {
-				rop = (color & (1 << plane)) ? 0xff: 0;
-				rop &= ROP_ONE;
-				ropfn[rop] = mask;
-				ropfn -= (OMFB_PLANEOFFS >> 2);
+				rop = (color & (1 << plane))
+				    ? ROP_ONE : ROP_ZERO;
+				omfb_set_rop(plane, rop, mask);
 			} while (--plane >= 0);
 #endif
 		}
