@@ -134,30 +134,20 @@ static int	omrasops_init(struct rasops_info *, int, int);
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
 
 /*
- * mask clear right
+ * Clear lower w bits from x.
+ * x must be filled with 1 at least lower w bits.
  */
-/* ex.: width==3, (cycles at MC68030)
-    mask filled with 1 at least width bits.
-    mask=0b..1111111
-     bclr	(6 cycle)
-    mask=0b..1110111
-     addq	(2 cycle)
-    mask=0b..1111000 (clear right 3 bit)
-*/
-// YYY (少なくとも LSB から c_bits 以上が 1 で埋まっている) c_mask の
-// LSB から c_bits 分をクリアする?
 #if USE_M68K_ASM
-#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	asm volatile(							\
-	"	bclr	%[bits],%[mask]		;\n"			\
-	"	addq.l	#1,%[mask]		;\n"			\
-	    : [mask] "+&d" (c_mask)					\
-	    : [bits] "d" (c_bits)					\
-	    :								\
+#define CLEAR_LOWER_BITS(x, w)					\
+	asm volatile(						\
+	"	bclr	%[width],%[data]	;\n"		\
+	"	addq.l	#1,%[data]		;\n"		\
+	    : [data] "+&d" (x)					\
+	    : [width] "d" (w)					\
+	    :							\
 	)
 #else
-#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	c_mask = (c_mask & ~(1 << c_bits)) + 1
+#define CLEAR_LOWER_BITS(x, w)	x = (x & ~(1U << w)) + 1
 #endif
 
 /* set planemask for common plane and common ROP */
@@ -267,7 +257,7 @@ om_fill(int planemask, int rop,
 		if (width < 0) {
 			/* clear right zero bits */
 			width = -width;
-			MASK_CLEAR_RIGHT(mask, width);
+			CLEAR_LOWER_BITS(mask, width);
 
 			/* loop exit after done */
 			width = 0;
@@ -330,7 +320,7 @@ om_fill_color(int color,
 		if (width < 0) {
 			/* clear right zero bits */
 			width = -width;
-			MASK_CLEAR_RIGHT(mask, width);
+			CLEAR_LOWER_BITS(mask, width);
 			/* loop exit after done */
 			width = 0;
 		}
@@ -477,7 +467,7 @@ omfb_drawchar(
 		if (width < 0) {
 			/* clear right zero bits */
 			width = -width;
-			MASK_CLEAR_RIGHT(mask, width);
+			CLEAR_LOWER_BITS(mask, width);
 			/* loop exit after done */
 			width = 0;
 		}
