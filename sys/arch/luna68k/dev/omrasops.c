@@ -77,12 +77,12 @@ static void	om4_copyrows(void *, int, int, int num);
 static void	omfb_erasecols(void *, int, int, int, long);
 static void	omfb_eraserows(void *, int, int, long);
 static int	omfb_allocattr(void *, int, int, int, long *);
-static void	omfb_unpack_attr(long, int *, int *, int *);
-
-static int	omrasops_init(struct rasops_info *, int, int);
 
 static void	om_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
 static void	om_fill_color(int, uint8_t *, int, int, int, int);
+static void	omfb_unpack_attr(long, int *, int *, int *);
+
+static int	omrasops_init(struct rasops_info *, int, int);
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
