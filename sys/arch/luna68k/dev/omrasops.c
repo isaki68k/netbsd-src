@@ -326,8 +326,7 @@ omfb_fill_color(int color,
 
 		{
 			/* TODO: 中間ならマスクを再設定しない */
-			uint32_t *ropfn = (uint32_t *)
-			    (BMAP_FN0 + OMFB_PLANEOFFS * lastplane);
+			uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
 			int16_t plane = lastplane;
 			int16_t rop;
 
