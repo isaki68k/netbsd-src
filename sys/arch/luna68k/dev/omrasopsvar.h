@@ -53,9 +53,6 @@ BMSEL は共通ビットマッププレーンへの書き込みがどのプレ�
 
 /* 個別のプレーンや ROP の処理を行うため、定義をやり直す */
 
-#define OMFB_PLANE_C	BMAP_BMP		/* common plane */
-#define OMFB_PLANE_0	BMAP_BMAP0
-
 #define OMFB_ROP_C		BMAP_FN			/* common ROP */
 #define OMFB_ROP_0		BMAP_FN0
 
