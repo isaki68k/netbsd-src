@@ -46,9 +46,6 @@ BMSEL は共通ビットマッププレーンへの書き込みがどのプレ�
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
 #define OMFB_PLANEOFFS	(0x40000)	/* plane offset */
 
-#define OMFB_RASTERBYTES	(2048/8) /* bytes in VRAM raster */
-
-
 #define OMFB_MAX_PLANECOUNT	(8)
 
 /* 個別のプレーンや ROP の処理を行うため、定義をやり直す */
