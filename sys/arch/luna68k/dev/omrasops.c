@@ -187,7 +187,7 @@ static inline void
 omfb_reset_planemask_and_rop(void)
 {
 
-	omfb_set_planemask(omfb_planemask);
+	omfb_set_planemask(hwplanemask);
 	omfb_set_rop_curplane(ROP_THROUGH, ~0U);
 }
 
@@ -307,7 +307,7 @@ omfb_fill_color(int color,
 	ASSUME(omfb_planecount > 0);
 
 	/* select all planes */
-	omfb_set_planemask(omfb_planemask);
+	omfb_set_planemask(hwplanemask);
 
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
@@ -451,7 +451,7 @@ omfb_drawchar(
 	dstc = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
 
 	/* select all plane */
-	omfb_set_planemask(omfb_planemask);
+	omfb_set_planemask(hwplanemask);
 
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
@@ -602,7 +602,7 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 
 	if (bg == 0) {
 		// omfb_fill のほうが効率がすこし良い
-		omfb_fill(omfb_planemask, ROP_ZERO,
+		omfb_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
 		omfb_fill_color(bg, p, sl, scanspan, width, height);
@@ -641,7 +641,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 
 	if (bg == 0) {
 		// omfb_fill のほうが効率がすこし良い
-		omfb_fill(omfb_planemask, ROP_ZERO,
+		omfb_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
 		omfb_fill_color(bg, p, sl, scanspan, width, height);
@@ -1106,7 +1106,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		uint32_t mask;
 
 		mask = ALL1BITS << (32 - wl);
-		omfb_set_planemask(omfb_planemask);
+		omfb_set_planemask(hwplanemask);
 		omfb_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
@@ -1198,7 +1198,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	}
 	ptrstep = ri->ri_stride * rowheight;
 
-	omfb_set_planemask(omfb_planemask);
+	omfb_set_planemask(hwplanemask);
 
 	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
@@ -1637,7 +1637,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
-	omfb_fill(omfb_planemask, ROP_INV2,
+	omfb_fill(hwplanemask, ROP_INV2,
 	    p, sl, scanspan,
 	    0, width, height);
 
@@ -1712,8 +1712,8 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 #endif
 	}
 
-	fg &= omfb_planemask;
-	bg &= omfb_planemask;
+	fg &= hwplanemask;
+	bg &= hwplanemask;
 
 #if 0
 	int i;
@@ -1737,8 +1737,8 @@ omfb_unpack_attr(long attr, int *fg, int *bg, int *underline)
 {
 	int f, b;
 
-	f = (attr >> 8) & omfb_planemask;
-	b = attr & omfb_planemask;
+	f = (attr >> 8) & hwplanemask;
+	b = attr & hwplanemask;
 
 	if (fg)
 		*fg = f;

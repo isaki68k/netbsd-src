@@ -57,7 +57,6 @@ BMSEL は共通ビットマッププレーンへの書き込みがどのプレ�
 
 
 /* 差し替え予定 */
-#define omfb_planemask	hwplanemask
 #define omfb_planecount hwplanecount
 extern int hwplanemask;
 extern int hwplanecount;
