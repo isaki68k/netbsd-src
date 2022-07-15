@@ -158,21 +158,20 @@ omfb_set_planemask(int planemask)
 	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
 }
 
-/* set ROP and ROP's mask for individual plane */
-static inline void
-omfb_set_rop(int plane, int rop, uint32_t mask)
-{
-
-	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane))[rop] =
-	    mask;
-}
-
 /* get ROP address */
 static inline uint32_t *
 omfb_rop_addr(int plane, int rop)
 {
 
 	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
+}
+
+/* set ROP and ROP's mask for individual plane */
+static inline void
+omfb_set_rop(int plane, int rop, uint32_t mask)
+{
+
+	*(volatile uint32_t *)omfb_rop_addr(plane, rop) = mask;
 }
 
 /* set ROP and ROP's mask for current setplanemask-ed plane(s) */
