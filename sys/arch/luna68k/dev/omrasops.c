@@ -159,11 +159,12 @@ omfb_set_planemask(int planemask)
 }
 
 /* get ROP address */
-static inline uint32_t *
+static inline volatile uint32_t *
 omfb_rop_addr(int plane, int rop)
 {
 
-	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
+	return (volatile uint32_t *)
+	    (OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
 }
 
 /* set ROP and ROP's mask for individual plane */
@@ -171,7 +172,7 @@ static inline void
 omfb_set_rop(int plane, int rop, uint32_t mask)
 {
 
-	*(volatile uint32_t *)omfb_rop_addr(plane, rop) = mask;
+	*omfb_rop_addr(plane, rop) = mask;
 }
 
 /* set ROP and ROP's mask for current setplanemask-ed plane(s) */
@@ -326,7 +327,7 @@ omfb_fill_color(int color,
 
 		{
 			/* TODO: 中間ならマスクを再設定しない */
-			uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
+			volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
 			int16_t plane = lastplane;
 			int16_t rop;
 
