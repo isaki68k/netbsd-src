@@ -504,7 +504,7 @@ omfb_drawchar(
 				uint32_t v;
 				GETBITS(f, fontx, dw, v);
 				/* no need to shift of v. masked by ROP */
-				*W(d) = v;
+				*(uint32_t *)d = v;
 				d += OMFB_STRIDE;
 				f += fontstride;
 			} while (--h >= 0);
@@ -516,9 +516,9 @@ omfb_drawchar(
 				uint32_t v;
 				GETBITS(f, fontx, dw, v);
 				/* no need to shift of v. masked by ROP */
-				*W(d) = v;
+				*(uint32_t *)d = v;
 				d += OMFB_STRIDE;
-				*W(d) = v;
+				*(uint32_t *)d = v;
 				d += OMFB_STRIDE;
 				f += fontstride;
 			} while (--h >= 0);

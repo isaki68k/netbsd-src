@@ -68,7 +68,6 @@ extern int hwplanecount;
 /*
  * Helper macros
  */
-#define W(addr)  ((uint32_t *)(addr))
 
 /* obsoleted */
 #define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 1))
