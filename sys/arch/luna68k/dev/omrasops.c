@@ -66,6 +66,20 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 #define ASSUME(cond)	(void)(cond)
 #endif
 
+// XXX アトリビュートの 8bpp 対応も含めて再設計が必要。
+struct rowattr_t {
+	union {
+		int32_t all;
+		struct {
+			int8_t ismulti; /* is multi color used */
+			uint8_t fg;
+			uint8_t bg;
+			uint8_t reserved;
+		};
+	};
+};
+static struct rowattr_t rowattr[43];
+
 /* wscons emulator operations */
 static void	omfb_cursor(void *, int, int, int);
 static int	om_mapchar(void *, int, u_int *);
@@ -95,23 +109,56 @@ static int	omrasops_init(struct rasops_info *, int, int);
 #define	ALIGNMASK	(0x1f)
 #define	BYTESDONE	(4)
 
-// XXX アトリビュートの 8bpp 対応も含めて再設計が必要。
-struct rowattr_t {
-	union {
-		int32_t all;
-		struct {
-			int8_t ismulti; /* is multi color used */
-			uint8_t fg;
-			uint8_t bg;
-			uint8_t reserved;
-		};
-	};
-};
-static struct rowattr_t rowattr[43];
+/*
+ * macros to handle unaligned bit copy ops.
+ * See src/sys/dev/rasops/rasops_mask.h for MI version.
+ * Also refer src/sys/arch/hp300/dev/maskbits.h.
+ * (which was implemented for ancient src/sys/arch/hp300/dev/grf_hy.c)
+ */
+
+/* luna68k version GETBITS() that gets w bits from bit x at psrc memory */
+#define	FASTGETBITS(psrc, x, w, dst)					\
+	asm("bfextu %3{%1:%2},%0"					\
+	    : "=d" (dst) 						\
+	    : "di" (x), "di" (w), "o" (*(uint32_t *)(psrc)))
+
+/* luna68k version PUTBITS() that puts w bits from bit x at pdst memory */
+/* XXX this macro assumes (x + w) <= 32 to handle unaligned residual bits */
+#define	FASTPUTBITS(src, x, w, pdst)					\
+	asm("bfins %3,%0{%1:%2}"					\
+	    : "+o" (*(uint32_t *)(pdst))				\
+	    : "di" (x), "di" (w), "d" (src)				\
+	    : "memory" );
+
+#define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
+#define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
 
 /*
- * planemask and ROP inline functions
+ * mask clear right
  */
+/* ex.: width==3, (cycles at MC68030)
+    mask filled with 1 at least width bits.
+    mask=0b..1111111
+     bclr	(6 cycle)
+    mask=0b..1110111
+     addq	(2 cycle)
+    mask=0b..1111000 (clear right 3 bit)
+*/
+// YYY (少なくとも LSB から c_bits 以上が 1 で埋まっている) c_mask の
+// LSB から c_bits 分をクリアする?
+#if USE_M68K_ASM
+#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
+	asm volatile(							\
+	"	bclr	%[bits],%[mask]		;\n"			\
+	"	addq.l	#1,%[mask]		;\n"			\
+	    : [mask] "+&d" (c_mask)					\
+	    : [bits] "d" (c_bits)					\
+	    :								\
+	)
+#else
+#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
+	c_mask = (c_mask & ~(1 << c_bits)) + 1
+#endif
 
 /* set planemask for common plane and common ROP */
 static inline void
@@ -188,56 +235,6 @@ om_reset_rowattr(int row, int bg)
 	rowattr[row].bg = bg;
 	rowattr[row].fg = bg;	 /* fg sets same value */
 }
-
-
-/*
- * macros to handle unaligned bit copy ops.
- * See src/sys/dev/rasops/rasops_mask.h for MI version.
- * Also refer src/sys/arch/hp300/dev/maskbits.h.
- * (which was implemented for ancient src/sys/arch/hp300/dev/grf_hy.c)
- */
-
-/* luna68k version GETBITS() that gets w bits from bit x at psrc memory */
-#define	FASTGETBITS(psrc, x, w, dst)					\
-	asm("bfextu %3{%1:%2},%0"					\
-	    : "=d" (dst) 						\
-	    : "di" (x), "di" (w), "o" (*(uint32_t *)(psrc)))
-
-/* luna68k version PUTBITS() that puts w bits from bit x at pdst memory */
-/* XXX this macro assumes (x + w) <= 32 to handle unaligned residual bits */
-#define	FASTPUTBITS(src, x, w, pdst)					\
-	asm("bfins %3,%0{%1:%2}"					\
-	    : "+o" (*(uint32_t *)(pdst))				\
-	    : "di" (x), "di" (w), "d" (src)				\
-	    : "memory" );
-
-#define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
-#define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
-
-/*
- * mask clear right
- */
-/* ex.: width==3, (cycles at MC68030)
-    mask filled with 1 at least width bits.
-    mask=0b..1111111
-     bclr	(6 cycle)
-    mask=0b..1110111
-     addq	(2 cycle)
-    mask=0b..1111000 (clear right 3 bit)
-*/
-#if USE_M68K_ASM
-#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	asm volatile(							\
-	"	bclr	%[bits],%[mask]		;\n"			\
-	"	addq.l	#1,%[mask]		;\n"			\
-	    : [mask] "+&d" (c_mask)					\
-	    : [bits] "d" (c_bits)					\
-	    :								\
-	)
-#else
-#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
-	c_mask = (c_mask & ~(1 << c_bits)) + 1
-#endif
 
 /*
  * fill rectangle
