@@ -877,12 +877,16 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 static void
 omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 {
+	uint8_t *dst1, *dst2, *dst3;
 	int wh;
+	int wl;
+	int rewind;
+	int step;
+	uint32_t mask;
 	int16_t h;
 	int16_t wloop, hloop;
-	uint8_t *dst1, *dst2, *dst3;
-	int rewind;
-	int step = OMFB_STRIDE;
+
+	step = OMFB_STRIDE;
 
 	// X 方向は (An)+ のため、常に昇順方向
 
@@ -1092,71 +1096,69 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		dst2 += 4 - height * step;
 		dst3 += 4 - height * step;
 	}
-	int wl = width & 0x1f;
-	// ここまで来ていれば wl > 0
-	{
-		// 端数ビットの転送
-		uint32_t mask;
 
-		mask = ALL1BITS << (32 - wl);
-		omfb_set_planemask(hwplanemask);
-		omfb_set_rop_curplane(ROP_THROUGH, mask);
+	wl = width & 0x1f;
+	// ここまで来ていれば wl > 0
+
+	// 端数ビットの転送
+
+	mask = ALL1BITS << (32 - wl);
+	omfb_set_planemask(hwplanemask);
+	omfb_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
-		asm volatile(
-		"|omfb4_rascopy_multi_bit:\n"
-		"	move.l	%[h],%[hloop]			;\n"
-		"1:\n"
-		"	move.l	(%[src0]),(%[dst0])		;\n"
-		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-		"	move.l	(%[src0]),(%[dst1])		;\n"
-		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-		"	move.l	(%[src0]),(%[dst2])		;\n"
-		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-		"	move.l	(%[src0]),(%[dst3])		;\n"
-		"	adda.l	%[rewind],%[src0]		;\n"
+	asm volatile(
+	"|omfb4_rascopy_multi_bit:\n"
+	"	move.l	%[h],%[hloop]			;\n"
+	"1:\n"
+	"	move.l	(%[src0]),(%[dst0])		;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
+	"	move.l	(%[src0]),(%[dst1])		;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
+	"	move.l	(%[src0]),(%[dst2])		;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
+	"	move.l	(%[src0]),(%[dst3])		;\n"
+	"	adda.l	%[rewind],%[src0]		;\n"
 
-		"	adda.l	%[step],%[dst0]			;\n"
-		"	adda.l	%[step],%[dst1]			;\n"
-		"	adda.l	%[step],%[dst2]			;\n"
-		"	adda.l	%[step],%[dst3]			;\n"
+	"	adda.l	%[step],%[dst0]			;\n"
+	"	adda.l	%[step],%[dst1]			;\n"
+	"	adda.l	%[step],%[dst2]			;\n"
+	"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[hloop],1b			;\n"
-		    : /* output */
-		      [src0] "+&a" (src0),
-		      [dst0] "+&a" (dst0),
-		      [dst1] "+&a" (dst1),
-		      [dst2] "+&a" (dst2),
-		      [dst3] "+&a" (dst3),
-		      [hloop] "=&d" (hloop)
-		    : /* input */
-		      [h] "g" (h),
-		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
-		      [rewind] "r" (rewind),
-		      [step] "r" (step)
-		    : /* clobbers */
-		      "memory"
-		);
+	"	dbra	%[hloop],1b			;\n"
+	    : /* output */
+	      [src0] "+&a" (src0),
+	      [dst0] "+&a" (dst0),
+	      [dst1] "+&a" (dst1),
+	      [dst2] "+&a" (dst2),
+	      [dst3] "+&a" (dst3),
+	      [hloop] "=&d" (hloop)
+	    : /* input */
+	      [h] "g" (h),
+	      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
+	      [rewind] "r" (rewind),
+	      [step] "r" (step)
+	    : /* clobbers */
+	      "memory"
+	);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
-			*(uint32_t *)dst0 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFFS;
-			*(uint32_t *)dst1 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFFS;
-			*(uint32_t *)dst2 = *(uint32_t *)src0;
-			src0 += OMFB_PLANEOFFS;
-			*(uint32_t *)dst3 = *(uint32_t *)src0;
-			src0 += rewind;
+	for (hloop = h; hloop >= 0; hloop--) {
+		*(uint32_t *)dst0 = *(uint32_t *)src0;
+		src0 += OMFB_PLANEOFFS;
+		*(uint32_t *)dst1 = *(uint32_t *)src0;
+		src0 += OMFB_PLANEOFFS;
+		*(uint32_t *)dst2 = *(uint32_t *)src0;
+		src0 += OMFB_PLANEOFFS;
+		*(uint32_t *)dst3 = *(uint32_t *)src0;
+		src0 += rewind;
 
-			dst0 += step;
-			dst1 += step;
-			dst2 += step;
-			dst3 += step;
-		}
-#endif
-
-		omfb_reset_planemask_and_rop();
+		dst0 += step;
+		dst1 += step;
+		dst2 += step;
+		dst3 += step;
 	}
+#endif
+	omfb_reset_planemask_and_rop();
 }
 
 static void
