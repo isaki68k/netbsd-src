@@ -380,7 +380,10 @@ omfb_fill_color(int color,
 }
 
 static const uint8_t ropsel[] = {
-	ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE
+	ROP_ZERO,
+	ROP_INV1,
+	ROP_THROUGH,
+	ROP_ONE,
 };
 
 /*
