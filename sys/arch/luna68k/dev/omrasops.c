@@ -258,11 +258,8 @@ omfb_fill(int planemask, int rop,
 
 		width -= dw;
 		if (width < 0) {
-			/* clear right zero bits */
-			width = -width;
-			CLEAR_LOWER_BITS(mask, width);
-
-			/* loop exit after done */
+			CLEAR_LOWER_BITS(mask, -width);
+			/* To exit this loop. */
 			width = 0;
 		}
 
@@ -318,10 +315,8 @@ omfb_fill_color(int color,
 	do {
 		width -= dw;
 		if (width < 0) {
-			/* clear right zero bits */
-			width = -width;
-			CLEAR_LOWER_BITS(mask, width);
-			/* loop exit after done */
+			CLEAR_LOWER_BITS(mask, -width);
+			/* To exit this loop. */
 			width = 0;
 		}
 
@@ -463,10 +458,8 @@ omfb_drawchar(
 	do {
 		width -= dw;
 		if (width < 0) {
-			/* clear right zero bits */
-			width = -width;
-			CLEAR_LOWER_BITS(mask, width);
-			/* loop exit after done */
+			CLEAR_LOWER_BITS(mask, -width);
+			/* To exit this loop. */
 			width = 0;
 		}
 
