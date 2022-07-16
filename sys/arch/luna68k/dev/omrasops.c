@@ -299,6 +299,8 @@ omfb_fill_color(int color,
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
+	int16_t h16;
+	int16_t lastplane;
 
 	ASSUME(width > 0);
 	ASSUME(height > 0);
@@ -309,10 +311,14 @@ omfb_fill_color(int color,
 
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
-	int16_t h16 = height - 1;
-	int16_t lastplane = omfb_planecount - 1;
+	h16 = height - 1;
+	lastplane = omfb_planecount - 1;
 
 	do {
+		/* TODO: 中間ならマスクを再設定しない */
+		int16_t plane = lastplane;
+		int16_t rop;
+
 		width -= dw;
 		if (width < 0) {
 			CLEAR_LOWER_BITS(mask, -width);
@@ -320,36 +326,29 @@ omfb_fill_color(int color,
 			width = 0;
 		}
 
-		{
-			/* TODO: 中間ならマスクを再設定しない */
-			int16_t plane = lastplane;
-			int16_t rop;
-
 #if USE_M68K_ASM
-			volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
-			asm volatile(
-			"omfb_fill_color_rop:\n"
-			"	btst	%[plane],%[color]		;\n"
-			"	seq	%[rop]				;\n"
-			"	andi.w	#0x3c,%[rop]			;\n"
-			"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
-			"	suba.l	#0x40000,%[ropfn]		;\n"
-			"	dbra	%[plane],omfb_fill_color_rop	;\n"
-			    : [plane] "+&d" (plane),
-			      [ropfn] "+&a" (ropfn),
-			      [rop] "=&d" (rop)
-			    : [color] "d" (color),
-			      [mask] "g" (mask)
-			    : "memory"
-			);
+		volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
+		asm volatile(
+		"omfb_fill_color_rop:\n"
+		"	btst	%[plane],%[color]		;\n"
+		"	seq	%[rop]				;\n"
+		"	andi.w	#0x3c,%[rop]			;\n"
+		"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
+		"	suba.l	#0x40000,%[ropfn]		;\n"
+		"	dbra	%[plane],omfb_fill_color_rop	;\n"
+		    : [plane] "+&d" (plane),
+		      [ropfn] "+&a" (ropfn),
+		      [rop] "=&d" (rop)
+		    : [color] "d" (color),
+		      [mask] "g" (mask)
+		    : "memory"
+		);
 #else
-			do {
-				rop = (color & (1 << plane))
-				    ? ROP_ONE : ROP_ZERO;
-				omfb_set_rop(plane, rop, mask);
-			} while (--plane >= 0);
+		do {
+			rop = (color & (1 << plane)) ? ROP_ONE : ROP_ZERO;
+			omfb_set_rop(plane, rop, mask);
+		} while (--plane >= 0);
 #endif
-		}
 
 		{
 			uint8_t *d = dstptr;
