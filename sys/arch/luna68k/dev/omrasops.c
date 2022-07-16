@@ -94,7 +94,7 @@ static int	omfb_allocattr(void *, int, int, int, long *);
 static void	omfb_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
 static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
 static void	omfb_drawchar(struct rasops_info *, int, int, int, int,
-    uint8_t *, int, int, int, uint8_t, uint8_t);
+    uint8_t *, int, int, uint8_t, uint8_t);
 static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
 static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
@@ -402,7 +402,6 @@ static const uint8_t ropsel[] = {
  * fontptr: source pointer of fontdata
  * fontstride: y-stride of fontdata [byte]
  * fontx: font bit offset from fontptr MSB
- * heightscale: 0=等倍 else=縦倍角 [dstheight = height * (heightscale + 1)]
  * fg : foreground color
  * bg : background color
  *
@@ -413,7 +412,7 @@ omfb_drawchar(
     struct rasops_info *ri,
     int x, int y,
     int width, int height,
-    uint8_t *fontptr, int fontstride, int fontx, int heightscale,
+    uint8_t *fontptr, int fontstride, int fontx,
     uint8_t fg, uint8_t bg)
 {
 	/* ROP アドレスのキャッシュ */
@@ -457,6 +456,10 @@ omfb_drawchar(
 	    omfb_planecount == 1);
 
 	do {
+		uint8_t *d;
+		uint8_t *f;
+		int16_t h;
+
 		width -= dw;
 		if (width < 0) {
 			CLEAR_LOWER_BITS(mask, -width);
@@ -489,33 +492,17 @@ omfb_drawchar(
 		}
 #endif
 
-		if (heightscale == 0) {
-			uint8_t *d = dstc;
-			uint8_t *f = fontptr;
-			int16_t h = height - 1;
-			do {
-				uint32_t v;
-				GETBITS(f, fontx, dw, v);
-				/* no need to shift v because masked by ROP */
-				*(uint32_t *)d = v;
-				d += OMFB_STRIDE;
-				f += fontstride;
-			} while (--h >= 0);
-		} else {
-			uint8_t *d = dstc;
-			uint8_t *f = fontptr;
-			int16_t h = height - 1;
-			do {
-				uint32_t v;
-				GETBITS(f, fontx, dw, v);
-				/* no need to shift v because masked by ROP */
-				*(uint32_t *)d = v;
-				d += OMFB_STRIDE;
-				*(uint32_t *)d = v;
-				d += OMFB_STRIDE;
-				f += fontstride;
-			} while (--h >= 0);
-		}
+		d = dstc;
+		f = fontptr;
+		h = height - 1;
+		do {
+			uint32_t v;
+			GETBITS(f, fontx, dw, v);
+			/* no need to shift v because it's masked by ROP */
+			*(uint32_t *)d = v;
+			d += OMFB_STRIDE;
+			f += fontstride;
+		} while (--h >= 0);
 
 		dstc += 4;
 		fontx += dw;
@@ -537,7 +524,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int x, y;
 	int fontx;
 	int fontstride;
-	int heightscale;
 	uint8_t *fb;
 
 	if (uc >= 0x80)
@@ -546,7 +532,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	y = ri->ri_font->fontheight * row;
 	x = ri->ri_font->fontwidth * startcol;
 	fontx = 0;
-	heightscale = 0;
 
 	width = ri->ri_font->fontwidth;
 	height = ri->ri_font->fontheight;
@@ -558,8 +543,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	omfb_unpack_attr(attr, &fg, &bg, NULL);
 	omfb_set_rowattr(row, fg, bg);
 	omfb_drawchar(ri, x, y, width, height,
-	    fb, fontstride, fontx, heightscale,
-	    fg, bg);
+	    fb, fontstride, fontx, fg, bg);
 
 	omfb_reset_planemask_and_rop();
 }
