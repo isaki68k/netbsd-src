@@ -695,10 +695,15 @@ static void
 omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
     uint8_t rop[])
 {
+	uint32_t mask;
 	int wh;
+	int wl;
+	int step;
+	int plane;
 	int16_t h;
 	int16_t wloop, hloop;
-	int step = OMFB_STRIDE;
+
+	step = OMFB_STRIDE;
 
 	// X 方向は (An)+ のため、常に昇順方向
 
@@ -813,52 +818,49 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		dst += 4 - height * step;
 	}
 
-	int wl = width & 0x1f;
+	wl = width & 0x1f;
 	// ここまで来ていれば wl > 0
-	{
-		// 端数ビットの転送
-		uint32_t mask;
-		int plane;
 
-		mask = ALL1BITS << (32 - wl);
-		// ROP の状態を保持したたまマスクを設定することがハード的には
-		// できないので、ここでは共通ROPは使えない。
-		for (plane = 0; plane < omfb_planecount; plane++) {
-			omfb_set_rop(plane, rop[plane], mask);
-		}
+	// 端数ビットの転送
+
+	mask = ALL1BITS << (32 - wl);
+	// ROP の状態を保持したたまマスクを設定することがハード的には
+	// できないので、ここでは共通ROPは使えない。
+	for (plane = 0; plane < omfb_planecount; plane++) {
+		omfb_set_rop(plane, rop[plane], mask);
+	}
 
 #if USE_M68K_ASM
-		asm volatile(
-		"|omfb_rascopy_single_bit:\n"
-		"	move.l	%[h],%[hloop]			;\n"
-		"1:\n"
-		"	move.l	(%[src]),(%[dst])		;\n"
+	asm volatile(
+	"|omfb_rascopy_single_bit:\n"
+	"	move.l	%[h],%[hloop]			;\n"
+	"1:\n"
+	"	move.l	(%[src]),(%[dst])		;\n"
 
-		"	adda.l	%[step],%[src]			;\n"
-		"	adda.l	%[step],%[dst]			;\n"
+	"	adda.l	%[step],%[src]			;\n"
+	"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[hloop],1b			;\n"
-		    : /* output */
-		      [src] "+&a" (src),
-		      [dst] "+&a" (dst),
-		      [hloop] "=&d" (hloop)
-		    : /* input */
-		      [h] "g" (h),
-		      [step] "r" (step)
-		    : /* clobbers */
-		      "memory"
-		);
+	"	dbra	%[hloop],1b			;\n"
+	    : /* output */
+	      [src] "+&a" (src),
+	      [dst] "+&a" (dst),
+	      [hloop] "=&d" (hloop)
+	    : /* input */
+	      [h] "g" (h),
+	      [step] "r" (step)
+	    : /* clobbers */
+	      "memory"
+	);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
-			*(uint32_t *)dst = *(uint32_t *)src;
-			dst += step;
-			src += step;
-		}
+	for (hloop = h; hloop >= 0; hloop--) {
+		*(uint32_t *)dst = *(uint32_t *)src;
+		dst += step;
+		src += step;
+	}
 #endif
 
-		for (plane = 0; plane < omfb_planecount; plane++) {
-			omfb_set_rop(plane, rop[plane], ALL1BITS);
-		}
+	for (plane = 0; plane < omfb_planecount; plane++) {
+		omfb_set_rop(plane, rop[plane], ALL1BITS);
 	}
 }
 
