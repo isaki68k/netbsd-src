@@ -251,7 +251,7 @@ omfb_fill(int planemask, int rop,
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
 
-	/* for loop waste 4 clock */
+	/* do-while loop seems slightly faster than a for loop */
 	do {
 		uint8_t *d;
 		int16_t h;
