@@ -316,8 +316,10 @@ omfb_fill_color(int color,
 
 	do {
 		/* TODO: 中間ならマスクを再設定しない */
+		uint8_t *d;
 		int16_t plane = lastplane;
 		int16_t rop;
+		int16_t h;
 
 		width -= dw;
 		if (width < 0) {
@@ -350,30 +352,28 @@ omfb_fill_color(int color,
 		} while (--plane >= 0);
 #endif
 
-		{
-			uint8_t *d = dstptr;
-			dstptr += 4;
-			int16_t h = h16;
+		d = dstptr;
+		dstptr += 4;
+		h = h16;
 
 #if USE_M68K_ASM
-			asm volatile(
-			"omfb_fill_color_loop_h:\n"
-			"	clr.l	(%[d])	;\n"/* any data to write */
-			"	add.l	%[dstspan],%[d]			;\n"
-			"	dbra	%[h],omfb_fill_color_loop_h	;\n"
-			    : [d] "+&a" (d),
-			      [h] "+&d" (h)
-			    : [dstspan] "r" (dstspan)
-			    : "memory"
-			);
+		asm volatile(
+		"omfb_fill_color_loop_h:\n"
+// ROP_ONE なのでなにか書き込めば1になる。何を書いてもいい
+		"	clr.l	(%[d])	;\n"/* any data to write */
+		"	add.l	%[dstspan],%[d]			;\n"
+		"	dbra	%[h],omfb_fill_color_loop_h	;\n"
+		    : [d] "+&a" (d),
+		      [h] "+&d" (h)
+		    : [dstspan] "r" (dstspan)
+		    : "memory"
+		);
 #else
-			do {
-				*d = 0;
-				d += dstspan;
-			} while (--h >= 0);
+		do {
+			*d = 0;
+			d += dstspan;
+		} while (--h >= 0);
 #endif
-		}
-
 		mask = ALL1BITS;
 		dw = 32;
 	} while (width > 0);
