@@ -541,26 +541,23 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int heightscale;
 	uint8_t *fb;
 
+	if (uc >= 0x80)
+		return;
+
 	y = ri->ri_font->fontheight * row;
 	x = ri->ri_font->fontwidth * startcol;
 	fontx = 0;
 	heightscale = 0;
 
-	if (uc <= 0x7f) {
-		width = ri->ri_font->fontwidth;
-		height = ri->ri_font->fontheight;
+	width = ri->ri_font->fontwidth;
+	height = ri->ri_font->fontheight;
 
-		fb = (uint8_t *)ri->ri_font->data +
-		    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
-		fontstride = ri->ri_font->stride;
-	} else {
-		/* XXX 全角跡地。どうする? */
-		return;
-	}
+	fb = (uint8_t *)ri->ri_font->data +
+	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
+	fontstride = ri->ri_font->stride;
+
 	omfb_unpack_attr(attr, &fg, &bg, NULL);
-
 	omfb_set_rowattr(row, fg, bg);
-
 	omfb_drawchar(ri, x, y, width, height,
 	    fb, fontstride, fontx, heightscale,
 	    fg, bg);
