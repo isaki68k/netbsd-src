@@ -54,8 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 
 #define USE_M68K_ASM	1
 
-// gcc でコンパイラに最適化の条件を与える。
-// clang 5 にはあるようだ…
+/* To provide optimization conditions to compilers */
 #if defined(__GNUC__)
 #define ASSUME(cond)	if (!(cond)) __unreachable()
 #elif defined(__clang__)
@@ -66,7 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 #define ASSUME(cond)	(void)(cond)
 #endif
 
-// XXX アトリビュートの 8bpp 対応も含めて再設計が必要。
+/* XXX it should be redesigned, including making the attributes support 8bpp */
 struct rowattr_t {
 	union {
 		int32_t all;
@@ -150,7 +149,7 @@ static int	omrasops_init(struct rasops_info *, int, int);
 #define CLEAR_LOWER_BITS(x, w)	x = (x & ~(1U << w)) + 1
 #endif
 
-/* set planemask for common plane and common ROP */
+/* Set planemask for the common plane and the common ROP */
 static inline void
 omfb_set_planemask(int planemask)
 {
@@ -158,7 +157,7 @@ omfb_set_planemask(int planemask)
 	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
 }
 
-/* get ROP address */
+/* Get a ROP address */
 static inline volatile uint32_t *
 omfb_rop_addr(int plane, int rop)
 {
@@ -167,7 +166,7 @@ omfb_rop_addr(int plane, int rop)
 	    (OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
 }
 
-/* set ROP and ROP's mask for individual plane */
+/* Set ROP and ROP's mask for individual plane */
 static inline void
 omfb_set_rop(int plane, int rop, uint32_t mask)
 {
@@ -175,7 +174,7 @@ omfb_set_rop(int plane, int rop, uint32_t mask)
 	*omfb_rop_addr(plane, rop) = mask;
 }
 
-/* set ROP and ROP's mask for current setplanemask-ed plane(s) */
+/* Set ROP and ROP's mask for current setplanemask-ed plane(s) */
 static inline void
 omfb_set_rop_curplane(int rop, uint32_t mask)
 {
@@ -183,7 +182,7 @@ omfb_set_rop_curplane(int rop, uint32_t mask)
 	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
 }
 
-/* reset planemask and ROP */
+/* Reset planemask and ROP */
 static inline void
 omfb_reset_planemask_and_rop(void)
 {
@@ -227,9 +226,9 @@ omfb_reset_rowattr(int row, int bg)
 }
 
 /*
- * fill rectangle
- * v は書き込み位置にかかわらず 32 bit の値をそのまま使うため、
- * 実質 ALL0BITS か ALL1BITS しか想定していない。
+ * Fill rectangle.
+ * v assumes only ALL0BITS or ALL1BITS, because all bits are used as is
+ * regardless of bit offset of the destination.
  */
 static void
 omfb_fill(int planemask, int rop,
@@ -315,7 +314,7 @@ omfb_fill_color(int color,
 	lastplane = omfb_planecount - 1;
 
 	do {
-		/* TODO: 中間ならマスクを再設定しない */
+		/* TODO: re-setting mask can be ommitted in middle of loop */
 		uint8_t *d;
 		int16_t plane = lastplane;
 		int16_t rop;
@@ -430,7 +429,7 @@ omfb_drawchar(
 	if (saved_fg != fg || saved_bg != bg) {
 		saved_fg = fg;
 		saved_bg = bg;
-		/* ROP を求める */
+		/* calculate ROP */
 		for (plane = 0; plane < omfb_planecount; plane++) {
 			int t = (fg & 1) * 2 + (bg & 1);
 			ropaddr[plane] = omfb_rop_addr(plane, ropsel[t]);
@@ -439,7 +438,7 @@ omfb_drawchar(
 		}
 	}
 
-	// x の下位5ビットと上位に分ける
+	/* divide x into the lower 5 bits and the rest. */
 	xh = x >> 5;
 	xl = x & 0x1f;
 
@@ -497,7 +496,7 @@ omfb_drawchar(
 			do {
 				uint32_t v;
 				GETBITS(f, fontx, dw, v);
-				/* no need to shift of v. masked by ROP */
+				/* no need to shift v because masked by ROP */
 				*(uint32_t *)d = v;
 				d += OMFB_STRIDE;
 				f += fontstride;
@@ -509,7 +508,7 @@ omfb_drawchar(
 			do {
 				uint32_t v;
 				GETBITS(f, fontx, dw, v);
-				/* no need to shift of v. masked by ROP */
+				/* no need to shift v because masked by ROP */
 				*(uint32_t *)d = v;
 				d += OMFB_STRIDE;
 				*(uint32_t *)d = v;
@@ -588,11 +587,11 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
-	// 本当はどうなの
+	/* I'm not sure */
 	omfb_set_rowattr(row, fg, bg);
 
 	if (bg == 0) {
-		// omfb_fill のほうが効率がすこし良い
+		/* omfb_fill seems slightly efficient */
 		omfb_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
@@ -631,7 +630,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	}
 
 	if (bg == 0) {
-		// omfb_fill のほうが効率がすこし良い
+		/* omfb_fill seems slightly efficient */
 		omfb_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
@@ -768,7 +767,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #endif
 
 		if ((width & 0x3f) == 0) {
-			// 転送完了
+			/* transfer completed */
 			return;
 		}
 
@@ -809,7 +808,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #endif
 
 		if ((width & 0x1f) == 0) {
-			// 転送完了
+			/* transfer completed */
 			return;
 		}
 
@@ -1014,7 +1013,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #endif
 
 		if ((width & 0x3f) == 0) {
-			// 転送完了
+			/* transfer completed */
 			return;
 		}
 
@@ -1085,7 +1084,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #endif
 
 		if ((width & 0x1f) == 0) {
-			// 転送完了
+			/* transfer completed */
 			return;
 		}
 
@@ -1260,6 +1259,11 @@ skip:
 		}
 	}
 }
+
+/*
+ * XXX omfb{1,4}_copycols can be merged, but these are not frequently executed
+ * and have low execution costs.  So I'm putting it off for now.
+ */
 
 static void
 omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
