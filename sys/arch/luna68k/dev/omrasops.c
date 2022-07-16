@@ -253,6 +253,9 @@ omfb_fill(int planemask, int rop,
 
 	/* for loop waste 4 clock */
 	do {
+		uint8_t *d;
+		int16_t h;
+
 		width -= dw;
 		if (width < 0) {
 			/* clear right zero bits */
@@ -265,31 +268,28 @@ omfb_fill(int planemask, int rop,
 
 		omfb_set_rop_curplane(rop, mask);
 
-		{
-			uint8_t *d = dstptr;
-			dstptr += 4;
-			int16_t h = h16;
+		d = dstptr;
+		dstptr += 4;
+		h = h16;
 
 #if USE_M68K_ASM
-			asm volatile(
-			"omfb_fill_loop_h:\n"
-			"	move.l	%[v],(%[d])		;\n"
-			"	add.l	%[dstspan],%[d]		;\n"
-			"	dbra	%[h],omfb_fill_loop_h	;\n"
-			    : [d] "+&a" (d),
-			      [h] "+&d" (h)
-			    : [v] "d" (v),
-			      [dstspan] "r" (dstspan)
-			    : "memory"
-			);
+		asm volatile(
+		"omfb_fill_loop_h:\n"
+		"	move.l	%[v],(%[d])		;\n"
+		"	add.l	%[dstspan],%[d]		;\n"
+		"	dbra	%[h],omfb_fill_loop_h	;\n"
+		    : [d] "+&a" (d),
+		      [h] "+&d" (h)
+		    : [v] "d" (v),
+		      [dstspan] "r" (dstspan)
+		    : "memory"
+		);
 #else
-			do {
-				*(uint32_t *)d = v;
-				d += dstspan;
-			} while (--h >= 0);
+		do {
+			*(uint32_t *)d = v;
+			d += dstspan;
+		} while (--h >= 0);
 #endif
-		}
-
 		mask = ALL1BITS;
 		dw = 32;
 	} while (width > 0);
