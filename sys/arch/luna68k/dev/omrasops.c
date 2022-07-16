@@ -270,7 +270,7 @@ omfb_fill(int planemask, int rop,
 		h = h16;
 
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"omfb_fill_loop_h:\n"
 		"	move.l	%[v],(%[d])		;\n"
 		"	add.l	%[dstspan],%[d]		;\n"
@@ -330,7 +330,7 @@ omfb_fill_color(int color,
 
 #if USE_M68K_ASM
 		volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
-		asm volatile(
+		asm volatile("\n"
 		"omfb_fill_color_rop:\n"
 		"	btst	%[plane],%[color]		;\n"
 		"	seq	%[rop]				;\n"
@@ -357,7 +357,7 @@ omfb_fill_color(int color,
 		h = h16;
 
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"omfb_fill_color_loop_h:\n"
 // ROP_ONE なのでなにか書き込めば1になる。何を書いてもいい
 		"	clr.l	(%[d])	;\n"/* any data to write */
@@ -727,7 +727,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		wh--;	/* for dbra */
 
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"|omfb_rascopy_single_LL:\n"
 		"	move.w	%[h],%[hloop]				;\n"
 		"1:\n"
@@ -780,7 +780,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	if ((width & 32) != 0) {
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"|omfb_rascopy_single_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
@@ -831,7 +831,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 
 #if USE_M68K_ASM
-	asm volatile(
+	asm volatile("\n"
 	"|omfb_rascopy_single_bit:\n"
 	"	move.l	%[h],%[hloop]			;\n"
 	"1:\n"
@@ -911,7 +911,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		wh--;	/* for dbra */
 
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"|omfb4_rascopy_multi_LL:\n"
 		"	move.w	%[h],%[hloop]	;\n"
 		"1:\n"
@@ -1032,7 +1032,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	if ((width & 32) != 0) {
 		// 奇数ロングワードなので 1 ロングワード転送
 #if USE_M68K_ASM
-		asm volatile(
+		asm volatile("\n"
 		"|omfb4_rascopy_multi_L:\n"
 		"	move.l	%[h],%[hloop]			;\n"
 		"1:\n"
@@ -1107,7 +1107,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	omfb_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
-	asm volatile(
+	asm volatile("\n"
 	"|omfb4_rascopy_multi_bit:\n"
 	"	move.l	%[h],%[hloop]			;\n"
 	"1:\n"
