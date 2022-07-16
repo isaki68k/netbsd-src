@@ -1170,6 +1170,10 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	uint8_t *src, *dst;
 	int width, rowheight;
 	int ptrstep, rowstep;
+	int srcplane;
+	int i;
+	int r;
+	uint8_t rop[OMFB_MAX_PLANECOUNT];
 
 	width = ri->ri_emuwidth;
 	rowheight = ri->ri_font->fontheight;
@@ -1195,12 +1199,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	omfb_set_planemask(hwplanemask);
 
-	uint8_t rop[OMFB_MAX_PLANECOUNT];
-	int srcplane = 0;
-	int i;
-	uint32_t srcplaneoffs = 0;
-	int r;
-
+	srcplane = 0;
 	while (nrows > 0) {
 		r = 1;
 		if (rowattr[srcrow].ismulti == false &&
@@ -1225,6 +1224,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
 			omfb4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
+			uint8_t *srcp;
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
 
@@ -1242,11 +1242,8 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				bg >>= 1;
 			}
 
-			srcplaneoffs = OMFB_PLANEOFFS +
-			    srcplane * OMFB_PLANEOFFS;
 
-// YYY 宣言
-			uint8_t *srcp = src + srcplaneoffs;
+			srcp = src + OMFB_PLANEOFFS + srcplane * OMFB_PLANEOFFS;
 			omfb_rascopy_single(dst, srcp, width, rowheight * r,
 			    rop);
 		}
