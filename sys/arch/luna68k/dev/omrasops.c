@@ -239,6 +239,7 @@ omfb_fill(int planemask, int rop,
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
+	int16_t h16;
 
 	ASSUME(width > 0);
 	ASSUME(height > 0);
@@ -246,8 +247,7 @@ omfb_fill(int planemask, int rop,
 
 	omfb_set_planemask(planemask);
 
-	int16_t h16 = height - 1;
-
+	h16 = height - 1;
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
 
