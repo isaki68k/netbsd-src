@@ -93,8 +93,8 @@ static int	omfb_allocattr(void *, int, int, int, long *);
 
 static void	omfb_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
 static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
-static void	omfb_drawchar(struct rasops_info *, int, int, int, int,
-    uint8_t *, int, int, uint8_t, uint8_t);
+static void	omfb_drawchar(struct rasops_info *, int, int, uint8_t *,
+    int, int, uint8_t, uint8_t);
 static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
 static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
@@ -398,7 +398,6 @@ static const uint8_t ropsel[] = {
  */
 /*
  * x, y: destination Left-Top in pixel
- * width, height : source font size in pixel
  * fontptr: source pointer of fontdata
  * fontstride: y-stride of fontdata [byte]
  * fontx: font bit offset from fontptr MSB
@@ -411,7 +410,6 @@ static void
 omfb_drawchar(
     struct rasops_info *ri,
     int x, int y,
-    int width, int height,
     uint8_t *fontptr, int fontstride, int fontx,
     uint8_t fg, uint8_t bg)
 {
@@ -424,6 +422,8 @@ omfb_drawchar(
 	int dw;		/* 1 pass width bits */
 	uint8_t *dstc;
 	int xh, xl;
+	int width;
+	int height;
 
 	if (saved_fg != fg || saved_bg != bg) {
 		saved_fg = fg;
@@ -447,6 +447,8 @@ omfb_drawchar(
 	/* select all plane */
 	omfb_set_planemask(hwplanemask);
 
+	width = ri->ri_font->fontwidth;
+	height = ri->ri_font->fontheight;
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
 
@@ -518,8 +520,6 @@ static void
 omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
 	struct rasops_info *ri = cookie;
-	int width;
-	int height;
 	int fg, bg;
 	int x, y;
 	int fontx;
@@ -533,17 +533,13 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	x = ri->ri_font->fontwidth * startcol;
 	fontx = 0;
 
-	width = ri->ri_font->fontwidth;
-	height = ri->ri_font->fontheight;
-
 	fb = (uint8_t *)ri->ri_font->data +
 	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
 	fontstride = ri->ri_font->stride;
 
 	omfb_unpack_attr(attr, &fg, &bg, NULL);
 	omfb_set_rowattr(row, fg, bg);
-	omfb_drawchar(ri, x, y, width, height,
-	    fb, fontstride, fontx, fg, bg);
+	omfb_drawchar(ri, x, y, fb, fontstride, fontx, fg, bg);
 
 	omfb_reset_planemask_and_rop();
 }
