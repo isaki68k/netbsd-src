@@ -66,7 +66,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 #endif
 
 /* XXX it should be redesigned, including making the attributes support 8bpp */
-struct rowattr_t {
+typedef struct {
 	union {
 		int32_t all;
 		struct {
@@ -76,8 +76,8 @@ struct rowattr_t {
 			uint8_t reserved;
 		};
 	};
-};
-static struct rowattr_t rowattr[43];
+} rowattr_t;
+static rowattr_t rowattr[43];
 
 /* wscons emulator operations */
 static void	omfb_cursor(void *, int, int, int);
