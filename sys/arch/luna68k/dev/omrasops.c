@@ -415,7 +415,7 @@ omfb_drawchar(
 {
 	/* ROP アドレスのキャッシュ */
 	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
-	static int saved_fg, saved_bg;
+	static int last_fg, last_bg;
 
 	uint32_t mask;
 	int plane;
@@ -425,9 +425,9 @@ omfb_drawchar(
 	int width;
 	int height;
 
-	if (saved_fg != fg || saved_bg != bg) {
-		saved_fg = fg;
-		saved_bg = bg;
+	if (last_fg != fg || last_bg != bg) {
+		last_fg = fg;
+		last_bg = bg;
 		/* calculate ROP */
 		for (plane = 0; plane < omfb_planecount; plane++) {
 			int t = (fg & 1) * 2 + (bg & 1);
