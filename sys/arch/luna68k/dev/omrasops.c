@@ -156,13 +156,13 @@ static rowattr_t rowattr[43];
  * x must be filled with 1 at least lower w bits.
  */
 #if USE_M68K_ASM
-#define CLEAR_LOWER_BITS(x, w)					\
-	asm volatile(						\
-	"	bclr	%[width],%[data]	;\n"		\
-	"	addq.l	#1,%[data]		;\n"		\
-	    : [data] "+&d" (x)					\
-	    : [width] "d" (w)					\
-	    :							\
+#define CLEAR_LOWER_BITS(x, w)						\
+	asm volatile(							\
+	"	bclr	%[width],%[data]	;\n"			\
+	"	addq.l	#1,%[data]		;\n"			\
+	    : [data] "+&d" (x)						\
+	    : [width] "d" (w)						\
+	    :								\
 	)
 #else
 #define CLEAR_LOWER_BITS(x, w)	x = (x & ~(1U << w)) + 1
