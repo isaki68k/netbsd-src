@@ -109,12 +109,14 @@ static rowattr_t rowattr[43];
 #define	ALIGNMASK	(0x1f)
 #define	BYTESDONE	(4)
 
+#if 0 /* XXX not used yet */
 /*
  * internal attributes. see omfb_allocattr().
  */
-#define OMFB_ATTR_MULTICOLOR		(1U << 30)
+#define OMFB_ATTR_MULTICOLOR		(1U << 31)
 #define OMFB_ATTR_UNDERLINE		(1U << 17)
 #define OMFB_ATTR_BOLD			(1U << 16)
+#endif
 
 /*
  * XXX deprecated.
@@ -1645,7 +1647,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
 /*
  * attr bitmap:
  * 31 30 29 ............ 18 17 16
- *  0 MC <--- reserved ---> UL BO
+ * MC <------ reserved ---> UL BO
  *  MC: multi-color row attribute (copyrows で利用)
  *   SI or MC が立っている行は複数カラー使用されていると判定する
  *  UL: Underline (現在未サポート)
