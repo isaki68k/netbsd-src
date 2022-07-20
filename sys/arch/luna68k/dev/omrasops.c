@@ -110,6 +110,15 @@ static rowattr_t rowattr[43];
 #define	BYTESDONE	(4)
 
 /*
+ * XXX deprecated.
+ * This way cannot be extended to 8bpp, so don't use it in new code.
+ */
+#define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 1))
+#define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 2))
+#define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 3))
+#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 4))
+
+/*
  * macros to handle unaligned bit copy ops.
  * See src/sys/dev/rasops/rasops_mask.h for MI version.
  * Also refer src/sys/arch/hp300/dev/maskbits.h.

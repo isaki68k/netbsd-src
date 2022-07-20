@@ -53,16 +53,6 @@ extern int hwplanemask;
 extern int hwplanecount;
 
 /*
- * Helper macros
- */
-
-/* obsoleted */
-#define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 1))
-#define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 2))
-#define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 3))
-#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 4))
-
-/*
  * ROP function
  *
  * LUNA's frame buffer uses Hitachi HM53462 video RAM, which has raster
