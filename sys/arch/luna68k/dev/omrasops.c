@@ -414,10 +414,6 @@ omfb_drawchar(
     uint8_t *fontptr, int fontstride, int fontx,
     uint8_t fg, uint8_t bg)
 {
-	/* ROP アドレスのキャッシュ */
-	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
-	static int last_fg, last_bg;
-
 	uint32_t mask;
 	int plane;
 	int dw;		/* 1 pass width bits */
@@ -425,6 +421,9 @@ omfb_drawchar(
 	int xh, xl;
 	int width;
 	int height;
+	/* ROP address cache */
+	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
+	static int last_fg, last_bg;
 
 	if (last_fg != fg || last_bg != bg) {
 		last_fg = fg;
