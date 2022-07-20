@@ -77,7 +77,6 @@ typedef struct {
 		};
 	};
 } rowattr_t;
-static rowattr_t rowattr[43];
 
 /* wscons emulator operations */
 static void	omfb_cursor(void *, int, int, int);
@@ -101,6 +100,8 @@ static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
 static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
+
+static rowattr_t rowattr[43];
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
