@@ -110,6 +110,13 @@ static rowattr_t rowattr[43];
 #define	BYTESDONE	(4)
 
 /*
+ * internal attributes. see omfb_allocattr().
+ */
+#define OMFB_ATTR_MULTICOLOR		(1U << 30)
+#define OMFB_ATTR_UNDERLINE		(1U << 17)
+#define OMFB_ATTR_BOLD			(1U << 16)
+
+/*
  * XXX deprecated.
  * This way cannot be extended to 8bpp, so don't use it in new code.
  */
