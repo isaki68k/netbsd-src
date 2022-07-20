@@ -219,18 +219,20 @@ omfb_set_rowattr(int row, int fg, int bg)
 	if (rowattr[row].ismulti)
 		return;
 
-	/* 単色のクリア状態から */
+	// 単色のクリア状態から
 	if (rowattr[row].fg == rowattr[row].bg) {
-		/* 両方いっぺんに変更されたらマルチカラー */
+		// 両方いっぺんに変更されたらマルチカラー
 		if (rowattr[row].fg != fg && rowattr[row].bg != bg) {
+			/* when both are changed at once, it's multi-color */
 			rowattr[row].ismulti = true;
 		} else {
-			/* そうでなければモノカラー */
+			// そうでなければモノカラー
+			/* otherwise, it's single-color */
 			rowattr[row].fg = fg;
 			rowattr[row].bg = bg;
 		}
 	} else {
-		/* 色が変更されたらここ */
+		// 色が変更されたらここ
 		rowattr[row].ismulti = true;
 	}
 }
@@ -377,8 +379,8 @@ omfb_fill_color(int color,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"omfb_fill_color_loop_h:\n"
-// ROP_ONE なのでなにか書き込めば1になる。何を書いてもいい
-		"	clr.l	(%[d])	;\n"/* any data to write */
+		/* you may write any data here since ROP_ONE or ZERO */
+		"	clr.l	(%[d])				;\n"
 		"	add.l	%[dstspan],%[d]			;\n"
 		"	dbra	%[h],omfb_fill_color_loop_h	;\n"
 		    : [d] "+&a" (d),
@@ -405,25 +407,26 @@ static const uint8_t ropsel[] = {
 };
 
 /*
- * 指定した色で文字を描画する。
- * しくみ：
- * プレーンROP を前景・背景に応じて次のように設定する。
- * fg bg  rop          result
- *  0  0  ROP_ZERO      0
- *  0  1  ROP_INV1     ~D
- *  1  0  ROP_THROUGH   D
- *  1  1  ROP_ONE       1
- * これにより1度の共通プレーン書き込みで、前景・背景で文字を描画できる。
- */
-/*
- * x, y: destination Left-Top in pixel
- * fontptr: source pointer of fontdata
- * fontstride: y-stride of fontdata [byte]
- * fontx: font bit offset from fontptr MSB
- * fg : foreground color
- * bg : background color
+ * Draw a character by the specified color.
+ * Arguments are:
+ *  x, y: destination left-top position in pixels.
+ *  fontptr: source pointer of fontdata.
+ *  fontstride: y-stride of fontdata in bytes.
+ *  fontx: bit offset of the font, from MSB of fontptr.
+ *  fg: foreground color
+ *  bg: background color
+ * This function modifies(breaks) the planemask and ROPs.
  *
- * breaks: planemask, ROP
+ * How it works:
+ * Set plane ROP accroding to fg/bg color combination as follows.
+ *  fg bg  rop         result
+ *  -- --  ----------- ------
+ *   0  0  ROP_ZERO     0
+ *   0  1  ROP_INV1    ~D
+ *   1  0  ROP_THROUGH  D
+ *   1  1  ROP_ONE      1
+ * This allows characters to be drawn in the specified fg/bg colors with
+ * a single write to the common plane.
  */
 static void
 omfb_drawchar(
@@ -678,15 +681,16 @@ omfb1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 }
 
 /*
- * single plane raster copy
- * dst : destination plane pointer
- * src : source plane pointer
- *    if y-forward, src > dst, point to Left-Top.
- *    if y-backward, src < dst, point to Left-Bottom.
- * width: pixel width (must > 0)
- * height: pixel height (> 0 : forward, < 0 backward)
- * rop: rop[omfb_planecount] ROP
- * プレーンマスクとROP は破壊される
+ * Single plane raster copy.
+ *  dst: destination plane pointer.
+ *  src: source plane pointer.
+ *       if y-forward, src > dst, point to left-top.
+ *       if y-backward, src < dst, point to left-bottom.
+ *  width: pixel width (must > 0)
+ *  height: pixel height (> 0 if forward, < 0 if backward)
+ *  rop: ROP array with omfb_planecount elements.
+ *
+ * This function modifies(breaks) the planemask and ROPs.
  */
 static void
 omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
@@ -702,24 +706,27 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 	step = OMFB_STRIDE;
 
-	// X 方向は (An)+ のため、常に昇順方向
+	/*
+	 * X direction is always forward (or ascend order) to use (An)+
+	 * addressing mode in asm.
+	 */
 
-	// もしバックワードコピーならY は逆順になるようにする
+	/* Reverse order Y if backward copy */
 	if (height < 0) {
-		// 符号は step 側で管理するため、height は正にする
+		/* The sign is managed by step, height is always positive */
 		step = -step;
 		height = -height;
 	}
 	h = height - 1;	/* for dbra */
 
-	// single では2ロングワード単位の処理をする必然は無いが、
-	// 対称性と高速化の両面から考えて、2ロングワード処理を行う。
+	/*
+	 * For single, it's not necessary to process two longwords at a time,
+	 * but we do so for symmetry and speedup.
+	 */
 
-	// まず2ロングワード単位の矩形を転送する
+	/* First, transfer a rectangle consist of two longwords */
 	wh = (width >> 6);
 	if (wh > 0) {
-		// 2ロングワード単位で転送
-
 		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
@@ -769,13 +776,13 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 			return;
 		}
 
-		// 次の転送のために y を巻き戻す
+		/* rewind y for the next transfer */
 		src -= height * step;
 		dst -= height * step;
 	}
 
 	if ((width & 32) != 0) {
-		// 奇数ロングワードなので 1 ロングワード転送
+		/* Transfer one longword since an odd longword */
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb_rascopy_single_L:\n"
@@ -810,19 +817,21 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 			return;
 		}
 
-		// 次の転送のために y を巻き戻す
+		/* rewind y for the next transfer */
 		src += 4 - height * step;
 		dst += 4 - height * step;
 	}
 
 	wl = width & 0x1f;
-	// ここまで来ていれば wl > 0
+	/* wl > 0 at this point */
 
-	// 端数ビットの転送
+	/* Then, transfer residual bits */
 
 	mask = ALL1BITS << (32 - wl);
-	// ROP の状態を保持したたまマスクを設定することがハード的には
-	// できないので、ここでは共通ROPは使えない。
+	/*
+	 * The common ROP cannot be used here.  Because the hardware doesn't
+	 * allow you to set the mask while keeping the ROP states.
+	 */
 	for (plane = 0; plane < omfb_planecount; plane++) {
 		omfb_set_rop(plane, rop[plane], mask);
 	}
@@ -862,14 +871,15 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 }
 
 /*
- * multiple plane raster copy
- * dst0 : destination Plane0 pointer
- * src0 : source Plane0 pointer
- *    if y-forward, src0 > dst0, point to Left-Top.
- *    if y-backward, src0 < dst0, point to Left-Bottom.
- * width: pixel width (must > 0)
- * height: pixel height (> 0 : forward, < 0 backward)
- * プレーンマスクとROP は破壊される
+ * Multiple plane raster copy.
+ *  dst0: destination pointer in Plane0.
+ *  src0: source pointer in Plane0.
+ *       if y-forward, src0 > dst0, point to left-top.
+ *       if y-backward, src0 < dst0, point to left-bottom.
+ *  width: pixel width (must > 0)
+ *  height: pixel height (> 0 if forward, < 0 if backward)
+ *
+ * This function modifies(breaks) the planemask and ROPs.
  */
 static void
 omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
@@ -885,11 +895,14 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 	step = OMFB_STRIDE;
 
-	// X 方向は (An)+ のため、常に昇順方向
+	/*
+	 * X direction is always forward (or ascend order) to use (An)+
+	 * addressing mode in asm.
+	 */
 
-	// もしバックワードコピーならY は逆順になるようにする
+	/* Reverse order Y if backward copy */
 	if (height < 0) {
-		// 符号は step 側で管理するため、height は正にする
+		/* The sign is managed by step, height is always positive */
 		step = -step;
 		height = -height;
 	}
@@ -899,11 +912,9 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	dst2 = dst1 + OMFB_PLANEOFFS;
 	dst3 = dst2 + OMFB_PLANEOFFS;
 
-	// まず2ロングワード単位の矩形を転送する
+	/* First, transfer a rectangle consist of two longwords */
 	wh = (width >> 6);
 	if (wh > 0) {
-		// 2ロングワード単位で転送
-
 		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
@@ -915,20 +926,19 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	move.w	%[wh],%[wloop]	;\n"
 
 		"2:\n"
-			/* fastest way for MC68030 */
 			/*
-			 * 命令のオーバーラップとアクセスウェイトの関係で、
-			 * LUNA では
-			 * move.l (An)+,(An)+ よりも
-			 * move.l (An,Dn),(An,Dn) よりも
-			 * movem.l よりも速い
-			 */
-			/* ソースの (An)+ は Head 0 だけど adda は Head 2
-			 * なので、
-			 * 前の命令にライトウェイトサイクルがあって Tail
-			 * が発生すると
-			 * (An)+,.. はオーバーラップしないが adda は
-			 * オーバーラップできる。
+			 * Optimized for 68030.
+			 *
+			 * On LUNA, it's faster than "MOVE.L (An)+,(An)+",
+			 * "MOVE.L (An,Dn),(An,Dn)", and "MOVEM.L", because 
+			 * the relationship of instruction overlaps and
+			 * access waits.
+			 *
+			 * The head time of (An)+ as source operand is 0 and
+			 * the head time of ADDA instruction is 2.  If the
+			 * previous instruction has some write wait cycles,
+			 * i.e., tail cycles, (An)+ as source operand cannot
+			 * overlap it but ADDA instruction can.
 			 */
 		"	move.l	(%[src0]),(%[dst0])+	;\n"	/* P0 */
 		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
@@ -938,7 +948,8 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
 
-		"	addq.l	#4,%[src0]		;\n"	// オーバーラップを期待して ()+ にしない
+			/* Expect an overlap, so don't use (An)+ */
+		"	addq.l	#4,%[src0]		;\n"
 
 		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
 		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
@@ -1015,7 +1026,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			return;
 		}
 
-		// 次の転送のために y を巻き戻す
+		/* rewind y for the next transfer */
 		src0 -= height * step;
 		dst0 -= height * step;
 		dst1 -= height * step;
@@ -1023,11 +1034,11 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		dst3 -= height * step;
 	}
 
-	// rewind はプレーンの巻き戻しなので Y 順序とは関係ない
+	/* This rewind rewinds the plane, so Y order is irrelevant */
 	rewind = OMFB_STRIDE - OMFB_PLANEOFFS * 3;
 
 	if ((width & 32) != 0) {
-		// 奇数ロングワードなので 1 ロングワード転送
+		/* Transfer one longword since an odd longword */
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_L:\n"
@@ -1086,7 +1097,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			return;
 		}
 
-		// 次の転送のために y を巻き戻す
+		/* rewind y for the next transfer */
 		src0 += 4 - height * step;
 		dst0 += 4 - height * step;
 		dst1 += 4 - height * step;
@@ -1095,9 +1106,9 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	}
 
 	wl = width & 0x1f;
-	// ここまで来ていれば wl > 0
+	/* wl > 0 at this point */
 
-	// 端数ビットの転送
+	/* Then, transfer residual bits */
 
 	mask = ALL1BITS << (32 - wl);
 	omfb_set_planemask(hwplanemask);
@@ -1161,8 +1172,6 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 static void
 omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
-	// dd if=32 0.116sec
-
 	struct rasops_info *ri = cookie;
 	uint8_t *src, *dst;
 	int width, rowheight;
@@ -1181,7 +1190,8 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		return;
 	} else if (srcrow < dstrow) {
 		/* y-backward */
-		// Bottom 行、Bottom ラスタを選択
+
+		/* select the bottom raster of the bottom row */
 		srcrow += nrows - 1;
 		dstrow += nrows - 1;
 		src += nrows * rowheight * ri->ri_stride - ri->ri_stride;
@@ -1205,14 +1215,14 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			goto skip;
 		}
 
-		/* 同じ行状態にある行数を数える */
+		/* count the number of rows with the same attributes */
 		for (; r < nrows; r++) {
 			if (rowattr[srcrow + r * rowstep].all !=
 			    rowattr[srcrow].all) {
 				break;
 			}
 		}
-		// この結果、r は srcrow 自身を含めた行数
+		/* r is the number of rows including srcrow itself */
 
 		if (rowattr[srcrow].ismulti) {
 			// src とdst は共通プレーンを指しているので P0 に変換
@@ -1226,8 +1236,11 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t bg = rowattr[srcrow].bg;
 
 			srcplane = 0;
-			/* ROP 選択のロジックは putchar と同じ */
-			/* srcplane は fg が立ってて bg が立ってないプレーン */
+			/*
+			 * The logic selecting ROP is the same as drawchar.
+			 * srcplane is the plane that fg is set and bg is not
+			 * set.
+			 */
 			for (i = 0; i < omfb_planecount; i++) {
 				int t = (fg & 1) * 2 + (bg & 1);
 				rop[i] = ropsel[t];
@@ -1643,7 +1656,30 @@ omfb_cursor(void *cookie, int on, int row, int col)
 
 /*
  * Allocate attribute. We just pack these into an integer.
+ *
+ * Attribute bitmap:
+ *  bit 31 30 29 ... 19 18 17 16 15 ... 8  7 ... 0
+ *      MC <- reserved --> UL BO <- fg -> <- bg ->
+ *
+ *  MC: Multi-Color (used by copyrows)
+ // copyrows で使われてる?
+ *  UL: Underline (not supported yet)
+ *  BO: Bold (for 1bpp HILIT; not supported yet)
+ *  reserved: must be 0
  */
+#if 0
+/*
+ * Future plan:
+ *
+ * Place fg and bg side by side in advance to reduce the computation cost
+ * at the time of ROP setting.
+ *
+ * bit 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+ *     f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
+ *
+ * In this form, use bit1..0 for 1bpp, use bit7..0 for 4bpp.
+ */
+#endif
 /*
  * attr bitmap:
  * 31 30 29 ............ 18 17 16
