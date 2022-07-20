@@ -259,10 +259,8 @@ omfb_reset_rowattr(int row, int bg)
  * regardless of bit offset of the destination.
  */
 static void
-omfb_fill(int planemask, int rop,
-    uint8_t *dstptr, int dstbitoffs, int dstspan,
-    uint32_t v,
-    int width, int height)
+omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
+    uint32_t v, int width, int height)
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
@@ -320,9 +318,8 @@ omfb_fill(int planemask, int rop,
 }
 
 static void
-omfb_fill_color(int color,
-	uint8_t *dstptr, int dstbitoffs, int dstspan,
-	int width, int height)
+omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
+    int width, int height)
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
