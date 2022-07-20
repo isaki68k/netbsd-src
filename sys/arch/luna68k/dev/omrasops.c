@@ -191,7 +191,7 @@ omfb_rop_addr(int plane, int rop)
 {
 
 	return (volatile uint32_t *)
-	    (OMFB_ROP_0 + OMFB_PLANEOFFS * plane + rop * 4);
+	    (OMFB_ROP_P0 + OMFB_PLANEOFFS * plane + rop * 4);
 }
 
 /* Set ROP and ROP's mask for individual plane */
@@ -207,7 +207,7 @@ static inline void
 omfb_set_rop_curplane(int rop, uint32_t mask)
 {
 
-	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
+	((volatile uint32_t *)(OMFB_ROP_COMMON))[rop] = mask;
 }
 
 /* Reset planemask and ROP */

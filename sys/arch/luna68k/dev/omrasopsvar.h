@@ -15,27 +15,23 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <machine/board.h>
+
 /*
  * Base addresses of LUNA's frame buffer
  * XXX: We consider only 1bpp and 4bpp for now
  */
 
-#include <machine/board.h>
+#define OMFB_PLANEMASK		BMAP_BMSEL	/* BMSEL register */
+#define OMFB_ROP_COMMON		BMAP_FN		/* common ROP */
+#define OMFB_ROP_P0		BMAP_FN0
 
-#define OMFB_PLANEMASK	BMAP_BMSEL	/* BMSEL register */
-
-#define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
-#define OMFB_PLANEOFFS	(0x40000)	/* plane offset */
+/* will be merged in near future */
+#define OMFB_ROPFUNC		BMAP_FN		/* common ROP function */
 
 #define OMFB_MAX_PLANECOUNT	(8)
-
-/* 個別のプレーンや ROP の処理を行うため、定義をやり直す */
-
-#define OMFB_ROP_C		BMAP_FN			/* common ROP */
-#define OMFB_ROP_0		BMAP_FN0
-
-#define OMFB_STRIDE		(2048/8)		/* stride [byte] */
-
+#define OMFB_PLANEOFFS		(0x40000)	/* plane offset */
+#define OMFB_STRIDE		(2048/8)	/* stride [byte] */
 
 /* 差し替え予定 */
 #define omfb_planecount hwplanecount
