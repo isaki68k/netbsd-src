@@ -22,16 +22,6 @@
 
 #include <machine/board.h>
 
-/*
-BMSEL は共通ビットマッププレーンへの書き込みがどのプレーンに反映されるか、
-および共通 ROP への書き込みがどのプレーンの ROP に反映されるかの
-両方に影響する。
-
-共通 ROP へのセットは、現在プレーンマスクで選択されている
-プレーンの ROP をひとつづつセットしていくのと同じ効果がある。
-共通プレーンへ書き込んだときの ROP という意味ではない。
-*/
-
 #define OMFB_PLANEMASK	BMAP_BMSEL	/* BMSEL register */
 
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */

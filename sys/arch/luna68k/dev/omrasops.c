@@ -41,6 +41,15 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
  *	- first column is at 32bit aligned address,
  *	- font glyphs are stored in 32bit padded.
  */
+/*
+ * BMSEL affects both of
+ * 1) which plane a write to the common bitmap plane is reflected on and
+ * 2) which plane's ROP a write to the common ROP is reflected on.
+ *
+ * The common ROP is not a ROP applied to write to the common bitmap plane.
+ * It's equivalent to set ROPs of the plane selected in the plane mask one
+ * by one.
+ */
 
 #include <sys/param.h>
 #include <sys/systm.h>
