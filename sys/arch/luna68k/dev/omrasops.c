@@ -101,8 +101,6 @@ static int	omfb_allocattr(void *, int, int, int, long *);
 
 static void	omfb_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
 static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
-static void	omfb_drawchar(struct rasops_info *, int, int, uint8_t *,
-    int, uint8_t, uint8_t);
 static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
 static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
@@ -408,24 +406,7 @@ omfb_fill_color(int color,
 	} while (width > 0);
 }
 
-static const uint8_t ropsel[] = {
-	ROP_ZERO,
-	ROP_INV1,
-	ROP_THROUGH,
-	ROP_ONE,
-};
-
 /*
- * Draw a character by the specified color.
- * Arguments are:
- *  x, y: destination left-top position in pixels.
- *  fontptr: source pointer of fontdata.
- *  fontstride: y-stride of fontdata in bytes.
- *  fg: foreground color
- *  bg: background color
- * This function modifies(breaks) the planemask and ROPs.
- *
- * How it works:
  * Set plane ROP accroding to fg/bg color combination as follows.
  *  fg bg  rop         result
  *  -- --  ----------- ------
@@ -436,24 +417,50 @@ static const uint8_t ropsel[] = {
  * This allows characters to be drawn in the specified fg/bg colors with
  * a single write to the common plane.
  */
+static const uint8_t ropsel[] = {
+	ROP_ZERO,
+	ROP_INV1,
+	ROP_THROUGH,
+	ROP_ONE,
+};
+
+/*
+ * Blit a character at the specified co-ordinates.
+ * This function modifies(breaks) the planemask and ROPs.
+ */
 static void
-omfb_drawchar(
-    struct rasops_info *ri,
-    int x, int y,
-    uint8_t *fontptr, int fontstride,
-    uint8_t fg, uint8_t bg)
+omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
+	struct rasops_info *ri = cookie;
+	uint8_t *fontptr;
+	uint8_t *dstcmn;
 	uint32_t mask;
-	int plane;
-	int dw;		/* 1 pass width bits */
-	uint8_t *dstc;
-	int xh, xl;
+	int fg, bg;
 	int width;
 	int height;
+	int x, y;
+	int fontstride;
 	int fontx;
+	int plane;
+	int dw;		/* 1 pass width bits */
+	int xh, xl;
 	/* ROP address cache */
 	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
 	static int last_fg, last_bg;
+
+	if (uc >= 0x80)
+		return;
+
+	width = ri->ri_font->fontwidth;
+	height = ri->ri_font->fontheight;
+	fontstride = ri->ri_font->stride;
+	y = height * row;
+	x = width * startcol;
+	fontptr = (uint8_t *)ri->ri_font->data +
+	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
+
+	omfb_unpack_attr(attr, &fg, &bg, NULL);
+	omfb_set_rowattr(row, fg, bg);
 
 	if (last_fg != fg || last_bg != bg) {
 		last_fg = fg;
@@ -472,13 +479,11 @@ omfb_drawchar(
 	xl = x & 0x1f;
 
 	/* write to common plane */
-	dstc = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
+	dstcmn = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
 
 	/* select all plane */
 	omfb_set_planemask(hwplanemask);
 
-	width = ri->ri_font->fontwidth;
-	height = ri->ri_font->fontheight;
 	fontx = 0;
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
@@ -500,7 +505,7 @@ omfb_drawchar(
 			width = 0;
 		}
 
-		/* drawchar の場合、width ループは 1 か 2 回で毎回 mask が違う
+		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
 		はずなので毎回セットしたほうがいい */
 #if 0
 		for (plane = 0; plane < omfb_planecount; plane++) {
@@ -525,7 +530,7 @@ omfb_drawchar(
 		}
 #endif
 
-		d = dstc;
+		d = dstcmn;
 		f = fontptr;
 		h = height - 1;
 		do {
@@ -537,38 +542,11 @@ omfb_drawchar(
 			f += fontstride;
 		} while (--h >= 0);
 
-		dstc += 4;
+		dstcmn += 4;
 		fontx += dw;
 		mask = ALL1BITS;
 		dw = 32;
 	} while (width > 0);
-}
-
-/*
- * Blit a character at the specified co-ordinates.
- */
-static void
-omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
-{
-	struct rasops_info *ri = cookie;
-	int fg, bg;
-	int x, y;
-	int fontstride;
-	uint8_t *fb;
-
-	if (uc >= 0x80)
-		return;
-
-	y = ri->ri_font->fontheight * row;
-	x = ri->ri_font->fontwidth * startcol;
-
-	fb = (uint8_t *)ri->ri_font->data +
-	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
-	fontstride = ri->ri_font->stride;
-
-	omfb_unpack_attr(attr, &fg, &bg, NULL);
-	omfb_set_rowattr(row, fg, bg);
-	omfb_drawchar(ri, x, y, fb, fontstride, fg, bg);
 
 	omfb_reset_planemask_and_rop();
 }
@@ -1245,7 +1223,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 			srcplane = 0;
 			/*
-			 * The logic selecting ROP is the same as drawchar.
+			 * The logic selecting ROP is the same as putchar.
 			 * srcplane is the plane that fg is set and bg is not
 			 * set.
 			 */
