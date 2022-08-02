@@ -108,6 +108,7 @@ static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
+// YYY 43 をなんとかしたい howmany(1024 / fontheight) ?
 static rowattr_t rowattr[43];
 
 #define	ALL1BITS	(~0U)
@@ -502,6 +503,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			width = 0;
 		}
 
+		// YYY どうすべ
 		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
 		はずなので毎回セットしたほうがいい */
 #if 0
@@ -700,6 +702,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		step = -step;
 		height = -height;
 	}
+	// YYY asm 側にいれたい
 	h = height - 1;	/* for dbra */
 
 	/*
@@ -711,6 +714,8 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	wh = (width >> 6);
 	if (wh > 0) {
 		int step8 = step - wh * 8;
+
+		// YYY asm 側に入れたい
 		wh--;	/* for dbra */
 
 #if USE_M68K_ASM
@@ -848,6 +853,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 #endif
 
+	// YYY いらないはず。ROP を戻す必要ないし戻せないはずなので
 	for (plane = 0; plane < omfb_planecount; plane++) {
 		omfb_set_rop(plane, rop[plane], ALL1BITS);
 	}
@@ -889,6 +895,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		step = -step;
 		height = -height;
 	}
+	// YYY asm 側にいれたい
 	h = height - 1;	/* for dbra */
 
 	dst1 = dst0 + OMFB_PLANEOFFS;
@@ -896,9 +903,12 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	dst3 = dst2 + OMFB_PLANEOFFS;
 
 	/* First, transfer a rectangle consist of two longwords */
+// YYY ここはsignedのままシフト?
 	wh = (width >> 6);
 	if (wh > 0) {
 		int step8 = step - wh * 8;
+
+		// YYY asm 側に入れたい
 		wh--;	/* for dbra */
 
 #if USE_M68K_ASM
@@ -1209,6 +1219,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 		if (rowattr[srcrow].ismulti) {
 			// src とdst は共通プレーンを指しているので P0 に変換
+			// YYY P0 に変換とは
 			uint8_t *src0 = src + OMFB_PLANEOFFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
 			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
