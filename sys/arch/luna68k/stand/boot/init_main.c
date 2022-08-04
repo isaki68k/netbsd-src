@@ -175,7 +175,7 @@ main(void)
 	int i, status = ST_NORMAL;
 	const char *machstr;
 	const char *bootdev;
-	uint32_t howto __unused;
+	uint32_t howto;
 	int unit, part;
 	int bdev, ctlr, id;
 
@@ -293,7 +293,6 @@ main(void)
 
 	howto = reorder_dipsw(dipsw2);
 
-#if 0
 	if ((howto & 0xFE) == 0) {
 		char c;
 
@@ -306,7 +305,6 @@ main(void)
 			bootnetbsd(default_file, 0);
 		}
 	}
-#endif
 
 	/*
 	 * Main Loop

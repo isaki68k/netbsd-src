@@ -307,10 +307,10 @@ bmdinit(void)
 
 	bp->bc_stat  = STAT_NORMAL;
 
-	bp->bc_xmin  = 0;
-	bp->bc_xmax  = 106;
-	bp->bc_ymin  = 0;
-	bp->bc_ymax  = 51;
+	bp->bc_xmin  = 8;
+	bp->bc_xmax  = 96;
+	bp->bc_ymin  = 2;
+	bp->bc_ymax  = 48;
 
 	bp->bc_row = bp->bc_ymin;
 
