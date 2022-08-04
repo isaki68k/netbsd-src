@@ -1,4 +1,4 @@
-/*	$NetBSD: amdgpufb.c,v 1.3 2021/12/19 12:21:29 riastradh Exp $	*/
+/*	$NetBSD: amdgpufb.c,v 1.5 2022/07/18 23:34:02 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amdgpufb.c,v 1.3 2021/12/19 12:21:29 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amdgpufb.c,v 1.5 2022/07/18 23:34:02 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/bus.h>
@@ -58,7 +58,6 @@ struct amdgpufb_softc {
 	device_t			sc_dev;
 	struct amdgpufb_attach_args	sc_afa;
 	struct amdgpu_task		sc_attach_task;
-	bool				sc_scheduled:1;
 	bool				sc_attached:1;
 };
 
@@ -84,29 +83,17 @@ amdgpufb_attach(device_t parent, device_t self, void *aux)
 {
 	struct amdgpufb_softc *const sc = device_private(self);
 	const struct amdgpufb_attach_args *const afa = aux;
-	int error;
 
 	sc->sc_dev = self;
 	sc->sc_afa = *afa;
-	sc->sc_scheduled = false;
 	sc->sc_attached = false;
 
 	aprint_naive("\n");
 	aprint_normal("\n");
 
 	amdgpu_task_init(&sc->sc_attach_task, &amdgpufb_attach_task);
-	error = amdgpu_task_schedule(parent, &sc->sc_attach_task);
-	if (error) {
-		aprint_error_dev(self, "failed to schedule mode set: %d\n",
-		    error);
-		goto fail0;
-	}
-	sc->sc_scheduled = true;
-
-	/* Success!  */
-	return;
-
-fail0:	return;
+	amdgpu_task_schedule(parent, &sc->sc_attach_task);
+	config_pending_incr(self);
 }
 
 static int
@@ -114,9 +101,6 @@ amdgpufb_detach(device_t self, int flags)
 {
 	struct amdgpufb_softc *const sc = device_private(self);
 	int error;
-
-	if (sc->sc_scheduled)
-		return EBUSY;
 
 	if (sc->sc_attached) {
 		pmf_device_deregister(self);
@@ -153,7 +137,7 @@ amdgpufb_attach_task(struct amdgpu_task *task)
 	if (error) {
 		aprint_error_dev(sc->sc_dev, "failed to attach drmfb: %d\n",
 		    error);
-		return;
+		goto out;
 	}
 
 	if (!pmf_device_register1(sc->sc_dev, NULL, NULL, &amdgpufb_shutdown))
@@ -161,6 +145,8 @@ amdgpufb_attach_task(struct amdgpu_task *task)
 		    "failed to register shutdown handler\n");
 
 	sc->sc_attached = true;
+out:
+	config_pending_decr(sc->sc_dev);
 }
 
 static bool

@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu_emu.c,v 1.33 2020/07/15 09:42:43 rin Exp $ */
+/*	$NetBSD: fpu_emu.c,v 1.36 2022/07/27 04:17:02 rin Exp $ */
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.33 2020/07/15 09:42:43 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.36 2022/07/27 04:17:02 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -189,8 +189,8 @@ fpu_dumpfpn(struct fpn *fp)
 
 /*
  * Emulate a floating-point instruction.
- * Return zero for success, else signal number.
- * (Typically: zero, SIGFPE, SIGILL, SIGSEGV)
+ * Return true if insn is consumed anyway.
+ * Otherwise, the caller must take care of it.
  */
 bool
 fpu_emulate(struct trapframe *tf, struct fpreg *fpf, ksiginfo_t *ksi)
@@ -808,7 +808,7 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 		/* Isolate condition codes */
 		cond >>= 28;
 		/* Move fpu condition codes to cr[1] */
-		tf->tf_cr &= (0x0f000000);
+		tf->tf_cr &= ~(0x0f000000);
 		tf->tf_cr |= (cond<<24);
 		DPRINTF(FPE_INSN, ("fpu_execute: cr[1] <= %x\n", cond));
 	}
@@ -817,7 +817,7 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 		cond = fsr & FPSCR_FPCC;
 		/* Isolate condition codes */
 		cond <<= 16;
-		/* Move fpu condition codes to cr[1] */
+		/* Move fpu condition codes to cr[bf/4] */
 		tf->tf_cr &= ~(0xf0000000>>bf);
 		tf->tf_cr |= (cond>>bf);
 		DPRINTF(FPE_INSN, ("fpu_execute: cr[%d] (cr=%x) <= %x\n", bf/4, tf->tf_cr, cond));

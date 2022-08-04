@@ -1,10 +1,11 @@
-#	$NetBSD: files.ttm,v 1.7 2021/12/19 10:55:38 riastradh Exp $
+#	$NetBSD: files.ttm,v 1.9 2022/07/19 23:19:07 riastradh Exp $
 
 # TTM, the texture and tiling manager.
 
 version	20180827
 
 define	drmkms_ttm: drmkms
+makeoptions	drmkms_ttm	"CPPFLAGS.drmkms_ttm"+="${CPPFLAGS.drmkms}"
 
 makeoptions	drmkms	"CWARNFLAGS.ttm_bo.c"+="${${ACTIVE_CC} == gcc && ${HAVE_GCC:U0} >= 7:? -Wno-error=implicit-fallthrough :}"
 makeoptions	drmkms_ttm	"CPPFLAGS.drmkms_ttm"+="-DCONFIG_AGP=1"
@@ -17,8 +18,7 @@ file	external/bsd/drm2/dist/drm/ttm/ttm_tt.c			drmkms_ttm
 file	external/bsd/drm2/dist/drm/ttm/ttm_bo.c			drmkms_ttm
 file	external/bsd/drm2/dist/drm/ttm/ttm_bo_util.c		drmkms_ttm
 file	external/bsd/drm2/ttm/ttm_bo_vm.c			drmkms_ttm
-# Linux module goo.
-#file	external/bsd/drm2/dist/drm/ttm/ttm_module.c		drmkms_ttm
+file	external/bsd/drm2/ttm/ttm_module.c			drmkms_ttm
 # Used only by vmwgfx.  Needs porting for rcu -> pserialize.
 #file	external/bsd/drm2/dist/drm/ttm/ttm_object.c		drmkms_ttm
 # Used only by vmwgfx.  Needs porting.  Does silly things like SIGKILL.

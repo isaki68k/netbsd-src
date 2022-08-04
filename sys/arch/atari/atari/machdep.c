@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.186 2022/03/13 17:50:55 andvar Exp $	*/
+/*	$NetBSD: machdep.c,v 1.188 2022/07/03 16:03:08 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.186 2022/03/13 17:50:55 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.188 2022/07/03 16:03:08 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -71,6 +71,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.186 2022/03/13 17:50:55 andvar Exp $")
 #include <sys/exec_aout.h>
 #include <sys/cpu.h>
 #include <sys/exec_elf.h>
+#include <sys/bus.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -175,7 +176,6 @@ consinit(void)
 void
 cpu_startup(void)
 {
-	extern int iomem_malloc_safe;
 	char pbuf[9];
 #ifdef DEBUG
 	extern int pmapdebug;
@@ -217,7 +217,7 @@ cpu_startup(void)
 	/*
 	 * Alloc extent allocation to use malloc
 	 */
-	iomem_malloc_safe = 1;
+	atari_bus_space_malloc_set_safe();
 }
 
 /*
@@ -256,22 +256,22 @@ identifycpu(void)
 	case CPU_68060:
 		__asm(".word 0x4e7a,0x0808;"
 		    "movl %%d0,%0" : "=d"(pcr) : : "d0");
-		snprintf(cputxt, sizeof(cputxt), "68%s060 rev.%d",
+		snprintf(cputxt, sizeof(cputxt), "MC68%s060 rev.%d",
 		    pcr & 0x10000 ? "LC/EC" : "", (pcr >> 8) & 0xff);
 		cpu = cputxt;
 		mmu = "/MMU";
 		break;
 	case CPU_68040:
-		cpu = "m68040";
+		cpu = "MC68040";
 		mmu = "/MMU";
 		break;
 	case CPU_68030:
-		cpu = "m68030";
+		cpu = "MC68030";
 		mmu = "/MMU";
 		break;
 	default: /* XXX */
-		cpu = "m68020";
-		mmu = " m68851 MMU";
+		cpu = "MC68020";
+		mmu = " MC68851 MMU";
 	}
 	cpu_setmodel("%s (%s CPU%s%sFPU)", mach, cpu, mmu, fpu);
 	printf("%s\n", cpu_getmodel());

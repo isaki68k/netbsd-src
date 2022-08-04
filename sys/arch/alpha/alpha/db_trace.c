@@ -1,4 +1,4 @@
-/* $NetBSD: db_trace.c,v 1.30 2021/07/24 21:31:32 andvar Exp $ */
+/* $NetBSD: db_trace.c,v 1.32 2022/07/21 01:52:28 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.30 2021/07/24 21:31:32 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.32 2022/07/21 01:52:28 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -165,15 +165,38 @@ do {									\
 	}
 }
 
-static int
-sym_is_trapsymbol(vaddr_t v)
+static bool
+db_alpha_sym_is_trapsymbol(vaddr_t v)
 {
 	int i;
 
 	for (i = 0; special_symbols[i].ss_val != 0; ++i)
 		if (v == special_symbols[i].ss_val)
-			return 1;
-	return 0;
+			return true;
+	return false;
+}
+
+static bool
+db_alpha_sym_is_backstop(vaddr_t v)
+{
+	return v == (vaddr_t)&alpha_kthread_backstop;
+}
+
+static const char *
+db_alpha_trap_description(vaddr_t v)
+{
+	int i;
+
+	for (i = 0; special_symbols[i].ss_val != 0; ++i)
+		if (v == special_symbols[i].ss_val)
+			return special_symbols[i].ss_note;
+	return "(? trap ?)";
+}
+
+static bool
+db_alpha_trap_is_syscall(vaddr_t v)
+{
+	return v == (vaddr_t)&XentSys;
 }
 
 static void
@@ -191,7 +214,6 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 	struct prologue_info pi;
 	db_expr_t diff;
 	db_sym_t sym;
-	int i;
 	u_long tfps;
 	const char *symname;
 	struct pcb *pcbp;
@@ -266,7 +288,7 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 		 * backstop, then we are at the root of the call
 		 * graph.
 		 */
-		if (symval == (vaddr_t)&alpha_kthread_backstop) {
+		if (db_alpha_sym_is_backstop(symval)) {
 			(*pr)("--- kernel thread backstop ---\n");
 			break;
 		}
@@ -306,16 +328,13 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 		 * If we are in a trap vector, frame points to a
 		 * trapframe.
 		 */
-		if (sym_is_trapsymbol(symval)) {
+		if (db_alpha_sym_is_trapsymbol(symval)) {
 			tf = (struct trapframe *)frame;
 
-			for (i = 0; special_symbols[i].ss_val != 0; ++i)
-				if (symval == special_symbols[i].ss_val)
-					(*pr)("--- %s",
-					    special_symbols[i].ss_note);
+			(*pr)("--- %s", db_alpha_trap_description(symval));
 
 			tfps = tf->tf_regs[FRAME_PS];
-			if (symval == (vaddr_t)&XentSys)
+			if (db_alpha_trap_is_syscall(symval))
 				decode_syscall(tf->tf_regs[FRAME_V0], p, pr);
 			if ((tfps & ALPHA_PSL_IPL_MASK) != last_ipl) {
 				last_ipl = tfps & ALPHA_PSL_IPL_MASK;

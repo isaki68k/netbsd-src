@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_mmap.c,v 1.180 2022/06/04 20:54:03 riastradh Exp $	*/
+/*	$NetBSD: uvm_mmap.c,v 1.184 2022/07/07 11:29:18 rin Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.180 2022/06/04 20:54:03 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.184 2022/07/07 11:29:18 rin Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_pax.h"
@@ -274,7 +274,7 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 	struct proc *p = l->l_proc;
 	vaddr_t addr;
 	off_t pos;
-	vsize_t size, pageoff, newsize;
+	vsize_t size, pageoff;
 	vm_prot_t prot, maxprot, extraprot;
 	int flags, fd, advice;
 	vaddr_t defaddr = 0;	/* XXXGCC */
@@ -309,17 +309,21 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 		return EINVAL;
 
 	/*
-	 * align file position and save offset.  adjust size.
+	 * Align file position and save offset into page.  Adjust size
+	 * so that it is an integral multiple of the page size.
 	 */
-
-	pageoff = (pos & PAGE_MASK);
-	pos    -= pageoff;
-	newsize = size + pageoff;		/* add offset */
-	newsize = (vsize_t)round_page(newsize);	/* round up */
-
-	if (newsize < size)
+	pageoff = pos & PAGE_MASK;
+	pos -= pageoff;
+	KASSERT(PAGE_MASK <= __type_max(vsize_t));
+	KASSERT((__type_max(vsize_t) - PAGE_SIZE + 1) % PAGE_SIZE == 0);
+	if (size > __type_max(vsize_t) - PAGE_SIZE + 1 - pageoff)
 		return ENOMEM;
-	size = newsize;
+	/*
+	 * size + pageoff <= VSIZE_MAX + 1 - PAGE_SIZE, and the
+	 * right-hand side is an integral multiple of the page size, so
+	 * round_page(size + pageoff) <= VSIZE_MAX + 1 - PAGE_SIZE.
+	 */
+	size = round_page(size + pageoff);
 
 	/*
 	 * now check (MAP_FIXED) or get (!MAP_FIXED) the "addr"
@@ -364,6 +368,8 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 
 	advice = UVM_ADV_NORMAL;
 	if ((flags & MAP_ANON) == 0) {
+		KASSERT(size != 0);
+
 		if ((fp = fd_getfile(fd)) == NULL)
 			return EBADF;
 
@@ -1004,6 +1010,8 @@ uvm_mmap_dev(struct proc *p, void **addrp, size_t len, dev_t dev,
 {
 	struct uvm_object *uobj;
 	int error, flags, prot;
+
+	KASSERT(len > 0);
 
 	flags = MAP_SHARED;
 	prot = VM_PROT_READ | VM_PROT_WRITE;

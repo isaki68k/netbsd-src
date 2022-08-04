@@ -1,4 +1,4 @@
-/*	$NetBSD: pic.c,v 1.79 2022/01/02 11:17:39 riastradh Exp $	*/
+/*	$NetBSD: pic.c,v 1.83 2022/07/28 10:26:26 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.79 2022/01/02 11:17:39 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.83 2022/07/28 10:26:26 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -98,13 +98,12 @@ static int pic_init(void);
 void
 pic_set_priority(struct cpu_info *ci, int newipl)
 {
-	register_t psw = DISABLE_INTERRUPT_SAVE();
-	if (pic_list[0] != NULL)
-		(pic_list[0]->pic_ops->pic_set_priority)(pic_list[0], newipl);
-	ci->ci_cpl = newipl;
-	if ((psw & I32_bit) == 0) {
-		ENABLE_INTERRUPT();
+	if (__predict_false(pic_list[0] == NULL)) {
+		ci->ci_cpl = newipl;
+		return;
 	}
+
+	pic_list[0]->pic_ops->pic_set_priority(pic_list[0], newipl);
 }
 #endif
 
@@ -151,7 +150,9 @@ pic_ipi_ddb(void *arg)
 int
 pic_ipi_kpreempt(void *arg)
 {
-	atomic_or_uint(&curcpu()->ci_astpending, __BIT(1));
+	struct lwp * const l = curlwp;
+
+	l->l_md.md_astpending |= __BIT(1);
 	return 1;
 }
 #endif /* __HAVE_PREEMPTION */
@@ -297,7 +298,7 @@ pic_mark_pending_sources(struct pic_softc *pic, size_t irq_base,
 	return ipl_mask;
 }
 
-uint32_t
+static uint32_t
 pic_find_pending_irqs_by_ipl(struct pic_softc *pic, size_t irq_base,
 	uint32_t pending, int ipl)
 {
@@ -332,6 +333,7 @@ pic_dispatch(struct intrsource *is, void *frame)
 {
 	int (*func)(void *) = is->is_func;
 	void *arg = is->is_arg;
+	int ocpl, ncpl;
 
 	if (__predict_false(arg == NULL)) {
 		if (__predict_false(frame == NULL)) {
@@ -341,6 +343,7 @@ pic_dispatch(struct intrsource *is, void *frame)
 		arg = frame;
 	}
 
+	ocpl = curcpu()->ci_cpl;
 #ifdef MULTIPROCESSOR
 	if (!is->is_mpsafe) {
 		KERNEL_LOCK(1, NULL);
@@ -353,6 +356,11 @@ pic_dispatch(struct intrsource *is, void *frame)
 	} else
 #endif
 		(void)(*func)(arg);
+	ncpl = curcpu()->ci_cpl;
+	KASSERTMSG(ocpl <= ncpl, "pic %s irq %u intrsource %s:"
+	    " cpl slipped %d -> %d",
+	    is->is_pic->pic_name, is->is_irq, is->is_source,
+	    ocpl, ncpl);
 
 	struct pic_percpu * const pcpu = percpu_getref(is->is_pic->pic_percpu);
 	KASSERT(pcpu->pcpu_magic == PICPERCPU_MAGIC);
@@ -361,7 +369,7 @@ pic_dispatch(struct intrsource *is, void *frame)
 }
 
 #if defined(__HAVE_PIC_PENDING_INTRS)
-void
+static void
 pic_deliver_irqs(struct cpu_info *ci, struct pic_softc *pic, int ipl,
     void *frame)
 {
@@ -497,7 +505,7 @@ pic_list_unblock_irqs(struct cpu_info *ci)
 	}
 }
 
-struct pic_softc *
+static struct pic_softc *
 pic_list_find_pic_by_pending_ipl(struct cpu_info *ci, uint32_t ipl_mask)
 {
 	uint32_t pending_pics = ci->ci_pending_pics;
@@ -516,7 +524,7 @@ pic_list_find_pic_by_pending_ipl(struct cpu_info *ci, uint32_t ipl_mask)
 	}
 }
 
-void
+static void
 pic_list_deliver_irqs(struct cpu_info *ci, register_t psw, int ipl,
     void *frame)
 {
@@ -555,7 +563,8 @@ pic_do_pending_ints(register_t psw, int newipl, void *frame)
 	}
 #endif /* __HAVE_PIC_PENDING_INTRS */
 #ifdef __HAVE_PREEMPTION
-	if (newipl == IPL_NONE && (ci->ci_astpending & __BIT(1))) {
+	struct lwp * const l = curlwp;
+	if (newipl == IPL_NONE && (l->l_md.md_astpending & __BIT(1))) {
 		pic_set_priority(ci, IPL_SCHED);
 		kpreempt(0);
 	}

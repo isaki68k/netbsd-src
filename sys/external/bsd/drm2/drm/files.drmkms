@@ -1,4 +1,4 @@
-#	$NetBSD: files.drmkms,v 1.73 2022/05/22 00:10:56 tnn Exp $
+#	$NetBSD: files.drmkms,v 1.83 2022/07/28 21:52:36 riastradh Exp $
 
 version	20180827
 
@@ -10,45 +10,47 @@ include "external/bsd/drm2/linux/files.drmkms_linux"
 # ARM SoC graphics drivers.
 define	drmkms_i2c: drmkms_linux
 
-define	drmkms: drmkms_linux, drmkms_i2c, linux
+define	drmkms: drmkms_linux, drmkms_i2c, linux, sysmon_power
 
 # This code comes from the Linux kernel, which assumes signed
 # overflow is OK.
 makeoptions 	drmkms	"COPTS.drmkms"+="-fwrapv"
 
 # Overrides first.
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/include"
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/include/drm"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/drm2/include"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/drm2/include/drm"
 
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/common/include"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/common/include"
 
 # Then upstream.
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/dist/include"
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/dist/include/drm"
-makeoptions 	drmkms	CPPFLAGS+="-I$S/external/bsd/drm2/dist/include/uapi"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/drm2/dist/include"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/drm2/dist/include/drm"
+makeoptions 	drmkms	"CPPFLAGS.drmkms"+="-I$S/external/bsd/drm2/dist/include/uapi"
 
-makeoptions	drmkms	CPPFLAGS+="-D__KERNEL__"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-D__KERNEL__"
 
 ifdef i386
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_X86"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_X86_PAT"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_X86"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_X86_PAT"
 elifdef amd64
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_X86"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_X86_64"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_X86_PAT"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_X86"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_X86_64"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_X86_PAT"
 elifdef arm
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_ARM"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_ARM"
 elifdef aarch64
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_ARM64"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_ARM64"
+elifdef alpha
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-Ualpha"
 endif
 
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_BACKLIGHT_CLASS_DEVICE=0"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_BACKLIGHT_CLASS_DEVICE_MODULE=0"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_DRM_FBDEV_EMULATION=1"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_DRM_FBDEV_OVERALLOC=100"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_FB=0"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_LOCKDEP=0"
-makeoptions	drmkms	CPPFLAGS+="-DCONFIG_PCI=1"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_BACKLIGHT_CLASS_DEVICE=0"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_BACKLIGHT_CLASS_DEVICE_MODULE=0"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_DRM_FBDEV_EMULATION=1"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_DRM_FBDEV_OVERALLOC=100"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_FB=0"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_LOCKDEP=0"
+makeoptions	drmkms	"CPPFLAGS.drmkms"+="-DCONFIG_PCI=1"
 
 makeoptions	drmkms	"CWARNFLAGS.drmkms"+="-Wno-missing-field-initializers"
 
@@ -67,6 +69,8 @@ file	external/bsd/drm2/pci/drm_pci_busid.c		drmkms
 define	drmfb: genfb
 file	external/bsd/drm2/drm/drmfb.c			drmfb
 
+makeoptions	drmfb	"CPPFLAGS.drmfb"+="${CPPFLAGS.drmkms}"
+
 include "external/bsd/drm2/ttm/files.ttm"
 
 makeoptions 	drmkms 	"CWARNFLAGS.drm_atomic_helper.c"+="-Wno-shadow"
@@ -82,9 +86,20 @@ makeoptions 	drmkms 	"CWARNFLAGS.drm_ioctl.c"+="-Wno-shadow"
 makeoptions	drmkms	"CWARNFLAGS.drm_mm.c"+="${${ACTIVE_CC} == clang :? -Wno-unused-function :}"
 makeoptions 	drmkms 	"CWARNFLAGS.drm_modes.c"+="-Wno-shadow"
 
-# Legacy user-mode setting
+# Legacy user-mode setting -- for the following legacy drivers:
+#
+#       mach64*
+#       mga*
+#       savage*
+#       sis*
+#       tdfx*
+#       via
+#
+# * not yet adapted to current drm code base
+#
 define	drmums: drmkms
-makeoptions	drmums	CPPFLAGS+="-DCONFIG_DRM_LEGACY"
+makeoptions	drmums	"CPPFLAGS.drmkms"+="-DCONFIG_DRM_LEGACY"
+makeoptions	drmums	"CPPFLAGS.drmums"+="${CPPFLAGS.drmkms}"
 file	external/bsd/drm2/dist/drm/drm_bufs.c		drmums
 file	external/bsd/drm2/dist/drm/drm_context.c	drmums
 file	external/bsd/drm2/dist/drm/drm_dma.c		drmums
@@ -92,10 +107,17 @@ file	external/bsd/drm2/dist/drm/drm_legacy_misc.c	drmums
 file	external/bsd/drm2/drm/drm_lock.c		drmums
 file	external/bsd/drm2/drm/drm_scatter.c		drmums
 
+# Set `options DRM_LEGACY' to allow loading modules requiring drmums
+# even if none are statically linked into the kernel.
+defflag		DRM_LEGACY: drmums
+
 # GPU scheduler
-file	external/bsd/drm2/dist/drm/scheduler/sched_entity.c	drmkms
-file	external/bsd/drm2/dist/drm/scheduler/sched_fence.c	drmkms
-file	external/bsd/drm2/dist/drm/scheduler/sched_main.c	drmkms
+define	drmkms_sched: drmkms
+makeoptions	drmkms_sched	"CPPFLAGS.drmkms_sched"+="${CPPFLAGS.drmkms}"
+
+file	external/bsd/drm2/dist/drm/scheduler/sched_entity.c	drmkms_sched
+file	external/bsd/drm2/dist/drm/scheduler/sched_fence.c	drmkms_sched
+file	external/bsd/drm2/dist/drm/scheduler/sched_main.c	drmkms_sched
 
 # Generated from drm2netbsd.
 #file	external/bsd/drm2/dist/drm/drm_agpsupport.c	drmkms	# drmkms_pci

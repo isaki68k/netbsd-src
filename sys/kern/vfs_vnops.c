@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.234 2022/07/18 04:30:30 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.234 2022/07/18 04:30:30 thorpej Exp $");
 
 #include "veriexec.h"
 
@@ -79,7 +79,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $
 #include <sys/proc.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
-#include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 #include <sys/ioctl.h>
 #include <sys/tty.h>
 #include <sys/poll.h>
@@ -106,21 +106,21 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $
 #define COMPAT_ZERODEV(dev)	(0)
 #endif
 
-int (*vn_union_readdir_hook) (struct vnode **, struct file *, struct lwp *);
+int (*vn_union_readdir_hook)(struct vnode **, struct file *, struct lwp *);
 
 #include <sys/verified_exec.h>
 
 static int vn_read(file_t *fp, off_t *offset, struct uio *uio,
-	    kauth_cred_t cred, int flags);
+    kauth_cred_t cred, int flags);
 static int vn_write(file_t *fp, off_t *offset, struct uio *uio,
-	    kauth_cred_t cred, int flags);
+    kauth_cred_t cred, int flags);
 static int vn_closefile(file_t *fp);
 static int vn_poll(file_t *fp, int events);
 static int vn_fcntl(file_t *fp, u_int com, void *data);
 static int vn_statfile(file_t *fp, struct stat *sb);
 static int vn_ioctl(file_t *fp, u_long com, void *data);
 static int vn_mmap(struct file *, off_t *, size_t, int, int *, int *,
-		   struct uvm_object **, int *);
+    struct uvm_object **, int *);
 static int vn_seek(struct file *, off_t, int, off_t *, int);
 
 const struct fileops vnops = {
@@ -368,8 +368,8 @@ vn_writechk(struct vnode *vp)
 	 * we can't allow writing.
 	 */
 	if (vp->v_iflag & VI_TEXT)
-		return (ETXTBSY);
-	return (0);
+		return ETXTBSY;
+	return 0;
 }
 
 int
@@ -440,7 +440,7 @@ vn_marktext(struct vnode *vp)
 
 	if ((vp->v_iflag & (VI_TEXT|VI_EXECMAP)) == (VI_TEXT|VI_EXECMAP)) {
 		/* Safe unlocked, as long as caller holds a reference. */
-		return (0);
+		return 0;
 	}
 
 	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
@@ -449,7 +449,7 @@ vn_marktext(struct vnode *vp)
 		KASSERT((vp->v_iflag & VI_TEXT) == 0);
 		mutex_exit(vp->v_interlock);
 		rw_exit(vp->v_uobj.vmobjlock);
-		return (ETXTBSY);
+		return ETXTBSY;
 	}
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
 		cpu_count(CPU_COUNT_EXECPAGES, vp->v_uobj.uo_npages);
@@ -457,7 +457,7 @@ vn_marktext(struct vnode *vp)
 	vp->v_iflag |= (VI_TEXT | VI_EXECMAP);
 	mutex_exit(vp->v_interlock);
 	rw_exit(vp->v_uobj.vmobjlock);
-	return (0);
+	return 0;
 }
 
 /*
@@ -479,7 +479,7 @@ vn_close(struct vnode *vp, int flags, kauth_cred_t cred)
 	}
 	error = VOP_CLOSE(vp, flags, cred);
 	vput(vp);
-	return (error);
+	return error;
 }
 
 static int
@@ -559,7 +559,7 @@ vn_rdwr(enum uio_rw rw, struct vnode *vp, void *base, int len, off_t offset,
 	if ((ioflg & IO_NODELOCKED) == 0) {
 		VOP_UNLOCK(vp);
 	}
-	return (error);
+	return error;
 }
 
 int
@@ -576,7 +576,7 @@ vn_readdir(file_t *fp, char *bf, int segflg, u_int count, int *done,
 
 unionread:
 	if (vp->v_type != VDIR)
-		return (EINVAL);
+		return EINVAL;
 	aiov.iov_base = bf;
 	aiov.iov_len = count;
 	auio.uio_iov = &aiov;
@@ -598,14 +598,14 @@ unionread:
 	mutex_exit(&fp->f_lock);
 	VOP_UNLOCK(vp);
 	if (error)
-		return (error);
+		return error;
 
 	if (count == auio.uio_resid && vn_union_readdir_hook) {
 		struct vnode *ovp = vp;
 
 		error = (*vn_union_readdir_hook)(&vp, fp, l);
 		if (error)
-			return (error);
+			return error;
 		if (vp != ovp)
 			goto unionread;
 	}
@@ -654,7 +654,7 @@ vn_read(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 	if (flags & FOF_UPDATE_OFFSET)
 		*offset += count - uio->uio_resid;
 	VOP_UNLOCK(vp);
-	return (error);
+	return error;
 }
 
 /*
@@ -709,7 +709,7 @@ vn_write(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 
  out:
 	VOP_UNLOCK(vp);
-	return (error);
+	return error;
 }
 
 /*
@@ -737,7 +737,7 @@ vn_stat(struct vnode *vp, struct stat *sb)
 	memset(&va, 0, sizeof(va));
 	error = VOP_GETATTR(vp, &va, kauth_cred_get());
 	if (error)
-		return (error);
+		return error;
 	/*
 	 * Copy from vattr table
 	 */
@@ -768,7 +768,7 @@ vn_stat(struct vnode *vp, struct stat *sb)
 		mode |= S_IFIFO;
 		break;
 	default:
-		return (EBADF);
+		return EBADF;
 	}
 	sb->st_mode = mode;
 	sb->st_nlink = va.va_nlink;
@@ -784,7 +784,7 @@ vn_stat(struct vnode *vp, struct stat *sb)
 	sb->st_flags = va.va_flags;
 	sb->st_gen = 0;
 	sb->st_blocks = va.va_bytes / S_BLKSIZE;
-	return (0);
+	return 0;
 }
 
 /*
@@ -797,7 +797,7 @@ vn_fcntl(file_t *fp, u_int com, void *data)
 	int error;
 
 	error = VOP_FCNTL(vp, com, data, fp->f_flag, kauth_cred_get());
-	return (error);
+	return error;
 }
 
 /*
@@ -821,8 +821,8 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 				*(int *)data = vattr.va_size - fp->f_offset;
 			VOP_UNLOCK(vp);
 			if (error)
-				return (error);
-			return (0);
+				return error;
+			return 0;
 		}
 		if ((com == FIONWRITE) || (com == FIONSPACE)) {
 			/*
@@ -831,13 +831,13 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 			 * open space in them.
 			 */
 			*(int *)data = 0;
-			return (0);
+			return 0;
 		}
 		if (com == FIOGETBMAP) {
 			daddr_t *block;
 
 			if (*(daddr_t *)data < 0)
-				return (EINVAL);
+				return EINVAL;
 			block = (daddr_t *)data;
 			vn_lock(vp, LK_SHARED | LK_RETRY);
 			error = VOP_BMAP(vp, *block, NULL, block, NULL);
@@ -848,7 +848,7 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 			daddr_t ibn, obn;
 
 			if (*(int32_t *)data < 0)
-				return (EINVAL);
+				return EINVAL;
 			ibn = (daddr_t)*(int32_t *)data;
 			vn_lock(vp, LK_SHARED | LK_RETRY);
 			error = VOP_BMAP(vp, ibn, NULL, &obn, NULL);
@@ -857,7 +857,7 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 			return error;
 		}
 		if (com == FIONBIO || com == FIOASYNC)	/* XXX */
-			return (0);			/* XXX */
+			return 0;			/* XXX */
 		/* FALLTHROUGH */
 	case VFIFO:
 	case VCHR:
@@ -873,10 +873,10 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 			if (ovp != NULL)
 				vrele(ovp);
 		}
-		return (error);
+		return error;
 
 	default:
-		return (EPASSTHROUGH);
+		return EPASSTHROUGH;
 	}
 }
 
@@ -887,7 +887,7 @@ static int
 vn_poll(file_t *fp, int events)
 {
 
-	return (VOP_POLL(fp->f_vnode, events));
+	return VOP_POLL(fp->f_vnode, events);
 }
 
 /*
@@ -897,12 +897,12 @@ int
 vn_kqfilter(file_t *fp, struct knote *kn)
 {
 
-	return (VOP_KQFILTER(fp->f_vnode, kn));
+	return VOP_KQFILTER(fp->f_vnode, kn);
 }
 
 static int
 vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
-	int *advicep, struct uvm_object **uobjp, int *maxprotp)
+    int *advicep, struct uvm_object **uobjp, int *maxprotp)
 {
 	struct uvm_object *uobj;
 	struct vnode *vp;
@@ -919,6 +919,8 @@ vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
 	flags = *flagsp;
 	maxprot = VM_PROT_EXECUTE;
 
+	KASSERT(size > 0);
+
 	vp = fp->f_vnode;
 	if (vp->v_type != VREG && vp->v_type != VCHR &&
 	    vp->v_type != VBLK) {
@@ -928,7 +930,12 @@ vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
 	if (vp->v_type != VCHR && off < 0) {
 		return EINVAL;
 	}
-	if (vp->v_type != VCHR && (off_t)(off + size) < off) {
+#if SIZE_MAX > UINT32_MAX	/* XXX -Wtype-limits */
+	if (vp->v_type != VCHR && size > __type_max(off_t)) {
+		return EOVERFLOW;
+	}
+#endif
+	if (vp->v_type != VCHR && off > __type_max(off_t) - size) {
 		/* no offset wrapping */
 		return EOVERFLOW;
 	}
@@ -1274,7 +1281,7 @@ vn_extattr_get(struct vnode *vp, int ioflg, int attrnamespace,
 	if (error == 0)
 		*buflen = *buflen - auio.uio_resid;
 
-	return (error);
+	return error;
 }
 
 /*
@@ -1308,7 +1315,7 @@ vn_extattr_set(struct vnode *vp, int ioflg, int attrnamespace,
 		VOP_UNLOCK(vp);
 	}
 
-	return (error);
+	return error;
 }
 
 int
@@ -1330,7 +1337,7 @@ vn_extattr_rm(struct vnode *vp, int ioflg, int attrnamespace,
 		VOP_UNLOCK(vp);
 	}
 
-	return (error);
+	return error;
 }
 
 int
@@ -1421,7 +1428,15 @@ vn_knote_to_interest(const struct knote *kn)
 void
 vn_knote_attach(struct vnode *vp, struct knote *kn)
 {
+	struct vnode_klist *vk = vp->v_klist;
 	long interest = 0;
+
+	/*
+	 * In the case of layered / stacked file systems, knotes
+	 * should only ever be associated with the base vnode.
+	 */
+	KASSERT(kn->kn_hook == vp);
+	KASSERT(vp->v_klist == &VNODE_TO_VIMPL(vp)->vi_klist);
 
 	/*
 	 * We maintain a bitmask of the kevents that there is interest in,
@@ -1432,18 +1447,23 @@ vn_knote_attach(struct vnode *vp, struct knote *kn)
 	 */
 
 	mutex_enter(vp->v_interlock);
-	SLIST_INSERT_HEAD(&vp->v_klist, kn, kn_selnext);
-	SLIST_FOREACH(kn, &vp->v_klist, kn_selnext) {
+	SLIST_INSERT_HEAD(&vk->vk_klist, kn, kn_selnext);
+	SLIST_FOREACH(kn, &vk->vk_klist, kn_selnext) {
 		interest |= vn_knote_to_interest(kn);
 	}
-	vp->v_klist_interest = interest;
+	vk->vk_interest = interest;
 	mutex_exit(vp->v_interlock);
 }
 
 void
 vn_knote_detach(struct vnode *vp, struct knote *kn)
 {
-	int interest = 0;
+	struct vnode_klist *vk = vp->v_klist;
+	long interest = 0;
+
+	/* See above. */
+	KASSERT(kn->kn_hook == vp);
+	KASSERT(vp->v_klist == &VNODE_TO_VIMPL(vp)->vi_klist);
 
 	/*
 	 * We special case removing the head of the list, because:
@@ -1457,16 +1477,16 @@ vn_knote_detach(struct vnode *vp, struct knote *kn)
 	 */
 
 	mutex_enter(vp->v_interlock);
-	if (__predict_true(kn == SLIST_FIRST(&vp->v_klist))) {
-		SLIST_REMOVE_HEAD(&vp->v_klist, kn_selnext);
-		SLIST_FOREACH(kn, &vp->v_klist, kn_selnext) {
+	if (__predict_true(kn == SLIST_FIRST(&vk->vk_klist))) {
+		SLIST_REMOVE_HEAD(&vk->vk_klist, kn_selnext);
+		SLIST_FOREACH(kn, &vk->vk_klist, kn_selnext) {
 			interest |= vn_knote_to_interest(kn);
 		}
-		vp->v_klist_interest = interest;
+		vk->vk_interest = interest;
 	} else {
 		struct knote *thiskn, *nextkn, *prevkn = NULL;
 
-		SLIST_FOREACH_SAFE(thiskn, &vp->v_klist, kn_selnext, nextkn) {
+		SLIST_FOREACH_SAFE(thiskn, &vk->vk_klist, kn_selnext, nextkn) {
 			if (thiskn == kn) {
 				KASSERT(kn != NULL);
 				KASSERT(prevkn != NULL);
@@ -1477,7 +1497,7 @@ vn_knote_detach(struct vnode *vp, struct knote *kn)
 				prevkn = thiskn;
 			}
 		}
-		vp->v_klist_interest = interest;
+		vk->vk_interest = interest;
 	}
 	mutex_exit(vp->v_interlock);
 }

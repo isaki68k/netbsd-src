@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bge.c,v 1.353 2022/05/19 04:43:43 buhrow Exp $	*/
+/*	$NetBSD: if_bge.c,v 1.367 2022/07/26 14:53:12 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wind River Systems
@@ -79,19 +79,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bge.c,v 1.353 2022/05/19 04:43:43 buhrow Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bge.c,v 1.367 2022/07/26 14:53:12 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
+
 #include <sys/callout.h>
-#include <sys/sockio.h>
-#include <sys/mbuf.h>
-#include <sys/malloc.h>
-#include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/socket.h>
-#include <sys/sysctl.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/mbuf.h>
 #include <sys/rndsource.h>
+#include <sys/socket.h>
+#include <sys/sockio.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -587,7 +588,7 @@ static uint32_t
 bge_readreg_ind(struct bge_softc *sc, int off)
 {
 	pci_conf_write(sc->sc_pc, sc->sc_pcitag, BGE_PCI_REG_BASEADDR, off);
-	return (pci_conf_read(sc->sc_pc, sc->sc_pcitag, BGE_PCI_REG_DATA));
+	return pci_conf_read(sc->sc_pc, sc->sc_pcitag, BGE_PCI_REG_DATA);
 }
 #endif
 
@@ -730,7 +731,7 @@ bge_ape_lock(struct bge_softc *sc, int locknum)
 	int i, off;
 
 	if ((sc->bge_mfw_flags & BGE_MFW_ON_APE) == 0)
-		return (0);
+		return 0;
 
 	/* Lock request/grant registers have different bases. */
 	if (BGE_ASICREV(sc->bge_chipid) == BGE_ASICREV_BCM5761) {
@@ -747,7 +748,7 @@ bge_ape_lock(struct bge_softc *sc, int locknum)
 	case BGE_APE_LOCK_GPIO:
 		/* Lock required when using GPIO. */
 		if (BGE_ASICREV(sc->bge_chipid) == BGE_ASICREV_BCM5761)
-			return (0);
+			return 0;
 		if (pa->pa_function == 0)
 			bit = BGE_APE_LOCK_REQ_DRIVER0;
 		else
@@ -775,7 +776,7 @@ bge_ape_lock(struct bge_softc *sc, int locknum)
 		bit = BGE_APE_LOCK_REQ_DRIVER0;
 		break;
 	default:
-		return (EINVAL);
+		return EINVAL;
 	}
 
 	/* Request a lock. */
@@ -798,10 +799,10 @@ bge_ape_lock(struct bge_softc *sc, int locknum)
 		    status & 0xFFFF);
 		/* Revoke the lock request. */
 		APE_WRITE_4(sc, gnt + off, bit);
-		return (EBUSY);
+		return EBUSY;
 	}
 
-	return (0);
+	return 0;
 }
 
 void
@@ -1008,7 +1009,7 @@ bge_read_nvram(struct bge_softc *sc, uint8_t *dest, int off, int cnt)
 		*(dest + i) = byte;
 	}
 
-	return (error ? 1 : 0);
+	return error ? 1 : 0;
 }
 
 /*
@@ -1074,13 +1075,13 @@ bge_read_eeprom(struct bge_softc *sc, void *destv, int off, int cnt)
 		*(dest + i) = byte;
 	}
 
-	return (error ? 1 : 0);
+	return error ? 1 : 0;
 }
 
 static int
 bge_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
-	struct bge_softc *sc = device_private(dev);
+	struct bge_softc * const sc = device_private(dev);
 	uint32_t data;
 	uint32_t autopoll;
 	int rv = 0;
@@ -1134,7 +1135,7 @@ bge_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 static int
 bge_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
-	struct bge_softc *sc = device_private(dev);
+	struct bge_softc * const sc = device_private(dev);
 	uint32_t data, autopoll;
 	int rv = 0;
 	int i;
@@ -1183,18 +1184,13 @@ bge_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 
 	bge_ape_unlock(sc, sc->bge_phy_ape_lock);
 
-	if (i == BGE_TIMEOUT) {
-		aprint_error_dev(sc->bge_dev, "PHY read timed out\n");
-		return ETIMEDOUT;
-	}
-
 	return rv;
 }
 
 static void
 bge_miibus_statchg(struct ifnet *ifp)
 {
-	struct bge_softc *sc = ifp->if_softc;
+	struct bge_softc * const sc = ifp->if_softc;
 	struct mii_data *mii = &sc->bge_mii;
 	uint32_t mac_mode, rx_mode, tx_mode;
 
@@ -1251,10 +1247,11 @@ bge_miibus_statchg(struct ifnet *ifp)
 static void
 bge_set_thresh(struct ifnet *ifp, int lvl)
 {
-	struct bge_softc *sc = ifp->if_softc;
+	struct bge_softc * const sc = ifp->if_softc;
 	int s;
 
-	/* For now, just save the new Rx-intr thresholds and record
+	/*
+	 * For now, just save the new Rx-intr thresholds and record
 	 * that a threshold update is pending.  Updating the hardware
 	 * registers here (even at splhigh()) is observed to
 	 * occasionally cause glitches where Rx-interrupts are not
@@ -1274,24 +1271,22 @@ bge_set_thresh(struct ifnet *ifp, int lvl)
 static void
 bge_update_all_threshes(int lvl)
 {
-	struct ifnet *ifp;
 	const char * const namebuf = "bge";
-	int namelen;
-	int s;
+	const size_t namelen = strlen(namebuf);
+	struct ifnet *ifp;
 
 	if (lvl < 0)
 		lvl = 0;
 	else if (lvl >= NBGE_RX_THRESH)
 		lvl = NBGE_RX_THRESH - 1;
 
-	namelen = strlen(namebuf);
 	/*
 	 * Now search all the interfaces for this name/number
 	 */
-	s = pserialize_read_enter();
+	int s = pserialize_read_enter();
 	IFNET_READER_FOREACH(ifp) {
 		if (strncmp(ifp->if_xname, namebuf, namelen) != 0)
-		      continue;
+			continue;
 		/* We got a match: update if doing auto-threshold-tuning */
 		if (bge_auto_thresh)
 			bge_set_thresh(ifp, lvl);
@@ -1325,7 +1320,7 @@ bge_alloc_jumbo_mem(struct bge_softc *sc)
 
 	/* Grab a big chunk o' storage. */
 	if (bus_dmamem_alloc(sc->bge_dmatag, BGE_JMEM, PAGE_SIZE, 0,
-	     &seg, 1, &rseg, BUS_DMA_NOWAIT)) {
+	    &seg, 1, &rseg, BUS_DMA_NOWAIT)) {
 		aprint_error_dev(sc->bge_dev, "can't alloc rx buffers\n");
 		return ENOBUFS;
 	}
@@ -1370,8 +1365,7 @@ bge_alloc_jumbo_mem(struct bge_softc *sc)
 	for (i = 0; i < BGE_JSLOTS; i++) {
 		sc->bge_cdata.bge_jslots[i] = ptr;
 		ptr += BGE_JLEN;
-		entry = malloc(sizeof(struct bge_jpool_entry),
-		    M_DEVBUF, M_WAITOK);
+		entry = kmem_alloc(sizeof(*entry), KM_SLEEP);
 		entry->slot = i;
 		SLIST_INSERT_HEAD(&sc->bge_jfree_listhead,
 				 entry, jpool_entries);
@@ -1418,7 +1412,7 @@ bge_jalloc(struct bge_softc *sc)
 
 	SLIST_REMOVE_HEAD(&sc->bge_jfree_listhead, jpool_entries);
 	SLIST_INSERT_HEAD(&sc->bge_jinuse_listhead, entry, jpool_entries);
-	return (sc->bge_cdata.bge_jslots[entry->slot]);
+	return sc->bge_cdata.bge_jslots[entry->slot];
 }
 
 /*
@@ -1428,11 +1422,8 @@ static void
 bge_jfree(struct mbuf *m, void *buf, size_t size, void *arg)
 {
 	struct bge_jpool_entry *entry;
-	struct bge_softc *sc;
+	struct bge_softc * const sc = arg;
 	int i, s;
-
-	/* Extract the softc struct pointer. */
-	sc = (struct bge_softc *)arg;
 
 	if (sc == NULL)
 		panic("bge_jfree: can't find softc pointer!");
@@ -1518,8 +1509,8 @@ bge_newbuf_std(struct bge_softc *sc, int i, struct mbuf *m,
 
 	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 	    offsetof(struct bge_ring_data, bge_rx_std_ring) +
-		i * sizeof (struct bge_rx_bd),
-	    sizeof (struct bge_rx_bd),
+		i * sizeof(struct bge_rx_bd),
+	    sizeof(struct bge_rx_bd),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
 	return 0;
@@ -1577,8 +1568,8 @@ bge_newbuf_jumbo(struct bge_softc *sc, int i, struct mbuf *m)
 
 	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 	    offsetof(struct bge_ring_data, bge_rx_jumbo_ring) +
-		i * sizeof (struct bge_rx_bd),
-	    sizeof (struct bge_rx_bd),
+		i * sizeof(struct bge_rx_bd),
+	    sizeof(struct bge_rx_bd),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
 	return 0;
@@ -1711,7 +1702,7 @@ bge_free_tx_ring(struct bge_softc *sc, bool disable)
 				bus_dmamap_destroy(sc->bge_dmatag32,
 				    dma->dmamap32);
 			}
-			free(dma, M_DEVBUF);
+			kmem_free(dma, sizeof(*dma));
 		}
 		SLIST_INIT(&sc->txdma_list);
 	}
@@ -1722,7 +1713,7 @@ bge_free_tx_ring(struct bge_softc *sc, bool disable)
 static int
 bge_init_tx_ring(struct bge_softc *sc)
 {
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	int i;
 	bus_dmamap_t dmamap, dmamap32;
 	bus_size_t maxsegsz;
@@ -1778,7 +1769,7 @@ bge_init_tx_ring(struct bge_softc *sc)
 				panic("dmamap32 NULL in bge_init_tx_ring");
 		} else
 			dmamap32 = dmamap;
-		dma = malloc(sizeof(*dma), M_DEVBUF, M_NOWAIT);
+		dma = kmem_alloc(sizeof(*dma), KM_NOSLEEP);
 		if (dma == NULL) {
 			aprint_error_dev(sc->bge_dev,
 			    "can't alloc txdmamap_pool_entry\n");
@@ -1800,8 +1791,8 @@ alloc_done:
 static void
 bge_setmulti(struct bge_softc *sc)
 {
-	struct ethercom		*ec = &sc->ethercom;
-	struct ifnet		*ifp = &ec->ec_if;
+	struct ethercom * const ec = &sc->ethercom;
+	struct ifnet * const ifp = &ec->ec_if;
 	struct ether_multi	*enm;
 	struct ether_multistep	step;
 	uint32_t		hashes[4] = { 0, 0, 0, 0 };
@@ -2310,7 +2301,7 @@ bge_blockinit(struct bge_softc *sc)
 {
 	volatile struct bge_rcb	 *rcb;
 	bus_size_t rcb_addr;
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	bge_hostaddr taddr;
 	uint32_t	dmactl, rdmareg, mimode, val;
 	int		i, limit;
@@ -2549,7 +2540,7 @@ bge_blockinit(struct bge_softc *sc)
 
 		bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 		    offsetof(struct bge_ring_data, bge_info),
-		    sizeof (struct bge_gib),
+		    sizeof(struct bge_gib),
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	}
 
@@ -3152,7 +3143,7 @@ bge_can_use_msi(struct bge_softc *sc)
 		if (BGE_IS_575X_PLUS(sc))
 			can_use_msi = 1;
 	}
-	return (can_use_msi);
+	return can_use_msi;
 }
 
 /*
@@ -3177,8 +3168,8 @@ bge_probe(device_t parent, cfdata_t match, void *aux)
 static void
 bge_attach(device_t parent, device_t self, void *aux)
 {
-	struct bge_softc	*sc = device_private(self);
-	struct pci_attach_args	*pa = aux;
+	struct bge_softc * const sc = device_private(self);
+	struct pci_attach_args * const pa = aux;
 	prop_dictionary_t dict;
 	const struct bge_product *bp;
 	const struct bge_revision *br;
@@ -3551,7 +3542,7 @@ bge_attach(device_t parent, device_t self, void *aux)
 	 * First check if firmware knows we do not have SEEPROM.
 	 */
 	if (prop_dictionary_get_bool(device_properties(self),
-	     "without-seeprom", &no_seeprom) && no_seeprom)
+	    "without-seeprom", &no_seeprom) && no_seeprom)
 		sc->bge_flags |= BGEF_NO_EEPROM;
 
 	else if (BGE_ASICREV(sc->bge_chipid) == BGE_ASICREV_BCM5906)
@@ -4031,8 +4022,8 @@ again:
 static int
 bge_detach(device_t self, int flags __unused)
 {
-	struct bge_softc *sc = device_private(self);
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct bge_softc * const sc = device_private(self);
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	int s;
 
 	s = splnet();
@@ -4392,13 +4383,18 @@ bge_reset(struct bge_softc *sc)
 static void
 bge_rxeof(struct bge_softc *sc)
 {
-	struct ifnet *ifp;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	uint16_t rx_prod, rx_cons;
 	int stdcnt = 0, jumbocnt = 0;
 	bus_dmamap_t dmamap;
 	bus_addr_t offset, toff;
 	bus_size_t tlen;
 	int tosync;
+
+	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
+	    offsetof(struct bge_ring_data, bge_status_block),
+	    sizeof(struct bge_status_block),
+	    BUS_DMASYNC_POSTREAD);
 
 	rx_cons = sc->bge_rx_saved_considx;
 	rx_prod = sc->bge_rdata->bge_status_block.bge_idx[0].bge_rx_prod_idx;
@@ -4407,24 +4403,17 @@ bge_rxeof(struct bge_softc *sc)
 	if (rx_cons == rx_prod)
 		return;
 
-	ifp = &sc->ethercom.ec_if;
-
-	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
-	    offsetof(struct bge_ring_data, bge_status_block),
-	    sizeof (struct bge_status_block),
-	    BUS_DMASYNC_POSTREAD);
-
 	offset = offsetof(struct bge_ring_data, bge_rx_return_ring);
 	tosync = rx_prod - rx_cons;
 
 	if (tosync != 0)
 		rnd_add_uint32(&sc->rnd_source, tosync);
 
-	toff = offset + (rx_cons * sizeof (struct bge_rx_bd));
+	toff = offset + (rx_cons * sizeof(struct bge_rx_bd));
 
 	if (tosync < 0) {
 		tlen = (sc->bge_return_ring_cnt - rx_cons) *
-		    sizeof (struct bge_rx_bd);
+		    sizeof(struct bge_rx_bd);
 		bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 		    toff, tlen, BUS_DMASYNC_POSTREAD);
 		tosync = -tosync;
@@ -4432,7 +4421,7 @@ bge_rxeof(struct bge_softc *sc)
 
 	if (tosync != 0) {
 		bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
-		    offset, tosync * sizeof (struct bge_rx_bd),
+		    offset, tosync * sizeof(struct bge_rx_bd),
 		    BUS_DMASYNC_POSTREAD);
 	}
 
@@ -4461,7 +4450,7 @@ bge_rxeof(struct bge_softc *sc)
 				continue;
 			}
 			if (bge_newbuf_jumbo(sc, sc->bge_jumbo,
-					     NULL)== ENOBUFS) {
+					     NULL) == ENOBUFS) {
 				if_statinc(ifp, if_ierrors);
 				bge_newbuf_jumbo(sc, sc->bge_jumbo, m);
 				continue;
@@ -4573,19 +4562,17 @@ bge_rxcsum(struct bge_softc *sc, struct bge_rx_bd *cur_rx, struct mbuf *m)
 static void
 bge_txeof(struct bge_softc *sc)
 {
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	struct bge_tx_bd *cur_tx = NULL;
-	struct ifnet *ifp;
 	struct txdmamap_pool_entry *dma;
 	bus_addr_t offset, toff;
 	bus_size_t tlen;
 	int tosync;
 	struct mbuf *m;
 
-	ifp = &sc->ethercom.ec_if;
-
 	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 	    offsetof(struct bge_ring_data, bge_status_block),
-	    sizeof (struct bge_status_block),
+	    sizeof(struct bge_status_block),
 	    BUS_DMASYNC_POSTREAD);
 
 	offset = offsetof(struct bge_ring_data, bge_tx_ring);
@@ -4595,11 +4582,11 @@ bge_txeof(struct bge_softc *sc)
 	if (tosync != 0)
 		rnd_add_uint32(&sc->rnd_source, tosync);
 
-	toff = offset + (sc->bge_tx_saved_considx * sizeof (struct bge_tx_bd));
+	toff = offset + (sc->bge_tx_saved_considx * sizeof(struct bge_tx_bd));
 
 	if (tosync < 0) {
 		tlen = (BGE_TX_RING_CNT - sc->bge_tx_saved_considx) *
-		    sizeof (struct bge_tx_bd);
+		    sizeof(struct bge_tx_bd);
 		bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 		    toff, tlen, BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 		tosync = -tosync;
@@ -4607,7 +4594,7 @@ bge_txeof(struct bge_softc *sc)
 
 	if (tosync != 0) {
 		bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
-		    offset, tosync * sizeof (struct bge_tx_bd),
+		    offset, tosync * sizeof(struct bge_tx_bd),
 		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	}
 
@@ -4617,9 +4604,7 @@ bge_txeof(struct bge_softc *sc)
 	 */
 	while (sc->bge_tx_saved_considx !=
 	    sc->bge_rdata->bge_status_block.bge_idx[0].bge_tx_cons_idx) {
-		uint32_t		idx = 0;
-
-		idx = sc->bge_tx_saved_considx;
+		uint32_t idx = sc->bge_tx_saved_considx;
 		cur_tx = &sc->bge_rdata->bge_tx_ring[idx];
 		if (cur_tx->bge_flags & BGE_TXBDFLAG_END)
 			if_statinc(ifp, if_opackets);
@@ -4656,19 +4641,18 @@ bge_txeof(struct bge_softc *sc)
 static int
 bge_intr(void *xsc)
 {
-	struct bge_softc *sc;
-	struct ifnet *ifp;
+	struct bge_softc * const sc = xsc;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	uint32_t pcistate, statusword, statustag;
 	uint32_t intrmask = BGE_PCISTATE_INTR_NOT_ACTIVE;
 
-	sc = xsc;
-	ifp = &sc->ethercom.ec_if;
 
 	/* 5717 and newer chips have no BGE_PCISTATE_INTR_NOT_ACTIVE bit */
 	if (BGE_IS_5717_PLUS(sc))
 		intrmask = 0;
 
-	/* It is possible for the interrupt to arrive before
+	/*
+	 * It is possible for the interrupt to arrive before
 	 * the status block is updated prior to the interrupt.
 	 * Reading the PCI State register will confirm whether the
 	 * interrupt is ours and will flush the status block.
@@ -4678,7 +4662,7 @@ bge_intr(void *xsc)
 	/* read status word from status block */
 	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 	    offsetof(struct bge_ring_data, bge_status_block),
-	    sizeof (struct bge_status_block),
+	    sizeof(struct bge_status_block),
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	statusword = sc->bge_rdata->bge_status_block.bge_status;
 	statustag = sc->bge_rdata->bge_status_block.bge_status_tag << 24;
@@ -4687,14 +4671,14 @@ bge_intr(void *xsc)
 		if (sc->bge_lasttag == statustag &&
 		    (~pcistate & intrmask)) {
 			BGE_EVCNT_INCR(sc->bge_ev_intr_spurious);
-			return (0);
+			return 0;
 		}
 		sc->bge_lasttag = statustag;
 	} else {
 		if (!(statusword & BGE_STATFLAG_UPDATED) &&
 		    !(~pcistate & intrmask)) {
 			BGE_EVCNT_INCR(sc->bge_ev_intr_spurious2);
-			return (0);
+			return 0;
 		}
 		statustag = 0;
 	}
@@ -4707,7 +4691,7 @@ bge_intr(void *xsc)
 
 	bus_dmamap_sync(sc->bge_dmatag, sc->bge_ring_map,
 	    offsetof(struct bge_ring_data, bge_status_block),
-	    sizeof (struct bge_status_block),
+	    sizeof(struct bge_status_block),
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	if (BGE_ASICREV(sc->bge_chipid) == BGE_ASICREV_BCM5700 ||
@@ -4775,8 +4759,8 @@ bge_asf_driver_up(struct bge_softc *sc)
 static void
 bge_tick(void *xsc)
 {
-	struct bge_softc *sc = xsc;
-	struct mii_data *mii = &sc->bge_mii;
+	struct bge_softc * const sc = xsc;
+	struct mii_data * const mii = &sc->bge_mii;
 	int s;
 
 	s = splnet();
@@ -4815,7 +4799,7 @@ bge_tick(void *xsc)
 static void
 bge_stats_update_regs(struct bge_softc *sc)
 {
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct ifnet *const ifp = &sc->ethercom.ec_if;
 
 	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 
@@ -4872,7 +4856,7 @@ bge_stats_update_regs(struct bge_softc *sc)
 static void
 bge_stats_update(struct bge_softc *sc)
 {
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	bus_size_t stats = BGE_MEMWIN_START + BGE_STATS_BLOCK;
 
 #define READ_STAT(sc, stats, stat) \
@@ -4942,7 +4926,7 @@ bge_cksum_pad(struct mbuf *pkt)
 		 * (thus perhaps avoiding the bcm5700 dma-min bug).
 		 */
 		for (last = pkt; last->m_next != NULL; last = last->m_next) {
-		       continue; /* do nothing */
+			continue; /* do nothing */
 		}
 
 		/* `last' now points to last in chain. */
@@ -4990,7 +4974,8 @@ bge_compact_dma_runt(struct mbuf *pkt)
 		if (mlen >= 8)
 			continue;
 
-		/* If we get here, mbuf data is too small for DMA engine.
+		/*
+		 * If we get here, mbuf data is too small for DMA engine.
 		 * Try to fix by shuffling data to prev or next in chain.
 		 * If that fails, do a compacting deep-copy of the whole chain.
 		 */
@@ -5005,8 +4990,8 @@ bge_compact_dma_runt(struct mbuf *pkt)
 			m = prev;
 			continue;
 		} else if (m->m_next != NULL &&
-			     M_TRAILINGSPACE(m) >= shortfall &&
-			     m->m_next->m_len >= (8 + shortfall)) {
+			    M_TRAILINGSPACE(m) >= shortfall &&
+			    m->m_next->m_len >= (8 + shortfall)) {
 		    /* m is writable and have enough data in next, pull up. */
 
 			memcpy(m->m_data + m->m_len, m->m_next->m_data,
@@ -5015,7 +5000,8 @@ bge_compact_dma_runt(struct mbuf *pkt)
 			m->m_next->m_len -= shortfall;
 			m->m_next->m_data += shortfall;
 		} else if (m->m_next == NULL || 1) {
-			/* Got a runt at the very end of the packet.
+			/*
+			 * Got a runt at the very end of the packet.
 			 * borrow data from the tail of the preceding mbuf and
 			 * update its length in-place. (The original data is
 			 * still valid, so we can do this even if prev is not
@@ -5087,7 +5073,7 @@ bge_compact_dma_runt(struct mbuf *pkt)
 static int
 bge_encap(struct bge_softc *sc, struct mbuf *m_head, uint32_t *txidx)
 {
-	struct ifnet *ifp = &sc->ethercom.ec_if;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
 	struct bge_tx_bd	*f, *prev_f;
 	uint32_t		frag, cur;
 	uint16_t		csum_flags = 0;
@@ -5197,7 +5183,7 @@ doit:
 			aprint_error_dev(sc->bge_dev,
 			    "TSO: hard case m0->m_len == %d < ip/tcp hlen %zd,"
 			    "not handled yet\n",
-			     m0->m_len, hlen+ sizeof(struct tcphdr));
+			    m0->m_len, hlen+ sizeof(struct tcphdr));
 #ifdef NOTYET
 			/*
 			 * XXX jonathan@NetBSD.org: untested.
@@ -5423,14 +5409,12 @@ fail_unload:
 static void
 bge_start(struct ifnet *ifp)
 {
-	struct bge_softc *sc;
+	struct bge_softc * const sc = ifp->if_softc;
 	struct mbuf *m_head = NULL;
 	struct mbuf *m;
 	uint32_t prodidx;
 	int pkts = 0;
 	int error;
-
-	sc = ifp->if_softc;
 
 	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
@@ -5509,14 +5493,14 @@ bge_start(struct ifnet *ifp)
 static int
 bge_init(struct ifnet *ifp)
 {
-	struct bge_softc *sc = ifp->if_softc;
+	struct bge_softc * const sc = ifp->if_softc;
 	const uint16_t *m;
 	uint32_t mode, reg;
 	int s, error = 0;
 
 	s = splnet();
 
-	ifp = &sc->ethercom.ec_if;
+	KASSERT(ifp == &sc->ethercom.ec_if);
 
 	/* Cancel pending I/O and flush buffers. */
 	bge_stop(ifp, 0);
@@ -5589,8 +5573,6 @@ bge_init(struct ifnet *ifp)
 		splx(s);
 		return error;
 	}
-
-	ifp = &sc->ethercom.ec_if;
 
 	/* 5718 step 25, 57XX step 54 */
 	/* Specify MTU. */
@@ -5713,9 +5695,9 @@ out:
 static int
 bge_ifmedia_upd(struct ifnet *ifp)
 {
-	struct bge_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->bge_mii;
-	struct ifmedia *ifm = &sc->bge_ifmedia;
+	struct bge_softc * const sc = ifp->if_softc;
+	struct mii_data * const mii = &sc->bge_mii;
+	struct ifmedia * const ifm = &sc->bge_ifmedia;
 	int rc;
 
 	/* If this is a 1000baseX NIC, enable the TBI port. */
@@ -5813,8 +5795,8 @@ bge_ifmedia_upd(struct ifnet *ifp)
 static void
 bge_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
-	struct bge_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->bge_mii;
+	struct bge_softc * const sc = ifp->if_softc;
+	struct mii_data * const mii = &sc->bge_mii;
 
 	if (sc->bge_flags & BGEF_FIBER_TBI) {
 		ifmr->ifm_status = IFM_AVALID;
@@ -5839,8 +5821,8 @@ bge_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 static int
 bge_ifflags_cb(struct ethercom *ec)
 {
-	struct ifnet *ifp = &ec->ec_if;
-	struct bge_softc *sc = ifp->if_softc;
+	struct ifnet * const ifp = &ec->ec_if;
+	struct bge_softc * const sc = ifp->if_softc;
 	u_short change = ifp->if_flags ^ sc->bge_if_flags;
 
 	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
@@ -5862,8 +5844,8 @@ bge_ifflags_cb(struct ethercom *ec)
 static int
 bge_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
-	struct bge_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = (struct ifreq *) data;
+	struct bge_softc * const sc = ifp->if_softc;
+	struct ifreq * const ifr = (struct ifreq *) data;
 	int s, error = 0;
 	struct mii_data *mii;
 
@@ -5921,10 +5903,8 @@ bge_ioctl(struct ifnet *ifp, u_long command, void *data)
 static void
 bge_watchdog(struct ifnet *ifp)
 {
-	struct bge_softc *sc;
+	struct bge_softc * const sc = ifp->if_softc;
 	uint32_t status;
-
-	sc = ifp->if_softc;
 
 	/* If pause frames are active then don't reset the hardware. */
 	if ((CSR_READ_4(sc, BGE_RX_MODE) & BGE_RXMODE_FLOWCTL_ENABLE) != 0) {
@@ -5991,7 +5971,7 @@ bge_stop_block(struct bge_softc *sc, bus_addr_t reg, uint32_t bit)
 static void
 bge_stop(struct ifnet *ifp, int disable)
 {
-	struct bge_softc *sc = ifp->if_softc;
+	struct bge_softc * const sc = ifp->if_softc;
 
 	if (disable) {
 		sc->bge_detaching = 1;
@@ -6096,8 +6076,8 @@ bge_stop(struct ifnet *ifp, int disable)
 static void
 bge_link_upd(struct bge_softc *sc)
 {
-	struct ifnet *ifp = &sc->ethercom.ec_if;
-	struct mii_data *mii = &sc->bge_mii;
+	struct ifnet * const ifp = &sc->ethercom.ec_if;
+	struct mii_data * const mii = &sc->bge_mii;
 	uint32_t status;
 	uint16_t phyval;
 	int link;
@@ -6429,5 +6409,5 @@ bge_get_eaddr(struct bge_softc *sc, uint8_t eaddr[])
 		if ((*func)(sc, eaddr) == 0)
 			break;
 	}
-	return (*func == NULL ? ENXIO : 0);
+	return *func == NULL ? ENXIO : 0;
 }

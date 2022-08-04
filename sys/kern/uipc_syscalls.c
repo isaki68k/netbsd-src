@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_syscalls.c,v 1.202 2021/10/02 17:37:21 thorpej Exp $	*/
+/*	$NetBSD: uipc_syscalls.c,v 1.206 2022/07/01 22:30:51 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls.c,v 1.202 2021/10/02 17:37:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls.c,v 1.206 2022/07/01 22:30:51 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pipe.h"
@@ -498,7 +498,7 @@ sys_sendto(struct lwp *l, const struct sys_sendto_args *uap,
 		syscallarg(const struct sockaddr *)	to;
 		syscallarg(unsigned int)		tolen;
 	} */
-	struct msghdr	msg;
+	struct msghdr	msg = {0};
 	struct iovec	aiov;
 
 	msg.msg_name = __UNCONST(SCARG(uap, to)); /* XXXUNCONST kills const */
@@ -694,7 +694,7 @@ sys_recvfrom(struct lwp *l, const struct sys_recvfrom_args *uap,
 		syscallarg(struct sockaddr *)	from;
 		syscallarg(unsigned int *)	fromlenaddr;
 	} */
-	struct msghdr	msg;
+	struct msghdr	msg = {0};
 	struct iovec	aiov;
 	int		error;
 	struct mbuf	*from;
@@ -1041,8 +1041,15 @@ sys_recvmmsg(struct lwp *l, const struct sys_recvmmsg_args *uap,
 	if (SCARG(uap, timeout)) {
 		if ((error = copyin(SCARG(uap, timeout), &ts, sizeof(ts))) != 0)
 			return error;
+		if (ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L)
+			return EINVAL;
 		getnanotime(&now);
-		timespecadd(&now, &ts, &ts);
+		if (timespecaddok(&now, &ts)) {
+			timespecadd(&now, &ts, &ts);
+		} else {
+			ts.tv_sec = __type_max(time_t);
+			ts.tv_nsec = 999999999L;
+		}
 	}
 
 	s = SCARG(uap, s);
@@ -1109,8 +1116,7 @@ sys_recvmmsg(struct lwp *l, const struct sys_recvmmsg_args *uap,
 
 		if (SCARG(uap, timeout)) {
 			getnanotime(&now);
-			timespecsub(&now, &ts, &now);
-			if (now.tv_sec > 0)
+			if (timespeccmp(&ts, &now, <))
 				break;
 		}
 
@@ -1627,6 +1633,10 @@ sockargs(struct mbuf **mp, const void *bf, size_t buflen, enum uio_seg seg,
 		mhdr.msg_controllen = buflen;
 		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&mhdr); cmsg;
 		    cmsg = CMSG_NXTHDR(&mhdr, cmsg)) {
+			KASSERT(((char *)cmsg - mtod(m, char *)) <= buflen);
+			if (cmsg->cmsg_len >
+			    buflen - ((char *)cmsg - mtod(m, char *)))
+				break;
 			ktrkuser(mbuftypes[type], cmsg, cmsg->cmsg_len);
 		}
 		return 0;

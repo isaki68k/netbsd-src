@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.1 2021/12/19 12:39:09 riastradh Exp $
+# $NetBSD: Makefile,v 1.5 2022/07/30 03:29:52 tnn Exp $
 
 .include "../Makefile.inc"
 .include "../drmkms/Makefile.inc"
@@ -10,7 +10,7 @@ MKLDSCRIPT=yes
 WARNS=	3
 
 .if ${MACHINE_ARCH} == "x86_64"
-COPTS.amdgpu_float+=	-mhard-float -msse -msse2
+COPTS.amdgpu_float+=	${${ACTIVE_CC} == "gcc" :? -mhard-float :} -msse -msse2
 .elif !empty(MACHINE_ARCH:Maarch64*)
 COPTS.amdgpu_float+=	-march=armv8-a
 .endif
@@ -46,14 +46,20 @@ CWARNFLAGS+=	-Wno-override-init
 
 # sed -ne 's,^makeoptions	amdgpu	"\([^"]*\.c\)"+="\(.*\)",\1+=	\2,gp' <files.amdgpu | sed -e 's,\$S,${S},g'
 CWARNFLAGS.amdgpu_arct_reg_init.c+=	-Wno-cast-qual
-CWARNFLAGS.amdgpu_bo_list.c+=	-Wno-type-limits
+CWARNFLAGS.amdgpu_bo_list.c+=	-Wno-type-limits -Wno-tautological-constant-out-of-range-compare
+CWARNFLAGS.amdgpu_fiji_smumgr.c+=	-Wno-cast-qual
 CWARNFLAGS.amdgpu_hw_ddc.c+=	-Wno-type-limits
 CWARNFLAGS.amdgpu_hw_generic.c+=	-Wno-type-limits
 CWARNFLAGS.amdgpu_hw_hpd.c+=	-Wno-type-limits
 CWARNFLAGS.amdgpu_navi10_ppt.c+=	-Wno-type-limits
+CWARNFLAGS.amdgpu_polaris10_smumgr.c+=	-Wno-cast-qual
+CWARNFLAGS.amdgpu_process_pptables_v1_0.c+=	-Wno-cast-qual
 CWARNFLAGS.amdgpu_rn_clk_mgr.c+=	-Wno-type-limits
 CWARNFLAGS.amdgpu_vega10_reg_init.c+=	-Wno-cast-qual
 CWARNFLAGS.amdgpu_vega20_reg_init.c+=	-Wno-cast-qual
+CWARNFLAGS.amdgpu_uvd.c+=	-Wno-format
+CWARNFLAGS.amdgpu_vcn.c+=	-Wno-format
+COPTS.amdgpu_dcn10_resource.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_dcn20_resource.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_dcn21_resource.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_dcn_calc_auto.c+=	${COPTS.amdgpu_float}
@@ -66,10 +72,12 @@ COPTS.amdgpu_display_mode_vba_21.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_display_rq_dlg_calc_20.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_display_rq_dlg_calc_20v2.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_display_rq_dlg_calc_21.c+=	${COPTS.amdgpu_float}
+COPTS.amdgpu_display_rq_dlg_helpers.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_dml1_display_rq_dlg_calc.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_dml_common_defs.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_rc_calc.c+=	${COPTS.amdgpu_float}
 COPTS.amdgpu_rc_calc_dpi.c+=	${COPTS.amdgpu_float}
+COPTS.amdgpu_rn_clk_mgr.c+=	${COPTS.amdgpu_float}
 
 # sed -ne 's,^file	\(external/bsd/drm2/.*\)/[^/ 	]*	.*,.PATH:	\1,gp' <files.amdgpu | sort -u
 .PATH:	${S}/external/bsd/drm2/amdgpu
