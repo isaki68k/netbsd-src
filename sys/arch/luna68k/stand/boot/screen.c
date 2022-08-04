@@ -119,12 +119,24 @@ screen(int argc, char *argv[])
 				bmdputc( 0x30 + i );
 
 	} else if (!strcmp(argv[1], "alpha")) {
-		for (j = 0; j < 26; j++) {
-			for (i = 0; i < 90; i++) {
-				bmdputc(0x41 + j);
+		for (j = 0; j < 50; j++) {
+			for (i = 0; i < 106; i++) {
+				int d = i / 10;
+				int n = i % 10;
+				switch (n) {
+				 case 0:
+					bmdputc(0x30 + (d > 9 ? d + 7 : d));
+					break;
+				 case 1:
+					bmdputc('#');
+					break;
+				 default:
+					bmdputc(0x41 + (j > 26 ? j + 6 : j));
+					break;
+				}
 			}
-			bmdputc(0x0D);
-			bmdputc(0x0A);
+			//bmdputc(0x0D);
+			//bmdputc(0x0A);
 		}
 	}
 
