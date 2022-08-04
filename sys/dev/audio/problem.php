@@ -937,6 +937,10 @@ item(56581, false,
 "audiocfg: Kernel panic on USB audio test use",
 "たぶん usb 側");
 
+item(-56644, true,
+"Kernel assertion in audio.c",
+"audio_read() が track_recor() を呼び出す条件を修正");
+
 item(56659, false,
 "Focusrite Scarlett 2i4 USB audio autoconfiguration error",
 "たぶん uaudio 側");
@@ -944,6 +948,10 @@ item(56659, false,
 item(56660, false,
 "Douk Audio U2 PRO USB (XMOS HIFI DSD) audio autoconfiguration error",
 "たぶん uaudio 側");
+
+item(56947, true,
+"audio(4) may fail uobj allocation under VA fragmentation/preassure",
+"");
 
 ?>
 
