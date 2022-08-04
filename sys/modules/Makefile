@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.266 2022/06/04 03:31:10 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.269 2022/07/28 22:00:23 riastradh Exp $
 
 .include <bsd.own.mk>
 
@@ -348,14 +348,17 @@ SUBDIR+=	viadrmums
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
+SUBDIR+=	amdgpu
 SUBDIR+=	compat_linux
 SUBDIR+=	drm
-#SUBDIR+=	drmkms
-#SUBDIR+=	drmkms_agp
-#SUBDIR+=	drmkms_linux
-#SUBDIR+=	drmkms_pci
+SUBDIR+=	drmkms
+SUBDIR+=	drmkms_agp
+SUBDIR+=	drmkms_linux
+SUBDIR+=	drmkms_pci
+SUBDIR+=	drmkms_sched
+SUBDIR+=	drmkms_ttm
 SUBDIR+=	i915drm
-#SUBDIR+=	i915drmkms
+SUBDIR+=	i915drmkms
 #
 # ISA modules
 #

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.733 2022/05/19 02:23:59 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.751 2022/08/03 05:29:04 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.733 2022/05/19 02:23:59 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.751 2022/08/03 05:29:04 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -90,26 +90,25 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.733 2022/05/19 02:23:59 msaitoh Exp $");
 #endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/callout.h>
-#include <sys/mbuf.h>
-#include <sys/malloc.h>
-#include <sys/kmem.h>
-#include <sys/kernel.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <sys/errno.h>
-#include <sys/device.h>
-#include <sys/queue.h>
-#include <sys/syslog.h>
-#include <sys/interrupt.h>
-#include <sys/cpu.h>
-#include <sys/pcq.h>
-#include <sys/sysctl.h>
-#include <sys/workqueue.h>
-#include <sys/atomic.h>
 
+#include <sys/atomic.h>
+#include <sys/callout.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/errno.h>
+#include <sys/interrupt.h>
+#include <sys/ioctl.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/mbuf.h>
+#include <sys/pcq.h>
+#include <sys/queue.h>
 #include <sys/rndsource.h>
+#include <sys/socket.h>
+#include <sys/sysctl.h>
+#include <sys/syslog.h>
+#include <sys/systm.h>
+#include <sys/workqueue.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -321,9 +320,9 @@ struct wm_softc;
 #endif
 
 #ifdef WM_EVENT_COUNTERS
-#define WM_Q_EVCNT_DEFINE(qname, evname)				\
+#define WM_Q_EVCNT_DEFINE(qname, evname)				 \
 	char qname##_##evname##_evcnt_name[sizeof("qname##XX##evname")]; \
-	struct evcnt qname##_ev_##evname;
+	struct evcnt qname##_ev_##evname
 
 #define WM_Q_EVCNT_ATTACH(qname, evname, q, qnum, xname, evtype)	\
 	do {								\
@@ -342,7 +341,7 @@ struct wm_softc;
 	WM_Q_EVCNT_ATTACH(qname, evname, q, qnum, xname, EVCNT_TYPE_INTR)
 
 #define WM_Q_EVCNT_DETACH(qname, evname, q, qnum)	\
-	evcnt_detach(&(q)->qname##_ev_##evname);
+	evcnt_detach(&(q)->qname##_ev_##evname)
 #endif /* WM_EVENT_COUNTERS */
 
 struct wm_txqueue {
@@ -409,27 +408,27 @@ struct wm_txqueue {
 	uint32_t txq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
 	/* TX event counters */
-	WM_Q_EVCNT_DEFINE(txq, txsstall)    /* Stalled due to no txs */
-	WM_Q_EVCNT_DEFINE(txq, txdstall)    /* Stalled due to no txd */
-	WM_Q_EVCNT_DEFINE(txq, fifo_stall)  /* FIFO stalls (82547) */
-	WM_Q_EVCNT_DEFINE(txq, txdw)	    /* Tx descriptor interrupts */
-	WM_Q_EVCNT_DEFINE(txq, txqe)	    /* Tx queue empty interrupts */
+	WM_Q_EVCNT_DEFINE(txq, txsstall);   /* Stalled due to no txs */
+	WM_Q_EVCNT_DEFINE(txq, txdstall);   /* Stalled due to no txd */
+	WM_Q_EVCNT_DEFINE(txq, fifo_stall); /* FIFO stalls (82547) */
+	WM_Q_EVCNT_DEFINE(txq, txdw);	    /* Tx descriptor interrupts */
+	WM_Q_EVCNT_DEFINE(txq, txqe);	    /* Tx queue empty interrupts */
 					    /* XXX not used? */
 
-	WM_Q_EVCNT_DEFINE(txq, ipsum)	    /* IP checksums comp. */
-	WM_Q_EVCNT_DEFINE(txq, tusum)	    /* TCP/UDP cksums comp. */
-	WM_Q_EVCNT_DEFINE(txq, tusum6)	    /* TCP/UDP v6 cksums comp. */
-	WM_Q_EVCNT_DEFINE(txq, tso)	    /* TCP seg offload (IPv4) */
-	WM_Q_EVCNT_DEFINE(txq, tso6)	    /* TCP seg offload (IPv6) */
-	WM_Q_EVCNT_DEFINE(txq, tsopain)	    /* Painful header manip. for TSO */
-	WM_Q_EVCNT_DEFINE(txq, pcqdrop)	    /* Pkt dropped in pcq */
-	WM_Q_EVCNT_DEFINE(txq, descdrop)    /* Pkt dropped in MAC desc ring */
+	WM_Q_EVCNT_DEFINE(txq, ipsum);	    /* IP checksums comp. */
+	WM_Q_EVCNT_DEFINE(txq, tusum);	    /* TCP/UDP cksums comp. */
+	WM_Q_EVCNT_DEFINE(txq, tusum6);	    /* TCP/UDP v6 cksums comp. */
+	WM_Q_EVCNT_DEFINE(txq, tso);	    /* TCP seg offload (IPv4) */
+	WM_Q_EVCNT_DEFINE(txq, tso6);	    /* TCP seg offload (IPv6) */
+	WM_Q_EVCNT_DEFINE(txq, tsopain);    /* Painful header manip. for TSO */
+	WM_Q_EVCNT_DEFINE(txq, pcqdrop);    /* Pkt dropped in pcq */
+	WM_Q_EVCNT_DEFINE(txq, descdrop);   /* Pkt dropped in MAC desc ring */
 					    /* other than toomanyseg */
 
-	WM_Q_EVCNT_DEFINE(txq, toomanyseg)  /* Pkt dropped(toomany DMA segs) */
-	WM_Q_EVCNT_DEFINE(txq, defrag)	    /* m_defrag() */
-	WM_Q_EVCNT_DEFINE(txq, underrun)    /* Tx underrun */
-	WM_Q_EVCNT_DEFINE(txq, skipcontext) /* Tx skip wrong cksum context */
+	WM_Q_EVCNT_DEFINE(txq, toomanyseg); /* Pkt dropped(toomany DMA segs) */
+	WM_Q_EVCNT_DEFINE(txq, defrag);	    /* m_defrag() */
+	WM_Q_EVCNT_DEFINE(txq, underrun);   /* Tx underrun */
+	WM_Q_EVCNT_DEFINE(txq, skipcontext); /* Tx skip wrong cksum context */
 
 	char txq_txseg_evcnt_names[WM_NTXSEGS][sizeof("txqXXtxsegXXX")];
 	struct evcnt txq_ev_txseg[WM_NTXSEGS]; /* Tx packets w/ N segments */
@@ -471,11 +470,11 @@ struct wm_rxqueue {
 	uint32_t rxq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
 	/* RX event counters */
-	WM_Q_EVCNT_DEFINE(rxq, intr)	/* Interrupts */
-	WM_Q_EVCNT_DEFINE(rxq, defer)	/* Rx deferred processing */
+	WM_Q_EVCNT_DEFINE(rxq, intr);	/* Interrupts */
+	WM_Q_EVCNT_DEFINE(rxq, defer);	/* Rx deferred processing */
 
-	WM_Q_EVCNT_DEFINE(rxq, ipsum)	/* IP checksums checked */
-	WM_Q_EVCNT_DEFINE(rxq, tusum)	/* TCP/UDP cksums checked */
+	WM_Q_EVCNT_DEFINE(rxq, ipsum);	/* IP checksums checked */
+	WM_Q_EVCNT_DEFINE(rxq, tusum);	/* TCP/UDP cksums checked */
 #endif
 };
 
@@ -596,12 +595,76 @@ struct wm_softc {
 	/* Event counters. */
 	struct evcnt sc_ev_linkintr;	/* Link interrupts */
 
-	/* WM_T_82542_2_1 only */
+	/* >= WM_T_82542_2_1 */
 	struct evcnt sc_ev_tx_xoff;	/* Tx PAUSE(!0) frames */
 	struct evcnt sc_ev_tx_xon;	/* Tx PAUSE(0) frames */
 	struct evcnt sc_ev_rx_xoff;	/* Rx PAUSE(!0) frames */
 	struct evcnt sc_ev_rx_xon;	/* Rx PAUSE(0) frames */
 	struct evcnt sc_ev_rx_macctl;	/* Rx Unsupported */
+
+	struct evcnt sc_ev_crcerrs;	/* CRC Error */
+	struct evcnt sc_ev_algnerrc;	/* Alignment Error */
+	struct evcnt sc_ev_symerrc;	/* Symbol Error */
+	struct evcnt sc_ev_rxerrc;	/* Receive Error */
+	struct evcnt sc_ev_mpc;		/* Missed Packets */
+	struct evcnt sc_ev_colc;	/* Collision */
+	struct evcnt sc_ev_sec;		/* Sequence Error */
+	struct evcnt sc_ev_cexterr;	/* Carrier Extension Error */
+	struct evcnt sc_ev_rlec;	/* Receive Length Error */
+	struct evcnt sc_ev_scc;		/* Single Collision */
+	struct evcnt sc_ev_ecol;	/* Excessive Collision */
+	struct evcnt sc_ev_mcc;		/* Multiple Collision */
+	struct evcnt sc_ev_latecol;	/* Late Collision */
+	struct evcnt sc_ev_dc;		/* Defer */
+	struct evcnt sc_ev_gprc;	/* Good Packets Rx */
+	struct evcnt sc_ev_bprc;	/* Broadcast Packets Rx */
+	struct evcnt sc_ev_mprc;	/* Multicast Packets Rx */
+	struct evcnt sc_ev_gptc;	/* Good Packets Tx */
+	struct evcnt sc_ev_gorc;	/* Good Octets Rx */
+	struct evcnt sc_ev_gotc;	/* Good Octets Tx */
+	struct evcnt sc_ev_rnbc;	/* Rx No Buffers */
+	struct evcnt sc_ev_ruc;		/* Rx Undersize */
+	struct evcnt sc_ev_rfc;		/* Rx Fragment */
+	struct evcnt sc_ev_roc;		/* Rx Oversize */
+	struct evcnt sc_ev_rjc;		/* Rx Jabber */
+	struct evcnt sc_ev_tor;		/* Total Octets Rx */
+	struct evcnt sc_ev_tot;		/* Total Octets Tx */
+	struct evcnt sc_ev_tpr;		/* Total Packets Rx */
+	struct evcnt sc_ev_tpt;		/* Total Packets Tx */
+	struct evcnt sc_ev_mptc;	/* Multicast Packets Tx */
+	struct evcnt sc_ev_bptc;	/* Broadcast Packets Tx Count */
+	struct evcnt sc_ev_prc64;	/* Packets Rx (64 bytes) */
+	struct evcnt sc_ev_prc127;	/* Packets Rx (65-127 bytes) */
+	struct evcnt sc_ev_prc255;	/* Packets Rx (128-255 bytes) */
+	struct evcnt sc_ev_prc511;	/* Packets Rx (255-511 bytes) */
+	struct evcnt sc_ev_prc1023;	/* Packets Rx (512-1023 bytes) */
+	struct evcnt sc_ev_prc1522;	/* Packets Rx (1024-1522 bytes) */
+	struct evcnt sc_ev_ptc64;	/* Packets Tx (64 bytes) */
+	struct evcnt sc_ev_ptc127;	/* Packets Tx (65-127 bytes) */
+	struct evcnt sc_ev_ptc255;	/* Packets Tx (128-255 bytes) */
+	struct evcnt sc_ev_ptc511;	/* Packets Tx (256-511 bytes) */
+	struct evcnt sc_ev_ptc1023;	/* Packets Tx (512-1023 bytes) */
+	struct evcnt sc_ev_ptc1522;	/* Packets Tx (1024-1522 Bytes) */
+	struct evcnt sc_ev_iac;		/* Interrupt Assertion */
+	struct evcnt sc_ev_icrxptc;	/* Intr. Cause Rx Pkt Timer Expire */
+	struct evcnt sc_ev_icrxatc;	/* Intr. Cause Rx Abs Timer Expire */
+	struct evcnt sc_ev_ictxptc;	/* Intr. Cause Tx Pkt Timer Expire */
+	struct evcnt sc_ev_ictxact;	/* Intr. Cause Tx Abs Timer Expire */
+	struct evcnt sc_ev_ictxqec;	/* Intr. Cause Tx Queue Empty */
+	struct evcnt sc_ev_ictxqmtc;	/* Intr. Cause Tx Queue Min Thresh */
+	struct evcnt sc_ev_icrxdmtc;	/* Intr. Cause Rx Desc Min Thresh */
+	struct evcnt sc_ev_icrxoc;	/* Intr. Cause Receiver Overrun */
+	struct evcnt sc_ev_tncrs;	/* Tx-No CRS */
+	struct evcnt sc_ev_tsctc;	/* TCP Segmentation Context Tx */
+	struct evcnt sc_ev_tsctfc;	/* TCP Segmentation Context Tx Fail */
+	struct evcnt sc_ev_mgtprc;	/* Management Packets RX */
+	struct evcnt sc_ev_mgtpdc;	/* Management Packets Dropped */
+	struct evcnt sc_ev_mgtptc;	/* Management Packets TX */
+	struct evcnt sc_ev_b2ogprc;	/* BMC2OS pkts received by host */
+	struct evcnt sc_ev_o2bspc;	/* OS2BMC pkts transmitted by host */
+	struct evcnt sc_ev_b2ospc;	/* BMC2OS pkts sent by BMC */
+	struct evcnt sc_ev_o2bgptc;	/* OS2BMC pkts received by BMC */
+
 #endif /* WM_EVENT_COUNTERS */
 
 	struct sysctllog *sc_sysctllog;
@@ -2049,8 +2112,8 @@ wm_attach(device_t parent, device_t self, void *aux)
 				aprint_error_dev(sc->sc_dev,
 				    "WARNING: I/O BAR at zero.\n");
 			} else if (pci_mapreg_map(pa, i, PCI_MAPREG_TYPE_IO,
-					0, &sc->sc_iot, &sc->sc_ioh,
-					NULL, &sc->sc_ios) == 0) {
+			    0, &sc->sc_iot, &sc->sc_ioh, NULL, &sc->sc_ios)
+			    == 0) {
 				sc->sc_flags |= WM_F_IOH_VALID;
 			} else
 				aprint_error_dev(sc->sc_dev,
@@ -3020,7 +3083,8 @@ alloc_retry:
 	} else {
 		ifp->if_start = wm_start;
 		/*
-		 * wm_transmit() has the same disadvantage as wm_transmit().
+		 * wm_transmit() has the same disadvantages as wm_nq_transmit()
+		 * described above.
 		 */
 		if (wm_is_using_multiqueue(sc))
 			ifp->if_transmit = wm_transmit;
@@ -3113,13 +3177,11 @@ alloc_retry:
 	 * If we're a i82544 or greater (except i82547), we can do
 	 * TCP segmentation offload.
 	 */
-	if (sc->sc_type >= WM_T_82544 && sc->sc_type != WM_T_82547) {
+	if (sc->sc_type >= WM_T_82544 && sc->sc_type != WM_T_82547)
 		ifp->if_capabilities |= IFCAP_TSOv4;
-	}
 
-	if (sc->sc_type >= WM_T_82571) {
+	if (sc->sc_type >= WM_T_82571)
 		ifp->if_capabilities |= IFCAP_TSOv6;
-	}
 
 	sc->sc_tx_process_limit = WM_TX_PROCESS_LIMIT_DEFAULT;
 	sc->sc_tx_intr_process_limit = WM_TX_INTR_PROCESS_LIMIT_DEFAULT;
@@ -3140,16 +3202,153 @@ alloc_retry:
 	evcnt_attach_dynamic(&sc->sc_ev_linkintr, EVCNT_TYPE_INTR,
 	    NULL, xname, "linkintr");
 
-	evcnt_attach_dynamic(&sc->sc_ev_tx_xoff, EVCNT_TYPE_MISC,
-	    NULL, xname, "tx_xoff");
-	evcnt_attach_dynamic(&sc->sc_ev_tx_xon, EVCNT_TYPE_MISC,
-	    NULL, xname, "tx_xon");
-	evcnt_attach_dynamic(&sc->sc_ev_rx_xoff, EVCNT_TYPE_MISC,
-	    NULL, xname, "rx_xoff");
-	evcnt_attach_dynamic(&sc->sc_ev_rx_xon, EVCNT_TYPE_MISC,
-	    NULL, xname, "rx_xon");
-	evcnt_attach_dynamic(&sc->sc_ev_rx_macctl, EVCNT_TYPE_MISC,
-	    NULL, xname, "rx_macctl");
+	if (sc->sc_type >= WM_T_82542_2_1) {
+		evcnt_attach_dynamic(&sc->sc_ev_tx_xoff, EVCNT_TYPE_MISC,
+		    NULL, xname, "tx_xoff");
+		evcnt_attach_dynamic(&sc->sc_ev_tx_xon, EVCNT_TYPE_MISC,
+		    NULL, xname, "tx_xon");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_xoff, EVCNT_TYPE_MISC,
+		    NULL, xname, "rx_xoff");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_xon, EVCNT_TYPE_MISC,
+		    NULL, xname, "rx_xon");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_macctl, EVCNT_TYPE_MISC,
+		    NULL, xname, "rx_macctl");
+	}
+
+	evcnt_attach_dynamic(&sc->sc_ev_crcerrs, EVCNT_TYPE_MISC,
+	    NULL, xname, "CRC Error");
+	evcnt_attach_dynamic(&sc->sc_ev_symerrc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Symbol Error");
+
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_attach_dynamic(&sc->sc_ev_algnerrc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Alignment Error");
+		evcnt_attach_dynamic(&sc->sc_ev_rxerrc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Receive Error");
+		evcnt_attach_dynamic(&sc->sc_ev_cexterr, EVCNT_TYPE_MISC,
+		    NULL, xname, "Carrier Extension Error");
+	}
+
+	evcnt_attach_dynamic(&sc->sc_ev_mpc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Missed Packets");
+	evcnt_attach_dynamic(&sc->sc_ev_colc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Collision");
+	evcnt_attach_dynamic(&sc->sc_ev_sec, EVCNT_TYPE_MISC,
+	    NULL, xname, "Sequence Error");
+	evcnt_attach_dynamic(&sc->sc_ev_rlec, EVCNT_TYPE_MISC,
+	    NULL, xname, "Receive Length Error");
+	evcnt_attach_dynamic(&sc->sc_ev_scc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Single Collision");
+	evcnt_attach_dynamic(&sc->sc_ev_ecol, EVCNT_TYPE_MISC,
+	    NULL, xname, "Excessive Collisions");
+	evcnt_attach_dynamic(&sc->sc_ev_mcc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Multiple Collision");
+	evcnt_attach_dynamic(&sc->sc_ev_latecol, EVCNT_TYPE_MISC,
+	    NULL, xname, "Late Collisions");
+	evcnt_attach_dynamic(&sc->sc_ev_dc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Defer");
+	evcnt_attach_dynamic(&sc->sc_ev_gprc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Good Packets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_bprc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Broadcast Packets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_mprc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Multicast Packets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_gptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Good Packets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_gorc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Good Octets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_gotc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Good Octets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_rnbc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Rx No Buffers");
+	evcnt_attach_dynamic(&sc->sc_ev_ruc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Rx Undersize");
+	evcnt_attach_dynamic(&sc->sc_ev_rfc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Rx Fragment");
+	evcnt_attach_dynamic(&sc->sc_ev_roc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Rx Oversize");
+	evcnt_attach_dynamic(&sc->sc_ev_rjc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Rx Jabber");
+	evcnt_attach_dynamic(&sc->sc_ev_tor, EVCNT_TYPE_MISC,
+	    NULL, xname, "Total Octets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_tot, EVCNT_TYPE_MISC,
+	    NULL, xname, "Total Octets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_tpr, EVCNT_TYPE_MISC,
+	    NULL, xname, "Total Packets Rx");
+	evcnt_attach_dynamic(&sc->sc_ev_tpt, EVCNT_TYPE_MISC,
+	    NULL, xname, "Total Packets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_mptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Multicast Packets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_bptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Broadcast Packets Tx Count");
+	evcnt_attach_dynamic(&sc->sc_ev_prc64, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (64 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc127, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (65-127 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc255, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (128-255 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc511, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (255-511 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc1023, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (512-1023 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc1522, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (1024-1522 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc64, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (64 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc127, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (65-127 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc255, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (128-255 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc511, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (256-511 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc1023, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (512-1023 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_ptc1522, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Tx (1024-1522 Bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_iac, EVCNT_TYPE_MISC,
+	    NULL, xname, "Interrupt Assertion");
+	evcnt_attach_dynamic(&sc->sc_ev_icrxptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Rx Pkt Timer Expire");
+	evcnt_attach_dynamic(&sc->sc_ev_icrxatc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Rx Abs Timer Expire");
+	evcnt_attach_dynamic(&sc->sc_ev_ictxptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Tx Pkt Timer Expire");
+	evcnt_attach_dynamic(&sc->sc_ev_ictxact, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Tx Abs Timer Expire");
+	evcnt_attach_dynamic(&sc->sc_ev_ictxqec, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Tx Queue Empty");
+	evcnt_attach_dynamic(&sc->sc_ev_ictxqmtc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Tx Queue Min Thresh");
+	evcnt_attach_dynamic(&sc->sc_ev_icrxdmtc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Intr. Cause Rx Desc Min Thresh");
+	evcnt_attach_dynamic(&sc->sc_ev_icrxoc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Interrupt Cause Receiver Overrun");
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_attach_dynamic(&sc->sc_ev_tncrs, EVCNT_TYPE_MISC,
+		    NULL, xname, "Tx with No CRS");
+		evcnt_attach_dynamic(&sc->sc_ev_tsctc, EVCNT_TYPE_MISC,
+		    NULL, xname, "TCP Segmentation Context Tx");
+		evcnt_attach_dynamic(&sc->sc_ev_tsctfc, EVCNT_TYPE_MISC,
+		    NULL, xname, "TCP Segmentation Context Tx Fail");
+	}
+	if (sc->sc_type >= WM_T_82540) {
+		evcnt_attach_dynamic(&sc->sc_ev_mgtprc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets RX");
+		evcnt_attach_dynamic(&sc->sc_ev_mgtpdc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets Dropped");
+		evcnt_attach_dynamic(&sc->sc_ev_mgtptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets TX");
+	}
+	if ((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003)) {
+		evcnt_attach_dynamic(&sc->sc_ev_b2ogprc, EVCNT_TYPE_MISC,
+		    NULL, xname, "BMC2OS Packets received by host");
+		evcnt_attach_dynamic(&sc->sc_ev_o2bspc, EVCNT_TYPE_MISC,
+		    NULL, xname, "OS2BMC Packets transmitted by host");
+		evcnt_attach_dynamic(&sc->sc_ev_b2ospc, EVCNT_TYPE_MISC,
+		    NULL, xname, "BMC2OS Packets sent by BMC");
+		evcnt_attach_dynamic(&sc->sc_ev_o2bgptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "OS2BMC Packets received by BMC");
+	}
 #endif /* WM_EVENT_COUNTERS */
 
 	sc->sc_txrx_use_workqueue = false;
@@ -3194,11 +3393,85 @@ wm_detach(device_t self, int flags __unused)
 #ifdef WM_EVENT_COUNTERS
 	evcnt_detach(&sc->sc_ev_linkintr);
 
-	evcnt_detach(&sc->sc_ev_tx_xoff);
-	evcnt_detach(&sc->sc_ev_tx_xon);
-	evcnt_detach(&sc->sc_ev_rx_xoff);
-	evcnt_detach(&sc->sc_ev_rx_xon);
-	evcnt_detach(&sc->sc_ev_rx_macctl);
+	if (sc->sc_type >= WM_T_82542_2_1) {
+		evcnt_detach(&sc->sc_ev_tx_xoff);
+		evcnt_detach(&sc->sc_ev_tx_xon);
+		evcnt_detach(&sc->sc_ev_rx_xoff);
+		evcnt_detach(&sc->sc_ev_rx_xon);
+		evcnt_detach(&sc->sc_ev_rx_macctl);
+	}
+
+	evcnt_detach(&sc->sc_ev_crcerrs);
+	evcnt_detach(&sc->sc_ev_symerrc);
+
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_detach(&sc->sc_ev_algnerrc);
+		evcnt_detach(&sc->sc_ev_rxerrc);
+		evcnt_detach(&sc->sc_ev_cexterr);
+	}
+	evcnt_detach(&sc->sc_ev_mpc);
+	evcnt_detach(&sc->sc_ev_colc);
+	evcnt_detach(&sc->sc_ev_sec);
+	evcnt_detach(&sc->sc_ev_rlec);
+	evcnt_detach(&sc->sc_ev_scc);
+	evcnt_detach(&sc->sc_ev_ecol);
+	evcnt_detach(&sc->sc_ev_mcc);
+	evcnt_detach(&sc->sc_ev_latecol);
+	evcnt_detach(&sc->sc_ev_dc);
+	evcnt_detach(&sc->sc_ev_gprc);
+	evcnt_detach(&sc->sc_ev_bprc);
+	evcnt_detach(&sc->sc_ev_mprc);
+	evcnt_detach(&sc->sc_ev_gptc);
+	evcnt_detach(&sc->sc_ev_gorc);
+	evcnt_detach(&sc->sc_ev_gotc);
+	evcnt_detach(&sc->sc_ev_rnbc);
+	evcnt_detach(&sc->sc_ev_ruc);
+	evcnt_detach(&sc->sc_ev_rfc);
+	evcnt_detach(&sc->sc_ev_roc);
+	evcnt_detach(&sc->sc_ev_rjc);
+	evcnt_detach(&sc->sc_ev_tor);
+	evcnt_detach(&sc->sc_ev_tot);
+	evcnt_detach(&sc->sc_ev_tpr);
+	evcnt_detach(&sc->sc_ev_tpt);
+	evcnt_detach(&sc->sc_ev_mptc);
+	evcnt_detach(&sc->sc_ev_bptc);
+	evcnt_detach(&sc->sc_ev_prc64);
+	evcnt_detach(&sc->sc_ev_prc127);
+	evcnt_detach(&sc->sc_ev_prc255);
+	evcnt_detach(&sc->sc_ev_prc511);
+	evcnt_detach(&sc->sc_ev_prc1023);
+	evcnt_detach(&sc->sc_ev_prc1522);
+	evcnt_detach(&sc->sc_ev_ptc64);
+	evcnt_detach(&sc->sc_ev_ptc127);
+	evcnt_detach(&sc->sc_ev_ptc255);
+	evcnt_detach(&sc->sc_ev_ptc511);
+	evcnt_detach(&sc->sc_ev_ptc1023);
+	evcnt_detach(&sc->sc_ev_ptc1522);
+	evcnt_detach(&sc->sc_ev_iac);
+	evcnt_detach(&sc->sc_ev_icrxptc);
+	evcnt_detach(&sc->sc_ev_icrxatc);
+	evcnt_detach(&sc->sc_ev_ictxptc);
+	evcnt_detach(&sc->sc_ev_ictxact);
+	evcnt_detach(&sc->sc_ev_ictxqec);
+	evcnt_detach(&sc->sc_ev_ictxqmtc);
+	evcnt_detach(&sc->sc_ev_icrxdmtc);
+	evcnt_detach(&sc->sc_ev_icrxoc);
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_detach(&sc->sc_ev_tncrs);
+		evcnt_detach(&sc->sc_ev_tsctc);
+		evcnt_detach(&sc->sc_ev_tsctfc);
+	}
+	if (sc->sc_type >= WM_T_82540) {
+		evcnt_detach(&sc->sc_ev_mgtprc);
+		evcnt_detach(&sc->sc_ev_mgtpdc);
+		evcnt_detach(&sc->sc_ev_mgtptc);
+	}
+	if ((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003)) {
+		evcnt_detach(&sc->sc_ev_b2ogprc);
+		evcnt_detach(&sc->sc_ev_o2bspc);
+		evcnt_detach(&sc->sc_ev_b2ospc);
+		evcnt_detach(&sc->sc_ev_o2bgptc);
+	}
 #endif /* WM_EVENT_COUNTERS */
 
 	rnd_detach_source(&sc->rnd_source);
@@ -3237,7 +3510,7 @@ wm_detach(device_t self, int flags __unused)
 	}
 	pci_intr_release(sc->sc_pc, sc->sc_intrs, sc->sc_nintrs);
 
-	/* wm_stop() ensure workqueue is stopped. */
+	/* wm_stop() ensured that the workqueue is stopped. */
 	workqueue_destroy(sc->sc_queue_wq);
 
 	for (i = 0; i < sc->sc_nqueues; i++)
@@ -3437,6 +3710,8 @@ wm_tick(void *arg)
 {
 	struct wm_softc *sc = arg;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	uint64_t crcerrs, algnerrc, symerrc, mpc, colc,  sec, rlec, rxerrc,
+	    cexterr;
 #ifndef WM_MPSAFE
 	int s = splnet();
 #endif
@@ -3451,6 +3726,20 @@ wm_tick(void *arg)
 		return;
 	}
 
+	crcerrs = CSR_READ(sc, WMREG_CRCERRS);
+	symerrc = CSR_READ(sc, WMREG_SYMERRC);
+	mpc = CSR_READ(sc, WMREG_MPC);
+	colc = CSR_READ(sc, WMREG_COLC);
+	sec = CSR_READ(sc, WMREG_SEC);
+	rlec = CSR_READ(sc, WMREG_RLEC);
+
+	WM_EVCNT_ADD(&sc->sc_ev_crcerrs, crcerrs);
+	WM_EVCNT_ADD(&sc->sc_ev_symerrc, symerrc);
+	WM_EVCNT_ADD(&sc->sc_ev_mpc, mpc);
+	WM_EVCNT_ADD(&sc->sc_ev_colc, colc);
+	WM_EVCNT_ADD(&sc->sc_ev_sec, sec);
+	WM_EVCNT_ADD(&sc->sc_ev_rlec, rlec);
+
 	if (sc->sc_type >= WM_T_82542_2_1) {
 		WM_EVCNT_ADD(&sc->sc_ev_rx_xon, CSR_READ(sc, WMREG_XONRXC));
 		WM_EVCNT_ADD(&sc->sc_ev_tx_xon, CSR_READ(sc, WMREG_XONTXC));
@@ -3458,17 +3747,88 @@ wm_tick(void *arg)
 		WM_EVCNT_ADD(&sc->sc_ev_tx_xoff, CSR_READ(sc, WMREG_XOFFTXC));
 		WM_EVCNT_ADD(&sc->sc_ev_rx_macctl, CSR_READ(sc, WMREG_FCRUC));
 	}
+	WM_EVCNT_ADD(&sc->sc_ev_scc, CSR_READ(sc, WMREG_SCC));
+	WM_EVCNT_ADD(&sc->sc_ev_ecol, CSR_READ(sc, WMREG_ECOL));
+	WM_EVCNT_ADD(&sc->sc_ev_mcc, CSR_READ(sc, WMREG_MCC));
+	WM_EVCNT_ADD(&sc->sc_ev_latecol, CSR_READ(sc, WMREG_LATECOL));
+	WM_EVCNT_ADD(&sc->sc_ev_dc, CSR_READ(sc, WMREG_DC));
+	WM_EVCNT_ADD(&sc->sc_ev_gprc, CSR_READ(sc, WMREG_GPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_bprc, CSR_READ(sc, WMREG_BPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_mprc, CSR_READ(sc, WMREG_MPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_gptc, CSR_READ(sc, WMREG_GPTC));
 
+	WM_EVCNT_ADD(&sc->sc_ev_gorc,
+	    CSR_READ(sc, WMREG_GORCL) + CSR_READ(sc, WMREG_GORCH));
+	WM_EVCNT_ADD(&sc->sc_ev_gotc,
+	    CSR_READ(sc, WMREG_GOTCL) + CSR_READ(sc, WMREG_GOTCH));
+
+	WM_EVCNT_ADD(&sc->sc_ev_rnbc, CSR_READ(sc, WMREG_RNBC));
+	WM_EVCNT_ADD(&sc->sc_ev_ruc, CSR_READ(sc, WMREG_RUC));
+	WM_EVCNT_ADD(&sc->sc_ev_rfc, CSR_READ(sc, WMREG_RFC));
+	WM_EVCNT_ADD(&sc->sc_ev_roc, CSR_READ(sc, WMREG_ROC));
+	WM_EVCNT_ADD(&sc->sc_ev_rjc, CSR_READ(sc, WMREG_RJC));
+
+	WM_EVCNT_ADD(&sc->sc_ev_tor,
+	    CSR_READ(sc, WMREG_TORL) + CSR_READ(sc, WMREG_TORH));
+	WM_EVCNT_ADD(&sc->sc_ev_tot,
+	    CSR_READ(sc, WMREG_TOTL) + CSR_READ(sc, WMREG_TOTH));
+
+	WM_EVCNT_ADD(&sc->sc_ev_tpr, CSR_READ(sc, WMREG_TPR));
+	WM_EVCNT_ADD(&sc->sc_ev_tpt, CSR_READ(sc, WMREG_TPT));
+	WM_EVCNT_ADD(&sc->sc_ev_mptc, CSR_READ(sc, WMREG_MPTC));
+	WM_EVCNT_ADD(&sc->sc_ev_bptc, CSR_READ(sc, WMREG_BPTC));
+	WM_EVCNT_ADD(&sc->sc_ev_prc64, CSR_READ(sc, WMREG_PRC64));
+	WM_EVCNT_ADD(&sc->sc_ev_prc127, CSR_READ(sc, WMREG_PRC127));
+	WM_EVCNT_ADD(&sc->sc_ev_prc255, CSR_READ(sc, WMREG_PRC255));
+	WM_EVCNT_ADD(&sc->sc_ev_prc511, CSR_READ(sc, WMREG_PRC511));
+	WM_EVCNT_ADD(&sc->sc_ev_prc1023, CSR_READ(sc, WMREG_PRC1023));
+	WM_EVCNT_ADD(&sc->sc_ev_prc1522, CSR_READ(sc, WMREG_PRC1522));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc64, CSR_READ(sc, WMREG_PTC64));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc127, CSR_READ(sc, WMREG_PTC127));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc255, CSR_READ(sc, WMREG_PTC255));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc511, CSR_READ(sc, WMREG_PTC511));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc1023, CSR_READ(sc, WMREG_PTC1023));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc1522, CSR_READ(sc, WMREG_PTC1522));
+	WM_EVCNT_ADD(&sc->sc_ev_iac, CSR_READ(sc, WMREG_IAC));
+	WM_EVCNT_ADD(&sc->sc_ev_icrxptc, CSR_READ(sc, WMREG_ICRXPTC));
+	WM_EVCNT_ADD(&sc->sc_ev_icrxatc, CSR_READ(sc, WMREG_ICRXATC));
+	WM_EVCNT_ADD(&sc->sc_ev_ictxptc, CSR_READ(sc, WMREG_ICTXPTC));
+	WM_EVCNT_ADD(&sc->sc_ev_ictxact, CSR_READ(sc, WMREG_ICTXATC));
+	WM_EVCNT_ADD(&sc->sc_ev_ictxqec, CSR_READ(sc, WMREG_ICTXQEC));
+	WM_EVCNT_ADD(&sc->sc_ev_ictxqmtc, CSR_READ(sc, WMREG_ICTXQMTC));
+	WM_EVCNT_ADD(&sc->sc_ev_icrxdmtc, CSR_READ(sc, WMREG_ICRXDMTC));
+	WM_EVCNT_ADD(&sc->sc_ev_icrxoc, CSR_READ(sc, WMREG_ICRXOC));
+
+	if (sc->sc_type >= WM_T_82543) {
+		algnerrc = CSR_READ(sc, WMREG_ALGNERRC);
+		rxerrc = CSR_READ(sc, WMREG_RXERRC);
+		cexterr = CSR_READ(sc, WMREG_CEXTERR);
+		WM_EVCNT_ADD(&sc->sc_ev_algnerrc, algnerrc);
+		WM_EVCNT_ADD(&sc->sc_ev_rxerrc, rxerrc);
+		WM_EVCNT_ADD(&sc->sc_ev_cexterr, cexterr);
+
+		WM_EVCNT_ADD(&sc->sc_ev_tncrs, CSR_READ(sc, WMREG_TNCRS));
+		WM_EVCNT_ADD(&sc->sc_ev_tsctc, CSR_READ(sc, WMREG_TSCTC));
+		WM_EVCNT_ADD(&sc->sc_ev_tsctfc, CSR_READ(sc, WMREG_TSCTFC));
+	} else
+		algnerrc = rxerrc = cexterr = 0;
+
+	if (sc->sc_type >= WM_T_82540) {
+		WM_EVCNT_ADD(&sc->sc_ev_mgtprc, CSR_READ(sc, WMREG_MGTPRC));
+		WM_EVCNT_ADD(&sc->sc_ev_mgtpdc, CSR_READ(sc, WMREG_MGTPDC));
+		WM_EVCNT_ADD(&sc->sc_ev_mgtptc, CSR_READ(sc, WMREG_MGTPTC));
+	}
+	if (((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003))
+	    && ((CSR_READ(sc, WMREG_MANC) & MANC_EN_BMC2OS) != 0)) {
+		WM_EVCNT_ADD(&sc->sc_ev_b2ogprc, CSR_READ(sc, WMREG_B2OGPRC));
+		WM_EVCNT_ADD(&sc->sc_ev_o2bspc, CSR_READ(sc, WMREG_O2BSPC));
+		WM_EVCNT_ADD(&sc->sc_ev_b2ospc, CSR_READ(sc, WMREG_B2OSPC));
+		WM_EVCNT_ADD(&sc->sc_ev_o2bgptc, CSR_READ(sc, WMREG_O2BGPTC));
+	}
 	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
-	if_statadd_ref(nsr, if_collisions, CSR_READ(sc, WMREG_COLC));
-	if_statadd_ref(nsr, if_ierrors, 0ULL /* ensure quad_t */
-	    + CSR_READ(sc, WMREG_CRCERRS)
-	    + CSR_READ(sc, WMREG_ALGNERRC)
-	    + CSR_READ(sc, WMREG_SYMERRC)
-	    + CSR_READ(sc, WMREG_RXERRC)
-	    + CSR_READ(sc, WMREG_SEC)
-	    + CSR_READ(sc, WMREG_CEXTERR)
-	    + CSR_READ(sc, WMREG_RLEC));
+	if_statadd_ref(nsr, if_collisions, colc);
+	if_statadd_ref(nsr, if_ierrors,
+	    crcerrs + algnerrc + symerrc + rxerrc + sec + cexterr + rlec);
 	/*
 	 * WMREG_RNBC is incremented when there are no available buffers in host
 	 * memory. It does not mean the number of dropped packets, because an
@@ -3478,7 +3838,7 @@ wm_tick(void *arg)
 	 * If you want to know the nubmer of WMREG_RMBC, you should use such as
 	 * own EVCNT instead of if_iqdrops.
 	 */
-	if_statadd_ref(nsr, if_iqdrops, CSR_READ(sc, WMREG_MPC));
+	if_statadd_ref(nsr, if_iqdrops, mpc);
 	IF_STAT_PUTREF(ifp);
 
 	if (sc->sc_flags & WM_F_HAS_MII)
@@ -3490,6 +3850,9 @@ wm_tick(void *arg)
 		wm_tbi_tick(sc);
 
 	WM_CORE_UNLOCK(sc);
+#ifndef WM_MPSAFE
+	splx(s);
+#endif
 
 	wm_watchdog(ifp);
 
@@ -3509,6 +3872,7 @@ wm_ifflags_cb(struct ethercom *ec)
 	DPRINTF(sc, WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 
+	KASSERT(IFNET_LOCKED(ifp));
 	WM_CORE_LOCK(sc);
 
 	/*
@@ -3608,6 +3972,14 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	DPRINTF(sc, WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		KASSERT(IFNET_LOCKED(ifp));
+	}
+
 #ifndef WM_MPSAFE
 	s = splnet();
 #endif
@@ -3676,15 +4048,15 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 		if (cmd == SIOCSIFCAP)
 			error = if_init(ifp);
-		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
-			;
-		else if (ifp->if_flags & IFF_RUNNING) {
-			/*
-			 * Multicast list has changed; set the hardware filter
-			 * accordingly.
-			 */
+		else if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
 			WM_CORE_LOCK(sc);
-			wm_set_filter(sc);
+			if (sc->sc_if_flags & IFF_RUNNING) {
+				/*
+				 * Multicast list has changed; set the hardware filter
+				 * accordingly.
+				 */
+				wm_set_filter(sc);
+			}
 			WM_CORE_UNLOCK(sc);
 		}
 		break;
@@ -4917,13 +5289,12 @@ wm_flush_desc_rings(struct wm_softc *sc)
 	txd->wtx_fields.wtxu_options = 0;
 	txd->wtx_fields.wtxu_vlan = 0;
 
-	bus_space_barrier(sc->sc_st, sc->sc_sh, 0, 0,
-	    BUS_SPACE_BARRIER_WRITE);
+	wm_cdtxsync(txq, 0, WM_NTXDESC(txq),
+	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	txq->txq_next = WM_NEXTTX(txq, txq->txq_next);
 	CSR_WRITE(sc, WMREG_TDT(0), txq->txq_next);
-	bus_space_barrier(sc->sc_st, sc->sc_sh, 0, 0,
-	    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+	CSR_WRITE_FLUSH(sc);
 	delay(250);
 
 	preg = pci_conf_read(sc->sc_pc, sc->sc_pcitag, WM_PCI_DESCRING_STATUS);
@@ -6108,6 +6479,8 @@ wm_init(struct ifnet *ifp)
 	struct wm_softc *sc = ifp->if_softc;
 	int ret;
 
+	KASSERT(IFNET_LOCKED(ifp));
+
 	WM_CORE_LOCK(sc);
 	ret = wm_init_locked(ifp);
 	WM_CORE_UNLOCK(sc);
@@ -6125,6 +6498,7 @@ wm_init_locked(struct ifnet *ifp)
 
 	DPRINTF(sc, WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
+	KASSERT(IFNET_LOCKED(ifp));
 	KASSERT(WM_CORE_LOCKED(sc));
 
 	/*
@@ -6680,7 +7054,9 @@ wm_init_locked(struct ifnet *ifp)
 	/* Start the one second link check clock. */
 	callout_schedule(&sc->sc_tick_ch, hz);
 
-	/* ...all done! */
+	/*
+	 * ...all done! (IFNET_LOCKED asserted above.)
+	 */
 	ifp->if_flags |= IFF_RUNNING;
 
  out:
@@ -6710,7 +7086,7 @@ wm_stop(struct ifnet *ifp, int disable)
 	WM_CORE_UNLOCK(sc);
 
 	/*
-	 * After wm_set_stopping_flags(), it is guaranteed
+	 * After wm_set_stopping_flags(), it is guaranteed that
 	 * wm_handle_queue_work() does not call workqueue_enqueue().
 	 * However, workqueue_wait() cannot call in wm_stop_locked()
 	 * because it can sleep...
@@ -7241,8 +7617,10 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 
 		for (j = 0; j < WM_NTXSEGS; j++) {
 			snprintf(txq->txq_txseg_evcnt_names[j],
-			    sizeof(txq->txq_txseg_evcnt_names[j]), "txq%02dtxseg%d", i, j);
-			evcnt_attach_dynamic(&txq->txq_ev_txseg[j], EVCNT_TYPE_MISC,
+			    sizeof(txq->txq_txseg_evcnt_names[j]),
+			    "txq%02dtxseg%d", i, j);
+			evcnt_attach_dynamic(&txq->txq_ev_txseg[j],
+			    EVCNT_TYPE_MISC,
 			    NULL, xname, txq->txq_txseg_evcnt_names[j]);
 		}
 
@@ -7527,10 +7905,15 @@ wm_init_rx_regs(struct wm_softc *sc, struct wm_queue *wmq,
 
 		if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 			if (MCLBYTES & ((1 << SRRCTL_BSIZEPKT_SHIFT) - 1))
-				panic("%s: MCLBYTES %d unsupported for 82575 or higher\n", __func__, MCLBYTES);
+				panic("%s: MCLBYTES %d unsupported for 82575 "
+				    "or higher\n", __func__, MCLBYTES);
 
-			/* Currently, support SRRCTL_DESCTYPE_ADV_ONEBUF only. */
-			CSR_WRITE(sc, WMREG_SRRCTL(qid), SRRCTL_DESCTYPE_ADV_ONEBUF
+			/*
+			 * Currently, support SRRCTL_DESCTYPE_ADV_ONEBUF
+			 * only.
+			 */
+			CSR_WRITE(sc, WMREG_SRRCTL(qid),
+			    SRRCTL_DESCTYPE_ADV_ONEBUF
 			    | (MCLBYTES >> SRRCTL_BSIZEPKT_SHIFT));
 			CSR_WRITE(sc, WMREG_RXDCTL(qid), RXDCTL_QUEUE_ENABLE
 			    | RXDCTL_PTHRESH(16) | RXDCTL_HTHRESH(8)
@@ -8918,11 +9301,7 @@ wm_deferred_start_locked(struct wm_txqueue *txq)
 	int qid = wmq->wmq_id;
 
 	KASSERT(mutex_owned(txq->txq_lock));
-
-	if (txq->txq_stopping) {
-		mutex_exit(txq->txq_lock);
-		return;
-	}
+	KASSERT(!txq->txq_stopping);
 
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 		/* XXX need for ALTQ or one CPU system */
@@ -9251,15 +9630,15 @@ wm_rxdesc_ensure_checksum(struct wm_rxqueue *rxq, uint32_t status,
 
 	if (!wm_rxdesc_is_set_status(sc, status, WRX_ST_IXSM, 0, 0)) {
 		if (wm_rxdesc_is_set_status(sc, status,
-			WRX_ST_IPCS, EXTRXC_STATUS_IPCS, NQRXC_STATUS_IPCS)) {
+		    WRX_ST_IPCS, EXTRXC_STATUS_IPCS, NQRXC_STATUS_IPCS)) {
 			WM_Q_EVCNT_INCR(rxq, ipsum);
 			m->m_pkthdr.csum_flags |= M_CSUM_IPv4;
 			if (wm_rxdesc_is_set_error(sc, errors,
-				WRX_ER_IPE, EXTRXC_ERROR_IPE, NQRXC_ERROR_IPE))
+			    WRX_ER_IPE, EXTRXC_ERROR_IPE, NQRXC_ERROR_IPE))
 				m->m_pkthdr.csum_flags |= M_CSUM_IPv4_BAD;
 		}
 		if (wm_rxdesc_is_set_status(sc, status,
-			WRX_ST_TCPCS, EXTRXC_STATUS_TCPCS, NQRXC_STATUS_L4I)) {
+		    WRX_ST_TCPCS, EXTRXC_STATUS_TCPCS, NQRXC_STATUS_L4I)) {
 			/*
 			 * Note: we don't know if this was TCP or UDP,
 			 * so we just set both bits, and expect the
@@ -9314,9 +9693,8 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 		uint8_t rsstype = wm_rxdesc_get_rsstype(rxq, i);
 #endif
 
-		if (!wm_rxdesc_dd(rxq, i, status)) {
+		if (!wm_rxdesc_dd(rxq, i, status))
 			break;
-		}
 
 		if (limit-- == 0) {
 			more = true;
@@ -9519,10 +9897,9 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 	if ((sc->sc_type == WM_T_ICH8) && (link == false))
 		wm_gig_downshift_workaround_ich8lan(sc);
 
-	if ((sc->sc_type == WM_T_ICH8)
-	    && (sc->sc_phytype == WMPHY_IGP_3)) {
+	if ((sc->sc_type == WM_T_ICH8) && (sc->sc_phytype == WMPHY_IGP_3))
 		wm_kmrn_lock_loss_workaround_ich8lan(sc);
-	}
+
 	DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: LSC -> mii_pollstat\n",
 		device_xname(dev)));
 	mii_pollstat(&sc->sc_mii);
@@ -9791,7 +10168,8 @@ wm_linkintr_tbi(struct wm_softc *sc, uint32_t icr)
 		/* Update LED */
 		wm_tbi_serdes_set_linkled(sc);
 	} else if (icr & ICR_RXSEQ)
-		DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: Receive sequence error\n",
+		DPRINTF(sc, WM_DEBUG_LINK,
+		    ("%s: LINK: Receive sequence error\n",
 			device_xname(sc->sc_dev)));
 }
 
@@ -9866,7 +10244,8 @@ wm_linkintr_serdes(struct wm_softc *sc, uint32_t icr)
 		/* Update LED */
 		wm_tbi_serdes_set_linkled(sc);
 	} else
-		DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: Receive sequence error\n",
+		DPRINTF(sc, WM_DEBUG_LINK,
+		    ("%s: LINK: Receive sequence error\n",
 		    device_xname(sc->sc_dev)));
 }
 
@@ -9942,34 +10321,6 @@ wm_intr_legacy(void *arg)
 	if (rndval == 0)
 		rndval = icr;
 
-	mutex_enter(rxq->rxq_lock);
-
-	if (rxq->rxq_stopping) {
-		mutex_exit(rxq->rxq_lock);
-		return 1;
-	}
-
-#if defined(WM_DEBUG) || defined(WM_EVENT_COUNTERS)
-	if (icr & (ICR_RXDMT0 | ICR_RXT0)) {
-		DPRINTF(sc, WM_DEBUG_RX,
-		    ("%s: RX: got Rx intr 0x%08x\n",
-			device_xname(sc->sc_dev),
-			icr & (uint32_t)(ICR_RXDMT0 | ICR_RXT0)));
-		WM_Q_EVCNT_INCR(rxq, intr);
-	}
-#endif
-	if (rxlimit > 0) {
-		/*
-		 * wm_rxeof() does *not* call upper layer functions directly,
-		 * as if_percpuq_enqueue() just call softint_schedule().
-		 * So, we can call wm_rxeof() in interrupt context.
-		 */
-		more = wm_rxeof(rxq, rxlimit);
-	} else
-		more = true;
-
-	mutex_exit(rxq->rxq_lock);
-
 	mutex_enter(txq->txq_lock);
 
 	if (txq->txq_stopping) {
@@ -9992,6 +10343,35 @@ wm_intr_legacy(void *arg)
 	} else
 		more = true;
 	mutex_exit(txq->txq_lock);
+
+	mutex_enter(rxq->rxq_lock);
+
+	if (rxq->rxq_stopping) {
+		mutex_exit(rxq->rxq_lock);
+		return 1;
+	}
+
+#if defined(WM_DEBUG) || defined(WM_EVENT_COUNTERS)
+	if (icr & (ICR_RXDMT0 | ICR_RXT0)) {
+		DPRINTF(sc, WM_DEBUG_RX,
+		    ("%s: RX: got Rx intr %#" __PRIxBIT "\n",
+			device_xname(sc->sc_dev),
+			icr & (ICR_RXDMT0 | ICR_RXT0)));
+		WM_Q_EVCNT_INCR(rxq, intr);
+	}
+#endif
+	if (rxlimit > 0) {
+		/*
+		 * wm_rxeof() does *not* call upper layer functions directly,
+		 * as if_percpuq_enqueue() just call softint_schedule().
+		 * So, we can call wm_rxeof() in interrupt context.
+		 */
+		more = wm_rxeof(rxq, rxlimit);
+	} else
+		more = true;
+
+	mutex_exit(rxq->rxq_lock);
+
 	WM_CORE_LOCK(sc);
 
 	if (sc->sc_core_stopping) {
@@ -10933,7 +11313,10 @@ wm_gmii_mediachange(struct ifnet *ifp)
 
 	DPRINTF(sc, WM_DEBUG_GMII, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
-	if ((ifp->if_flags & IFF_UP) == 0)
+
+	KASSERT(WM_CORE_LOCKED(sc));
+
+	if ((sc->sc_if_flags & IFF_UP) == 0)
 		return 0;
 
 	/* XXX Not for I354? FreeBSD's e1000_82575.c doesn't include it */
@@ -11005,6 +11388,8 @@ static void
 wm_gmii_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
 	struct wm_softc *sc = ifp->if_softc;
+
+	KASSERT(WM_CORE_LOCKED(sc));
 
 	ether_mediastatus(ifp, ifmr);
 	ifmr->ifm_active = (ifmr->ifm_active & ~IFM_ETH_FMASK)
@@ -11102,7 +11487,8 @@ wm_gmii_i82543_readreg(device_t dev, int phy, int reg, uint16_t *val)
 	    (MII_COMMAND_READ << 10) | (MII_COMMAND_START << 12), 14);
 	*val = wm_i82543_mii_recvbits(sc) & 0xffff;
 
-	DPRINTF(sc, WM_DEBUG_GMII, ("%s: GMII: read phy %d reg %d -> 0x%04hx\n",
+	DPRINTF(sc, WM_DEBUG_GMII,
+	    ("%s: GMII: read phy %d reg %d -> 0x%04hx\n",
 		device_xname(dev), phy, reg, *val));
 
 	return 0;
@@ -11162,7 +11548,8 @@ wm_gmii_mdic_readreg(device_t dev, int phy, int reg, uint16_t *val)
 		return ETIMEDOUT;
 	} else if (mdic & MDIC_E) {
 		/* This is normal if no PHY is present. */
-		DPRINTF(sc, WM_DEBUG_GMII, ("%s: MDIC read error: phy %d reg %d\n",
+		DPRINTF(sc, WM_DEBUG_GMII,
+		    ("%s: MDIC read error: phy %d reg %d\n",
 			device_xname(sc->sc_dev), phy, reg));
 		return -1;
 	} else
@@ -12430,11 +12817,11 @@ wm_tbi_mediainit(struct wm_softc *sc)
 
 	CSR_WRITE(sc, WMREG_CTRL, sc->sc_ctrl);
 
-#define	ADD(ss, mm, dd)							\
-do {									\
-	aprint_normal("%s%s", sep, ss);					\
+#define	ADD(ss, mm, dd)							  \
+do {									  \
+	aprint_normal("%s%s", sep, ss);					  \
 	ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER | (mm), (dd), NULL); \
-	sep = ", ";							\
+	sep = ", ";							  \
 } while (/*CONSTCOND*/0)
 
 	aprint_normal_dev(sc->sc_dev, "");
@@ -12536,8 +12923,8 @@ wm_tbi_mediachange(struct ifnet *ifp)
 	ctrl = CSR_READ(sc, WMREG_CTRL);
 	signal = wm_tbi_havesignal(sc, ctrl);
 
-	DPRINTF(sc, WM_DEBUG_LINK, ("%s: signal = %d\n", device_xname(sc->sc_dev),
-		signal));
+	DPRINTF(sc, WM_DEBUG_LINK,
+	    ("%s: signal = %d\n", device_xname(sc->sc_dev), signal));
 
 	if (signal) {
 		/* Have signal; wait for the link to come up. */
@@ -12547,13 +12934,15 @@ wm_tbi_mediachange(struct ifnet *ifp)
 				break;
 		}
 
-		DPRINTF(sc, WM_DEBUG_LINK,("%s: i = %d after waiting for link\n",
+		DPRINTF(sc, WM_DEBUG_LINK,
+		    ("%s: i = %d after waiting for link\n",
 			device_xname(sc->sc_dev), i));
 
 		status = CSR_READ(sc, WMREG_STATUS);
 		DPRINTF(sc, WM_DEBUG_LINK,
-		    ("%s: status after final read = 0x%x, STATUS_LU = 0x%x\n",
-			device_xname(sc->sc_dev), status, (uint32_t)STATUS_LU));
+		    ("%s: status after final read = 0x%x, STATUS_LU = %#"
+			__PRIxBIT "\n",
+			device_xname(sc->sc_dev), status, STATUS_LU));
 		if (status & STATUS_LU) {
 			/* Link is up. */
 			DPRINTF(sc, WM_DEBUG_LINK,
@@ -12590,7 +12979,8 @@ wm_tbi_mediachange(struct ifnet *ifp)
 			sc->sc_tbi_linkup = 0;
 		}
 	} else {
-		DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: set media -> no signal\n",
+		DPRINTF(sc, WM_DEBUG_LINK,
+		    ("%s: LINK: set media -> no signal\n",
 			device_xname(sc->sc_dev)));
 		sc->sc_tbi_linkup = 0;
 	}
@@ -12701,8 +13091,7 @@ wm_check_for_link(struct wm_softc *sc)
 	    && (IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO)) {
 		sc->sc_tbi_linkup = 1;
 		DPRINTF(sc, WM_DEBUG_LINK, ("%s: %s: go back to autonego\n",
-			device_xname(sc->sc_dev),
-			__func__));
+			device_xname(sc->sc_dev), __func__));
 		CSR_WRITE(sc, WMREG_TXCW, sc->sc_txcw);
 		CSR_WRITE(sc, WMREG_CTRL, (ctrl & ~CTRL_SLU));
 	} else if (signal && ((rxcw & RXCW_C) != 0)) {
@@ -12947,7 +13336,8 @@ wm_serdes_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 		/* Check flow */
 		reg = CSR_READ(sc, WMREG_PCS_LSTS);
 		if ((reg & PCS_LSTS_AN_COMP) == 0) {
-			DPRINTF(sc, WM_DEBUG_LINK, ("XXX LINKOK but not ACOMP\n"));
+			DPRINTF(sc, WM_DEBUG_LINK,
+			    ("XXX LINKOK but not ACOMP\n"));
 			goto setled;
 		}
 		pcs_adv = CSR_READ(sc, WMREG_PCS_ANADV);
@@ -14506,8 +14896,7 @@ retry:
 			wm_put_swsm_semaphore(sc);
 			goto retry;
 		}
-		aprint_error_dev(sc->sc_dev,
-		    "could not acquire SWSM SMBI\n");
+		aprint_error_dev(sc->sc_dev, "could not acquire SWSM SMBI\n");
 		return 1;
 	}
 
@@ -14813,9 +15202,8 @@ wm_put_swflag_ich8lan(struct wm_softc *sc)
 	if (ext_ctrl & EXTCNFCTR_MDIO_SW_OWNERSHIP) {
 		ext_ctrl &= ~EXTCNFCTR_MDIO_SW_OWNERSHIP;
 		CSR_WRITE(sc, WMREG_EXTCNFCTR, ext_ctrl);
-	} else {
+	} else
 		device_printf(sc->sc_dev, "Semaphore unexpectedly released\n");
-	}
 
 	mutex_exit(sc->sc_ich_phymtx);
 }
@@ -16539,8 +16927,8 @@ wm_k1_workaround_lpt_lp(struct wm_softc *sc, bool link)
 
 	if (link && (speed == STATUS_SPEED_1000)) {
 		sc->phy.acquire(sc);
-		int rv = wm_kmrn_readreg_locked(sc, KUMCTRLSTA_OFFSET_K1_CONFIG,
-		    &phyreg);
+		int rv = wm_kmrn_readreg_locked(sc,
+		    KUMCTRLSTA_OFFSET_K1_CONFIG, &phyreg);
 		if (rv != 0)
 			goto release;
 		rv = wm_kmrn_writereg_locked(sc, KUMCTRLSTA_OFFSET_K1_CONFIG,

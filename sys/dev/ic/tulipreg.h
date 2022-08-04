@@ -1,4 +1,4 @@
-/*	$NetBSD: tulipreg.h,v 1.41 2021/08/19 20:43:58 andvar Exp $	*/
+/*	$NetBSD: tulipreg.h,v 1.43 2022/08/01 07:37:18 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.

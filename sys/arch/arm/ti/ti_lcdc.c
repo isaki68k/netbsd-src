@@ -1,4 +1,4 @@
-/* $NetBSD: ti_lcdc.c,v 1.11 2022/04/21 21:22:25 andvar Exp $ */
+/* $NetBSD: ti_lcdc.c,v 1.13 2022/07/02 05:04:36 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.11 2022/04/21 21:22:25 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.13 2022/07/02 05:04:36 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: ti_lcdc.c,v 1.11 2022/04/21 21:22:25 andvar Exp $");
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
+#include <drm/drm_file.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_plane_helper.h>
 

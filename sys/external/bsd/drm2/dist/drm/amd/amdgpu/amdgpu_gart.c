@@ -1,4 +1,4 @@
-/*	$NetBSD: amdgpu_gart.c,v 1.8 2021/12/24 11:19:55 riastradh Exp $	*/
+/*	$NetBSD: amdgpu_gart.c,v 1.10 2022/07/30 17:12:39 riastradh Exp $	*/
 
 /*
  * Copyright 2008 Advanced Micro Devices, Inc.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amdgpu_gart.c,v 1.8 2021/12/24 11:19:55 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amdgpu_gart.c,v 1.10 2022/07/30 17:12:39 riastradh Exp $");
 
 #include <linux/pci.h>
 #include <linux/vmalloc.h>
@@ -78,6 +78,7 @@ static int amdgpu_gart_dummy_page_init(struct amdgpu_device *adev)
 {
 #ifdef __NetBSD__
 	int rsegs;
+	void *p;
 	int error;
 
 	/* XXX Can this be called more than once??  */
@@ -89,6 +90,12 @@ static int amdgpu_gart_dummy_page_init(struct amdgpu_device *adev)
 	if (error)
 		goto fail0;
 	KASSERT(rsegs == 1);
+	error = bus_dmamem_map(adev->ddev->dmat, &adev->dummy_page_seg, 1,
+	    PAGE_SIZE, &p, BUS_DMA_WAITOK);
+	if (error)
+		goto fail1;
+	memset(p, 0, PAGE_SIZE);
+	bus_dmamem_unmap(adev->ddev->dmat, p, PAGE_SIZE);
 	error = bus_dmamap_create(adev->ddev->dmat, PAGE_SIZE, 1, PAGE_SIZE, 0,
 	    BUS_DMA_WAITOK, &adev->dummy_page_map);
 	if (error)
@@ -97,6 +104,9 @@ static int amdgpu_gart_dummy_page_init(struct amdgpu_device *adev)
 	    &adev->dummy_page_seg, 1, PAGE_SIZE, BUS_DMA_WAITOK);
 	if (error)
 		goto fail2;
+
+	bus_dmamap_sync(adev->ddev->dmat, adev->dummy_page_map, 0, PAGE_SIZE,
+	    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
 
 	/* Success!  */
 	adev->dummy_page_addr = adev->dummy_page_map->dm_segs[0].ds_addr;

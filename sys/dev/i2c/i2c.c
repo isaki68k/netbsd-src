@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $	*/
+/*	$NetBSD: i2c.c,v 1.88 2022/07/23 03:05:27 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -53,7 +53,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.88 2022/07/23 03:05:27 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -129,8 +129,11 @@ iic_print_direct(void *aux, const char *pnp)
 	struct i2c_attach_args *ia = aux;
 
 	if (pnp != NULL)
-		aprint_normal("%s at %s addr 0x%02x",
+		aprint_normal("%s%s%s%s at %s addr 0x%02x",
 			      ia->ia_name ? ia->ia_name : "(unknown)",
+			      ia->ia_ncompat ? " (" : "",
+			      ia->ia_ncompat ? ia->ia_compat[0] : "",
+			      ia->ia_ncompat ? ")" : "",
 			      pnp, ia->ia_addr);
 	else
 		aprint_normal(" addr 0x%02x", ia->ia_addr);
@@ -819,7 +822,7 @@ static int
 iic_ioctl_exec(struct iic_softc *sc, i2c_ioctl_exec_t *iie, int flag)
 {
 	i2c_tag_t ic = sc->sc_tag;
-	uint8_t buf[I2C_EXEC_MAX_BUFLEN];
+	uint8_t *buf = NULL;
 	void *cmd = NULL;
 	int error;
 
@@ -849,10 +852,13 @@ iic_ioctl_exec(struct iic_softc *sc, i2c_ioctl_exec_t *iie, int flag)
 			goto out;
 	}
 
-	if (iie->iie_buf != NULL && I2C_OP_WRITE_P(iie->iie_op)) {
-		error = copyin(iie->iie_buf, buf, iie->iie_buflen);
-		if (error)
-			goto out;
+	if (iie->iie_buf != NULL) {
+		buf = kmem_alloc(iie->iie_buflen, KM_SLEEP);
+		if (I2C_OP_WRITE_P(iie->iie_op)) {
+			error = copyin(iie->iie_buf, buf, iie->iie_buflen);
+			if (error)
+				goto out;
+		}
 	}
 
 	iic_acquire_bus(ic, 0);
@@ -867,14 +873,17 @@ iic_ioctl_exec(struct iic_softc *sc, i2c_ioctl_exec_t *iie, int flag)
 		error = EIO;
 
 out:
+	if (iie->iie_buf != NULL && I2C_OP_READ_P(iie->iie_op))
+		error = copyout(buf, iie->iie_buf, iie->iie_buflen);
+
+	if (buf)
+		kmem_free(buf, iie->iie_buflen);
+
 	if (cmd)
 		kmem_free(cmd, iie->iie_cmdlen);
 
 	if (error)
 		return error;
-
-	if (iie->iie_buf != NULL && I2C_OP_READ_P(iie->iie_op))
-		error = copyout(buf, iie->iie_buf, iie->iie_buflen);
 
 	return error;
 }

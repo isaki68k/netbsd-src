@@ -1,4 +1,4 @@
-/* $NetBSD: mfii.c,v 1.15 2022/05/13 10:44:38 msaitoh Exp $ */
+/* $NetBSD: mfii.c,v 1.26 2022/07/16 07:23:51 msaitoh Exp $ */
 /* $OpenBSD: mfii.c,v 1.58 2018/08/14 05:22:21 jmatthew Exp $ */
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mfii.c,v 1.15 2022/05/13 10:44:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mfii.c,v 1.26 2022/07/16 07:23:51 msaitoh Exp $");
 
 #include "bio.h"
 
@@ -206,6 +206,21 @@ struct mfii_foreign_scan_info {
 	struct mfii_foreign_scan_cfg cfgs[8];
 } __packed;
 
+#define MFII_MAX_LD_EXT		256
+
+struct mfii_ld_list_ext {
+	uint32_t		mll_no_ld;
+	uint32_t		mll_res;
+	struct {
+		struct mfi_ld	mll_ld;
+		uint8_t		mll_state; /* states are the same as MFI_ */
+		uint8_t		mll_res2;
+		uint8_t		mll_res3;
+		uint8_t		mll_res4;
+		uint64_t	mll_size;
+	} mll_list[MFII_MAX_LD_EXT];
+} __packed;
+
 struct mfii_dmamem {
 	bus_dmamap_t		mdm_map;
 	bus_dma_segment_t	mdm_seg;
@@ -279,6 +294,9 @@ struct mfii_iop {
 	u_int8_t ldio_ctx_type_nseg;
 	u_int8_t sge_flag_chain;
 	u_int8_t sge_flag_eol;
+	u_int8_t iop_flag;
+#define MFII_IOP_QUIRK_REGREAD		0x01
+#define MFII_IOP_HAS_32BITDESC_BIT	0x02
 };
 
 struct mfii_softc {
@@ -287,6 +305,8 @@ struct mfii_softc {
 	struct scsipi_adapter   sc_adapt;
 
 	const struct mfii_iop	*sc_iop;
+	u_int			sc_iop_flag;
+#define MFII_IOP_DESC_32BIT		0x01
 
 	pci_chipset_tag_t	sc_pc;
 	pcitag_t		sc_tag;
@@ -335,13 +355,15 @@ struct mfii_softc {
 	struct {
 		bool		ld_present;
 		char		ld_dev[16];	/* device name sd? */
-	}			sc_ld[MFI_MAX_LD];
-	int			sc_target_lds[MFI_MAX_LD];
+		int		ld_target_id;
+	}			sc_ld[MFII_MAX_LD_EXT];
+	int			sc_target_lds[MFII_MAX_LD_EXT];
+	bool			sc_max256vd;
 
 	/* bio */
 	struct mfi_conf		*sc_cfg;
 	struct mfi_ctrl_info	sc_info;
-	struct mfi_ld_list	sc_ld_list;
+	struct mfii_ld_list_ext	sc_ld_list;
 	struct mfi_ld_details	*sc_ld_details; /* array to all logical disks */
 	int			sc_no_pd; /* used physical disks */
 	int			sc_ld_sz; /* sizeof sc_ld_details */
@@ -422,6 +444,9 @@ static int		mfii_initialise_firmware(struct mfii_softc *);
 static int		mfii_get_info(struct mfii_softc *);
 
 static void		mfii_start(struct mfii_softc *, struct mfii_ccb *);
+static void		mfii_start64(struct mfii_softc *, struct mfii_ccb *);
+static void		mfii_start_common(struct mfii_softc *,
+			    struct mfii_ccb *, bool);
 static void		mfii_done(struct mfii_softc *, struct mfii_ccb *);
 static int		mfii_poll(struct mfii_softc *, struct mfii_ccb *);
 static void		mfii_poll_done(struct mfii_softc *, struct mfii_ccb *);
@@ -554,6 +579,7 @@ static const struct mfii_iop mfii_iop_thunderbolt = {
 	MFII_REQ_TYPE_LDIO,
 	0,
 	MFII_SGE_CHAIN_ELEMENT | MFII_SGE_ADDR_IOCPLBNTA,
+	0,
 	0
 };
 
@@ -567,7 +593,8 @@ static const struct mfii_iop mfii_iop_25 = {
 	MFII_REQ_TYPE_NO_LOCK,
 	MFII_RAID_CTX_TYPE_CUDA | 0x1,
 	MFII_SGE_CHAIN_ELEMENT,
-	MFII_SGE_END_OF_LIST
+	MFII_SGE_END_OF_LIST,
+	0
 };
 
 static const struct mfii_iop mfii_iop_35 = {
@@ -577,7 +604,19 @@ static const struct mfii_iop mfii_iop_35 = {
 	MFII_REQ_TYPE_NO_LOCK,
 	MFII_RAID_CTX_TYPE_CUDA | 0x1,
 	MFII_SGE_CHAIN_ELEMENT,
-	MFII_SGE_END_OF_LIST
+	MFII_SGE_END_OF_LIST,
+	0
+};
+
+static const struct mfii_iop mfii_iop_aero = {
+	MFII_BAR_35,
+	MFII_IOP_NUM_SGE_LOC_35,
+	MFII_RAID_CTX_ROUTING_FLAGS_CPU0, /* | MFII_RAID_CTX_ROUTING_FLAGS_SQN */
+	MFII_REQ_TYPE_NO_LOCK,
+	MFII_RAID_CTX_TYPE_CUDA | 0x1,
+	MFII_SGE_CHAIN_ELEMENT,
+	MFII_SGE_END_OF_LIST,
+	MFII_IOP_QUIRK_REGREAD | MFII_IOP_HAS_32BITDESC_BIT
 };
 
 struct mfii_device {
@@ -587,24 +626,50 @@ struct mfii_device {
 };
 
 static const struct mfii_device mfii_devices[] = {
+	/* Fusion */
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_2208,
 	    &mfii_iop_thunderbolt },
+	/* Fury */
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3008,
 	    &mfii_iop_25 },
+	/* Invader */
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3108,
 	    &mfii_iop_25 },
+	/* Intruder */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3316,
+	    &mfii_iop_25 },
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3324,
+	    &mfii_iop_25 },
+	/* Cutlass */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_32XX_1,
+	    &mfii_iop_25 },
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_32XX_2,
+	    &mfii_iop_25 },
+	/* Crusader */
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3404,
-	    &mfii_iop_35 },
-	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3504,
-	    &mfii_iop_35 },
-	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3408,
-	    &mfii_iop_35 },
-	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3508,
 	    &mfii_iop_35 },
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3416,
 	    &mfii_iop_35 },
+	/* Ventura */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3504,
+	    &mfii_iop_35 },
 	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3516,
-	    &mfii_iop_35 }
+	    &mfii_iop_35 },
+	/* Tomcat */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3408,
+	    &mfii_iop_35 },
+	/* Harpoon */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_3508,
+	    &mfii_iop_35 },
+	/* Aero */
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_39XX_2,
+	    &mfii_iop_aero },
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_39XX_3,
+	    &mfii_iop_aero },
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_38XX_2,
+	    &mfii_iop_aero },
+	{ PCI_VENDOR_SYMBIOS,	PCI_PRODUCT_SYMBIOS_MEGARAID_38XX_3,
+	    &mfii_iop_aero }
 };
 
 static const struct mfii_iop *mfii_find_iop(struct pci_attach_args *);
@@ -645,6 +710,7 @@ mfii_attach(device_t parent, device_t self, void *aux)
 	int chain_frame_sz, nsge_in_io, nsge_in_chain, i;
 	struct scsipi_adapter *adapt = &sc->sc_adapt;
 	struct scsipi_channel *chan = &sc->sc_chan;
+	union mfi_mbox mbox;
 
 	/* init sc */
 	sc->sc_dev = self;
@@ -729,6 +795,11 @@ mfii_attach(device_t parent, device_t self, void *aux)
 	sc->sc_max_sgl = 1;
 	while ((sc->sc_max_sgl << 1) <= (nsge_in_io + nsge_in_chain))
 		sc->sc_max_sgl <<= 1;
+
+	/* Check for atomic(32bit) descriptor */
+	if (((sc->sc_iop->iop_flag & MFII_IOP_HAS_32BITDESC_BIT) != 0) &&
+	    ((scpad2 & MFI_STATE_ATOMIC_DESCRIPTOR) != 0))
+		sc->sc_iop_flag |= MFII_IOP_DESC_32BIT;
 
 	DNPRINTF(MFII_D_MISC, "%s: OSP 0x%08x, OSP2 0x%08x, OSP3 0x%08x\n",
 	    DEVNAME(sc), status, scpad2, scpad3);
@@ -816,6 +887,13 @@ mfii_attach(device_t parent, device_t self, void *aux)
 	for (i = 0; i < sc->sc_info.mci_lds_present; i++)
 		sc->sc_ld[i].ld_present = 1;
 
+	sc->sc_max256vd =
+	    (sc->sc_info.mci_adapter_ops3 & MFI_INFO_AOPS3_SUPP_MAX_EXT_LDS) ?
+	    true : false;
+
+	if (sc->sc_max256vd)
+		aprint_verbose_dev(self, "Max 256 VD support\n");
+
 	memset(adapt, 0, sizeof(*adapt));
 	adapt->adapt_dev = sc->sc_dev;
 	adapt->adapt_nchannels = 1;
@@ -845,8 +923,11 @@ mfii_attach(device_t parent, device_t self, void *aux)
 		goto intr_disestablish;
 	}
 
+	memset(&mbox, 0, sizeof(mbox));
+	if (sc->sc_max256vd)
+		mbox.b[0] = 1;
 	mutex_enter(&sc->sc_lock);
-	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, NULL, &sc->sc_ld_list,
+	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, &mbox, &sc->sc_ld_list,
 	    sizeof(sc->sc_ld_list), MFII_DATA_IN, true) != 0) {
 		mutex_exit(&sc->sc_lock);
 		aprint_error_dev(self,
@@ -858,6 +939,7 @@ mfii_attach(device_t parent, device_t self, void *aux)
 	for (i = 0; i < sc->sc_ld_list.mll_no_ld; i++) {
 		int target = sc->sc_ld_list.mll_list[i].mll_ld.mld_target;
 		sc->sc_target_lds[target] = i;
+		sc->sc_ld[i].ld_target_id = target;
 	}
 
 	/* enable interrupts */
@@ -992,7 +1074,8 @@ mfii_rescan(device_t self, const char *ifattr, const int *locators)
 	if (sc->sc_child != NULL)
 		return 0;
 
-	sc->sc_child = config_found(self, &sc->sc_chan, scsiprint, CFARGS_NONE);
+	sc->sc_child = config_found(self, &sc->sc_chan, scsiprint,
+	    CFARGS_NONE);
 	return 0;
 }
 
@@ -1046,7 +1129,8 @@ mfii_shutdown(device_t dev, int how)
 		mfii_scrub_ccb(ccb);
 		if (mfii_do_mgmt(sc, ccb, MR_DCMD_CTRL_CACHE_FLUSH, &mbox,
 		    NULL, 0, MFII_DATA_NONE, true)) {
-			aprint_error_dev(dev, "shutdown: cache flush failed\n");
+			aprint_error_dev(dev,
+			    "shutdown: cache flush failed\n");
 			rv = false;
 			goto fail;
 		}
@@ -1070,12 +1154,30 @@ fail:
 	return rv;
 }
 
-static u_int32_t
-mfii_read(struct mfii_softc *sc, bus_size_t r)
+/* Register read function without retry */
+static inline u_int32_t
+mfii_read_wor(struct mfii_softc *sc, bus_size_t r)
 {
 	bus_space_barrier(sc->sc_iot, sc->sc_ioh, r, 4,
 	    BUS_SPACE_BARRIER_READ);
 	return (bus_space_read_4(sc->sc_iot, sc->sc_ioh, r));
+}
+
+static u_int32_t
+mfii_read(struct mfii_softc *sc, bus_size_t r)
+{
+	uint32_t rv;
+	int i = 0;
+
+	if ((sc->sc_iop->iop_flag & MFII_IOP_QUIRK_REGREAD) != 0) {
+		do {
+			rv = mfii_read_wor(sc, r);
+			i++;
+		} while ((rv == 0) && (i < 3));
+	} else
+		rv = mfii_read_wor(sc, r);
+
+	return rv;
 }
 
 static void
@@ -1185,7 +1287,8 @@ mfii_aen_register(struct mfii_softc *sc)
 	mdm = mfii_dmamem_alloc(sc, sizeof(struct mfi_evt_detail));
 	if (mdm == NULL) {
 		mfii_put_ccb(sc, ccb);
-		aprint_error_dev(sc->sc_dev, "unable to allocate event data\n");
+		aprint_error_dev(sc->sc_dev,
+		    "unable to allocate event data\n");
 		return (ENOMEM);
 	}
 
@@ -1323,15 +1426,19 @@ mfii_aen_pd_state_change(struct mfii_softc *sc,
 static void
 mfii_aen_ld_update(struct mfii_softc *sc)
 {
+	union mfi_mbox mbox;
 	int i, target, old, nld;
-	int newlds[MFI_MAX_LD];
+	int newlds[MFII_MAX_LD_EXT];
 
+	memset(&mbox, 0, sizeof(mbox));
+	if (sc->sc_max256vd)
+		mbox.b[0] = 1;
 	mutex_enter(&sc->sc_lock);
-	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, NULL, &sc->sc_ld_list,
+	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, &mbox, &sc->sc_ld_list,
 	    sizeof(sc->sc_ld_list), MFII_DATA_IN, false) != 0) {
 		mutex_exit(&sc->sc_lock);
-		DNPRINTF(MFII_D_MISC, "%s: getting list of logical disks failed\n",
-		    DEVNAME(sc));
+		DNPRINTF(MFII_D_MISC,
+		    "%s: getting list of logical disks failed\n", DEVNAME(sc));
 		return;
 	}
 	mutex_exit(&sc->sc_lock);
@@ -1343,9 +1450,10 @@ mfii_aen_ld_update(struct mfii_softc *sc)
 		DNPRINTF(MFII_D_MISC, "%s: target %d: state %d\n",
 		    DEVNAME(sc), target, sc->sc_ld_list.mll_list[i].mll_state);
 		newlds[target] = i;
+		sc->sc_ld[i].ld_target_id = target;
 	}
 
-	for (i = 0; i < MFI_MAX_LD; i++) {
+	for (i = 0; i < MFII_MAX_LD_EXT; i++) {
 		old = sc->sc_target_lds[i];
 		nld = newlds[i];
 
@@ -1570,7 +1678,8 @@ mfii_get_info(struct mfii_softc *sc)
 	    sc->sc_info.mci_host.mih_port_count);
 
 	for (i = 0; i < 8; i++)
-		DPRINTF("%.0" PRIx64 " ", sc->sc_info.mci_host.mih_port_addr[i]);
+		DPRINTF("%.0" PRIx64 " ",
+		    sc->sc_info.mci_host.mih_port_addr[i]);
 	DPRINTF("\n");
 
 	DPRINTF("%s: type %.x port_count %d port_addr ",
@@ -1579,7 +1688,8 @@ mfii_get_info(struct mfii_softc *sc)
 	    sc->sc_info.mci_device.mid_port_count);
 
 	for (i = 0; i < 8; i++)
-		DPRINTF("%.0" PRIx64 " ", sc->sc_info.mci_device.mid_port_addr[i]);
+		DPRINTF("%.0" PRIx64 " ",
+		    sc->sc_info.mci_device.mid_port_addr[i]);
 	DPRINTF("\n");
 
 	return (0);
@@ -1604,7 +1714,12 @@ mfii_mfa_poll(struct mfii_softc *sc, struct mfii_ccb *ccb)
 	r = MFII_REQ_MFA(ccb->ccb_request_dva);
 	memcpy(&ccb->ccb_req, &r, sizeof(ccb->ccb_req));
 
-	mfii_start(sc, ccb);
+	/*
+	 * Even if the Aero card supports 32bit descriptor, 64bit descriptor
+	 * access is required for MFI_CMD_INIT.
+	 * Currently, mfii_mfa_poll() is called for MFI_CMD_INIT only.
+	 */
+	mfii_start64(sc, ccb);
 
 	for (;;) {
 		bus_dmamap_sync(sc->sc_dmat, MFII_DMA_MAP(sc->sc_requests),
@@ -1840,25 +1955,44 @@ mfii_load_mfa(struct mfii_softc *sc, struct mfii_ccb *ccb,
 static void
 mfii_start(struct mfii_softc *sc, struct mfii_ccb *ccb)
 {
-	u_long *r = (u_long *)&ccb->ccb_req;
+
+	mfii_start_common(sc, ccb,
+	    ((sc->sc_iop_flag & MFII_IOP_DESC_32BIT) != 0) ? true : false);
+}
+
+static void
+mfii_start64(struct mfii_softc *sc, struct mfii_ccb *ccb)
+{
+
+	mfii_start_common(sc, ccb, false);
+}
+
+static void
+mfii_start_common(struct mfii_softc *sc, struct mfii_ccb *ccb, bool do32)
+{
+	uint32_t *r = (uint32_t *)&ccb->ccb_req;
 
 	bus_dmamap_sync(sc->sc_dmat, MFII_DMA_MAP(sc->sc_requests),
 	    ccb->ccb_request_offset, MFII_REQUEST_SIZE,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
-#if defined(__LP64__) && 0
-	bus_space_write_8(sc->sc_iot, sc->sc_ioh, MFI_IQPL, *r);
-#else
-	mutex_enter(&sc->sc_post_mtx);
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh, MFI_IQPL, r[0]);
-	bus_space_barrier(sc->sc_iot, sc->sc_ioh,
-	    MFI_IQPL, 8, BUS_SPACE_BARRIER_WRITE);
+	if (do32)
+		bus_space_write_4(sc->sc_iot, sc->sc_ioh, MFI_ISQP, r[0]);
+	else {
+#if defined(__LP64__)
+		uint64_t buf;
 
-	bus_space_write_4(sc->sc_iot, sc->sc_ioh, MFI_IQPH, r[1]);
-	bus_space_barrier(sc->sc_iot, sc->sc_ioh,
-	    MFI_IQPH, 8, BUS_SPACE_BARRIER_WRITE);
-	mutex_exit(&sc->sc_post_mtx);
+		buf = ((uint64_t)r[1] << 32) | r[0];
+		bus_space_write_8(sc->sc_iot, sc->sc_ioh, MFI_IQPL, buf);
+#else
+		mutex_enter(&sc->sc_post_mtx);
+		bus_space_write_4(sc->sc_iot, sc->sc_ioh, MFI_IQPL, r[0]);
+		bus_space_write_4(sc->sc_iot, sc->sc_ioh, MFI_IQPH, r[1]);
+		bus_space_barrier(sc->sc_iot, sc->sc_ioh,
+		    MFI_IQPL, 8, BUS_SPACE_BARRIER_WRITE);
+		mutex_exit(&sc->sc_post_mtx);
 #endif
+	}
 }
 
 static void
@@ -2016,7 +2150,8 @@ mfii_postq(struct mfii_softc *sc)
 
 	for (;;) {
 		rdp = &postq[sc->sc_reply_postq_index];
-		DNPRINTF(MFII_D_INTR, "%s: mfii_postq index %d flags 0x%x data 0x%x\n",
+		DNPRINTF(MFII_D_INTR,
+		    "%s: mfii_postq index %d flags 0x%x data 0x%x\n",
 		    DEVNAME(sc), sc->sc_reply_postq_index, rdp->reply_flags,
 			rdp->data == 0xffffffff);
 		if ((rdp->reply_flags & MPII_REPLY_DESCR_TYPE_MASK) ==
@@ -2087,7 +2222,7 @@ mfii_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t req,
 	periph = xs->xs_periph;
 	target = periph->periph_target;
 
-	if (target >= MFI_MAX_LD || !sc->sc_ld[target].ld_present ||
+	if (target >= MFII_MAX_LD_EXT || !sc->sc_ld[target].ld_present ||
 	    periph->periph_lun != 0) {
 		xs->error = XS_SELTIMEOUT;
 		scsipi_done(xs);
@@ -2203,9 +2338,10 @@ mfii_scsi_cmd_io(struct mfii_softc *sc, struct mfii_ccb *ccb,
 	struct scsipi_periph *periph = xs->xs_periph;
 	struct mpii_msg_scsi_io *io = ccb->ccb_request;
 	struct mfii_raid_context *ctx = (struct mfii_raid_context *)(io + 1);
-	int segs;
+	int segs, target;
 
-	io->dev_handle = htole16(periph->periph_target);
+	target = sc->sc_ld[periph->periph_target].ld_target_id;
+	io->dev_handle = htole16(target);
 	io->function = MFII_FUNCTION_LDIO_REQUEST;
 	io->sense_buffer_low_address = htole32(ccb->ccb_sense_dva);
 	io->sgl_flags = htole16(0x02); /* XXX */
@@ -2232,7 +2368,7 @@ mfii_scsi_cmd_io(struct mfii_softc *sc, struct mfii_ccb *ccb,
 	ctx->type_nseg = sc->sc_iop->ldio_ctx_type_nseg;
 	ctx->timeout_value = htole16(0x14); /* XXX */
 	ctx->reg_lock_flags = htole16(sc->sc_iop->ldio_ctx_reg_lock_flags);
-	ctx->virtual_disk_target_id = htole16(periph->periph_target);
+	ctx->virtual_disk_target_id = htole16(target);
 
 	if (mfii_load_ccb(sc, ccb, ctx + 1,
 	    ISSET(xs->xs_control, XS_CTL_NOSLEEP)) != 0)
@@ -2263,8 +2399,10 @@ mfii_scsi_cmd_cdb(struct mfii_softc *sc, struct mfii_ccb *ccb,
 	struct scsipi_periph *periph = xs->xs_periph;
 	struct mpii_msg_scsi_io *io = ccb->ccb_request;
 	struct mfii_raid_context *ctx = (struct mfii_raid_context *)(io + 1);
+	int target;
 
-	io->dev_handle = htole16(periph->periph_target);
+	target = sc->sc_ld[periph->periph_target].ld_target_id;
+	io->dev_handle = htole16(target);
 	io->function = MFII_FUNCTION_LDIO_REQUEST;
 	io->sense_buffer_low_address = htole32(ccb->ccb_sense_dva);
 	io->sgl_flags = htole16(0x02); /* XXX */
@@ -2289,7 +2427,7 @@ mfii_scsi_cmd_cdb(struct mfii_softc *sc, struct mfii_ccb *ccb,
 	}
 	memcpy(io->cdb, xs->cmd, xs->cmdlen);
 
-	ctx->virtual_disk_target_id = htole16(periph->periph_target);
+	ctx->virtual_disk_target_id = htole16(target);
 
 	if (mfii_load_ccb(sc, ccb, ctx + 1,
 	    ISSET(xs->xs_control, XS_CTL_NOSLEEP)) != 0)
@@ -2816,7 +2954,10 @@ mfii_bio_getitall(struct mfii_softc *sc)
 	sc->sc_cfg = cfg;
 
 	/* get all ld info */
-	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, NULL, &sc->sc_ld_list,
+	memset(&mbox, 0, sizeof(mbox));
+	if (sc->sc_max256vd)
+		mbox.b[0] = 1;
+	if (mfii_mgmt(sc, MR_DCMD_LD_GET_LIST, &mbox, &sc->sc_ld_list,
 	    sizeof(sc->sc_ld_list), MFII_DATA_IN, false))
 		goto done;
 
@@ -2970,7 +3111,8 @@ mfii_ioctl_vol(struct mfii_softc *sc, struct bioc_vol *bv)
 	if (sc->sc_ld_details[i].mld_cfg.mlc_parm.mpa_span_depth > 1)
 		bv->bv_level *= 10;
 
-	bv->bv_nodisk = sc->sc_ld_details[i].mld_cfg.mlc_parm.mpa_no_drv_per_span *
+	bv->bv_nodisk =
+	    sc->sc_ld_details[i].mld_cfg.mlc_parm.mpa_no_drv_per_span *
 	    sc->sc_ld_details[i].mld_cfg.mlc_parm.mpa_span_depth;
 
 	bv->bv_size = sc->sc_ld_details[i].mld_size * 512; /* bytes per block */
@@ -3168,8 +3310,9 @@ mfii_ioctl_alarm(struct mfii_softc *sc, struct bioc_alarm *ba)
 		break;
 
 	default:
-		DNPRINTF(MFII_D_IOCTL, "%s: mfii_ioctl_alarm biocalarm invalid "
-		    "opcode %x\n", DEVNAME(sc), ba->ba_opcode);
+		DNPRINTF(MFII_D_IOCTL,
+		    "%s: mfii_ioctl_alarm biocalarm invalid opcode %x\n",
+		    DEVNAME(sc), ba->ba_opcode);
 		return (EINVAL);
 	}
 
@@ -3229,8 +3372,9 @@ mfii_ioctl_blink(struct mfii_softc *sc, struct bioc_blink *bb)
 
 	case BIOC_SBALARM:
 	default:
-		DNPRINTF(MFII_D_IOCTL, "%s: mfii_ioctl_blink biocblink invalid "
-		    "opcode %x\n", DEVNAME(sc), bb->bb_status);
+		DNPRINTF(MFII_D_IOCTL,
+		    "%s: mfii_ioctl_blink biocblink invalid opcode %x\n",
+		    DEVNAME(sc), bb->bb_status);
 		goto done;
 	}
 
@@ -3503,7 +3647,8 @@ mfii_ioctl_patrol(struct mfii_softc *sc, struct bioc_patrol *bp)
 				if (bp->bp_autonext < 0)
 					return (EINVAL);
 				else
-					prop.next_exec = time + bp->bp_autonext;
+					prop.next_exec =
+					    time + bp->bp_autonext;
 			}
 			prop.op_mode = MFI_PR_OPMODE_AUTO;
 			break;
@@ -3574,8 +3719,9 @@ mfii_ioctl_patrol(struct mfii_softc *sc, struct bioc_patrol *bp)
 		break;
 
 	default:
-		DNPRINTF(MFII_D_IOCTL, "%s: mfii_ioctl_patrol biocpatrol invalid "
-		    "opcode %x\n", DEVNAME(sc), bp->bp_opcode);
+		DNPRINTF(MFII_D_IOCTL,
+		    "%s: mfii_ioctl_patrol biocpatrol invalid opcode %x\n",
+		    DEVNAME(sc), bp->bp_opcode);
 		return (EINVAL);
 	}
 
@@ -3634,7 +3780,8 @@ mfii_bio_hs(struct mfii_softc *sc, int volid, int type, void *bio_hs)
 	/* offset into hotspare structure */
 	i = volid - cfg->mfc_no_ld;
 
-	DNPRINTF(MFII_D_IOCTL, "%s: mfii_vol_hs i %d volid %d no_ld %d no_hs %d "
+	DNPRINTF(MFII_D_IOCTL,
+	    "%s: mfii_vol_hs i %d volid %d no_ld %d no_hs %d "
 	    "hs %p cfg %p id %02x\n", DEVNAME(sc), i, volid, cfg->mfc_no_ld,
 	    cfg->mfc_no_hs, hs, cfg, hs[i].mhs_pd.mfp_id);
 
@@ -3709,6 +3856,7 @@ mfii_bbu(struct mfii_softc *sc, envsys_data_t *edata)
 	switch (bbu.battery_type) {
 	case MFI_BBU_TYPE_IBBU:
 	case MFI_BBU_TYPE_IBBU09:
+	case MFI_BBU_TYPE_CVPM02:
 		mask = MFI_BBU_STATE_BAD_IBBU;
 		soh_bad = 0;
 		break;
@@ -3740,7 +3888,8 @@ mfii_bbu(struct mfii_softc *sc, envsys_data_t *edata)
 		edata->state = ENVSYS_SVALID;
 		return;
 	case 3:
-		edata->value_cur = le16toh(bbu.temperature) * 1000000 + 273150000;
+		edata->value_cur =
+		    le16toh(bbu.temperature) * 1000000 + 273150000;
 		edata->state = ENVSYS_SVALID;
 		return;
 	}
@@ -3785,7 +3934,7 @@ static int
 mfii_create_sensors(struct mfii_softc *sc)
 {
 	int i, rv;
-	const int nsensors = MFI_BBU_SENSORS + MFI_MAX_LD;
+	const int nsensors = MFI_BBU_SENSORS + MFII_MAX_LD_EXT;
 
 	sc->sc_sme = sysmon_envsys_create();
 	sc->sc_sensors = malloc(sizeof(envsys_data_t) * nsensors,
@@ -3854,7 +4003,7 @@ mfii_refresh_sensor(struct sysmon_envsys *sme, envsys_data_t *edata)
 {
 	struct mfii_softc	*sc = sme->sme_cookie;
 
-	if (edata->sensor >= MFI_BBU_SENSORS + MFI_MAX_LD)
+	if (edata->sensor >= MFI_BBU_SENSORS + MFII_MAX_LD_EXT)
 		return;
 
 	if (edata->sensor < MFI_BBU_SENSORS) {

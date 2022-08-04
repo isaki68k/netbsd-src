@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.321 2022/06/02 17:20:21 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.323 2022/07/06 06:31:47 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.321 2022/06/02 17:20:21 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixgbe.c,v 1.323 2022/07/06 06:31:47 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -6662,9 +6662,8 @@ ixgbe_handle_que(void *context)
 	IXGBE_EVC_ADD(&que->handleq, 1);
 
 	if (ifp->if_flags & IFF_RUNNING) {
-		more = ixgbe_rxeof(que);
 		IXGBE_TX_LOCK(txr);
-		more |= ixgbe_txeof(txr);
+		more = ixgbe_txeof(txr);
 		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
 			if (!ixgbe_mq_ring_empty(ifp, txr->txr_interq))
 				ixgbe_mq_start_locked(ifp, txr);
@@ -6674,6 +6673,7 @@ ixgbe_handle_que(void *context)
 		    && (!ixgbe_legacy_ring_empty(ifp, NULL)))
 			ixgbe_legacy_start_locked(ifp, txr);
 		IXGBE_TX_UNLOCK(txr);
+		more |= ixgbe_rxeof(que);
 	}
 
 	if (more) {
@@ -6923,7 +6923,7 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 		if (error == 0) {
 #if 1 /* def IXGBE_DEBUG */
 #ifdef	RSS
-			aprintf_normal(", bound RSS bucket %d to CPU %d", i,
+			aprint_normal(", bound RSS bucket %d to CPU %d", i,
 			    cpu_id % ncpu);
 #else
 			aprint_normal(", bound queue %d to cpu %d", i,

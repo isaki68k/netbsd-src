@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.311 2022/04/04 06:10:00 yamaguchi Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.315 2022/06/20 12:22:00 martin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.311 2022/04/04 06:10:00 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.315 2022/06/20 12:22:00 martin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -644,7 +644,9 @@ error:
 void
 ether_input(struct ifnet *ifp, struct mbuf *m)
 {
+#if NVLAN > 0 || defined(MBUFTRACE)
 	struct ethercom *ec = (struct ethercom *) ifp;
+#endif
 	pktqueue_t *pktq = NULL;
 	struct ifqueue *inq = NULL;
 	uint16_t etype;
@@ -725,18 +727,17 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 
 	if_statadd(ifp, if_ibytes, m->m_pkthdr.len);
 
-#if NCARP > 0
-	if (__predict_false(ifp->if_carp && ifp->if_type != IFT_CARP)) {
-		/*
-		 * Clear M_PROMISC, in case the packet comes from a
-		 * vlan.
-		 */
-		m->m_flags &= ~M_PROMISC;
-		if (carp_input(m, (uint8_t *)&eh->ether_shost,
-		    (uint8_t *)&eh->ether_dhost, eh->ether_type) == 0)
+	if (!vlan_has_tag(m) && etype == ETHERTYPE_VLAN) {
+		m = ether_strip_vlantag(m);
+		if (m == NULL) {
+			if_statinc(ifp, if_ierrors);
 			return;
+		}
+
+		eh = mtod(m, struct ether_header *);
+		etype = ntohs(eh->ether_type);
+		ehlen = sizeof(*eh);
 	}
-#endif
 
 	if ((m->m_flags & (M_BCAST | M_MCAST | M_PROMISC)) == 0 &&
 	    (ifp->if_flags & IFF_PROMISC) != 0 &&
@@ -755,6 +756,10 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		etype = ntohs(eh->ether_type);
 	}
 
+	/*
+	 * Processing a logical interfaces that are able
+	 * to configure vlan(4).
+	*/
 #if NAGR > 0
 	if (ifp->if_lagg != NULL &&
 	    __predict_true(etype != ETHERTYPE_SLOWPROTOCOLS)) {
@@ -765,59 +770,55 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 #endif
 
 	/*
-	 * If VLANs are configured on the interface, check to
-	 * see if the device performed the decapsulation and
-	 * provided us with the tag.
+	 * VLAN processing.
+	 *
+	 * VLAN provides service delimiting so the frames are
+	 * processed before other handlings. If a VLAN interface
+	 * does not exist to take those frames, they're returned
+	 * to ether_input().
 	 */
-	if (ec->ec_nvlans && vlan_has_tag(m)) {
+
+	if (vlan_has_tag(m)) {
+		if (EVL_VLANOFTAG(vlan_get_tag(m)) == 0) {
+			if (etype == ETHERTYPE_VLAN ||
+			     etype == ETHERTYPE_QINQ)
+				goto drop;
+
+			/* XXX we should actually use the prio value? */
+			m->m_flags &= ~M_VLANTAG;
+		} else {
 #if NVLAN > 0
-		/*
-		 * vlan_input() will either recursively call ether_input()
-		 * or drop the packet.
-		 */
-		vlan_input(ifp, m);
-		return;
-#else
-		goto noproto;
+			if (ec->ec_nvlans > 0) {
+				m = vlan_input(ifp, m);
+
+				/* vlan_input() called ether_input() recursively */
+				if (m == NULL)
+					return;
+			}
 #endif
+			/* drop VLAN frames not for this port. */
+			goto noproto;
+		}
 	}
+
+#if NCARP > 0
+	if (__predict_false(ifp->if_carp && ifp->if_type != IFT_CARP)) {
+		/*
+		 * Clear M_PROMISC, in case the packet comes from a
+		 * vlan.
+		 */
+		m->m_flags &= ~M_PROMISC;
+		if (carp_input(m, (uint8_t *)&eh->ether_shost,
+		    (uint8_t *)&eh->ether_dhost, eh->ether_type) == 0)
+			return;
+	}
+#endif
 
 	/*
 	 * Handle protocols that expect to have the Ethernet header
 	 * (and possibly FCS) intact.
 	 */
 	switch (etype) {
-	case ETHERTYPE_VLAN: {
-		struct ether_vlan_header *evl = (void *)eh;
-
-		/*
-		 * If there is a tag of 0, then the VLAN header was probably
-		 * just being used to store the priority.  Extract the ether
-		 * type, and if IP or IPV6, let them deal with it.
-		 */
-		if (m->m_len >= sizeof(*evl) &&
-		    EVL_VLANOFTAG(ntohs(evl->evl_tag)) == 0) {
-			etype = ntohs(evl->evl_proto);
-			ehlen = sizeof(*evl);
-			if ((m->m_flags & M_PROMISC) == 0 &&
-			    (etype == ETHERTYPE_IP ||
-			     etype == ETHERTYPE_IPV6))
-				break;
-		}
-
-#if NVLAN > 0
-		/*
-		 * vlan_input() will either recursively call ether_input()
-		 * or drop the packet.
-		 */
-		if (ec->ec_nvlans != 0) {
-			vlan_input(ifp, m);
-			return;
-		} else
-#endif
-			goto noproto;
-	}
-
 #if NPPPOE > 0
 	case ETHERTYPE_PPPOEDISC:
 		pppoedisc_input(ifp, m);
@@ -972,6 +973,37 @@ error:
 	return;
 }
 
+static void
+ether_bpf_mtap(struct bpf_if *bp, struct mbuf *m, u_int direction)
+{
+	struct ether_vlan_header evl;
+	struct m_hdr mh, md;
+
+	KASSERT(bp != NULL);
+
+	if (!vlan_has_tag(m)) {
+		bpf_mtap3(bp, m, direction);
+		return;
+	}
+
+	memcpy(&evl, mtod(m, char *), ETHER_HDR_LEN);
+	evl.evl_proto = evl.evl_encap_proto;
+	evl.evl_encap_proto = htons(ETHERTYPE_VLAN);
+	evl.evl_tag = htons(vlan_get_tag(m));
+
+	md.mh_flags = 0;
+	md.mh_data = m->m_data + ETHER_HDR_LEN;
+	md.mh_len = m->m_len - ETHER_HDR_LEN;
+	md.mh_next = m->m_next;
+
+	mh.mh_flags = 0;
+	mh.mh_data = (char *)&evl;
+	mh.mh_len = sizeof(evl);
+	mh.mh_next = (struct mbuf *)&md;
+
+	bpf_mtap3(bp, (struct mbuf *)&mh, direction);
+}
+
 /*
  * Convert Ethernet address to printable (loggable) representation.
  */
@@ -1012,6 +1044,7 @@ ether_ifattach(struct ifnet *ifp, const uint8_t *lla)
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_output = ether_output;
 	ifp->_if_input = ether_input;
+	ifp->if_bpf_mtap = ether_bpf_mtap;
 	if (ifp->if_baudrate == 0)
 		ifp->if_baudrate = IF_Mbps(10);		/* just a default */
 
@@ -1745,6 +1778,108 @@ ether_del_vlantag(struct ifnet *ifp, uint16_t vtag)
 	kmem_free(vidp, sizeof(*vidp));
 
 	return 0;
+}
+
+int
+ether_inject_vlantag(struct mbuf **mp, uint16_t etype, uint16_t tag)
+{
+	static const size_t min_data_len =
+	    ETHER_MIN_LEN - ETHER_CRC_LEN + ETHER_VLAN_ENCAP_LEN;
+	/* Used to pad ethernet frames with < ETHER_MIN_LEN bytes */
+	static const char vlan_zero_pad_buff[ETHER_MIN_LEN] = { 0 };
+
+	struct ether_vlan_header *evl;
+	struct mbuf *m = *mp;
+	int error;
+
+	error = 0;
+
+	M_PREPEND(m, ETHER_VLAN_ENCAP_LEN, M_DONTWAIT);
+	if (m == NULL) {
+		error = ENOBUFS;
+		goto out;
+	}
+
+	if (m->m_len < sizeof(*evl)) {
+		m = m_pullup(m, sizeof(*evl));
+		if (m == NULL) {
+			error = ENOBUFS;
+			goto out;
+		}
+	}
+
+	/*
+	 * Transform the Ethernet header into an
+	 * Ethernet header with 802.1Q encapsulation.
+	 */
+	memmove(mtod(m, void *),
+	    mtod(m, char *) + ETHER_VLAN_ENCAP_LEN,
+	    sizeof(struct ether_header));
+	evl = mtod(m, struct ether_vlan_header *);
+	evl->evl_proto = evl->evl_encap_proto;
+	evl->evl_encap_proto = htons(etype);
+	evl->evl_tag = htons(tag);
+
+	/*
+	 * To cater for VLAN-aware layer 2 ethernet
+	 * switches which may need to strip the tag
+	 * before forwarding the packet, make sure
+	 * the packet+tag is at least 68 bytes long.
+	 * This is necessary because our parent will
+	 * only pad to 64 bytes (ETHER_MIN_LEN) and
+	 * some switches will not pad by themselves
+	 * after deleting a tag.
+	 */
+	if (m->m_pkthdr.len < min_data_len) {
+		m_copyback(m, m->m_pkthdr.len,
+		    min_data_len - m->m_pkthdr.len,
+		    vlan_zero_pad_buff);
+	}
+
+	m->m_flags &= ~M_VLANTAG;
+
+out:
+	*mp = m;
+	return error;
+}
+
+struct mbuf *
+ether_strip_vlantag(struct mbuf *m)
+{
+	struct ether_vlan_header *evl;
+
+	if (m->m_len < sizeof(*evl) &&
+	    (m = m_pullup(m, sizeof(*evl))) == NULL) {
+		return NULL;
+	}
+
+	if (m_makewritable(&m, 0, sizeof(*evl), M_DONTWAIT)) {
+		m_freem(m);
+		return NULL;
+	}
+
+	evl = mtod(m, struct ether_vlan_header *);
+	KASSERT(ntohs(evl->evl_encap_proto) == ETHERTYPE_VLAN);
+
+	vlan_set_tag(m, ntohs(evl->evl_tag));
+
+	/*
+	 * Restore the original ethertype.  We'll remove
+	 * the encapsulation after we've found the vlan
+	 * interface corresponding to the tag.
+	 */
+	evl->evl_encap_proto = evl->evl_proto;
+
+	/*
+	 * Remove the encapsulation header and append tag.
+	 * The original header has already been fixed up above.
+	 */
+	vlan_set_tag(m, ntohs(evl->evl_tag));
+	memmove((char *)evl + ETHER_VLAN_ENCAP_LEN, evl,
+	    offsetof(struct ether_vlan_header, evl_encap_proto));
+	m_adj(m, ETHER_VLAN_ENCAP_LEN);
+
+	return m;
 }
 
 static int

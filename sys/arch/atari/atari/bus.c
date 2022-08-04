@@ -1,4 +1,4 @@
-/*	$NetBSD: bus.c,v 1.62 2022/05/24 19:55:10 andvar Exp $	*/
+/*	$NetBSD: bus.c,v 1.67 2022/07/26 20:08:55 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_m68k_arch.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus.c,v 1.62 2022/05/24 19:55:10 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus.c,v 1.67 2022/07/26 20:08:55 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -49,18 +49,23 @@ __KERNEL_RCSID(0, "$NetBSD: bus.c,v 1.62 2022/05/24 19:55:10 andvar Exp $");
 #define	_ATARI_BUS_DMA_PRIVATE
 #include <sys/bus.h>
 
-int  bus_dmamem_alloc_range(bus_dma_tag_t tag, bus_size_t size,
-		bus_size_t alignment, bus_size_t boundary,
-		bus_dma_segment_t *segs, int nsegs, int *rsegs, int flags,
-		paddr_t low, paddr_t high);
+/*
+ * Extent maps to manage all memory space, including I/O ranges.  Allocate
+ * storage for 16 regions in each, initially.  Later, iomem_malloc_safe
+ * will indicate that it's safe to use malloc() to dynamically allocate
+ * region descriptors.
+ * This means that the fixed static storage is only used for registrating
+ * the found memory regions and the bus-mapping of the console.
+ */
+static long iomem_ex_storage[EXTENT_FIXED_STORAGE_SIZE(16) / sizeof(long)];
+static struct extent *iomem_ex;
+static int iomem_malloc_safe = 0;
+
 static int  _bus_dmamap_load_buffer(bus_dma_tag_t tag, bus_dmamap_t,
 		void *, bus_size_t, struct vmspace *, int, paddr_t *,
 		int *, int);
 static int  bus_mem_add_mapping(bus_space_tag_t t, bus_addr_t bpa,
 		bus_size_t size, int flags, bus_space_handle_t *bsph);
-
-extern struct extent *iomem_ex;
-extern int iomem_malloc_safe;
 
 extern paddr_t avail_end;
 
@@ -79,17 +84,17 @@ static long		bootm_ex_storage[EXTENT_FIXED_STORAGE_SIZE(32) /
 								sizeof(long)];
 static struct extent	*bootm_ex;
 
-void bootm_init(vaddr_t, pt_entry_t *, u_long);
 static vaddr_t	bootm_alloc(paddr_t pa, u_long size, int flags);
 static int	bootm_free(vaddr_t va, u_long size);
 
 void
-bootm_init(vaddr_t va, pt_entry_t *ptep, u_long size)
+bootm_init(vaddr_t va, void *ptep, vsize_t size)
 {
+
 	bootm_ex = extent_create("bootmem", va, va + size,
 	    (void *)bootm_ex_storage, sizeof(bootm_ex_storage),
 	    EX_NOCOALESCE|EX_NOWAIT);
-	bootm_ptep = ptep;
+	bootm_ptep = (pt_entry_t *)ptep;
 }
 
 vaddr_t
@@ -99,7 +104,7 @@ bootm_alloc(paddr_t pa, u_long size, int flags)
 	pt_entry_t	pg_proto;
 	vaddr_t		va, rva;
 
-	if (extent_alloc(bootm_ex, size, PAGE_SIZE, 0, EX_NOWAIT, &rva)) {
+	if (extent_alloc(bootm_ex, size, PAGE_SIZE, 0, EX_NOWAIT, &rva) != 0) {
 		printf("bootm_alloc fails! Not enough fixed extents?\n");
 		printf("Requested extent: pa=%lx, size=%lx\n",
 						(u_long)pa, size);
@@ -110,7 +115,7 @@ bootm_alloc(paddr_t pa, u_long size, int flags)
 	epg = &pg[btoc(size)];
 	va  = rva;
 	pg_proto = pa | PG_RW | PG_V;
-	if (!(flags & BUS_SPACE_MAP_CACHEABLE))
+	if ((flags & BUS_SPACE_MAP_CACHEABLE) == 0)
 		pg_proto |= PG_CI;
 	while (pg < epg) {
 		*pg++     = pg_proto;
@@ -137,6 +142,47 @@ bootm_free(vaddr_t va, u_long size)
 	return 1;
 }
 
+void
+atari_bus_space_extent_init(paddr_t startpa, paddr_t endpa)
+{
+
+	/*
+	 * Initialize the I/O mem extent map.
+	 * Note: we don't have to check the return value since
+	 * creation of a fixed extent map will never fail (since
+	 * descriptor storage has already been allocated).
+	 *
+	 * N.B. The iomem extent manages _all_ physical addresses
+	 * on the machine.  When the amount of RAM is found, all
+	 * extents of RAM are allocated from the map.
+	 */
+	iomem_ex = extent_create("iomem", startpa, endpa,
+	    (void *)iomem_ex_storage, sizeof(iomem_ex_storage),
+	    EX_NOCOALESCE | EX_NOWAIT);
+}
+
+int
+atari_bus_space_alloc_physmem(paddr_t startpa, paddr_t endpa)
+{
+
+	return extent_alloc_region(iomem_ex, startpa, endpa - startpa,
+	    EX_NOWAIT);
+}
+
+void
+atari_bus_space_malloc_set_safe(void)
+{
+
+	iomem_malloc_safe = EX_MALLOCOK;
+}
+
+int
+atari_bus_space_extent_malloc_flag(void)
+{
+
+	return iomem_malloc_safe;
+}
+
 int
 bus_space_map(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size, int flags,
     bus_space_handle_t *mhp)
@@ -148,18 +194,18 @@ bus_space_map(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size, int flags,
 	 * region is available.
 	 */
 	error = extent_alloc_region(iomem_ex, bpa + t->base, size,
-			EX_NOWAIT | (iomem_malloc_safe ? EX_MALLOCOK : 0));
+			EX_NOWAIT | iomem_malloc_safe);
 
-	if (error)
+	if (error != 0)
 		return error;
 
 	error = bus_mem_add_mapping(t, bpa, size, flags, mhp);
-	if (error) {
-		if (extent_free(iomem_ex, bpa + t->base, size, EX_NOWAIT |
-		    (iomem_malloc_safe ? EX_MALLOCOK : 0))) {
-			printf("bus_space_map: pa 0x%lx, size 0x%lx\n",
-			    bpa, size);
-			printf("bus_space_map: can't free region\n");
+	if (error != 0) {
+		if (extent_free(iomem_ex, bpa + t->base, size,
+		    EX_NOWAIT | iomem_malloc_safe)) {
+			printf("%s: pa 0x%lx, size 0x%lx\n",
+			    __func__, bpa, size);
+			printf("%s: can't free region\n", __func__);
 		}
 	}
 	return error;
@@ -181,7 +227,7 @@ bus_space_alloc(bus_space_tag_t t, bus_addr_t rstart, bus_addr_t rend,
 	 */
 	if ((rstart + t->base) < iomem_ex->ex_start ||
 	    (rend + t->base) > iomem_ex->ex_end)
-		panic("bus_space_alloc: bad region start/end");
+		panic("%s: bad region start/end", __func__);
 #endif /* DIAGNOSTIC */
 
 	/*
@@ -189,22 +235,21 @@ bus_space_alloc(bus_space_tag_t t, bus_addr_t rstart, bus_addr_t rend,
 	 */
 	error = extent_alloc_subregion(iomem_ex, rstart + t->base,
 	    rend + t->base, size, alignment, boundary,
-	    EX_FAST | EX_NOWAIT | (iomem_malloc_safe ?  EX_MALLOCOK : 0),
-	    &bpa);
+	    EX_FAST | EX_NOWAIT | iomem_malloc_safe, &bpa);
 
-	if (error)
+	if (error != 0)
 		return error;
 
 	/*
 	 * Map the bus physical address to a kernel virtual address.
 	 */
 	error = bus_mem_add_mapping(t, bpa, size, flags, bshp);
-	if (error) {
-		if (extent_free(iomem_ex, bpa, size, EX_NOWAIT |
-		    (iomem_malloc_safe ? EX_MALLOCOK : 0))) {
-			printf("bus_space_alloc: pa 0x%lx, size 0x%lx\n",
-			    bpa, size);
-			printf("bus_space_alloc: can't free region\n");
+	if (error != 0) {
+		if (extent_free(iomem_ex, bpa, size,
+		    EX_NOWAIT | iomem_malloc_safe) != 0) {
+			printf("%s: pa 0x%lx, size 0x%lx\n",
+			    __func__, bpa, size);
+			printf("%s: can't free region\n", __func__);
 		}
 	}
 
@@ -225,7 +270,7 @@ bus_mem_add_mapping(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size,
 
 #ifdef DIAGNOSTIC
 	if (endpa <= pa)
-		panic("bus_mem_add_mapping: overflow");
+		panic("%s: overflow", __func__);
 #endif
 
 	if (kernel_map == NULL) {
@@ -248,7 +293,7 @@ bus_mem_add_mapping(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size,
 	*bshp = va + (bpa & PGOFSET);
 
 	for (; pa < endpa; pa += PAGE_SIZE, va += PAGE_SIZE) {
-		u_int	*ptep, npte;
+		pt_entry_t *ptep, npte;
 
 		pmap_enter(pmap_kernel(), (vaddr_t)va, pa,
 		    VM_PROT_READ|VM_PROT_WRITE, VM_PROT_READ|VM_PROT_WRITE);
@@ -278,11 +323,11 @@ bus_space_unmap(bus_space_tag_t t, bus_space_handle_t bsh, bus_size_t size)
 	endva = m68k_round_page(((char *)bsh + size) - 1);
 #ifdef DIAGNOSTIC
 	if (endva < va)
-		panic("unmap_iospace: overflow");
+		panic("%s: overflow", __func__);
 #endif
 
 	(void)pmap_extract(pmap_kernel(), va, &bpa);
-	bpa += ((u_long)bsh & PGOFSET);
+	bpa += ((paddr_t)bsh & PGOFSET);
 
 	/*
 	 * Free the kernel virtual mapping.
@@ -296,10 +341,10 @@ bus_space_unmap(bus_space_tag_t t, bus_space_handle_t bsh, bus_size_t size)
 	/*
 	 * Mark as free in the extent map.
 	 */
-	if (extent_free(iomem_ex, bpa, size,
-	    EX_NOWAIT | (iomem_malloc_safe ? EX_MALLOCOK : 0))) {
-		printf("bus_space_unmap: pa 0x%lx, size 0x%lx\n", bpa, size);
-		printf("bus_space_unmap: can't free region\n");
+	if (extent_free(iomem_ex, bpa, size, EX_NOWAIT | iomem_malloc_safe)
+	    != 0) {
+		printf("%s: pa 0x%lx, size 0x%lx\n", __func__, bpa, size);
+		printf("%s: can't free region\n", __func__);
 	}
 }
 
@@ -333,6 +378,7 @@ bus_space_mmap(bus_space_tag_t t, bus_addr_t addr, off_t off, int prot,
 static size_t
 _bus_dmamap_mapsize(int const nsegments)
 {
+
 	KASSERT(nsegments > 0); 
 	return sizeof(struct atari_bus_dmamap) +
 	    (sizeof(bus_dma_segment_t) * (nsegments - 1));
@@ -362,7 +408,7 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * the (nsegments - 1).
 	 */
 	if ((mapstore = kmem_zalloc(_bus_dmamap_mapsize(nsegments),
-	    (flags & BUS_DMA_NOWAIT) ? KM_NOSLEEP : KM_SLEEP)) == NULL)
+	    (flags & BUS_DMA_NOWAIT) != 0 ? KM_NOSLEEP : KM_SLEEP)) == NULL)
 		return ENOMEM;
 
 	map = (struct atari_bus_dmamap *)mapstore;
@@ -448,7 +494,7 @@ _bus_dmamap_load_mbuf(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m0,
 
 #ifdef DIAGNOSTIC
 	if ((m0->m_flags & M_PKTHDR) == 0)
-		panic("_bus_dmamap_load_mbuf: no packet header");
+		panic("%s: no packet header", __func__);
 #endif
 
 	if (m0->m_pkthdr.len > map->_dm_size)
@@ -527,7 +573,7 @@ _bus_dmamap_load_raw(bus_dma_tag_t t, bus_dmamap_t map,
     bus_dma_segment_t *segs, int nsegs, bus_size_t size, int flags)
 {
 
-	panic("bus_dmamap_load_raw: not implemented");
+	panic("%s: not implemented", __func__);
 }
 
 /*
@@ -602,7 +648,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		ps = seg->ds_addr + offset;
 		pe = ps + seglen;
 
-		if (ops & BUS_DMASYNC_PREWRITE) {
+		if ((ops & BUS_DMASYNC_PREWRITE) != 0) {
 			p = ps & ~CACHELINE_MASK;
 			e = (pe + CACHELINE_MASK) & ~CACHELINE_MASK;
 
@@ -673,9 +719,9 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		 * start/end of the cache. In such a case, *flush* the
 		 * cachelines at the start and end of the required region.
 		 */
-		else if (ops & BUS_DMASYNC_PREREAD) {
+		else if ((ops & BUS_DMASYNC_PREREAD) != 0) {
 			/* flush cacheline on start boundary */
-			if (ps & CACHELINE_MASK) {
+			if ((ps & CACHELINE_MASK) != 0) {
 				DCFL(ps & ~CACHELINE_MASK);
 			}
 
@@ -825,7 +871,7 @@ bus_dmamem_map(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
 		    addr < (segs[curseg].ds_addr + segs[curseg].ds_len);
 		    addr += PAGE_SIZE, va += PAGE_SIZE, size -= PAGE_SIZE) {
 			if (size == 0)
-				panic("_bus_dmamem_map: size botch");
+				panic("%s: size botch", __func__);
 			pmap_enter(pmap_kernel(), va, addr - offset,
 			    VM_PROT_READ | VM_PROT_WRITE,
 			    VM_PROT_READ | VM_PROT_WRITE);
@@ -845,8 +891,8 @@ bus_dmamem_unmap(bus_dma_tag_t t, void *kva, size_t size)
 {
 
 #ifdef DIAGNOSTIC
-	if ((u_long)kva & PGOFSET)
-		panic("_bus_dmamem_unmap");
+	if ((vaddr_t)kva & PGOFSET)
+		panic("%s", __func__);
 #endif
 
 	size = round_page(size);
@@ -857,7 +903,7 @@ bus_dmamem_unmap(bus_dma_tag_t t, void *kva, size_t size)
 }
 
 /*
- * Common functin for mmap(2)'ing DMA-safe memory.  May be called by
+ * Common function for mmap(2)'ing DMA-safe memory.  May be called by
  * bus-specific DMA mmap(2)'ing functions.
  */
 paddr_t
@@ -870,20 +916,20 @@ bus_dmamem_mmap(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs, off_t off,
 
 	for (i = 0; i < nsegs; i++) {
 #ifdef DIAGNOSTIC
-		if (off & PGOFSET)
-			panic("_bus_dmamem_mmap: offset unaligned");
-		if (segs[i].ds_addr & PGOFSET)
-			panic("_bus_dmamem_mmap: segment unaligned");
-		if (segs[i].ds_len & PGOFSET)
-			panic("_bus_dmamem_mmap: segment size not multiple"
-			    " of page size");
+		if ((off & PGOFSET) != 0)
+			panic("%s: offset unaligned", __func__);
+		if ((segs[i].ds_addr & PGOFSET) != 0)
+			panic("%s: segment unaligned", __func__);
+		if ((segs[i].ds_len & PGOFSET) != 0)
+			panic("%s: segment size not multiple of page size",
+			    __func__);
 #endif
 		if (off >= segs[i].ds_len) {
 			off -= segs[i].ds_len;
 			continue;
 		}
 
-		return (m68k_btop((char *)segs[i].ds_addr - offset + off));
+		return m68k_btop((char *)segs[i].ds_addr - offset + off);
 	}
 
 	/* Page not found. */
@@ -922,12 +968,12 @@ _bus_dmamap_load_buffer(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
 		/*
 		 * Get the physical address for this segment.
 		 */
-		(void) pmap_extract(pmap, vaddr, &curaddr);
+		(void)pmap_extract(pmap, vaddr, &curaddr);
 
 		/*
 		 * Compute the segment size, and adjust counts.
 		 */
-		sgsize = PAGE_SIZE - ((u_long)vaddr & PGOFSET);
+		sgsize = PAGE_SIZE - ((vaddr_t)vaddr & PGOFSET);
 		if (buflen < sgsize)
 			sgsize = buflen;
 
@@ -1005,27 +1051,27 @@ bus_dmamem_alloc_range(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	 */
 	error = uvm_pglistalloc(size, low, high, alignment, boundary,
 	    &mlist, nsegs, (flags & BUS_DMA_NOWAIT) == 0);
-	if (error)
+	if (error != 0)
 		return error;
 
 	/*
 	 * Compute the location, size, and number of segments actually
 	 * returned by the VM code.
 	 */
-	m = mlist.tqh_first;
+	m = TAILQ_FIRST(&mlist);
 	curseg = 0;
 	lastaddr = VM_PAGE_TO_PHYS(m);
 	segs[curseg].ds_addr = lastaddr + offset;
 	segs[curseg].ds_len = PAGE_SIZE;
-	m = m->pageq.queue.tqe_next;
+	m = TAILQ_NEXT(m, pageq.queue);
 
-	for (; m != NULL; m = m->pageq.queue.tqe_next) {
+	for (; m != NULL; m = TAILQ_NEXT(m, pageq.queue)) {
 		curaddr = VM_PAGE_TO_PHYS(m);
 #ifdef DIAGNOSTIC
 		if (curaddr < low || curaddr >= high) {
 			printf("uvm_pglistalloc returned non-sensical"
 			    " address 0x%lx\n", curaddr);
-			panic("_bus_dmamem_alloc_range");
+			panic("%s", __func__);
 		}
 #endif
 		if (curaddr == (lastaddr + PAGE_SIZE))

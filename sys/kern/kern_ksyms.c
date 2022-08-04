@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_ksyms.c,v 1.105 2021/09/22 05:42:19 rin Exp $	*/
+/*	$NetBSD: kern_ksyms.c,v 1.107 2022/07/15 06:40:24 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_ksyms.c,v 1.105 2021/09/22 05:42:19 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_ksyms.c,v 1.107 2022/07/15 06:40:24 mrg Exp $");
 
 #if defined(_KERNEL) && defined(_KERNEL_OPT)
 #include "opt_copy_symtab.h"
@@ -556,7 +556,7 @@ ksyms_addsyms_elf(int symsize, void *start, void *end)
 		char *shstr = (uint8_t *)start +
 		    shdr[ehdr->e_shstrndx].sh_offset;
 		for (i = 1; i < ehdr->e_shnum; i++) {
-#ifdef DEBUG
+#ifdef KSYMS_DEBUG
 			printf("ksyms: checking %s\n", &shstr[shdr[i].sh_name]);
 #endif
 			if (shdr[i].sh_type != SHT_PROGBITS)
@@ -1395,6 +1395,7 @@ ksymsmmap(struct file *fp, off_t *offp, size_t nbytes, int prot, int *flagsp,
 	/* uvm_mmap guarantees page-aligned offset and size.  */
 	KASSERT(*offp == round_page(*offp));
 	KASSERT(nbytes == round_page(nbytes));
+	KASSERT(nbytes > 0);
 
 	/* Refuse negative offsets.  */
 	if (*offp < 0)

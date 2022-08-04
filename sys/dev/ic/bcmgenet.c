@@ -1,4 +1,4 @@
-/* $NetBSD: bcmgenet.c,v 1.11 2021/12/31 14:25:22 riastradh Exp $ */
+/* $NetBSD: bcmgenet.c,v 1.13 2022/08/01 07:37:18 mlelstv Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -34,7 +34,7 @@
 #include "opt_ddb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcmgenet.c,v 1.11 2021/12/31 14:25:22 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcmgenet.c,v 1.13 2022/08/01 07:37:18 mlelstv Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

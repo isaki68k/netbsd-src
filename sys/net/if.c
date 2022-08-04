@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $	*/
+/*	$NetBSD: if.c,v 1.511 2022/07/29 15:24:28 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.511 2022/07/29 15:24:28 skrll Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -1867,8 +1867,8 @@ ifa_remove(struct ifnet *ifp, struct ifaddr *ifa)
 	KASSERT(ifa->ifa_ifp == ifp);
 	/*
 	 * Check MP-safety for IFEF_MPSAFE drivers.
-	 * if_is_deactivated indicates ifa_remove is called form if_detach
-	 * where is safe even if IFNET_LOCK isn't held.
+	 * if_is_deactivated indicates ifa_remove is called fromm if_detach
+	 * where it is safe even if IFNET_LOCK isn't held.
 	 */
 	KASSERT(!if_is_mpsafe(ifp) || if_is_deactivated(ifp) || IFNET_LOCKED(ifp));
 
@@ -2424,10 +2424,12 @@ if_link_state_change_work(struct work *work, void *arg)
 	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	s = splnet();
 
-	/* Pop a link state change from the queue and process it.
+	/*
+	 * Pop a link state change from the queue and process it.
 	 * If there is nothing to process then if_detach() has been called.
 	 * We keep if_link_scheduled = true so the queue can safely drain
-	 * without more work being queued. */
+	 * without more work being queued.
+	 */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
 	LQ_POP(ifp->if_link_queue, state);
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
@@ -3082,7 +3084,7 @@ void
 if_export_if_data(ifnet_t * const ifp, struct if_data *ifi, bool zero_stats)
 {
 
-	/* Collet the volatile stats first; this zeros *ifi. */
+	/* Collect the volatile stats first; this zeros *ifi. */
 	if_stats_to_if_data(ifp, ifi, zero_stats);
 
 	ifi->ifi_type = ifp->if_type;
@@ -3450,6 +3452,9 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 		}
 	}
 
+	if ((cmd & IOC_IN) == 0 || IOCPARM_LEN(cmd) < sizeof(ifr->ifr_name))
+		return EINVAL;
+
 	bound = curlwp_bind();
 	ifp = if_get(ifr->ifr_name, &psref);
 	if (ifp == NULL) {
@@ -3740,11 +3745,11 @@ if_transmit_lock(struct ifnet *ifp, struct mbuf *m)
 	} else {
 		KERNEL_UNLOCK_ONE(NULL);
 		error = (*ifp->if_transmit)(ifp, m);
-		/* mbuf is alredy freed */
+		/* mbuf is already freed */
 	}
 #else /* !ALTQ */
 	error = (*ifp->if_transmit)(ifp, m);
-	/* mbuf is alredy freed */
+	/* mbuf is already freed */
 #endif /* !ALTQ */
 
 	return error;
@@ -3866,7 +3871,8 @@ if_flags_set(ifnet_t *ifp, const u_short flags)
 		if (cantflags != 0)
 			ifp->if_flags ^= cantflags;
 
-                /* Traditionally, we do not call if_ioctl after
+                /*
+		 * Traditionally, we do not call if_ioctl after
                  * setting/clearing only IFF_PROMISC if the interface
                  * isn't IFF_UP.  Uphold that tradition.
 		 */
