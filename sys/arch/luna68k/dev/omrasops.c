@@ -853,7 +853,6 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 #endif
 
-	// YYY いらないはず。ROP を戻す必要ないし戻せないはずなので
 	for (plane = 0; plane < omfb_planecount; plane++) {
 		omfb_set_rop(plane, rop[plane], ALL1BITS);
 	}
@@ -1291,6 +1290,8 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	sb = srcx & ALIGNMASK;
 	db = dstx & ALIGNMASK;
 
+	omfb_reset_planemask_and_rop();
+
 	if (db + w <= BLITWIDTH) {
 		/* Destination is contained within a single word */
 		sp = basep + (srcx / 32) * 4;
@@ -1421,6 +1422,8 @@ omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 
 	sb = srcx & ALIGNMASK;
 	db = dstx & ALIGNMASK;
+
+	omfb_reset_planemask_and_rop();
 
 	if (db + w <= BLITWIDTH) {
 		/* Destination is contained within a single word */
