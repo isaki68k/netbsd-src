@@ -893,8 +893,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	dst3 = dst2 + OMFB_PLANEOFFS;
 
 	/* First, transfer a rectangle consist of two longwords */
-// YYY ここはsignedのままシフト?
-	wh = (width >> 6);
+	wh = width >> 6;
 	if (wh > 0) {
 		int step8 = step - wh * 8;
 
