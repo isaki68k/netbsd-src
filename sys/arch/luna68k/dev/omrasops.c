@@ -465,8 +465,13 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		last_bg = bg;
 		/* calculate ROP */
 		for (plane = 0; plane < omfb_planecount; plane++) {
+#if 1
+			int t = (fg & 1) + ((bg & 1) * 2);
+			ropaddr[plane] = omfb_rop_addr(plane, t * 5);
+#else
 			int t = (fg & 1) * 2 + (bg & 1);
 			ropaddr[plane] = omfb_rop_addr(plane, ropsel[t]);
+#endif
 			fg >>= 1;
 			bg >>= 1;
 		}
