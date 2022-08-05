@@ -1214,8 +1214,11 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		/* r is the number of rows including srcrow itself */
 
 		if (rowattr[srcrow].ismulti) {
-			// src とdst は共通プレーンを指しているので P0 に変換
-			// YYY P0 に変換とは
+			/*
+			 * src,dst point to the common plane.  src0,dst0 will
+			 * point to the same offset in plane0 because plane0
+			 * is placed just after the common plane.
+			 */
 			uint8_t *src0 = src + OMFB_PLANEOFFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
 			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
