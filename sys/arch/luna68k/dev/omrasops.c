@@ -109,6 +109,8 @@ static void	omfb_unpack_attr(long, int *, int *, int *);
 static int	omrasops_init(struct rasops_info *, int, int);
 
 // YYY 43 をなんとかしたい howmany(1024 / fontheight) ?
+// howmany(1024, 24) だが実際には row=34 で初期化されてるのでその分しか
+// 使われていない
 static rowattr_t rowattr[43];
 
 #define	ALL1BITS	(~0U)
