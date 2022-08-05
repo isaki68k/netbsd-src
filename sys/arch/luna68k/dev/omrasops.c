@@ -503,14 +503,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			width = 0;
 		}
 
-		// YYY どうすべ
-		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
-		はずなので毎回セットしたほうがいい */
-#if 0
-		for (plane = 0; plane < omfb_planecount; plane++) {
-			*(ropaddr[plane]) = mask;
-		}
-#else
 		switch (omfb_planecount) {
 		 case 8:
 			*(ropaddr[7]) = mask;
@@ -527,7 +519,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			*(ropaddr[0]) = mask;
 			break;
 		}
-#endif
 
 		d = dstcmn;
 		f = fontptr;
