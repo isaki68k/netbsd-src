@@ -407,22 +407,30 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 }
 
 /*
- * Set plane ROP accroding to fg/bg color combination as follows.
- *  fg bg  rop         result
- *  -- --  ----------- ------
- *   0  0  ROP_ZERO     0
- *   0  1  ROP_INV1    ~D
- *   1  0  ROP_THROUGH  D
- *   1  1  ROP_ONE      1
+ * Calculate ROP depending on fg/bg color combination as follows.
+ * This is called per individual plane while shifting fg and bg.
+ * So the LSB of fg and bg points to this plane.
+ *
+ * All values of ROP we want to use here happens to be a multiple of 5.
+ *
+ *  bg fg  rop               result
+ *  -- --  ----------------  ------
+ *   0  0  ROP_ZERO    =  0   0
+ *   0  1  ROP_THROUGH =  5   D
+ *   1  0  ROP_INV1    = 10  ~D
+ *   1  1  ROP_ONE     = 15   1
+ *
  * This allows characters to be drawn in the specified fg/bg colors with
  * a single write to the common plane.
  */
-static const uint8_t ropsel[] = {
-	ROP_ZERO,
-	ROP_INV1,
-	ROP_THROUGH,
-	ROP_ONE,
-};
+static inline int
+omfb_fgbg2rop(int fg, int bg)
+{
+	int t;
+
+	t = (bg & 1) * 2 + (fg & 1);
+	return t * 5;
+}
 
 /*
  * Blit a character at the specified co-ordinates.
@@ -467,13 +475,8 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		last_bg = bg;
 		/* calculate ROP */
 		for (plane = 0; plane < omfb_planecount; plane++) {
-#if 1
-			int t = (fg & 1) + ((bg & 1) * 2);
-			ropaddr[plane] = omfb_rop_addr(plane, t * 5);
-#else
-			int t = (fg & 1) * 2 + (bg & 1);
-			ropaddr[plane] = omfb_rop_addr(plane, ropsel[t]);
-#endif
+			int t = omfb_fgbg2rop(fg, bg);
+			ropaddr[plane] = omfb_rop_addr(plane, t);
 			fg >>= 1;
 			bg >>= 1;
 		}
@@ -1235,8 +1238,8 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			 * set.
 			 */
 			for (i = 0; i < omfb_planecount; i++) {
-				int t = (fg & 1) * 2 + (bg & 1);
-				rop[i] = ropsel[t];
+				int t = omfb_fgbg2rop(fg, bg);
+				rop[i] = t;
 				omfb_set_rop(i, rop[i], ALL1BITS);
 				if (t == 2) {
 					srcplane = i;
