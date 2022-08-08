@@ -3779,8 +3779,6 @@ audio_free_usrbuf(audio_track_t *track)
 	vaddr_t vstart;
 	vsize_t vsize;
 
-	vstart = (vaddr_t)track->usrbuf.mem;
-	vsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
 	if (track->usrbuf.mem != NULL) {
 		/*
 		 * Unmap the kernel mapping.  uvm_unmap releases the
@@ -3788,6 +3786,8 @@ audio_free_usrbuf(audio_track_t *track)
 		 * last virtual mapping of the uvm object, so no need
 		 * to explicitly release (`detach') the object.
 		 */
+		vstart = (vaddr_t)track->usrbuf.mem;
+		vsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
 		uvm_unmap(kernel_map, vstart, vstart + vsize);
 
 		track->uobj = NULL;
