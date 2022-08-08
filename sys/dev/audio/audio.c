@@ -4642,7 +4642,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	audio_ring_t *last_dst;
 	int is_playback;
 	u_int newbufsize;
-	u_int oldblksize;
 	u_int len;
 	int error;
 
@@ -4681,7 +4680,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	 *     newvsize = roundup2(61440, PAGE_SIZE) = 61440 (= 15 pages)
 	 *    Therefore it maps 15 * 4K pages and usrbuf->capacity = 61440.
 	 */
-	oldblksize = track->usrbuf_blksize;
 	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
 	    frame_per_block(track->mixer, &track->usrbuf.fmt));
 	track->usrbuf.head = 0;
@@ -4694,7 +4692,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	} else {
 		newbufsize = track->usrbuf_blksize;
 	}
-	if (track->usrbuf_blksize != oldblksize) {
+	if (newbufsize != track->usrbuf.capacity) {
 		error = audio_realloc_usrbuf(track, newbufsize);
 		if (error) {
 			device_printf(sc->sc_dev, "malloc usrbuf(%d) failed\n",
