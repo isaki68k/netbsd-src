@@ -3559,7 +3559,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	audio_file_t *file)
 {
 	audio_track_t *track;
-	vsize_t vsize;
 	int error;
 
 	TRACEF(2, file, "off=%lld, prot=%d", (long long)(*offp), prot);
@@ -3595,10 +3594,9 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	if (track == NULL)
 		return EACCES;
 
-	vsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE), PAGE_SIZE);
-	if (len > vsize)
+	if (len > track->usrbuf_allocsize)
 		return EOVERFLOW;
-	if (*offp > (uint)(vsize - len))
+	if (*offp > (uint)(track->usrbuf_allocsize - len))
 		return EOVERFLOW;
 
 	/* XXX TODO: what happens when mmap twice. */
@@ -3719,11 +3717,16 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 
 	/* Get a nonzero multiple of PAGE_SIZE */
 	newvsize = roundup2(newbufsize, PAGE_SIZE);
+	if (newvsize < 65536) {
+		newvsize = 65536;
+	}
 
 	if (track->usrbuf.mem != NULL) {
-		oldvsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
+		oldvsize = track->usrbuf_allocsize;
 		if (oldvsize == newvsize) {
+			/* capacity changed but allocated size unchanged. */
 			track->usrbuf.capacity = newbufsize;
+printf("usrbuf not changed %d\n", (int)newvsize);
 			return 0;
 		}
 		vstart = (vaddr_t)track->usrbuf.mem;
@@ -3732,6 +3735,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 		track->uobj = NULL;		/* paranoia */
 		track->usrbuf.mem = NULL;
 	}
+printf("usrbuf %d -> %d\n", track->usrbuf_allocsize, (int)newvsize);
 
 	/* Create a uvm anonymous object */
 	track->uobj = uao_create(newvsize, 0);
@@ -3759,6 +3763,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 
 	track->usrbuf.mem = (void *)vstart;
 	track->usrbuf.capacity = newbufsize;
+	track->usrbuf_allocsize = newvsize;
 	memset(track->usrbuf.mem, 0, newvsize);
 	return 0;
 
@@ -3767,6 +3772,7 @@ abort:
 	track->uobj = NULL;		/* paranoia */
 	track->usrbuf.mem = NULL;
 	track->usrbuf.capacity = 0;
+	track->usrbuf_allocsize = 0;
 	return error;
 }
 
@@ -3787,12 +3793,13 @@ audio_free_usrbuf(audio_track_t *track)
 		 * to explicitly release (`detach') the object.
 		 */
 		vstart = (vaddr_t)track->usrbuf.mem;
-		vsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
+		vsize = track->usrbuf_allocsize;
 		uvm_unmap(kernel_map, vstart, vstart + vsize);
 
 		track->uobj = NULL;
 		track->usrbuf.mem = NULL;
 		track->usrbuf.capacity = 0;
+		track->usrbuf_allocsize = 0;
 	}
 }
 
@@ -4692,6 +4699,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	} else {
 		newbufsize = track->usrbuf_blksize;
 	}
+printf("%s: capacity=%d newbufsize=%d\n", __func__, (int)track->usrbuf.capacity, (int)newbufsize);
 	if (newbufsize != track->usrbuf.capacity) {
 		error = audio_realloc_usrbuf(track, newbufsize);
 		if (error) {
