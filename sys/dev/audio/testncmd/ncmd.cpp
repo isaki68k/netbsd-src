@@ -1032,6 +1032,49 @@ cmd_reclen(int ac, char *av[])
 	return 0;
 }
 
+// mmap() した後 AUDIO_SET_INFO して usrbuf を reallocate した後、
+// mmap してたところに書き込んでみるテスト。
+// uvm が refcount を持ってるっぽくて、reallocate した後でも領域は有効っぽい。
+// ただし audio のほうはもう新しいバッファを見ているので不整合ではある。
+int
+cmd_mmap_enc(int ac, char *av[])
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd < 0) {
+		err(1, "open");
+	}
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r < 0) {
+		err(1, "AUDIO_GETBUFINFO");
+	}
+
+	void *p = mmap(NULL, ai.play.buffer_size, PROT_READ | PROT_WRITE,
+		MAP_FILE, fd, 0);
+	if (p == MAP_FAILED) {
+		err(1, "mmap");
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision= 32;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 192000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "slinear/12/96k");
+	if (r < 0) {
+		err(1, "AUDIO_SETINFO");
+	}
+
+	((uint32_t *)p)[0] = 0;
+
+	CLOSE(fd);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -1054,6 +1097,7 @@ struct cmdtable cmdtable[] = {
 	DEF(GETOOFFS),
 	DEF(GETIOFFS),
 	DEF(reclen),
+	DEF(mmap_enc),
 	{ NULL, NULL },
 };
 #undef DEF
