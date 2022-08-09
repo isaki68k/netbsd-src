@@ -575,7 +575,7 @@ cmd_playmmap(int ac, char *av[])
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
 	ai.play.sample_rate = 44100;
-	ai.play.channels = 2;
+	ai.play.channels = 1;
 	r = IOCTL(audiofd, AUDIO_SETINFO, &ai, "set");
 	if (r == -1)
 		err(1, "AUDIO_SETINFO");
@@ -593,7 +593,7 @@ cmd_playmmap(int ac, char *av[])
 	if (ptr == MAP_FAILED)
 		err(1, "mmap");
 
-	for (;; usleep(100)) {
+	for (;;) {
 		struct audio_offset ao;
 		r = IOCTL(audiofd, AUDIO_GETOOFFS, &ao, "GETOOFFS");
 		if (r == -1)
