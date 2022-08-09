@@ -4664,7 +4664,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		newbufsize = track->usrbuf_blksize;
 		newvsize = track->usrbuf_blksize;
 	}
-printf("%s: capacity=%d newbufsize=%d\n", __func__, (int)track->usrbuf.capacity, (int)newbufsize);
 	if (newvsize != track->usrbuf_allocsize) {
 		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
 		track->usrbuf_allocsize = newvsize;
