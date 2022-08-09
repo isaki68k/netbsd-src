@@ -645,7 +645,7 @@ static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
 static void *audio_realloc(void *, size_t);
-static int audio_realloc_usrbuf(audio_track_t *, int);
+//static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
 
 static audio_track_t *audio_track_create(struct audio_softc *,
@@ -3695,6 +3695,7 @@ audio_realloc(void *memblock, size_t bytes)
 	return kern_malloc(bytes, M_WAITOK);
 }
 
+#if 0
 /*
  * (Re)allocate usrbuf with 'newbufsize' bytes.
  * Use this function for usrbuf because only usrbuf can be mmapped.
@@ -3775,6 +3776,7 @@ abort:
 	track->usrbuf_allocsize = 0;
 	return error;
 }
+#endif
 
 /*
  * Free usrbuf (if available).
@@ -3782,6 +3784,7 @@ abort:
 static void
 audio_free_usrbuf(audio_track_t *track)
 {
+#if 0
 	vaddr_t vstart;
 	vsize_t vsize;
 
@@ -3801,7 +3804,83 @@ audio_free_usrbuf(audio_track_t *track)
 		track->usrbuf.capacity = 0;
 		track->usrbuf_allocsize = 0;
 	}
+#else
+	audio_free(track->usrbuf.mem);
+	track->usrbuf.capacity = 0;
+	track->usrbuf_allocsize = 0;
+#endif
 }
+
+#if 0
+static void
+audio_track_usrbuf(audio_track_t *track)
+{
+	u_int newbufsize;
+	u_int newvsize;
+
+	KASSERT(track->usrbuf_blksize > 0);
+
+	if (audio_track_is_playback(track)) {
+		newbufsize = track->usrbuf_blksize * AUMINNOBLK;
+		if (newbufsize >= 65536) {
+			newvsize = newbufsize;
+		} else {
+			newbufsize = rounddown(65536, track->usrbuf_blksize);
+			newvsize = 65536;
+		}
+	} else {
+		newvsize = track->usrbuf_blksize;
+	}
+
+	if (newvsize != track->usrbuf_allocsize) {
+		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
+		track->usrbuf_allocsize = newvsize;
+	}
+
+	track->usrbuf.capacity = newbufsize;
+}
+
+// track->usrbuf_blksize に従って usrbuf を確保する
+static void
+audio_ptrack_usrbuf(audio_track_t *track)
+{
+	u_int newbufsize;
+	u_int newvsize;
+
+	KASSERT(track->usrbuf_blksize > 0);
+
+	newbufsize = track->usrbuf_blksize * AUMINNOBLK;
+	if (newbufsize >= 65536) {
+		newvsize = newbufsize;
+	} else {
+		newbufsize = rounddown(65536, track->usrbuf_blksize);
+		newvsize = 65536;
+	}
+
+	if (newvsize != track->usrbuf_allocsize) {
+		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
+		track->usrbuf_allocsize = newvsize;
+	}
+
+	track->usrbuf.capacity = newbufsize;
+}
+
+static void
+audio_rtrack_usrbuf(audio_track_t *track)
+{
+
+	KASSERT(track->usrbuf_blksize > 0);
+
+	newvsize = track->usrbuf_blksize;
+
+	if (newvsize != track->usrbuf_allocsize) {
+		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
+		track->usrbuf_allocsize = newvsize;
+	}
+
+	track->usrbuf.capacity = newvsize;
+}
+#endif
 
 /*
  * This filter changes the volume for each channel.
@@ -4645,15 +4724,14 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
-	struct audio_softc *sc;
 	audio_ring_t *last_dst;
 	int is_playback;
 	u_int newbufsize;
+	u_int newvsize;
 	u_int len;
 	int error;
 
 	KASSERT(track);
-	sc = track->mixer->sc;
 
 	is_playback = audio_track_is_playback(track);
 
@@ -4692,22 +4770,23 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	track->usrbuf.head = 0;
 	track->usrbuf.used = 0;
 	if (is_playback) {
-		if (track->usrbuf_blksize * AUMINNOBLK > 65536)
-			newbufsize = track->usrbuf_blksize * AUMINNOBLK;
-		else
+		newbufsize = track->usrbuf_blksize * AUMINNOBLK;
+		if (newbufsize >= 65536) {
+			newvsize = newbufsize;
+		} else {
 			newbufsize = rounddown(65536, track->usrbuf_blksize);
+			newvsize = 65536;
+		}
 	} else {
 		newbufsize = track->usrbuf_blksize;
+		newvsize = track->usrbuf_blksize;
 	}
 printf("%s: capacity=%d newbufsize=%d\n", __func__, (int)track->usrbuf.capacity, (int)newbufsize);
-	if (newbufsize != track->usrbuf.capacity) {
-		error = audio_realloc_usrbuf(track, newbufsize);
-		if (error) {
-			device_printf(sc->sc_dev, "malloc usrbuf(%d) failed\n",
-			    newbufsize);
-			goto error;
-		}
+	if (newvsize != track->usrbuf_allocsize) {
+		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
+		track->usrbuf_allocsize = newvsize;
 	}
+	track->usrbuf.capacity = newbufsize;
 
 	/* Recalc water mark. */
 	if (is_playback) {
