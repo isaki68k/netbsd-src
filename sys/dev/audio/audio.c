@@ -1723,17 +1723,6 @@ audio_track_lock_exit(audio_track_t *track)
 	atomic_store_release(&track->lock, 0);
 }
 
-/*
- * Free 'mem' if available, and initialize the pointer.
- * For this reason, this is implemented as macro.
- */
-#define audio_free(mem)	do {	\
-	if (mem != NULL) {	\
-		kern_free(mem);	\
-		mem = NULL;	\
-	}	\
-} while (0)
-
 
 static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
@@ -3650,9 +3639,9 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 		audio_pmixer_start(sc, true);
 	audio_exlock_mutex_exit(sc);
 
-	/* Finally, replace the usrbuf to uvm. */
+	/* Finally, replace the usrbuf from kmem to uvm. */
 	audio_track_lock_enter(track);
-	audio_free(track->usrbuf.mem);
+	kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
 	track->usrbuf.mem = (void *)vstart;
 	track->usrbuf_allocsize = newvsize;
 	memset(track->usrbuf.mem, 0, newvsize);
@@ -3719,6 +3708,17 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 }
 
 /*
+ * Free 'mem' if available, and initialize the pointer.
+ * For this reason, this is implemented as macro.
+ */
+#define audio_free(mem)	do {	\
+	if (mem != NULL) {	\
+		kern_free(mem);	\
+		mem = NULL;	\
+	}	\
+} while (0)
+
+/*
  * (Re)allocate 'memblock' with specified 'bytes'.
  * bytes must not be 0.
  * This function never returns NULL.
@@ -3752,11 +3752,11 @@ audio_free_usrbuf(audio_track_t *track)
 		vstart = (vaddr_t)track->usrbuf.mem;
 		vsize = track->usrbuf_allocsize;
 		uvm_unmap(kernel_map, vstart, vstart + vsize);
-		track->usrbuf.mem = NULL;
 		track->mmapped = 0;
 	} else {
-		audio_free(track->usrbuf.mem);
+		kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
 	}
+	track->usrbuf.mem = NULL;
 	track->usrbuf.capacity = 0;
 	track->usrbuf_allocsize = 0;
 }
@@ -4654,21 +4654,25 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	track->usrbuf.used = 0;
 	if (is_playback) {
 		newbufsize = track->usrbuf_blksize * AUMINNOBLK;
-		if (newbufsize >= 65536) {
-			newvsize = newbufsize;
-		} else {
+		if (newbufsize < 65536)
 			newbufsize = rounddown(65536, track->usrbuf_blksize);
-			newvsize = 65536;
-		}
+		newvsize = roundup2(newbufsize, PAGE_SIZE);
 	} else {
 		newbufsize = track->usrbuf_blksize;
 		newvsize = track->usrbuf_blksize;
 	}
+	// 64KB 程度のサイズだと kmem がページ境界で動いてることを期待している
 	if (newvsize != track->usrbuf_allocsize) {
-		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
+		if (track->usrbuf_allocsize != 0) {
+			kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
+		}
+		TRACET(2, track, "usrbuf_allocsize %d -> %d",
+		    track->usrbuf_allocsize, newvsize);
+		track->usrbuf.mem = kmem_alloc(newvsize, KM_SLEEP);
 		track->usrbuf_allocsize = newvsize;
 	}
 	track->usrbuf.capacity = newbufsize;
+printf("%s capacity=%d\n", __func__, newbufsize);
 
 	/* Recalc water mark. */
 	if (is_playback) {
