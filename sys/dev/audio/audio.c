@@ -1724,6 +1724,17 @@ audio_track_lock_exit(audio_track_t *track)
 	atomic_store_release(&track->lock, 0);
 }
 
+/*
+ * Free 'mem' if available, and initialize the pointer.
+ * For this reason, this is implemented as macro.
+ */
+#define audio_free(mem)	do {	\
+	if (mem != NULL) {	\
+		kern_free(mem);	\
+		mem = NULL;	\
+	}	\
+} while (0)
+
 
 static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
@@ -3559,11 +3570,16 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	audio_file_t *file)
 {
 	audio_track_t *track;
+	struct uvm_object *uobj;
+	vaddr_t vstart;
+	vsize_t newvsize;
 	int error;
 
-	TRACEF(2, file, "off=%lld, prot=%d", (long long)(*offp), prot);
+	TRACEF(2, file, "off=%jd, len=%ju, prot=%d",
+	    (intmax_t)(*offp), (uintmax_t)len, prot);
 
 	KASSERT(len > 0);
+	/* len is already rounded up to PAGE_SIZE. */
 
 	if (*offp < 0)
 		return EINVAL;
@@ -3594,35 +3610,69 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	if (track == NULL)
 		return EACCES;
 
-	if (len > track->usrbuf_allocsize)
-		return EOVERFLOW;
-	if (*offp > (uint)(track->usrbuf_allocsize - len))
-		return EOVERFLOW;
-
 	/* XXX TODO: what happens when mmap twice. */
-	if (!track->mmapped) {
-		track->mmapped = true;
+	if (track->mmapped)
+		return EIO;
 
-		if (!track->is_pause) {
-			error = audio_exlock_mutex_enter(sc);
-			if (error)
-				return error;
-			if (sc->sc_pbusy == false)
-				audio_pmixer_start(sc, true);
-			audio_exlock_mutex_exit(sc);
-		}
-		/* XXX mmapping record buffer is not supported */
+	/* Create a uvm anonymous object */
+	newvsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
+	if (*offp + len > newvsize)
+		return EOVERFLOW;
+	uobj = uao_create(newvsize, 0);
+
+	/* Map it into the kernel virtual address space */
+	vstart = 0;
+	error = uvm_map(kernel_map, &vstart, newvsize, uobj, 0, 0,
+	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_NONE,
+	    UVM_ADV_RANDOM, 0));
+	if (error) {
+		device_printf(sc->sc_dev, "uvm_map failed: errno=%d\n", error);
+		uao_detach(uobj);	/* release reference */
+		return error;
 	}
 
-	/* get ringbuffer */
-	*uobjp = track->uobj;
+	error = uvm_map_pageable(kernel_map, vstart, vstart + newvsize,
+	    false, 0);
+	if (error) {
+		device_printf(sc->sc_dev, "uvm_map_pageable failed: errno=%d\n",
+		    error);
+		goto abort;
+	}
+
+	error = audio_exlock_mutex_enter(sc);
+	if (error)
+		goto abort;
+
+	/*
+	 * mmap() will start playing immediately.  XXX Maybe we lack API...
+	 * If no one has played yet, start pmixer here.
+	 */
+	if (sc->sc_pbusy == false)
+		audio_pmixer_start(sc, true);
+	audio_exlock_mutex_exit(sc);
+
+	/* Finally, replace the usrbuf to uvm. */
+	audio_track_lock_enter(track);
+	audio_free(track->usrbuf.mem);
+	track->usrbuf.mem = (void *)vstart;
+	track->usrbuf_allocsize = newvsize;
+	memset(track->usrbuf.mem, 0, newvsize);
+	track->mmapped = true;
+	audio_track_lock_exit(track);
 
 	/* Acquire a reference for the mmap.  munmap will release. */
-	uao_reference(*uobjp);
+	uao_reference(uobj);
+	*uobjp = uobj;
 	*maxprotp = prot;
 	*advicep = UVM_ADV_RANDOM;
 	*flagsp = MAP_SHARED;
+
 	return 0;
+
+abort:
+	uvm_unmap(kernel_map, vstart, vstart + newvsize);
+	/* uvm_unmap also detach uobj */
+	return error;
 }
 
 /*
@@ -3668,17 +3718,6 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	return error;
 }
-
-/*
- * Free 'mem' if available, and initialize the pointer.
- * For this reason, this is implemented as macro.
- */
-#define audio_free(mem)	do {	\
-	if (mem != NULL) {	\
-		kern_free(mem);	\
-		mem = NULL;	\
-	}	\
-} while (0)
 
 /*
  * (Re)allocate 'memblock' with specified 'bytes'.
@@ -3784,11 +3823,10 @@ abort:
 static void
 audio_free_usrbuf(audio_track_t *track)
 {
-#if 0
 	vaddr_t vstart;
 	vsize_t vsize;
 
-	if (track->usrbuf.mem != NULL) {
+	if (track->mmapped) {
 		/*
 		 * Unmap the kernel mapping.  uvm_unmap releases the
 		 * reference to the uvm object, and this should be the
@@ -3798,17 +3836,13 @@ audio_free_usrbuf(audio_track_t *track)
 		vstart = (vaddr_t)track->usrbuf.mem;
 		vsize = track->usrbuf_allocsize;
 		uvm_unmap(kernel_map, vstart, vstart + vsize);
-
-		track->uobj = NULL;
 		track->usrbuf.mem = NULL;
-		track->usrbuf.capacity = 0;
-		track->usrbuf_allocsize = 0;
+		track->mmapped = 0;
+	} else {
+		audio_free(track->usrbuf.mem);
 	}
-#else
-	audio_free(track->usrbuf.mem);
 	track->usrbuf.capacity = 0;
 	track->usrbuf_allocsize = 0;
-#endif
 }
 
 #if 0
@@ -4734,6 +4768,10 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	KASSERT(track);
 
 	is_playback = audio_track_is_playback(track);
+
+	/* Once mmap is called, the track format cannot be changed. */
+	if (is_playback && track->mmapped)
+		return EIO;
 
 	/* usrbuf is the closest buffer to the userland. */
 	track->usrbuf.fmt = *usrfmt;
