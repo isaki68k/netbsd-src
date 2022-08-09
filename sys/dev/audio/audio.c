@@ -3754,7 +3754,9 @@ audio_free_usrbuf(audio_track_t *track)
 		uvm_unmap(kernel_map, vstart, vstart + vsize);
 		track->mmapped = 0;
 	} else {
-		kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
+		if (track->usrbuf_allocsize != 0) {
+			kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
+		}
 	}
 	track->usrbuf.mem = NULL;
 	track->usrbuf.capacity = 0;
