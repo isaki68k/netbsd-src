@@ -645,7 +645,6 @@ static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
 static void *audio_realloc(void *, size_t);
-//static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
 
 static audio_track_t *audio_track_create(struct audio_softc *,
@@ -3734,89 +3733,6 @@ audio_realloc(void *memblock, size_t bytes)
 	return kern_malloc(bytes, M_WAITOK);
 }
 
-#if 0
-/*
- * (Re)allocate usrbuf with 'newbufsize' bytes.
- * Use this function for usrbuf because only usrbuf can be mmapped.
- * If successful, it updates track->usrbuf.mem, track->usrbuf.capacity and
- * returns 0.  Otherwise, it clears track->usrbuf.mem, track->usrbuf.capacity
- * and returns errno.
- * It must be called before updating usrbuf.capacity.
- */
-static int
-audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
-{
-	struct audio_softc *sc;
-	vaddr_t vstart;
-	vsize_t oldvsize;
-	vsize_t newvsize;
-	int error;
-
-	KASSERT(newbufsize > 0);
-	sc = track->mixer->sc;
-
-	/* Get a nonzero multiple of PAGE_SIZE */
-	newvsize = roundup2(newbufsize, PAGE_SIZE);
-	if (newvsize < 65536) {
-		newvsize = 65536;
-	}
-
-	if (track->usrbuf.mem != NULL) {
-		oldvsize = track->usrbuf_allocsize;
-		if (oldvsize == newvsize) {
-			/* capacity changed but allocated size unchanged. */
-			track->usrbuf.capacity = newbufsize;
-printf("usrbuf not changed %d\n", (int)newvsize);
-			return 0;
-		}
-		vstart = (vaddr_t)track->usrbuf.mem;
-		uvm_unmap(kernel_map, vstart, vstart + oldvsize);
-		/* uvm_unmap also detach uobj */
-		track->uobj = NULL;		/* paranoia */
-		track->usrbuf.mem = NULL;
-	}
-printf("usrbuf %d -> %d\n", track->usrbuf_allocsize, (int)newvsize);
-
-	/* Create a uvm anonymous object */
-	track->uobj = uao_create(newvsize, 0);
-
-	/* Map it into the kernel virtual address space */
-	vstart = 0;
-	error = uvm_map(kernel_map, &vstart, newvsize, track->uobj, 0, 0,
-	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_NONE,
-	    UVM_ADV_RANDOM, 0));
-	if (error) {
-		device_printf(sc->sc_dev, "uvm_map failed: errno=%d\n", error);
-		uao_detach(track->uobj);	/* release reference */
-		goto abort;
-	}
-
-	error = uvm_map_pageable(kernel_map, vstart, vstart + newvsize,
-	    false, 0);
-	if (error) {
-		device_printf(sc->sc_dev, "uvm_map_pageable failed: errno=%d\n",
-		    error);
-		uvm_unmap(kernel_map, vstart, vstart + newvsize);
-		/* uvm_unmap also detach uobj */
-		goto abort;
-	}
-
-	track->usrbuf.mem = (void *)vstart;
-	track->usrbuf.capacity = newbufsize;
-	track->usrbuf_allocsize = newvsize;
-	memset(track->usrbuf.mem, 0, newvsize);
-	return 0;
-
-	/* failure */
-abort:
-	track->uobj = NULL;		/* paranoia */
-	track->usrbuf.mem = NULL;
-	track->usrbuf.capacity = 0;
-	track->usrbuf_allocsize = 0;
-	return error;
-}
-#endif
-
 /*
  * Free usrbuf (if available).
  */
@@ -3844,77 +3760,6 @@ audio_free_usrbuf(audio_track_t *track)
 	track->usrbuf.capacity = 0;
 	track->usrbuf_allocsize = 0;
 }
-
-#if 0
-static void
-audio_track_usrbuf(audio_track_t *track)
-{
-	u_int newbufsize;
-	u_int newvsize;
-
-	KASSERT(track->usrbuf_blksize > 0);
-
-	if (audio_track_is_playback(track)) {
-		newbufsize = track->usrbuf_blksize * AUMINNOBLK;
-		if (newbufsize >= 65536) {
-			newvsize = newbufsize;
-		} else {
-			newbufsize = rounddown(65536, track->usrbuf_blksize);
-			newvsize = 65536;
-		}
-	} else {
-		newvsize = track->usrbuf_blksize;
-	}
-
-	if (newvsize != track->usrbuf_allocsize) {
-		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
-		track->usrbuf_allocsize = newvsize;
-	}
-
-	track->usrbuf.capacity = newbufsize;
-}
-
-// track->usrbuf_blksize に従って usrbuf を確保する
-static void
-audio_ptrack_usrbuf(audio_track_t *track)
-{
-	u_int newbufsize;
-	u_int newvsize;
-
-	KASSERT(track->usrbuf_blksize > 0);
-
-	newbufsize = track->usrbuf_blksize * AUMINNOBLK;
-	if (newbufsize >= 65536) {
-		newvsize = newbufsize;
-	} else {
-		newbufsize = rounddown(65536, track->usrbuf_blksize);
-		newvsize = 65536;
-	}
-
-	if (newvsize != track->usrbuf_allocsize) {
-		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
-		track->usrbuf_allocsize = newvsize;
-	}
-
-	track->usrbuf.capacity = newbufsize;
-}
-
-static void
-audio_rtrack_usrbuf(audio_track_t *track)
-{
-
-	KASSERT(track->usrbuf_blksize > 0);
-
-	newvsize = track->usrbuf_blksize;
-
-	if (newvsize != track->usrbuf_allocsize) {
-		track->usrbuf.mem = audio_realloc(track->usrbuf.mem, newvsize);
-		track->usrbuf_allocsize = newvsize;
-	}
-
-	track->usrbuf.capacity = newvsize;
-}
-#endif
 
 /*
  * This filter changes the volume for each channel.
