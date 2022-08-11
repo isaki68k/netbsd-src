@@ -6377,7 +6377,7 @@ audio_psignal(struct audio_softc *sc, pid_t pid, int signum)
  * It is called from recording hardware interrupt everytime.
  * It does:
  * - Deliver SIGIO for all async processes.
- * - Notify to audio_read() that data has arrived.
+ * - Notify the waiting audio_read() that data has stored in the track.
  * - selnotify() for select/poll-ing processes.
  */
 /*
@@ -6424,7 +6424,7 @@ audio_softintr_rd(void *cookie)
  * It is called from playback hardware interrupt everytime.
  * It does:
  * - Deliver SIGIO for all async and writable (used < lowat) processes.
- * - Notify to audio_write() that outbuf block available.
+ * - Notify the waiting audio_write() that outbuf block available.
  * - selnotify() for select/poll-ing processes if there are any writable
  *   (used < lowat) processes.  Checking each descriptor will be done by
  *   filt_audiowrite_event().
