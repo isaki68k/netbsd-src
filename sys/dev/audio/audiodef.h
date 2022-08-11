@@ -119,7 +119,7 @@ struct audio_track {
 
 	audio_ring_t	usrbuf;		/* user i/o buffer */
 	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
-	u_int		usrbuf_allocsize;
+	u_int		usrbuf_allocsize; /* allocation size in bytes */
 	bool		mmapped;	/* device is mmap()-ed */
 	u_int		usrbuf_usedhigh;/* high water mark in bytes */
 	u_int		usrbuf_usedlow;	/* low water mark in bytes */

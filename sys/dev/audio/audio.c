@@ -3753,7 +3753,7 @@ audio_free_usrbuf(audio_track_t *track)
 			vstart = (vaddr_t)track->usrbuf.mem;
 			vsize = track->usrbuf_allocsize;
 			uvm_unmap(kernel_map, vstart, vstart + vsize);
-			track->mmapped = 0;
+			track->mmapped = false;
 		} else {
 			kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
 		}
@@ -4663,7 +4663,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		newbufsize = track->usrbuf_blksize;
 		newvsize = track->usrbuf_blksize;
 	}
-	// 64KB 程度のサイズだと kmem がページ境界で動いてることを期待している
+	/*
+	 * Reallocate only if the number of pages changes.
+	 * This is because we expect kmem to allocate memory on per page
+	 * basis if the request size is about 64KB.
+	 */
 	if (newvsize != track->usrbuf_allocsize) {
 		if (track->usrbuf_allocsize != 0) {
 			kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
@@ -4674,7 +4678,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		track->usrbuf_allocsize = newvsize;
 	}
 	track->usrbuf.capacity = newbufsize;
-printf("%s capacity=%d\n", __func__, newbufsize);
 
 	/* Recalc water mark. */
 	if (is_playback) {
