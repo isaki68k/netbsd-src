@@ -3742,19 +3742,19 @@ audio_free_usrbuf(audio_track_t *track)
 	vaddr_t vstart;
 	vsize_t vsize;
 
-	if (track->mmapped) {
-		/*
-		 * Unmap the kernel mapping.  uvm_unmap releases the
-		 * reference to the uvm object, and this should be the
-		 * last virtual mapping of the uvm object, so no need
-		 * to explicitly release (`detach') the object.
-		 */
-		vstart = (vaddr_t)track->usrbuf.mem;
-		vsize = track->usrbuf_allocsize;
-		uvm_unmap(kernel_map, vstart, vstart + vsize);
-		track->mmapped = 0;
-	} else {
-		if (track->usrbuf_allocsize != 0) {
+	if (track->usrbuf_allocsize != 0) {
+		if (track->mmapped) {
+			/*
+			 * Unmap the kernel mapping.  uvm_unmap releases the
+			 * reference to the uvm object, and this should be the
+			 * last virtual mapping of the uvm object, so no need
+			 * to explicitly release (`detach') the object.
+			 */
+			vstart = (vaddr_t)track->usrbuf.mem;
+			vsize = track->usrbuf_allocsize;
+			uvm_unmap(kernel_map, vstart, vstart + vsize);
+			track->mmapped = 0;
+		} else {
 			kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
 		}
 	}
