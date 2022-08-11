@@ -4617,7 +4617,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	is_playback = audio_track_is_playback(track);
 
 	/* Once mmap is called, the track format cannot be changed. */
-	if (is_playback && track->mmapped)
+	if (track->mmapped)
 		return EIO;
 
 	/* usrbuf is the closest buffer to the userland. */
