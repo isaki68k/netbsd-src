@@ -234,7 +234,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.134 2022/07/06 01:12:45 riastradh Exp $"
 
 /*
  * 0: No debug logs
- * 1: action changes like open/close/set_format...
+ * 1: action changes like open/close/set_format/mmap...
  * 2: + normal operations like read/write/ioctl...
  * 3: + TRACEs except interrupt
  * 4: + TRACEs including interrupt
@@ -3563,7 +3563,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	vsize_t vsize;
 	int error;
 
-	TRACEF(2, file, "off=%jd, len=%ju, prot=%d",
+	TRACEF(1, file, "off=%jd, len=%ju, prot=%d",
 	    (intmax_t)(*offp), (uintmax_t)len, prot);
 
 	KASSERT(len > 0);
