@@ -3718,11 +3718,10 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 	sc = track->mixer->sc;
 
 	/* Get a nonzero multiple of PAGE_SIZE */
-	newvsize = roundup2(MAX(newbufsize, PAGE_SIZE), PAGE_SIZE);
+	newvsize = roundup2(newbufsize, PAGE_SIZE);
 
 	if (track->usrbuf.mem != NULL) {
-		oldvsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE),
-		    PAGE_SIZE);
+		oldvsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
 		if (oldvsize == newvsize) {
 			track->usrbuf.capacity = newbufsize;
 			return 0;
