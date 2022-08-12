@@ -3567,7 +3567,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	    (intmax_t)(*offp), (uintmax_t)len, prot);
 
 	KASSERT(len > 0);
-	/* len is already rounded up to PAGE_SIZE. */
 
 	if (*offp < 0)
 		return EINVAL;
