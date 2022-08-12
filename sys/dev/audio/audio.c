@@ -3560,7 +3560,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	audio_track_t *track;
 	struct uvm_object *uobj;
 	vaddr_t vstart;
-	vsize_t newvsize;
+	vsize_t vsize;
 	int error;
 
 	TRACEF(2, file, "off=%jd, len=%ju, prot=%d",
@@ -3603,14 +3603,14 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 		return EIO;
 
 	/* Create a uvm anonymous object */
-	newvsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
-	if (*offp + len > newvsize)
+	vsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE), PAGE_SIZE);
+	if (*offp + len > vsize)
 		return EOVERFLOW;
-	uobj = uao_create(newvsize, 0);
+	uobj = uao_create(vsize, 0);
 
 	/* Map it into the kernel virtual address space */
 	vstart = 0;
-	error = uvm_map(kernel_map, &vstart, newvsize, uobj, 0, 0,
+	error = uvm_map(kernel_map, &vstart, vsize, uobj, 0, 0,
 	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_NONE,
 	    UVM_ADV_RANDOM, 0));
 	if (error) {
@@ -3619,7 +3619,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 		return error;
 	}
 
-	error = uvm_map_pageable(kernel_map, vstart, vstart + newvsize,
+	error = uvm_map_pageable(kernel_map, vstart, vstart + vsize,
 	    false, 0);
 	if (error) {
 		device_printf(sc->sc_dev, "uvm_map_pageable failed: errno=%d\n",
@@ -3643,8 +3643,8 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	audio_track_lock_enter(track);
 	kmem_free(track->usrbuf.mem, track->usrbuf_allocsize);
 	track->usrbuf.mem = (void *)vstart;
-	track->usrbuf_allocsize = newvsize;
-	memset(track->usrbuf.mem, 0, newvsize);
+	track->usrbuf_allocsize = vsize;
+	memset(track->usrbuf.mem, 0, vsize);
 	track->mmapped = true;
 	audio_track_lock_exit(track);
 
@@ -3658,7 +3658,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	return 0;
 
 abort:
-	uvm_unmap(kernel_map, vstart, vstart + newvsize);
+	uvm_unmap(kernel_map, vstart, vstart + vsize);
 	/* uvm_unmap also detach uobj */
 	return error;
 }
