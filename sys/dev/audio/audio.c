@@ -3781,7 +3781,7 @@ audio_free_usrbuf(audio_track_t *track)
 	vsize_t vsize;
 
 	vstart = (vaddr_t)track->usrbuf.mem;
-	vsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE), PAGE_SIZE);
+	vsize = roundup2(track->usrbuf.capacity, PAGE_SIZE);
 	if (track->usrbuf.mem != NULL) {
 		/*
 		 * Unmap the kernel mapping.  uvm_unmap releases the
