@@ -5951,6 +5951,15 @@ DEF(AUDIO_SETINFO_mmap_pause)
 
 	XP_EQ(1, ai.play.pause);
 
+	/*
+	 * Unpause before close.  Unless, subsequent audioplay(1) which use
+	 * /dev/sound by default will pause...
+	 */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "reset pause");
+	XP_SYS_EQ(0, r);
+
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 
