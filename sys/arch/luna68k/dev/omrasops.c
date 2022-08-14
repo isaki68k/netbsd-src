@@ -104,7 +104,7 @@ static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
 static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
 static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
-static void	omfb_unpack_attr(long, int *, int *, int *);
+static void	omfb_unpack_attr(long, uint8_t *, uint8_t *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
@@ -221,7 +221,7 @@ omfb_reset_planemask_and_rop(void)
 }
 
 static inline void
-omfb_set_rowattr(int row, int fg, int bg)
+omfb_set_rowattr(int row, uint8_t fg, uint8_t bg)
 {
 
 	if (rowattr[row].fg == fg && rowattr[row].bg == bg)
@@ -248,7 +248,7 @@ omfb_set_rowattr(int row, int fg, int bg)
 }
 
 static inline void
-omfb_reset_rowattr(int row, int bg)
+omfb_reset_rowattr(int row, uint8_t bg)
 {
 
 	rowattr[row].ismulti = false;
@@ -424,7 +424,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
  * a single write to the common plane.
  */
 static inline int
-omfb_fgbg2rop(int fg, int bg)
+omfb_fgbg2rop(uint8_t fg, uint8_t bg)
 {
 	int t;
 
@@ -443,7 +443,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	uint8_t *fontptr;
 	uint8_t *dstcmn;
 	uint32_t mask;
-	int fg, bg;
 	int width;
 	int height;
 	int x, y;
@@ -452,9 +451,10 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int plane;
 	int dw;		/* 1 pass width bits */
 	int xh, xl;
+	uint8_t fg, bg;
 	/* ROP address cache */
 	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
-	static int last_fg, last_bg;
+	static uint8_t last_fg, last_bg;
 
 	if (uc >= 0x80)
 		return;
@@ -558,11 +558,11 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	int startx;
 	int width;
 	int height;
-	int fg, bg;
 	int sh, sl;
 	int y;
 	int scanspan;
 	uint8_t *p;
+	uint8_t fg, bg;
 
 	scanspan = ri->ri_stride;
 	y = ri->ri_font->fontheight * row;
@@ -596,11 +596,11 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	int startx;
 	int width;
 	int height;
-	int fg, bg;
 	int sh, sl;
 	int y;
 	int scanspan;
 	uint8_t *p;
+	uint8_t fg, bg;
 
 	scanspan = ri->ri_stride;
 	y = ri->ri_font->fontheight * startrow;
@@ -1763,9 +1763,9 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 }
 
 static void
-omfb_unpack_attr(long attr, int *fg, int *bg, int *underline)
+omfb_unpack_attr(long attr, uint8_t *fg, uint8_t *bg, int *underline)
 {
-	int f, b;
+	uint8_t f, b;
 
 	f = (attr >> 8) & hwplanemask;
 	b = attr & hwplanemask;
