@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.134 2022/07/06 01:12:45 riastradh Exp $	*/
+/*	$NetBSD: audio.c,v 1.135 2022/08/13 06:47:41 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -181,7 +181,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.134 2022/07/06 01:12:45 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.135 2022/08/13 06:47:41 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
