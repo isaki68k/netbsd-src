@@ -108,9 +108,11 @@ static void	omfb_unpack_attr(long, uint8_t *, uint8_t *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
-// YYY 43 をなんとかしたい howmany(1024 / fontheight) ?
-// howmany(1024, 24) だが実際には row=34 で初期化されてるのでその分しか
-// 使われていない
+/*
+ * XXX should be fixed...
+ * This number of elements is derived from howmany(1024, fontheight = 24).
+ * But it is currently initialized with row = 34, so it is used only up to 34.
+ */
 static rowattr_t rowattr[43];
 
 #define	ALL1BITS	(~0U)
@@ -229,6 +231,7 @@ omfb_set_rowattr(int row, uint8_t fg, uint8_t bg)
 	if (rowattr[row].ismulti)
 		return;
 
+	// YYY
 	// 単色のクリア状態から
 	if (rowattr[row].fg == rowattr[row].bg) {
 		// 両方いっぺんに変更されたらマルチカラー
@@ -707,7 +710,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	h = height - 1;	/* for dbra */
 
 	/*
-	 * For single, it's not necessary to process two longwords at a time,
+	 * On single, it's not necessary to process two longwords at a time,
 	 * but we do so for symmetry and speedup.
 	 */
 
@@ -1658,49 +1661,25 @@ omfb_cursor(void *cookie, int on, int row, int col)
  * Allocate attribute. We just pack these into an integer.
  *
  * Attribute bitmap:
- *  bit 31 30 29 ... 19 18 17 16 15 ... 8  7 ... 0
- *      MC <- reserved --> UL BO <- fg -> <- bg ->
- *
- *  MC: Multi-Color (used by copyrows)
- // copyrows で使われてる?
- *  UL: Underline (not supported yet)
- *  BO: Bold (for 1bpp HILIT; not supported yet)
- *  reserved: must be 0
+ *  b31:    Multi color (used by copyrows)
+ *  b30-18: 0 (reserved)
+ *  b17:    Underline (not supported yet)
+ *  b16:    Bold (or HILIT if 1bpp; not supported yet)
+ *  b15-8:  fg color code
+ *  b7-0:   bg color code
  */
 #if 0
 /*
  * Future plan:
- *
  * Place fg and bg side by side in advance to reduce the computation cost
  * at the time of ROP setting.
  *
- * bit 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
- *     f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
+ * bit: 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+ *      f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
  *
- * In this form, use bit1..0 for 1bpp, use bit7..0 for 4bpp.
+ * In this form, use bit1..0 if 1bpp, use bit7..0 if 4bpp.
  */
 #endif
-/*
- * attr bitmap:
- * 31 30 29 ............ 18 17 16
- * MC <------ reserved ---> UL BO
- *  MC: multi-color row attribute (copyrows で利用)
- *   SI or MC が立っている行は複数カラー使用されていると判定する
- *  UL: Underline (現在未サポート)
- *  BO: Bold (1bpp HILIT サポート用、現在未サポート)
- *  reserved: must be 0
- * 15 ... 8  7 .... 0
- * <--fg-->  <--bg-->
-#if 0
- * TODO:
- * f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
- * reverse を処理した後の fg, bg  を 1 ビットごとに分解して格納する。
- * プレーン ROP の設定時の演算コストを下げるためにここで分解する。
- * 1bpp の場合は f0, b0 を使用する。
- * 4bpp の場合は f3...b0 を使用する。
- * 8bpp の場合は f7...b0 を使用する。
-#endif
- */
 static int
 omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 {
