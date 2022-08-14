@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac.c,v 1.75 2021/09/11 20:28:06 andvar Exp $ */
+/* $NetBSD: dwc_gmac.c,v 1.77 2022/08/09 23:58:46 sekiya Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.75 2021/09/11 20:28:06 andvar Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.77 2022/08/09 23:58:46 sekiya Exp $");
 
 /* #define	DWC_GMAC_DEBUG	1 */
 
@@ -803,7 +803,6 @@ dwc_gmac_miibus_statchg(struct ifnet *ifp)
 	conf |= AWIN_GMAC_MAC_CONF_FRAMEBURST
 	    | AWIN_GMAC_MAC_CONF_DISABLERXOWN
 	    | AWIN_GMAC_MAC_CONF_DISABLEJABBER
-	    | AWIN_GMAC_MAC_CONF_ACS
 	    | AWIN_GMAC_MAC_CONF_RXENABLE
 	    | AWIN_GMAC_MAC_CONF_TXENABLE;
 	switch (IFM_SUBTYPE(mii->mii_media_active)) {
