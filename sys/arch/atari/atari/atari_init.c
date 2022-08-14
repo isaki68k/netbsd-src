@@ -1,4 +1,4 @@
-/*	$NetBSD: atari_init.c,v 1.104 2022/05/24 06:28:00 andvar Exp $	*/
+/*	$NetBSD: atari_init.c,v 1.106 2022/07/03 16:03:08 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman
@@ -33,12 +33,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atari_init.c,v 1.104 2022/05/24 06:28:00 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atari_init.c,v 1.106 2022/07/03 16:03:08 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mbtype.h"
 #include "opt_m060sp.h"
 #include "opt_m68k_arch.h"
+#include "opt_st_pool_size.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -57,6 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: atari_init.c,v 1.104 2022/05/24 06:28:00 andvar Exp 
 #include <sys/exec_aout.h>
 #include <sys/core.h>
 #include <sys/kcore.h>
+#include <sys/bus.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -109,21 +111,6 @@ static u_int milan_probe_bank(paddr_t paddr);
 #endif
 
 /*
- * Extent maps to manage all memory space, including I/O ranges.  Allocate
- * storage for 16 regions in each, initially.  Later, iomem_malloc_safe
- * will indicate that it's safe to use malloc() to dynamically allocate
- * region descriptors.
- * This means that the fixed static storage is only used for registrating
- * the found memory regions and the bus-mapping of the console.
- *
- * The extent maps are not static!  They are used for bus address space
- * allocation.
- */
-static long iomem_ex_storage[EXTENT_FIXED_STORAGE_SIZE(16) / sizeof(long)];
-struct extent *iomem_ex;
-int iomem_malloc_safe;
-
-/*
  * All info needed to generate a panic dump. All fields are setup by
  * start_c().
  * XXX: Should sheck usage of phys_segs. There is some unwanted overlap
@@ -145,18 +132,29 @@ extern struct pcb	*curpcb;
 vaddr_t	page_zero;
 
 /*
- * Crude support for allocation in ST-ram. Currently only used to allocate
- * video ram.
+ * Simple support for allocation in ST-ram.
+ * Currently 16 bit ST-ram is required to allocate DMA buffers for SCSI and
+ * FDC transfers, and video memory for the XFree68 based Xservers.
  * The physical address is also returned because the video init needs it to
  * setup the controller at the time the vm-system is not yet operational so
  * 'kvtop()' cannot be used.
  */
+#define	ST_POOL_SIZE_MIN	24	/* for DMA bounce buffers */
 #ifndef ST_POOL_SIZE
-#define	ST_POOL_SIZE	40			/* XXX: enough? */
+#define	ST_POOL_SIZE		56	/* Xserver requires 320KB (40 pages) */
 #endif
 
-u_long	st_pool_size = ST_POOL_SIZE * PAGE_SIZE; /* Patchable	*/
-u_long	st_pool_virt, st_pool_phys;
+psize_t	st_pool_size = ST_POOL_SIZE * PAGE_SIZE; /* Patchable	*/
+vaddr_t	st_pool_virt;
+paddr_t	st_pool_phys;
+
+/*
+ * Thresholds to restrict size of reserved ST memory to make sure
+ * the kernel at least boot even on lower memory machines.
+ * Nowadays we could assume most users have 4MB ST-RAM and 16MB TT-RAM.
+ */
+#define	STRAM_MINTHRESH		(2 * 1024 * 1024)
+#define	TTRAM_MINTHRESH		(4 * 1024 * 1024)
 
 /* I/O address space variables */
 vaddr_t	stio_addr;		/* Where the st io-area is mapped	*/
@@ -284,12 +282,20 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 #endif
 
 	/*
-	 * The following is a hack. We do not know how much ST memory we
-	 * really need until after configuration has finished. At this
-	 * time I have no idea how to grab ST memory at that time.
+	 * We do not know how much ST memory we really need until after
+	 * configuration has finished, but typical users of ST memory
+	 * are bounce buffers DMA against TT-RAM for SCSI and FDC,
+	 * and video memory for the Xserver.
+	 * If we have enough RAMs reserve ST memory including for the Xserver.
+	 * Otherwise just allocate minimum one for SCSI and FDC.
+	 *
 	 * The round_page() call is ment to correct errors made by
 	 * binpatching!
 	 */
+	if (st_pool_size > ST_POOL_SIZE_MIN * PAGE_SIZE &&
+	    (stphysize <= STRAM_MINTHRESH || ttphysize <= TTRAM_MINTHRESH)) {
+		st_pool_size = ST_POOL_SIZE_MIN * PAGE_SIZE;
+	}
 	st_pool_size   = m68k_round_page(st_pool_size);
 	st_pool_phys   = stphysize - st_pool_size;
 	stphysize      = st_pool_phys;
@@ -665,25 +671,13 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 	init_stmem();
 
 	/*
-	 * Initialize the I/O mem extent map.
-	 * Note: we don't have to check the return value since
-	 * creation of a fixed extent map will never fail (since
-	 * descriptor storage has already been allocated).
-	 *
-	 * N.B. The iomem extent manages _all_ physical addresses
-	 * on the machine.  When the amount of RAM is found, all
-	 * extents of RAM are allocated from the map.
+	 * Initialize the iomem extent for bus_space(9) to manage address
+	 * spaces and allocate the physical RAM from the extent map.
 	 */
-	iomem_ex = extent_create("iomem", 0x0, 0xffffffff,
-	    (void *)iomem_ex_storage, sizeof(iomem_ex_storage),
-	    EX_NOCOALESCE|EX_NOWAIT);
-
-	/*
-	 * Allocate the physical RAM from the extent map
-	 */
+	atari_bus_space_extent_init(0x0, 0xffffffff);
 	for (i = 0; i < NMEM_SEGS && boot_segs[i].end != 0; i++) {
-		if (extent_alloc_region(iomem_ex, boot_segs[i].start,
-		    boot_segs[i].end - boot_segs[i].start, EX_NOWAIT)) {
+		if (atari_bus_space_alloc_physmem(boot_segs[i].start,
+		    boot_segs[i].end)) {
 			/* XXX: Ahum, should not happen ;-) */
 			printf("Warning: Cannot allocate boot memory from"
 			    " extent map!?\n");
@@ -953,7 +947,6 @@ map_io_areas(paddr_t ptpa, psize_t ptsize, u_int ptextra)
 	/* ptsize:	 Size of 'pt' in bytes		*/
 	/* ptextra:	 #of additional I/O pte's	*/
 {
-	extern void	bootm_init(vaddr_t, pt_entry_t *, u_long);
 	vaddr_t		ioaddr;
 	pt_entry_t	*pt, *pg, *epg;
 	pt_entry_t	pg_proto;

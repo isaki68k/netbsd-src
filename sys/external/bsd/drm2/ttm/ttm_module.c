@@ -1,11 +1,8 @@
-/*	$NetBSD: i915_perf.c,v 1.2 2021/12/19 01:44:10 riastradh Exp $	*/
+/*	$NetBSD: ttm_module.c,v 1.1 2022/07/17 15:36:05 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,16 +27,25 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i915_perf.c,v 1.2 2021/12/19 01:44:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ttm_module.c,v 1.1 2022/07/17 15:36:05 riastradh Exp $");
 
-#include "i915_drv.h"
+#include <sys/errno.h>
+#include <sys/module.h>
 
-void
-i915_perf_init(struct drm_i915_private *i915)
+MODULE(MODULE_CLASS_DRIVER, drmkms_ttm, "drmkms");
+
+static int
+drmkms_ttm_modcmd(modcmd_t cmd, void *arg)
 {
-}
 
-void
-i915_perf_fini(struct drm_i915_private *i915)
-{
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		return 0;
+	case MODULE_CMD_AUTOUNLOAD:
+		return EBUSY;
+	case MODULE_CMD_FINI:
+		return 0;
+	default:
+		return ENOTTY;
+	}
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmevar.h,v 1.24 2022/05/07 08:20:04 skrll Exp $	*/
+/*	$NetBSD: nvmevar.h,v 1.27 2022/08/01 08:09:30 mlelstv Exp $	*/
 /*	$OpenBSD: nvmevar.h,v 1.8 2016/04/14 11:18:32 dlg Exp $ */
 
 /*

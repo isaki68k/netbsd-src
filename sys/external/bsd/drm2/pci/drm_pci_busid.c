@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_pci_busid.c,v 1.1 2021/12/19 11:09:48 riastradh Exp $	*/
+/*	$NetBSD: drm_pci_busid.c,v 1.3 2022/07/23 08:45:03 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_pci_busid.c,v 1.1 2021/12/19 11:09:48 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_pci_busid.c,v 1.3 2022/07/23 08:45:03 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/device.h>

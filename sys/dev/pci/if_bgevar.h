@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bgevar.h,v 1.26 2020/02/01 06:17:23 thorpej Exp $	*/
+/*	$NetBSD: if_bgevar.h,v 1.31 2022/08/07 08:37:48 skrll Exp $	*/
 /*
  * Copyright (c) 2001 Wind River Systems
  * Copyright (c) 1997, 1998, 1999, 2001
@@ -73,9 +73,9 @@
 
 #define BGE_HOSTADDR(x, y)						\
 	do {								\
-		(x).bge_addr_lo = ((uint64_t) (y) & 0xffffffff);	\
+		(x).bge_addr_lo = BUS_ADDR_LO32(y);			\
 		if (sizeof (bus_addr_t) == 8)				\
-			(x).bge_addr_hi = ((uint64_t) (y) >> 32);	\
+			(x).bge_addr_hi = BUS_ADDR_HI32(y);		\
 		else							\
 			(x).bge_addr_hi = 0;				\
 	} while(0)
@@ -216,9 +216,9 @@ struct bge_chain_data {
 	struct mbuf		*bge_tx_chain[BGE_TX_RING_CNT];
 	struct mbuf		*bge_rx_std_chain[BGE_STD_RX_RING_CNT];
 	struct mbuf		*bge_rx_jumbo_chain[BGE_JUMBO_RX_RING_CNT];
-	struct mbuf		*bge_rx_mini_chain[BGE_MINI_RX_RING_CNT];
 	bus_dmamap_t		bge_rx_std_map[BGE_STD_RX_RING_CNT];
 	bus_dmamap_t		bge_rx_jumbo_map;
+	bus_dma_segment_t	bge_rx_jumbo_seg;
 	/* Stick the jumbo mem management stuff here too. */
 	void *			bge_jslots[BGE_JSLOTS];
 	void *			bge_jumbo_buf;
@@ -286,11 +286,11 @@ struct bge_softc {
 	uint16_t		bge_mps;
 	int			bge_expmrq;
 	uint32_t		bge_lasttag;
-	u_int32_t		bge_mfw_flags;  /* Management F/W flags */
-#define	BGE_MFW_ON_RXCPU	0x00000001
-#define	BGE_MFW_ON_APE		0x00000002
-#define	BGE_MFW_TYPE_NCSI	0x00000004
-#define	BGE_MFW_TYPE_DASH	0x00000008
+	uint32_t		bge_mfw_flags;  /* Management F/W flags */
+#define	BGE_MFW_ON_RXCPU	__BIT(0)
+#define	BGE_MFW_ON_APE		__BIT(1)
+#define	BGE_MFW_TYPE_NCSI	__BIT(2)
+#define	BGE_MFW_TYPE_DASH	__BIT(3)
 	int			bge_phy_ape_lock;
 	int			bge_phy_addr;
 	uint32_t		bge_chipid;
@@ -315,9 +315,9 @@ struct bge_softc {
 	uint32_t		bge_tx_max_coal_bds;
 	uint32_t		bge_tx_buf_ratio;
 	uint32_t		bge_sts;
-#define BGE_STS_LINK		0x00000001	/* MAC link status */
-#define BGE_STS_LINK_EVT	0x00000002	/* pending link event */
-#define BGE_STS_AUTOPOLL	0x00000004	/* PHY auto-polling  */
+#define BGE_STS_LINK		__BIT(0)	/* MAC link status */
+#define BGE_STS_LINK_EVT	__BIT(1)	/* pending link event */
+#define BGE_STS_AUTOPOLL	__BIT(2)	/* PHY auto-polling  */
 #define BGE_STS_BIT(sc, x)	((sc)->bge_sts & (x))
 #define BGE_STS_SETBIT(sc, x)	((sc)->bge_sts |= (x))
 #define BGE_STS_CLRBIT(sc, x)	((sc)->bge_sts &= ~(x))

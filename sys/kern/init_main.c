@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.538 2022/03/19 13:51:35 hannken Exp $	*/
+/*	$NetBSD: init_main.c,v 1.540 2022/07/21 14:07:16 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.538 2022/03/19 13:51:35 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.540 2022/07/21 14:07:16 simonb Exp $");
 
 #include "opt_cnmagic.h"
 #include "opt_ddb.h"
@@ -112,7 +112,6 @@ __KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.538 2022/03/19 13:51:35 hannken Exp 
 #include "opt_ktrace.h"
 #include "opt_pax.h"
 #include "opt_compat_netbsd.h"
-#include "opt_wapbl.h"
 #include "opt_ptrace.h"
 #include "opt_splash.h"
 #include "opt_kernhist.h"
@@ -762,7 +761,7 @@ configure(void)
 	/*
 	 * XXX
 	 * callout_setfunc() requires mutex(9) so it can't be in config_init()
-	 * on amiga and atari which use config_init() and autoconf(9) fucntions
+	 * on amiga and atari which use config_init() and autoconf(9) functions
 	 * to initialize console devices.
 	 */
 	config_twiddle_init();

@@ -1,4 +1,4 @@
-/*	$NetBSD: audiotest.c,v 1.22 2022/05/31 08:43:16 andvar Exp $	*/
+/*	$NetBSD: audiotest.c,v 1.27 2022/08/13 07:22:40 isaki Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: audiotest.c,v 1.22 2022/05/31 08:43:16 andvar Exp $");
+__RCSID("$NetBSD: audiotest.c,v 1.27 2022/08/13 07:22:40 isaki Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -1382,6 +1382,7 @@ void test_open_multiuser(bool);
 void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
+void test_mmap_len(size_t, off_t, int);
 void test_poll_mode(int, int, int);
 void test_poll_in_open(const char *);
 void test_kqueue_mode(int, int, int);
@@ -2307,8 +2308,8 @@ DEF(rdwr_fallback_RDWR) {
 }
 
 /*
- * On full-duplex hardware, the second descriptor's readablity/writability
- * is not depend on the first descriptor('s open mode).
+ * On full-duplex hardware, the second descriptor's readability/writability
+ * does not depend on the first descriptor's open mode.
  * On half-duplex hardware, it depends on the first descriptor's open mode.
  */
 void
@@ -2688,20 +2689,25 @@ DEF(mmap_mode_RDWR_READWRITE)	{ test_mmap_mode(O_RDWR, PROT_READWRITE); }
 
 /*
  * Check mmap()'s length and offset.
+ *
+ * Actual len and offset cannot be determined before open.  So that,
+ * pass pre-defined constant as argument, and convert it after open.
  */
-DEF(mmap_len)
+#define LS	(100)	/* lsize     */
+#define LS1	(101)	/* lsize + 1 */
+void
+test_mmap_len(size_t len, off_t offset, int exp)
 {
 	struct audio_info ai;
 	int fd;
 	int r;
-	size_t len;
-	off_t offset;
+	size_t plen;
 	void *ptr;
 	int bufsize;
 	int pagesize;
 	int lsize;
 
-	TEST("mmap_len");
+	TEST("mmap_len(%zd, %jd, %d)", len, offset, exp);
 	if ((props & AUDIO_PROP_MMAP) == 0) {
 		XP_SKIP("This test is only for mmap-able device");
 		return;
@@ -2713,8 +2719,8 @@ DEF(mmap_len)
 	}
 #endif
 
-	len = sizeof(pagesize);
-	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0);
+	plen = sizeof(pagesize);
+	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &plen, NULL, 0);
 	REQUIRED_SYS_EQ(0, r);
 
 	fd = OPEN(devaudio, O_WRONLY);
@@ -2730,49 +2736,32 @@ DEF(mmap_len)
 	 * I'm not sure.
 	 */
 	lsize = roundup2(bufsize, pagesize);
-	struct {
-		size_t len;
-		off_t offset;
-		int exp;
-	} table[] = {
-		/* len offset	expected */
 
-		{ 0,	0,	0 },		/* len is 0  */
-		{ 1,	0,	0 },		/* len is smaller than lsize */
-		{ lsize, 0,	0 },		/* len is the same as lsize */
-		{ lsize + 1, 0,	EOVERFLOW },	/* len is larger */
+	/* Here, lsize can be assigned */
+	if (len == LS) {
+		len = lsize;
+	} else if (len == LS1) {
+		len = lsize + 1;
+	}
+	if (offset == LS) {
+		offset = lsize;
+	} else if (offset == LS1) {
+		offset = lsize + 1;
+	}
 
-		{ 0, -1,	EINVAL },	/* offset is negative */
-		{ 0, lsize,	0 },		/* pointless param but ok */
-		{ 0, lsize + 1,	EOVERFLOW },	/* exceed */
-		{ 1, lsize,	EOVERFLOW },	/* exceed */
+	ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
+	if (exp == 0) {
+		XP_SYS_PTR(0, ptr);
+	} else {
+		/* NetBSD8 introduces EOVERFLOW */
+		if (netbsd < 8 && exp == EOVERFLOW)
+			exp = EINVAL;
+		XP_SYS_PTR(exp, ptr);
+	}
 
-		/*
-		 * When you treat offset as 32bit, offset will be 0
-		 * and thus it incorrectly succeeds.
-		 */
-		{ lsize,	1ULL<<32,	EOVERFLOW },
-	};
-
-	for (int i = 0; i < (int)__arraycount(table); i++) {
-		len = table[i].len;
-		offset = table[i].offset;
-		int exp = table[i].exp;
-
-		ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
-		if (exp == 0) {
-			XP_SYS_PTR(0, ptr);
-		} else {
-			/* NetBSD8 introduces EOVERFLOW */
-			if (netbsd < 8 && exp == EOVERFLOW)
-				exp = EINVAL;
-			XP_SYS_PTR(exp, ptr);
-		}
-
-		if (ptr != MAP_FAILED) {
-			r = MUNMAP(ptr, len);
-			XP_SYS_EQ(0, r);
-		}
+	if (ptr != MAP_FAILED) {
+		r = MUNMAP(ptr, len);
+		XP_SYS_EQ(0, r);
 	}
 
 	r = CLOSE(fd);
@@ -2780,6 +2769,21 @@ DEF(mmap_len)
 
 	reset_after_mmap();
 }
+#define f(l, o, e)	test_mmap_len(l, o, e)
+DEF(mmap_len_0)	{ f(0,   0,   0); }		/* len is 0 */
+DEF(mmap_len_1)	{ f(1,   0,   0); }		/* len is smaller than lsize */
+DEF(mmap_len_2)	{ f(LS,  0,   0); }		/* len is the same as lsize */
+DEF(mmap_len_3)	{ f(LS1, 0,   EOVERFLOW); }	/* len is larger */
+DEF(mmap_len_4)	{ f(0,   -1,  EINVAL); }	/* offset is negative */
+DEF(mmap_len_5)	{ f(0,   LS,  0); }		/* pointless param but ok */
+DEF(mmap_len_6)	{ f(0,   LS1, EOVERFLOW); }	/* exceed */
+DEF(mmap_len_7)	{ f(1,   LS,  EOVERFLOW); }	/* exceed */
+/*
+ * When you treat the offset as 32bit, offset will be 0 and thus it
+ * incorrectly succeeds.
+ */
+DEF(mmap_len_8)	{ f(LS, 1ULL << 32, EOVERFLOW); }
+#undef f
 
 /*
  * mmap() the same descriptor twice.
@@ -5866,6 +5870,102 @@ DEF(AUDIO_SETINFO_gain_balance)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * Changing track formats after mmap should fail.
+ */
+DEF(AUDIO_SETINFO_mmap_enc)
+{
+	struct audio_info ai;
+	void *ptr;
+	int fd;
+	int r;
+
+	TEST("AUDIO_SETINFO_mmap");
+
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	ptr = MMAP(NULL, 1, PROT_WRITE, MAP_FILE, fd, 0);
+	XP_SYS_PTR(0, ptr);
+
+	/*
+	 * SETINFO after mmap should fail.
+	 * NetBSD9 changes errno.
+	 */
+	AUDIO_INITINFO(&ai);
+	ai.play.channels = 2;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "channels=2");
+	if (netbsd < 9) {
+		XP_SYS_NG(EINVAL, r);
+	} else {
+		XP_SYS_NG(EIO, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	reset_after_mmap();
+}
+
+/*
+ * Even after mmap, changing pause should succeed.
+ */
+DEF(AUDIO_SETINFO_mmap_pause)
+{
+	struct audio_info ai;
+	void *ptr;
+	int fd;
+	int r;
+
+	TEST("AUDIO_SETINFO_mmap");
+
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	ptr = MMAP(NULL, 1, PROT_WRITE, MAP_FILE, fd, 0);
+	XP_SYS_PTR(0, ptr);
+
+	/* SETINFO after mmap should fail */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "set pause");
+	XP_SYS_EQ(0, r);
+
+	AUDIO_INITINFO(&ai);
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get pause");
+	XP_SYS_EQ(0, r);
+
+	XP_EQ(1, ai.play.pause);
+
+	/*
+	 * Unpause before close.  Unless, subsequent audioplay(1) which use
+	 * /dev/sound by default will pause...
+	 */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "reset pause");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	reset_after_mmap();
+}
+
 #define NENC	(AUDIO_ENCODING_AC3 + 1)
 #define NPREC	(5)
 /*
@@ -7102,21 +7202,29 @@ struct testentry testtable[] = {
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),
-/**/	ENT(mmap_mode_RDONLY_NONE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDONLY_READ),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDONLY_WRITE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDONLY_READWRITE),// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_WRONLY_NONE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_WRONLY_READ),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_WRONLY_WRITE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_WRONLY_READWRITE),// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDWR_NONE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDWR_READ),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDWR_WRITE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_mode_RDWR_READWRITE),	// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_len),			// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_twice),		// XXX rump doesn't supprot mmap
-/**/	ENT(mmap_multi),		// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDONLY_NONE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDONLY_READ),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDONLY_WRITE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDONLY_READWRITE),// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_WRONLY_NONE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_WRONLY_READ),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_WRONLY_WRITE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_WRONLY_READWRITE),// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDWR_NONE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDWR_READ),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDWR_WRITE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_mode_RDWR_READWRITE),	// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_0),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_1),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_2),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_3),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_4),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_5),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_6),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_7),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_len_8),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_twice),		// XXX rump doesn't support mmap
+/**/	ENT(mmap_multi),		// XXX rump doesn't support mmap
 	ENT(poll_mode_RDONLY_IN),
 	ENT(poll_mode_RDONLY_OUT),
 	ENT(poll_mode_RDONLY_INOUT),
@@ -7209,6 +7317,8 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_pause_RDWR_3),
 	ENT(AUDIO_SETINFO_gain),
 	ENT(AUDIO_SETINFO_gain_balance),
+/**/	ENT(AUDIO_SETINFO_mmap_enc),	// XXX rump doesn't support mmap
+/**/	ENT(AUDIO_SETINFO_mmap_pause),	// XXX rump doesn't support mmap
 	ENT(AUDIO_GETENC_range),
 	ENT(AUDIO_GETENC_error),
 	ENT(AUDIO_ERROR_RDONLY),

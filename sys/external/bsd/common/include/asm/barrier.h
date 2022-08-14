@@ -1,4 +1,4 @@
-/*	$NetBSD: barrier.h,v 1.13 2022/04/09 23:43:30 riastradh Exp $	*/
+/*	$NetBSD: barrier.h,v 1.19 2022/07/19 21:30:40 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -42,21 +42,60 @@
 #define	MULTIPROCESSOR	1	/* safer to assume multiprocessor */
 #endif
 
+/*
+ * I/O memory barriers.  drm uses these to order memory operations on
+ * normal or write-combining/prefetchable, or uncacheable I/O
+ * operations, for coordination between the CPU and I/O devices.
+ *
+ * In NetBSD, this is normally done with bus_space_barrier, but Linux
+ * doesn't pass around the bus space tag and handle needed for that.
+ */
 #if defined(__aarch64__)
-#define	mb()	__asm __volatile ("dsb sy" ::: "memory")
-#define	wmb()	__asm __volatile ("dsb st" ::: "memory")
-#define	rmb()	__asm __volatile ("dsb ld" ::: "memory")
+#include <arm/cpufunc.h>
+#define	mb()	dsb(sy)
+#define	wmb()	dsb(st)
+#define	rmb()	dsb(ld)
+#elif defined(__arm__)
+#include <arm/cpufunc.h>
+#define	mb()	dsb()
+#define	wmb()	mb()
+#define	rmb()	mb()
 #elif defined(__i386__) || defined(__x86_64__)
 #include <x86/cpufunc.h>
 #define	mb()	x86_mfence()
 #define	wmb()	x86_sfence()
 #define	rmb()	x86_lfence()
+#elif defined(__powerpc__)
+#define	mb()	__asm __volatile ("eieio" ::: "memory")
+#define	wmb()	mb()
+#define	rmb()	mb()
+#elif defined(__sparc__) || defined(__sparc64__)
+#ifdef __sparc64__
+#define	mb()	__asm __volatile ("membar #MemIssue" ::: "memory")
 #else
-#define	mb	membar_sync
-#define	wmb	membar_producer
-#define	rmb	membar_consumer
+#define	mb()	membar_sync()	/* ldstub */
+#endif
+#define	wmb()	mb()		/* XXX could maybe be __insn_barrier in TSO */
+#define	rmb()	mb()		/* XXX could maybe be __insn_barrier in TSO */
+#elif defined(__mips__)
+#include <mips/locore.h>
+#define	mb()	wbflush()
+#define	wmb()	mb()
+#define	rmb()	mb()
+#elif defined(__alpha__)
+#include <machine/alpha_cpu.h>
+#define	mb()	alpha_mb()
+#define	wmb()	alpha_wmb()
+#define	rmb()	mb()
+#else
+#error Missing Linux memory-mapped I/O barriers for this architecture.
 #endif
 
+/*
+ * MP memory barriers.  drm uses these to order memory operations on
+ * normal memory for coordination between CPUs.  Aliases for NetBSD's
+ * membar_*.
+ */
 #ifdef MULTIPROCESSOR
 #  define	smp_mb				membar_sync
 #  define	smp_wmb				membar_producer

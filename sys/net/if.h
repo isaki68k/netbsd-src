@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.296 2021/12/31 14:24:26 riastradh Exp $	*/
+/*	$NetBSD: if.h,v 1.299 2022/07/28 15:15:29 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -340,6 +340,8 @@ typedef struct ifnet {
 #define	if_watchdog	if_slowtimo
 	void		(*if_drain)	/* :: routine to release resources */
 			    (struct ifnet *);
+	void		(*if_bpf_mtap)	/* :: bpf routine */
+			    (struct bpf_if *, struct mbuf *, u_int);
 	struct ifaltq	if_snd;		/* q: output queue (includes altq) */
 	struct ifaddr	*if_dl;		/* i: identity of this interface. */
 	const struct sockaddr_dl
@@ -437,7 +439,7 @@ typedef struct ifnet {
 } ifnet_t;
 
 #include <net/if_stats.h>
- 
+
 #define	if_name(ifp)	((ifp)->if_xname)
 
 #define	IFF_UP		0x0001		/* interface is up */
@@ -698,7 +700,7 @@ if_start_lock(struct ifnet *ifp)
 		(m)->m_nextpkt = 0; \
 		(ifq)->ifq_len--; \
 	} \
-} while (/*CONSTCOND*/0) 
+} while (/*CONSTCOND*/0)
 #define	IF_POLL(ifq, m)		((m) = (ifq)->ifq_head)
 #define	IF_PURGE(ifq)							\
 do {									\
@@ -1406,10 +1408,11 @@ int	sysctl_ifq(int *name, u_int namelen, void *oldp,
 #define IFQCTL_PEAK	3
 #define IFQCTL_DROPS	4
 
-/* 
+/*
  * Hook for if_vlan - needed by if_agr
  */
-MODULE_HOOK(if_vlan_vlan_input_hook, void, (struct ifnet *, struct mbuf *));
+MODULE_HOOK(if_vlan_vlan_input_hook,
+    struct mbuf *, (struct ifnet *, struct mbuf *));
 
 #endif /* _KERNEL */
 

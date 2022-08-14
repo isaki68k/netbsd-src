@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnode.c,v 1.143 2022/04/09 23:45:45 riastradh Exp $	*/
+/*	$NetBSD: vfs_vnode.c,v 1.145 2022/08/05 05:20:39 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011, 2019, 2020 The NetBSD Foundation, Inc.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.143 2022/04/09 23:45:45 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.145 2022/08/05 05:20:39 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pax.h"
@@ -457,7 +457,8 @@ vnalloc_marker(struct mount *mp)
 	vp->v_mount = mp;
 	vp->v_type = VBAD;
 	vp->v_interlock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
-	klist_init(&vp->v_klist);
+	klist_init(&vip->vi_klist.vk_klist);
+	vp->v_klist = &vip->vi_klist;
 	vip->vi_state = VS_MARKER;
 
 	return vp;
@@ -475,7 +476,7 @@ vnfree_marker(vnode_t *vp)
 	KASSERT(vip->vi_state == VS_MARKER);
 	mutex_obj_free(vp->v_interlock);
 	uvm_obj_destroy(&vp->v_uobj, true);
-	klist_fini(&vp->v_klist);
+	klist_fini(&vip->vi_klist.vk_klist);
 	pool_cache_put(vcache_pool, vip);
 }
 
@@ -1391,7 +1392,8 @@ vcache_alloc(void)
 	vp->v_interlock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 
 	uvm_obj_init(&vp->v_uobj, &uvm_vnodeops, true, 1);
-	klist_init(&vp->v_klist);
+	klist_init(&vip->vi_klist.vk_klist);
+	vp->v_klist = &vip->vi_klist;
 	cv_init(&vp->v_cv, "vnode");
 	cache_vnode_init(vp);
 
@@ -1453,7 +1455,8 @@ vcache_free(vnode_impl_t *vip)
 	mutex_obj_free(vp->v_interlock);
 	rw_destroy(&vip->vi_lock);
 	uvm_obj_destroy(&vp->v_uobj, true);
-	klist_fini(&vp->v_klist);
+	KASSERT(vp->v_klist == &vip->vi_klist);
+	klist_fini(&vip->vi_klist.vk_klist);
 	cv_destroy(&vp->v_cv);
 	cache_vnode_fini(vp);
 	pool_cache_put(vcache_pool, vip);
@@ -1826,6 +1829,19 @@ vcache_reclaim(vnode_t *vp)
 	 * while we clean it out.
 	 */
 	VSTATE_CHANGE(vp, VS_BLOCKED, VS_RECLAIMING);
+
+	/*
+	 * Send NOTE_REVOKE now, before we call VOP_RECLAIM(),
+	 * because VOP_RECLAIM() could cause vp->v_klist to
+	 * become invalid.  Don't check for interest in NOTE_REVOKE
+	 * here; it's always posted because it sets EV_EOF.
+	 *
+	 * Once it's been posted, reset vp->v_klist to point to
+	 * our own local storage, in case we were sharing with
+	 * someone else.
+	 */
+	KNOTE(&vp->v_klist->vk_klist, NOTE_REVOKE);
+	vp->v_klist = &vip->vi_klist;
 	mutex_exit(vp->v_interlock);
 
 	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
@@ -1912,11 +1928,6 @@ vcache_reclaim(vnode_t *vp)
 	vp->v_op = dead_vnodeop_p;
 	VSTATE_CHANGE(vp, VS_RECLAIMING, VS_RECLAIMED);
 	vp->v_tag = VT_NON;
-	/*
-	 * Don't check for interest in NOTE_REVOKE; it's always posted
-	 * because it sets EV_EOF.
-	 */
-	KNOTE(&vp->v_klist, NOTE_REVOKE);
 	mutex_exit(vp->v_interlock);
 
 	/*
@@ -2094,4 +2105,29 @@ vshareilock(vnode_t *tvp, vnode_t *fvp)
 	mutex_obj_hold(fvp->v_interlock);
 	tvp->v_interlock = fvp->v_interlock;
 	mutex_obj_free(oldlock);
+}
+
+void
+vshareklist(vnode_t *tvp, vnode_t *fvp)
+{
+	/*
+	 * If two vnodes share klist state, they must also share
+	 * an interlock.
+	 */
+	KASSERT(tvp->v_interlock == fvp->v_interlock);
+
+	/*
+	 * We make the following assumptions:
+	 *
+	 * ==> Some other synchronization is happening outside of
+	 *     our view to make this safe.
+	 *
+	 * ==> That the "to" vnode will have the necessary references
+	 *     on the "from" vnode so that the storage for the klist
+	 *     won't be yanked out from beneath us (the vnode_impl).
+	 *
+	 * ==> If "from" is also sharing, we then assume that "from"
+	 *     has the necessary references, and so on.
+	 */
+	tvp->v_klist = fvp->v_klist;
 }

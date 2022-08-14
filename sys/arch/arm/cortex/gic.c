@@ -1,4 +1,4 @@
-/*	$NetBSD: gic.c,v 1.53 2022/03/03 06:26:28 riastradh Exp $	*/
+/*	$NetBSD: gic.c,v 1.56 2022/06/26 11:14:36 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -30,12 +30,11 @@
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
-#include "opt_gic.h"
 
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.53 2022/03/03 06:26:28 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.56 2022/06/26 11:14:36 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -52,10 +51,6 @@ __KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.53 2022/03/03 06:26:28 riastradh Exp $");
 
 #include <arm/cortex/gic_reg.h>
 #include <arm/cortex/mpcore_var.h>
-
-#ifdef GIC_SPLFUNCS
-#include <arm/cortex/gic_splfuncs.h>
-#endif
 
 void armgic_irq_handler(void *);
 
@@ -229,11 +224,14 @@ armgic_set_priority(struct pic_softc *pic, int ipl)
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
 	struct cpu_info * const ci = curcpu();
 
-	if (ipl < ci->ci_hwpl) {
+	while (ipl < ci->ci_hwpl) {
 		/* Lowering priority mask */
 		ci->ci_hwpl = ipl;
+		__insn_barrier();
 		gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
 	}
+	__insn_barrier();
+	ci->ci_cpl = ipl;
 }
 
 #ifdef MULTIPROCESSOR
@@ -742,10 +740,6 @@ armgic_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(sc->sc_dev, "%u Priorities, %zu SPIs, %u PPIs, "
 	    "%u SGIs\n",  priorities, sc->sc_gic_lines - ppis - sgis, ppis,
 	    sgis);
-
-#ifdef GIC_SPLFUNCS
-	gic_spl_init();
-#endif
 }
 
 CFATTACH_DECL_NEW(armgic, 0,

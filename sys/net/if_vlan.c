@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.167 2021/12/24 04:50:40 yamaguchi Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.170 2022/06/20 08:14:48 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.167 2021/12/24 04:50:40 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.170 2022/06/20 08:14:48 yamaguchi Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -138,7 +138,6 @@ struct vlan_mc_entry {
 struct ifvlan_linkmib {
 	struct ifvlan *ifvm_ifvlan;
 	const struct vlan_multisw *ifvm_msw;
-	int	ifvm_encaplen;	/* encapsulation length */
 	int	ifvm_mtufudge;	/* MTU fudged by this much */
 	int	ifvm_mintu;	/* min transmission unit */
 	uint16_t ifvm_proto;	/* encapsulation ethertype */
@@ -170,7 +169,6 @@ struct ifvlan {
 #define	ifv_if		ifv_ec.ec_if
 
 #define	ifv_msw		ifv_mib.ifvm_msw
-#define	ifv_encaplen	ifv_mib.ifvm_encaplen
 #define	ifv_mtufudge	ifv_mib.ifvm_mtufudge
 #define	ifv_mintu	ifv_mib.ifvm_mintu
 #define	ifv_tag		ifv_mib.ifvm_tag
@@ -204,12 +202,13 @@ static int	vlan_unconfig_locked(struct ifvlan *, struct ifvlan_linkmib *);
 static void	vlan_hash_init(void);
 static int	vlan_hash_fini(void);
 static int	vlan_tag_hash(uint16_t, u_long);
-static struct ifvlan_linkmib*	vlan_getref_linkmib(struct ifvlan *,
-    struct psref *);
+static struct ifvlan_linkmib*
+		vlan_getref_linkmib(struct ifvlan *, struct psref *);
 static void	vlan_putref_linkmib(struct ifvlan_linkmib *, struct psref *);
 static void	vlan_linkmib_update(struct ifvlan *, struct ifvlan_linkmib *);
-static struct ifvlan_linkmib*	vlan_lookup_tag_psref(struct ifnet *,
-    uint16_t, struct psref *);
+static struct ifvlan_linkmib*
+		vlan_lookup_tag_psref(struct ifnet *, uint16_t,
+		    struct psref *);
 
 #if !defined(VLAN_TAG_HASH_SIZE)
 #define VLAN_TAG_HASH_SIZE 32
@@ -228,9 +227,6 @@ static struct psref_class *ifvm_psref_class __read_mostly;
 
 struct if_clone vlan_cloner =
     IF_CLONE_INITIALIZER("vlan", vlan_clone_create, vlan_clone_destroy);
-
-/* Used to pad ethernet frames with < ETHER_MIN_LEN bytes */
-static char vlan_zero_pad_buff[ETHER_MIN_LEN];
 
 static uint32_t nvlanifs;
 
@@ -436,7 +432,6 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 		struct ethercom *ec = (void *)p;
 
 		nmib->ifvm_msw = &vlan_ether_multisw;
-		nmib->ifvm_encaplen = ETHER_VLAN_ENCAP_LEN;
 		nmib->ifvm_mintu = ETHERMIN;
 
 		error = ether_add_vlantag(p, tag, NULL);
@@ -453,7 +448,7 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 			 * the feature with other NetBSD
 			 * implementations, which might still be useful.
 			 */
-			nmib->ifvm_mtufudge = nmib->ifvm_encaplen;
+			nmib->ifvm_mtufudge = ETHER_VLAN_ENCAP_LEN;
 		}
 
 		/*
@@ -1280,60 +1275,17 @@ vlan_start(struct ifnet *ifp)
 			/*
 			 * insert the tag ourselves
 			 */
-			M_PREPEND(m, mib->ifvm_encaplen, M_DONTWAIT);
-			if (m == NULL) {
-				printf("%s: unable to prepend encap header",
-				    p->if_xname);
-				if_statinc(ifp, if_oerrors);
-				continue;
-			}
 
 			switch (p->if_type) {
 			case IFT_ETHER:
-			    {
-				struct ether_vlan_header *evl;
-
-				if (m->m_len < sizeof(struct ether_vlan_header))
-					m = m_pullup(m,
-					    sizeof(struct ether_vlan_header));
+				(void)ether_inject_vlantag(&m,
+				    ETHERTYPE_VLAN, mib->ifvm_tag);
 				if (m == NULL) {
-					printf("%s: unable to pullup encap "
-					    "header", p->if_xname);
-					if_statinc(ifp, if_oerrors);
+					printf("%s: unable to inject VLAN tag",
+					    p->if_xname);
 					continue;
 				}
-
-				/*
-				 * Transform the Ethernet header into an
-				 * Ethernet header with 802.1Q encapsulation.
-				 */
-				memmove(mtod(m, void *),
-				    mtod(m, char *) + mib->ifvm_encaplen,
-				    sizeof(struct ether_header));
-				evl = mtod(m, struct ether_vlan_header *);
-				evl->evl_proto = evl->evl_encap_proto;
-				evl->evl_encap_proto = htons(ETHERTYPE_VLAN);
-				evl->evl_tag = htons(mib->ifvm_tag);
-
-				/*
-				 * To cater for VLAN-aware layer 2 ethernet
-				 * switches which may need to strip the tag
-				 * before forwarding the packet, make sure
-				 * the packet+tag is at least 68 bytes long.
-				 * This is necessary because our parent will
-				 * only pad to 64 bytes (ETHER_MIN_LEN) and
-				 * some switches will not pad by themselves
-				 * after deleting a tag.
-				 */
-				const size_t min_data_len = ETHER_MIN_LEN -
-				    ETHER_CRC_LEN + ETHER_VLAN_ENCAP_LEN;
-				if (m->m_pkthdr.len < min_data_len) {
-					m_copyback(m, m->m_pkthdr.len,
-					    min_data_len - m->m_pkthdr.len,
-					    vlan_zero_pad_buff);
-				}
 				break;
-			    }
 
 			default:
 				panic("%s: impossible", __func__);
@@ -1424,62 +1376,17 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 		/*
 		 * insert the tag ourselves
 		 */
-		M_PREPEND(m, mib->ifvm_encaplen, M_DONTWAIT);
-		if (m == NULL) {
-			printf("%s: unable to prepend encap header",
-			    p->if_xname);
-			if_statinc(ifp, if_oerrors);
-			error = ENOBUFS;
-			goto out;
-		}
-
 		switch (p->if_type) {
 		case IFT_ETHER:
-		    {
-			struct ether_vlan_header *evl;
-
-			if (m->m_len < sizeof(struct ether_vlan_header))
-				m = m_pullup(m,
-				    sizeof(struct ether_vlan_header));
-			if (m == NULL) {
-				printf("%s: unable to pullup encap "
-				    "header", p->if_xname);
-				if_statinc(ifp, if_oerrors);
-				error = ENOBUFS;
+			error = ether_inject_vlantag(&m,
+			    ETHERTYPE_VLAN, mib->ifvm_tag);
+			if (error != 0) {
+				KASSERT(m == NULL);
+				printf("%s: unable to inject VLAN tag",
+				    p->if_xname);
 				goto out;
 			}
-
-			/*
-			 * Transform the Ethernet header into an
-			 * Ethernet header with 802.1Q encapsulation.
-			 */
-			memmove(mtod(m, void *),
-			    mtod(m, char *) + mib->ifvm_encaplen,
-			    sizeof(struct ether_header));
-			evl = mtod(m, struct ether_vlan_header *);
-			evl->evl_proto = evl->evl_encap_proto;
-			evl->evl_encap_proto = htons(ETHERTYPE_VLAN);
-			evl->evl_tag = htons(mib->ifvm_tag);
-
-			/*
-			 * To cater for VLAN-aware layer 2 ethernet
-			 * switches which may need to strip the tag
-			 * before forwarding the packet, make sure
-			 * the packet+tag is at least 68 bytes long.
-			 * This is necessary because our parent will
-			 * only pad to 64 bytes (ETHER_MIN_LEN) and
-			 * some switches will not pad by themselves
-			 * after deleting a tag.
-			 */
-			const size_t min_data_len = ETHER_MIN_LEN -
-			    ETHER_CRC_LEN + ETHER_VLAN_ENCAP_LEN;
-			if (m->m_pkthdr.len < min_data_len) {
-				m_copyback(m, m->m_pkthdr.len,
-				    min_data_len - m->m_pkthdr.len,
-				    vlan_zero_pad_buff);
-			}
 			break;
-		    }
 
 		default:
 			panic("%s: impossible", __func__);
@@ -1518,61 +1425,22 @@ out:
  * given source interface and tag, then run the real packet through the
  * parent's input routine.
  */
-void
+struct mbuf *
 vlan_input(struct ifnet *ifp, struct mbuf *m)
 {
 	struct ifvlan *ifv;
 	uint16_t vid;
 	struct ifvlan_linkmib *mib;
 	struct psref psref;
-	bool have_vtag;
 
-	have_vtag = vlan_has_tag(m);
-	if (have_vtag) {
-		vid = EVL_VLANOFTAG(vlan_get_tag(m));
-		m->m_flags &= ~M_VLANTAG;
-	} else {
-		struct ether_vlan_header *evl;
-
-		if (ifp->if_type != IFT_ETHER) {
-			panic("%s: impossible", __func__);
-		}
-
-		if (m->m_len < sizeof(struct ether_vlan_header) &&
-		    (m = m_pullup(m,
-		     sizeof(struct ether_vlan_header))) == NULL) {
-			printf("%s: no memory for VLAN header, "
-			    "dropping packet.\n", ifp->if_xname);
-			return;
-		}
-
-		if (m_makewritable(&m, 0,
-		    sizeof(struct ether_vlan_header), M_DONTWAIT)) {
-			m_freem(m);
-			if_statinc(ifp, if_ierrors);
-			return;
-		}
-
-		evl = mtod(m, struct ether_vlan_header *);
-		KASSERT(ntohs(evl->evl_encap_proto) == ETHERTYPE_VLAN);
-
-		vid = EVL_VLANOFTAG(ntohs(evl->evl_tag));
-
-		/*
-		 * Restore the original ethertype.  We'll remove
-		 * the encapsulation after we've found the vlan
-		 * interface corresponding to the tag.
-		 */
-		evl->evl_encap_proto = evl->evl_proto;
-	}
+	KASSERT(vlan_has_tag(m));
+	vid = EVL_VLANOFTAG(vlan_get_tag(m));
+	KASSERT(vid != 0);
 
 	mib = vlan_lookup_tag_psref(ifp, vid, &psref);
 	if (mib == NULL) {
-		m_freem(m);
-		if_statinc(ifp, if_noproto);
-		return;
+		return m;
 	}
-	KASSERT(mib->ifvm_encaplen == ETHER_VLAN_ENCAP_LEN);
 
 	ifv = mib->ifvm_ifvlan;
 	if ((ifv->ifv_if.if_flags & (IFF_UP | IFF_RUNNING)) !=
@@ -1583,14 +1451,11 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	/*
-	 * Now, remove the encapsulation header.  The original
-	 * header has already been fixed up above.
+	 * Having found a valid vlan interface corresponding to
+	 * the given source interface and vlan tag.
+	 * remove the vlan tag.
 	 */
-	if (!have_vtag) {
-		memmove(mtod(m, char *) + mib->ifvm_encaplen,
-		    mtod(m, void *), sizeof(struct ether_header));
-		m_adj(m, mib->ifvm_encaplen);
-	}
+	m->m_flags &= ~M_VLANTAG;
 
 	/*
 	 * Drop promiscuously received packets if we are not in
@@ -1621,6 +1486,7 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	if_input(&ifv->ifv_if, m);
 out:
 	vlan_putref_linkmib(mib, &psref);
+	return NULL;
 }
 
 /*

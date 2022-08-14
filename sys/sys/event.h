@@ -1,4 +1,4 @@
-/*	$NetBSD: event.h,v 1.52 2022/02/12 15:51:29 thorpej Exp $	*/
+/*	$NetBSD: event.h,v 1.54 2022/07/19 00:46:00 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999,2000,2001 Jonathan Lemon <jlemon@FreeBSD.org>
@@ -262,7 +262,6 @@ struct knote {
 	struct kfilter		*kn_kfilter;
 	void 			*kn_hook;
 	int			kn_hookid;
-	unsigned int		kn_influx;	/* q: in-flux counter */
 
 #define	KN_ACTIVE	0x01U			/* event has been triggered */
 #define	KN_QUEUED	0x02U			/* event is on queue */
@@ -334,30 +333,10 @@ int	kfilter_unregister(const char *);
 int	filt_seltrue(struct knote *, long);
 extern const struct filterops seltrue_filtops;
 
-static inline void
-klist_init(struct klist *list)
-{
-	SLIST_INIT(list);
-}
-
-static inline void
-klist_fini(struct klist *list)
-{
-	/* Nothing, for now. */
-}
-
-static inline void
-klist_insert(struct klist *list, struct knote *kn)
-{
-	SLIST_INSERT_HEAD(list, kn, kn_selnext);
-}
-
-static inline bool
-klist_remove(struct klist *list, struct knote *kn)
-{
-	SLIST_REMOVE(list, kn, knote, kn_selnext);
-	return SLIST_EMPTY(list);
-}
+void	klist_init(struct klist *);
+void	klist_fini(struct klist *);
+void	klist_insert(struct klist *, struct knote *);
+bool	klist_remove(struct klist *, struct knote *);
 
 #else 	/* !_KERNEL */
 

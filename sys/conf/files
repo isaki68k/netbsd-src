@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1298 2022/06/05 13:35:52 rjs Exp $
+#	$NetBSD: files,v 1.1301 2022/07/24 18:04:48 mrg Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -141,6 +141,8 @@ defparam opt_wapbl.h		WAPBL_DEBUG_PRINT
 defflag opt_rnd_printf.h	RND_PRINTF
 
 defflag opt_todr.h		TODR_DEBUG
+
+defparam opt_maxlwp.h		MAXLWP
 
 # compatibility options
 #
@@ -1514,10 +1516,12 @@ attach	ipmi at ipmibus
 device	dwhdmi: edid, videomode, drmkms, drmkms_i2c, ddc_read_edid
 file	dev/ic/dw_hdmi.c		dwhdmi
 file	dev/ic/dw_hdmi_phy.c		dwhdmi
+makeoptions	dwhdmi	"CPPFLAGS.dwhdmi"+="${CPPFLAGS.drmkms}"
 
 # Analogix DisplayPort
 device	anxdp: edid, videomode, drmkms, drmkms_i2c
 file	dev/ic/anx_dp.c			anxdp
+makeoptions	anxdp	"CPPFLAGS.anxdp"+="${CPPFLAGS.drmkms}"
 
 # Broadcom GENET v5 ethernet
 device	genet: arp, ether, ifnet, mii

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.103 2022/04/06 22:01:45 mlelstv Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.105 2022/07/31 12:59:26 mlelstv Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.103 2022/04/06 22:01:45 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.105 2022/07/31 12:59:26 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -203,6 +203,7 @@ static const struct urtwn_dev {
 	URTWN_DEV(TPLINK,	RTL8192CU),
 	URTWN_DEV(TRENDNET,	RTL8188CU),
 	URTWN_DEV(TRENDNET,	RTL8192CU),
+	URTWN_DEV(TRENDNET,	TEW648UBM),
 	URTWN_DEV(ZYXEL,	RTL8192CU),
 
 	/* URTWN_RTL8188E */
@@ -2623,7 +2624,8 @@ urtwn_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 				struct usbd_pipe *pipe = sc->tx_pipe[pidx];
 				usbd_clear_endpoint_stall_async(pipe);
 			}
-			device_printf(sc->sc_dev, "device timeout\n");
+			device_printf(sc->sc_dev, "transmit failed, %s\n",
+			              usbd_errstr(status));
 			if_statinc(ifp, if_oerrors);
 		}
 		splx(s);

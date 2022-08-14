@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.301 2022/03/25 08:56:36 hannken Exp $	*/
+/*	$NetBSD: vnode.h,v 1.303 2022/08/05 05:20:39 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -179,8 +179,8 @@ struct vnode {
 	enum vtype	v_type;			/* -   vnode type */
 	enum vtagtype	v_tag;			/* -   type of underlying data */
 	void 		*v_data;		/* -   private data for fs */
-	struct klist	v_klist;		/* i   notes attached to vnode */
-	long		v_klist_interest;	/* i   what the noes are interested in */
+	struct vnode_klist *v_klist;		/* i   kevent / knote info */
+
 	void		*v_segvguard;		/* e   for PAX_SEGVGUARD */
 };
 #define	v_mountedhere	v_un.vu_mountedhere
@@ -190,6 +190,19 @@ struct vnode {
 #define	v_ractx		v_un.vu_ractx
 
 typedef struct vnode vnode_t;
+
+/*
+ * Structure that encompasses the kevent state for a vnode.  This is
+ * carved out as a separate structure because some vnodes may share
+ * this state with one another.
+ *
+ * N.B. if two vnodes share a vnode_klist, then they must also share
+ * v_interlock.
+ */
+struct vnode_klist {
+	struct klist	vk_klist;	/* i   notes attached to vnode */
+	long		vk_interest;	/* i   what the notes are interested in */
+};
 #endif
 
 /*
@@ -414,24 +427,26 @@ void vref(struct vnode *);
 /*
  * Macro to determine kevent interest on a vnode.
  */
-#define	VN_KEVENT_INTEREST(vp, n)					\
-	((vp)->v_klist_interest != 0)
+#define	_VN_KEVENT_INTEREST(vp, n)					\
+	(((vp)->v_klist->vk_interest & (n)) != 0)
+
+static inline bool
+VN_KEVENT_INTEREST(struct vnode *vp, long hint)
+{
+	mutex_enter(vp->v_interlock);
+	bool rv = _VN_KEVENT_INTEREST(vp, hint);
+	mutex_exit(vp->v_interlock);
+	return rv;
+}
 
 static inline void
 VN_KNOTE(struct vnode *vp, long hint)
 {
-	/*
-	 * Testing for klist interest unlocked is fine here, as registering
-	 * interest in vnode events is inherently racy with respect to other
-	 * system activity anyway.  Having knotes attached to vnodes is
-	 * actually incredibly rare, so we want to void having to take locks,
-	 * etc. in what is the overwhelmingly common case.
-	 */
-	if (__predict_false(VN_KEVENT_INTEREST(vp, hint))) {
-		mutex_enter(vp->v_interlock);
-		knote(&vp->v_klist, hint);
-		mutex_exit(vp->v_interlock);
+	mutex_enter(vp->v_interlock);
+	if (__predict_false(_VN_KEVENT_INTEREST(vp, hint))) {
+		knote(&vp->v_klist->vk_klist, hint);
 	}
+	mutex_exit(vp->v_interlock);
 }
 
 void	vn_knote_attach(struct vnode *, struct knote *);
@@ -594,6 +609,7 @@ int	vdead_check(struct vnode *, int);
 void	vrevoke(struct vnode *);
 void	vremfree(struct vnode *);
 void	vshareilock(struct vnode *, struct vnode *);
+void	vshareklist(struct vnode *, struct vnode *);
 int	vrefcnt(struct vnode *);
 int	vcache_get(struct mount *, const void *, size_t, struct vnode **);
 int	vcache_new(struct mount *, struct vnode *,
