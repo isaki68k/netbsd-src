@@ -1241,7 +1241,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				int t = omfb_fgbg2rop(fg, bg);
 				rop[i] = t;
 				omfb_set_rop(i, rop[i], ALL1BITS);
-				if (t == 2) {
+				if (t == ROP_THROUGH) {
 					srcplane = i;
 				}
 				fg >>= 1;
