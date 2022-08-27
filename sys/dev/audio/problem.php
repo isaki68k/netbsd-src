@@ -951,7 +951,11 @@ item(56660, false,
 
 item(56947, true,
 "audio(4) may fail uobj allocation under VA fragmentation/preassure",
-"");
+"malloc まわりを色々修正してみた");
+
+item(56980, true,
+"The Sound Blaster Audigy Rx is not supported by NetBSD",
+"emuxki(4) への追加パッチのようだが、まだ動かないようだ?");
 
 ?>
 
