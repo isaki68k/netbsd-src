@@ -66,10 +66,8 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 /* To provide optimization conditions to compilers */
 #if defined(__GNUC__)
 #define ASSUME(cond)	if (!(cond)) __unreachable()
-#elif defined(__clang__)
-# if __has_builtin(__builtin_assume)
-#  define ASSUME(cond)	__builtin_assume(cond)
-# endif
+#elif defined(__clang__) && __has_builtin(__builtin_assume)
+#define ASSUME(cond)	__builtin_assume(cond)
 #else
 #define ASSUME(cond)	(void)(cond)
 #endif
@@ -231,21 +229,17 @@ omfb_set_rowattr(int row, uint8_t fg, uint8_t bg)
 	if (rowattr[row].ismulti)
 		return;
 
-	// YYY
-	// 単色のクリア状態から
 	if (rowattr[row].fg == rowattr[row].bg) {
-		// 両方いっぺんに変更されたらマルチカラー
+		/* From the initial (erased) state, */
 		if (rowattr[row].fg != fg && rowattr[row].bg != bg) {
-			/* when both are changed at once, it's multi-color */
+			/* if both are changed at once, it's multi color */
 			rowattr[row].ismulti = true;
 		} else {
-			// そうでなければモノカラー
-			/* otherwise, it's single-color */
+			/* otherwise, it's single color */
 			rowattr[row].fg = fg;
 			rowattr[row].bg = bg;
 		}
 	} else {
-		// 色が変更されたらここ
 		rowattr[row].ismulti = true;
 	}
 }
@@ -254,9 +248,10 @@ static inline void
 omfb_reset_rowattr(int row, uint8_t bg)
 {
 
+	/* Setting fg equal to bg means 'reset' or 'erased'. */
 	rowattr[row].ismulti = false;
 	rowattr[row].bg = bg;
-	rowattr[row].fg = bg;	 /* fg sets same value */
+	rowattr[row].fg = bg;
 }
 
 /*
@@ -602,6 +597,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	int sh, sl;
 	int y;
 	int scanspan;
+	int row;
 	uint8_t *p;
 	uint8_t fg, bg;
 
@@ -615,7 +611,7 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
-	for (int row = startrow; row < startrow + nrows; row++) {
+	for (row = startrow; row < startrow + nrows; row++) {
 		omfb_reset_rowattr(row, bg);
 	}
 
