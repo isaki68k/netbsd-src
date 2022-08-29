@@ -687,7 +687,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	int step;
 	int plane;
 	int16_t height_m1;
-	int16_t wloop, hloop;
+	int16_t wloop, h;
 
 	step = OMFB_STRIDE;
 
@@ -720,7 +720,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb_rascopy_single_LL:\n"
-		"	move.w	%[height_m1],%[hloop]			;\n"
+		"	move.w	%[height_m1],%[h]			;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]				;\n"
 
@@ -732,11 +732,11 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		"	adda.l	%[step8],%[src]				;\n"
 		"	adda.l	%[step8],%[dst]				;\n"
 
-		"	dbra	%[hloop],1b				;\n"
+		"	dbra	%[h],1b					;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
-		      [hloop] "=&d" (hloop),
+		      [h] "=&d" (h),
 		      [wloop] "=&d" (wloop)
 		    : /* input */
 		      [wh] "r" (wh),
@@ -746,7 +746,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		      "memory"
 		);
 #else
-		for (hloop = height_m1; hloop >= 0; hloop--) {
+		for (h = height_m1; h >= 0; h--) {
 			uint32_t *s32 = (uint32_t *)src;
 			uint32_t *d32 = (uint32_t *)dst;
 			for (wloop = wh; wloop >= 0; wloop--) {
@@ -773,18 +773,18 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb_rascopy_single_L:\n"
-		"	move.l	%[height_m1],%[hloop]		;\n"
+		"	move.l	%[height_m1],%[h]		;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[hloop],1b			;\n"
+		"	dbra	%[h],1b				;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
-		      [hloop] "=&d" (hloop)
+		      [h] "=&d" (h)
 		    : /* input */
 		      [height_m1] "g" (height_m1),
 		      [step] "r" (step)
@@ -792,7 +792,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		      "memory"
 		);
 #else
-		for (hloop = height_m1; hloop >= 0; hloop--) {
+		for (h = height_m1; h >= 0; h--) {
 			*(uint32_t *)dst = *(uint32_t *)src;
 			dst += step;
 			src += step;
@@ -826,18 +826,18 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 	asm volatile("\n"
 	"|omfb_rascopy_single_bit:\n"
-	"	move.l	%[height_m1],%[hloop]		;\n"
+	"	move.l	%[height_m1],%[h]		;\n"
 	"1:\n"
 	"	move.l	(%[src]),(%[dst])		;\n"
 
 	"	adda.l	%[step],%[src]			;\n"
 	"	adda.l	%[step],%[dst]			;\n"
 
-	"	dbra	%[hloop],1b			;\n"
+	"	dbra	%[h],1b				;\n"
 	    : /* output */
 	      [src] "+&a" (src),
 	      [dst] "+&a" (dst),
-	      [hloop] "=&d" (hloop)
+	      [h] "=&d" (h)
 	    : /* input */
 	      [height_m1] "g" (height_m1),
 	      [step] "r" (step)
@@ -845,7 +845,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	      "memory"
 	);
 #else
-	for (hloop = height_m1; hloop >= 0; hloop--) {
+	for (h = height_m1; h >= 0; h--) {
 		*(uint32_t *)dst = *(uint32_t *)src;
 		dst += step;
 		src += step;
@@ -878,7 +878,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	int step;
 	uint32_t mask;
 	int16_t height_m1;
-	int16_t wloop, hloop;
+	int16_t wloop, h;
 
 	step = OMFB_STRIDE;
 
@@ -910,7 +910,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_LL:\n"
-		"	move.w	%[height_m1],%[hloop]	;\n"
+		"	move.w	%[height_m1],%[h]	;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]		;\n"
 
@@ -956,14 +956,14 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step8],%[dst2]	;\n"
 		"	adda.l	%[step8],%[dst3]	;\n"
 
-		"	dbra	%[hloop],1b		;\n"
+		"	dbra	%[h],1b			;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
 		      [dst3] "+&a" (dst3),
-		      [hloop] "=&d" (hloop),
+		      [h] "=&d" (h),
 		      [wloop] "=&d" (wloop)
 		    : /* input */
 		      [wh] "r" (wh),
@@ -974,7 +974,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      "memory"
 		);
 #else
-		for (hloop = height_m1; hloop >= 0; hloop--) {
+		for (h = height_m1; h >= 0; h--) {
 			for (wloop = wh; wloop >= 0; wloop--) {
 				*(uint32_t *)dst0 = *(uint32_t *)src0;
 				dst0 += 4;
@@ -1031,7 +1031,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_L:\n"
-		"	move.l	%[height_m1],%[hloop]		;\n"
+		"	move.l	%[height_m1],%[h]		;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
@@ -1047,14 +1047,14 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[hloop],1b			;\n"
+		"	dbra	%[h],1b				;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
 		      [dst3] "+&a" (dst3),
-		      [hloop] "=&d" (hloop)
+		      [h] "=&d" (h)
 		    : /* input */
 		      [height_m1] "g" (height_m1),
 		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
@@ -1064,7 +1064,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      "memory"
 		);
 #else
-		for (hloop = height_m1; hloop >= 0; hloop--) {
+		for (h = height_m1; h >= 0; h--) {
 			*(uint32_t *)dst0 = *(uint32_t *)src0;
 			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst1 = *(uint32_t *)src0;
@@ -1106,7 +1106,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 	asm volatile("\n"
 	"|omfb4_rascopy_multi_bit:\n"
-	"	move.l	%[height_m1],%[hloop]		;\n"
+	"	move.l	%[height_m1],%[h]		;\n"
 	"1:\n"
 	"	move.l	(%[src0]),(%[dst0])		;\n"
 	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
@@ -1122,14 +1122,14 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	"	adda.l	%[step],%[dst2]			;\n"
 	"	adda.l	%[step],%[dst3]			;\n"
 
-	"	dbra	%[hloop],1b			;\n"
+	"	dbra	%[h],1b				;\n"
 	    : /* output */
 	      [src0] "+&a" (src0),
 	      [dst0] "+&a" (dst0),
 	      [dst1] "+&a" (dst1),
 	      [dst2] "+&a" (dst2),
 	      [dst3] "+&a" (dst3),
-	      [hloop] "=&d" (hloop)
+	      [h] "=&d" (h)
 	    : /* input */
 	      [height_m1] "g" (height_m1),
 	      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
@@ -1139,7 +1139,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	      "memory"
 	);
 #else
-	for (hloop = height_m1; hloop >= 0; hloop--) {
+	for (h = height_m1; h >= 0; h--) {
 		*(uint32_t *)dst0 = *(uint32_t *)src0;
 		src0 += OMFB_PLANEOFFS;
 		*(uint32_t *)dst1 = *(uint32_t *)src0;
