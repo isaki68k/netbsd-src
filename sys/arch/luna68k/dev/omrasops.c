@@ -686,7 +686,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	int wl;
 	int step;
 	int plane;
-	int16_t h;
+	int16_t height_m1;
 	int16_t wloop, hloop;
 
 	step = OMFB_STRIDE;
@@ -702,8 +702,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		step = -step;
 		height = -height;
 	}
-	// YYY asm 側にいれたい
-	h = height - 1;	/* for dbra */
+	height_m1 = height - 1;
 
 	/*
 	 * On single, it's not necessary to process two longwords at a time,
@@ -721,7 +720,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb_rascopy_single_LL:\n"
-		"	move.w	%[h],%[hloop]				;\n"
+		"	move.w	%[height_m1],%[hloop]			;\n"
 		"1:\n"
 		"	move.w	%[wh],%[wloop]				;\n"
 
@@ -741,13 +740,13 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		      [wloop] "=&d" (wloop)
 		    : /* input */
 		      [wh] "r" (wh),
-		      [h] "g" (h),
+		      [height_m1] "g" (height_m1),
 		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
 		);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
+		for (hloop = height_m1; hloop >= 0; hloop--) {
 			uint32_t *s32 = (uint32_t *)src;
 			uint32_t *d32 = (uint32_t *)dst;
 			for (wloop = wh; wloop >= 0; wloop--) {
@@ -774,7 +773,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb_rascopy_single_L:\n"
-		"	move.l	%[h],%[hloop]			;\n"
+		"	move.l	%[height_m1],%[hloop]		;\n"
 		"1:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
@@ -787,13 +786,13 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		      [dst] "+&a" (dst),
 		      [hloop] "=&d" (hloop)
 		    : /* input */
-		      [h] "g" (h),
+		      [height_m1] "g" (height_m1),
 		      [step] "r" (step)
 		    : /* clobbers */
 		      "memory"
 		);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
+		for (hloop = height_m1; hloop >= 0; hloop--) {
 			*(uint32_t *)dst = *(uint32_t *)src;
 			dst += step;
 			src += step;
@@ -827,7 +826,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 	asm volatile("\n"
 	"|omfb_rascopy_single_bit:\n"
-	"	move.l	%[h],%[hloop]			;\n"
+	"	move.l	%[height_m1],%[hloop]		;\n"
 	"1:\n"
 	"	move.l	(%[src]),(%[dst])		;\n"
 
@@ -840,13 +839,13 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	      [dst] "+&a" (dst),
 	      [hloop] "=&d" (hloop)
 	    : /* input */
-	      [h] "g" (h),
+	      [height_m1] "g" (height_m1),
 	      [step] "r" (step)
 	    : /* clobbers */
 	      "memory"
 	);
 #else
-	for (hloop = h; hloop >= 0; hloop--) {
+	for (hloop = height_m1; hloop >= 0; hloop--) {
 		*(uint32_t *)dst = *(uint32_t *)src;
 		dst += step;
 		src += step;
@@ -878,7 +877,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	int rewind;
 	int step;
 	uint32_t mask;
-	int16_t h;
+	int16_t height_m1;
 	int16_t wloop, hloop;
 
 	step = OMFB_STRIDE;
@@ -894,8 +893,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		step = -step;
 		height = -height;
 	}
-	// YYY asm 側にいれたい
-	h = height - 1;	/* for dbra */
+	height_m1 = height - 1;
 
 	dst1 = dst0 + OMFB_PLANEOFFS;
 	dst2 = dst1 + OMFB_PLANEOFFS;
@@ -912,9 +910,9 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_LL:\n"
-		"	move.w	%[h],%[hloop]	;\n"
+		"	move.w	%[height_m1],%[hloop]	;\n"
 		"1:\n"
-		"	move.w	%[wh],%[wloop]	;\n"
+		"	move.w	%[wh],%[wloop]		;\n"
 
 		"2:\n"
 			/*
@@ -969,14 +967,14 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      [wloop] "=&d" (wloop)
 		    : /* input */
 		      [wh] "r" (wh),
-		      [h] "g" (h),
+		      [height_m1] "g" (height_m1),
 		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
 		);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
+		for (hloop = height_m1; hloop >= 0; hloop--) {
 			for (wloop = wh; wloop >= 0; wloop--) {
 				*(uint32_t *)dst0 = *(uint32_t *)src0;
 				dst0 += 4;
@@ -1033,7 +1031,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_L:\n"
-		"	move.l	%[h],%[hloop]			;\n"
+		"	move.l	%[height_m1],%[hloop]		;\n"
 		"1:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
@@ -1058,7 +1056,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      [dst3] "+&a" (dst3),
 		      [hloop] "=&d" (hloop)
 		    : /* input */
-		      [h] "g" (h),
+		      [height_m1] "g" (height_m1),
 		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [rewind] "r" (rewind),
 		      [step] "r" (step)
@@ -1066,7 +1064,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      "memory"
 		);
 #else
-		for (hloop = h; hloop >= 0; hloop--) {
+		for (hloop = height_m1; hloop >= 0; hloop--) {
 			*(uint32_t *)dst0 = *(uint32_t *)src0;
 			src0 += OMFB_PLANEOFFS;
 			*(uint32_t *)dst1 = *(uint32_t *)src0;
@@ -1108,7 +1106,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 	asm volatile("\n"
 	"|omfb4_rascopy_multi_bit:\n"
-	"	move.l	%[h],%[hloop]			;\n"
+	"	move.l	%[height_m1],%[hloop]		;\n"
 	"1:\n"
 	"	move.l	(%[src0]),(%[dst0])		;\n"
 	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
@@ -1133,7 +1131,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	      [dst3] "+&a" (dst3),
 	      [hloop] "=&d" (hloop)
 	    : /* input */
-	      [h] "g" (h),
+	      [height_m1] "g" (height_m1),
 	      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 	      [rewind] "r" (rewind),
 	      [step] "r" (step)
@@ -1141,7 +1139,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	      "memory"
 	);
 #else
-	for (hloop = h; hloop >= 0; hloop--) {
+	for (hloop = height_m1; hloop >= 0; hloop--) {
 		*(uint32_t *)dst0 = *(uint32_t *)src0;
 		src0 += OMFB_PLANEOFFS;
 		*(uint32_t *)dst1 = *(uint32_t *)src0;
