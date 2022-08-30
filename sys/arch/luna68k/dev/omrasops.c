@@ -714,10 +714,8 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	if (wh > 0) {
 		int step8 = step - wh * 8;
 
-		// YYY asm 側に入れたい
-		wh--;	/* for dbra */
-
 #if USE_M68K_ASM
+		wh--;	/* for dbra */
 		asm volatile("\n"
 		"|omfb_rascopy_single_LL:\n"
 		"	move.w	%[height_m1],%[h]			;\n"
@@ -746,6 +744,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		      "memory"
 		);
 #else
+		wh--;	/* to match to asm side */
 		for (h = height_m1; h >= 0; h--) {
 			uint32_t *s32 = (uint32_t *)src;
 			uint32_t *d32 = (uint32_t *)dst;
@@ -904,10 +903,8 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	if (wh > 0) {
 		int step8 = step - wh * 8;
 
-		// YYY asm 側に入れたい
-		wh--;	/* for dbra */
-
 #if USE_M68K_ASM
+		wh--;	/* for dbra */
 		asm volatile("\n"
 		"|omfb4_rascopy_multi_LL:\n"
 		"	move.w	%[height_m1],%[h]	;\n"
@@ -974,6 +971,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		      "memory"
 		);
 #else
+		wh--;	/* to match to asm side */
 		for (h = height_m1; h >= 0; h--) {
 			for (w = wh; w >= 0; w--) {
 				*(uint32_t *)dst0 = *(uint32_t *)src0;
