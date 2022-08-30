@@ -825,7 +825,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 	asm volatile("\n"
 	"|omfb_rascopy_single_bit:\n"
-	"	move.l	%[height_m1],%[h]		;\n"
+	"	move.w	%[height_m1],%[h]		;\n"
 	"1:\n"
 	"	move.l	(%[src]),(%[dst])		;\n"
 
