@@ -342,10 +342,11 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	do {
 		/* TODO: re-setting mask can be ommitted in middle of loop */
 		uint8_t *d;
-		int16_t plane = lastplane;
+		int16_t plane;
 		int16_t rop;
 		int16_t h;
 
+		plane = lastplane;
 		width -= dw;
 		if (width < 0) {
 			CLEAR_LOWER_BITS(mask, -width);
@@ -1582,7 +1583,9 @@ static int
 omfb_mapchar(void *cookie, int c, u_int *cp)
 {
 	struct rasops_info *ri = cookie;
-	struct wsdisplay_font *wf = ri->ri_font;
+	struct wsdisplay_font *wf;
+
+	wf = ri->ri_font;
 
 	if (wf->encoding != WSDISPLAY_FONTENC_ISO) {
 		c = wsfont_map_unichar(wf, c);
@@ -1675,8 +1678,11 @@ omfb_cursor(void *cookie, int on, int row, int col)
 static int
 omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 {
-	uint32_t a = 0;
-	uint16_t c = 0;
+	uint32_t a;
+	uint16_t c;
+
+	a = 0;
+	c = 0;
 
 	if ((flags & WSATTR_BLINK) != 0)
 		return EINVAL;
