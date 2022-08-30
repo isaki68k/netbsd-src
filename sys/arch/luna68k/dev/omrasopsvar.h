@@ -33,7 +33,7 @@
 #define OMFB_PLANEOFFS		(0x40000)	/* plane offset */
 #define OMFB_STRIDE		(2048/8)	/* stride [byte] */
 
-/* 差し替え予定 */
+/* TODO: should be improved... */
 #define omfb_planecount hwplanecount
 extern int hwplanemask;
 extern int hwplanecount;
@@ -67,9 +67,6 @@ extern int hwplanecount;
 #define ROP_OR3		13	/* D | ~M	*/
 #define ROP_NAND	14	/* ~D | ~M	*/
 #define ROP_ONE		15	/* all 1	*/
-
-/*
- */
 
 int omrasops1_init(struct rasops_info *, int, int);
 int omrasops4_init(struct rasops_info *, int, int);
