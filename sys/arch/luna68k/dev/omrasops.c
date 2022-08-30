@@ -716,29 +716,27 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 #if USE_M68K_ASM
 		wh--;	/* for dbra */
+		h = height_m1;
 		asm volatile("\n"
-		"|omfb_rascopy_single_LL:\n"
-		"	move.w	%[height_m1],%[h]			;\n"
-		"1:\n"
+		"omfb_rascopy_single_LL:\n"
 		"	move.w	%[wh],%[w]				;\n"
 
-		"2:\n"
+		"1:\n"
 		"	move.l	(%[src])+,(%[dst])+			;\n"
 		"	move.l	(%[src])+,(%[dst])+			;\n"
-		"	dbra	%[w],2b					;\n"
+		"	dbra	%[w],1b					;\n"
 
 		"	adda.l	%[step8],%[src]				;\n"
 		"	adda.l	%[step8],%[dst]				;\n"
 
-		"	dbra	%[h],1b					;\n"
+		"	dbra	%[h],omfb_rascopy_single_LL		;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
-		      [h] "=&d" (h),
+		      [h] "+&d" (h),
 		      [w] "=&d" (w)
 		    : /* input */
 		      [wh] "r" (wh),
-		      [height_m1] "g" (height_m1),
 		      [step8] "r" (step8)
 		    : /* clobbers */
 		      "memory"
@@ -770,22 +768,20 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	if ((width & 32) != 0) {
 		/* Transfer one longword since an odd longword */
 #if USE_M68K_ASM
+		h = height_m1;
 		asm volatile("\n"
-		"|omfb_rascopy_single_L:\n"
-		"	move.l	%[height_m1],%[h]		;\n"
-		"1:\n"
+		"omfb_rascopy_single_L:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[h],1b				;\n"
+		"	dbra	%[h],omfb_rascopy_single_L	;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
-		      [h] "=&d" (h)
+		      [h] "+&d" (h)
 		    : /* input */
-		      [height_m1] "g" (height_m1),
 		      [step] "r" (step)
 		    : /* clobbers */
 		      "memory"
@@ -823,22 +819,20 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	}
 
 #if USE_M68K_ASM
+	h = height_m1;
 	asm volatile("\n"
-	"|omfb_rascopy_single_bit:\n"
-	"	move.w	%[height_m1],%[h]		;\n"
-	"1:\n"
+	"omfb_rascopy_single_bit:\n"
 	"	move.l	(%[src]),(%[dst])		;\n"
 
 	"	adda.l	%[step],%[src]			;\n"
 	"	adda.l	%[step],%[dst]			;\n"
 
-	"	dbra	%[h],1b				;\n"
+	"	dbra	%[h],omfb_rascopy_single_bit	;\n"
 	    : /* output */
 	      [src] "+&a" (src),
 	      [dst] "+&a" (dst),
-	      [h] "=&d" (h)
+	      [h] "+&d" (h)
 	    : /* input */
-	      [height_m1] "g" (height_m1),
 	      [step] "r" (step)
 	    : /* clobbers */
 	      "memory"
