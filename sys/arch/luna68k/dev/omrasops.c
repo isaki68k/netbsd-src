@@ -264,8 +264,8 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
     uint32_t val, int width, int height)
 {
 	uint32_t mask;
+	int32_t height_m1;
 	int dw;		/* 1 pass width bits */
-	int16_t height_m1;
 
 	ASSUME(width > 0);
 	ASSUME(height > 0);
@@ -280,7 +280,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	/* do-while loop seems slightly faster than a for loop */
 	do {
 		uint8_t *d;
-		int16_t h;
+		int32_t h;
 
 		width -= dw;
 		if (width < 0) {
