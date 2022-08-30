@@ -899,13 +899,12 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 
 #if USE_M68K_ASM
 		wh--;	/* for dbra */
+		h = height_m1;
 		asm volatile("\n"
-		"|omfb4_rascopy_multi_LL:\n"
-		"	move.w	%[height_m1],%[h]	;\n"
-		"1:\n"
+		"omfb4_rascopy_multi_LL:\n"
 		"	move.w	%[wh],%[w]		;\n"
 
-		"2:\n"
+		"1:\n"
 			/*
 			 * Optimized for 68030.
 			 *
@@ -939,7 +938,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0])+,(%[dst0])+	;\n"	/* P0 */
 
-		"	dbra	%[w],2b			;\n"
+		"	dbra	%[w],1b			;\n"
 
 		"	adda.l	%[step8],%[src0]	;\n"
 		"	adda.l	%[step8],%[dst0]	;\n"
@@ -947,18 +946,17 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step8],%[dst2]	;\n"
 		"	adda.l	%[step8],%[dst3]	;\n"
 
-		"	dbra	%[h],1b			;\n"
+		"	dbra	%[h],omfb4_rascopy_multi_LL	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
 		      [dst3] "+&a" (dst3),
-		      [h] "=&d" (h),
+		      [h] "+&d" (h),
 		      [w] "=&d" (w)
 		    : /* input */
 		      [wh] "r" (wh),
-		      [height_m1] "g" (height_m1),
 		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [step8] "r" (step8)
 		    : /* clobbers */
@@ -1021,10 +1019,9 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	if ((width & 32) != 0) {
 		/* Transfer one longword since an odd longword */
 #if USE_M68K_ASM
+		h = height_m1;
 		asm volatile("\n"
-		"|omfb4_rascopy_multi_L:\n"
-		"	move.l	%[height_m1],%[h]		;\n"
-		"1:\n"
+		"omfb4_rascopy_multi_L:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1039,16 +1036,15 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[h],1b				;\n"
+		"	dbra	%[h],omfb4_rascopy_multi_L	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
 		      [dst1] "+&a" (dst1),
 		      [dst2] "+&a" (dst2),
 		      [dst3] "+&a" (dst3),
-		      [h] "=&d" (h)
+		      [h] "+&d" (h)
 		    : /* input */
-		      [height_m1] "g" (height_m1),
 		      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 		      [rewind] "r" (rewind),
 		      [step] "r" (step)
@@ -1096,10 +1092,9 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	omfb_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
+	h = height_m1;
 	asm volatile("\n"
-	"|omfb4_rascopy_multi_bit:\n"
-	"	move.l	%[height_m1],%[h]		;\n"
-	"1:\n"
+	"omfb4_rascopy_multi_bit:\n"
 	"	move.l	(%[src0]),(%[dst0])		;\n"
 	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 	"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1114,16 +1109,15 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	"	adda.l	%[step],%[dst2]			;\n"
 	"	adda.l	%[step],%[dst3]			;\n"
 
-	"	dbra	%[h],1b				;\n"
+	"	dbra	%[h],omfb4_rascopy_multi_bit	;\n"
 	    : /* output */
 	      [src0] "+&a" (src0),
 	      [dst0] "+&a" (dst0),
 	      [dst1] "+&a" (dst1),
 	      [dst2] "+&a" (dst2),
 	      [dst3] "+&a" (dst3),
-	      [h] "=&d" (h)
+	      [h] "+&d" (h)
 	    : /* input */
-	      [height_m1] "g" (height_m1),
 	      [PLANEOFFS] "r" (OMFB_PLANEOFFS),
 	      [rewind] "r" (rewind),
 	      [step] "r" (step)
