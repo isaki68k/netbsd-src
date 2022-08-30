@@ -1305,7 +1305,7 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	else
 		full = w / 32;
 
-	sbover = (sb + lnum) >= 32;
+	sbover = (sb + lnum >= 32);
 
 	if (dstcol < srccol || srccol + ncols < dstcol) {
 		/* copy forward (left-to-right) */
