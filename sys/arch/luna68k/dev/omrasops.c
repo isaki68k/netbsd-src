@@ -323,9 +323,9 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
     int width, int height)
 {
 	uint32_t mask;
+	int32_t height_m1;
+	int32_t lastplane;
 	int dw;		/* 1 pass width bits */
-	int16_t height_m1;
-	int16_t lastplane;
 
 	ASSUME(width > 0);
 	ASSUME(height > 0);
@@ -342,9 +342,9 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	do {
 		/* TODO: re-setting mask can be ommitted in middle of loop */
 		uint8_t *d;
-		int16_t plane;
+		int32_t plane;
+		int32_t h;
 		int16_t rop;
-		int16_t h;
 
 		plane = lastplane;
 		width -= dw;
