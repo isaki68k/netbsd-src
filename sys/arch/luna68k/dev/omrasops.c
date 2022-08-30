@@ -256,12 +256,12 @@ omfb_reset_rowattr(int row, uint8_t bg)
 
 /*
  * Fill rectangle.
- * v assumes only ALL0BITS or ALL1BITS, because all bits are used as is
+ * val assumes only ALL0BITS or ALL1BITS, because all bits are used as is
  * regardless of bit offset of the destination.
  */
 static void
 omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
-    uint32_t v, int width, int height)
+    uint32_t val, int width, int height)
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
@@ -298,18 +298,18 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"omfb_fill_loop_h:\n"
-		"	move.l	%[v],(%[d])		;\n"
+		"	move.l	%[val],(%[d])		;\n"
 		"	add.l	%[dstspan],%[d]		;\n"
 		"	dbra	%[h],omfb_fill_loop_h	;\n"
 		    : [d] "+&a" (d),
 		      [h] "+&d" (h)
-		    : [v] "d" (v),
+		    : [val] "d" (val),
 		      [dstspan] "r" (dstspan)
 		    : "memory"
 		);
 #else
 		do {
-			*(uint32_t *)d = v;
+			*(uint32_t *)d = val;
 			d += dstspan;
 		} while (--h >= 0);
 #endif
