@@ -256,7 +256,7 @@ omfb_reset_rowattr(int row, uint8_t bg)
 
 /*
  * Fill rectangle.
- * val assumes only ALL0BITS or ALL1BITS, because all bits are used as is
+ * val is assumed only ALL0BITS or ALL1BITS, because all bits are used as is
  * regardless of bit offset of the destination.
  */
 static void
@@ -410,7 +410,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
  * This is called per individual plane while shifting fg and bg.
  * So the LSB of fg and bg points to this plane.
  *
- * All values of ROP we want to use here happens to be a multiple of 5.
+ * All ROP values we want to use here happens to be a multiple of 5.
  *
  *  bg fg  rop               result
  *  -- --  ----------------  ------
@@ -495,10 +495,9 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
 
-	ASSUME(
-	    omfb_planecount == 8 ||
-	    omfb_planecount == 4 ||
-	    omfb_planecount == 1);
+	ASSUME(omfb_planecount == 8 ||
+	       omfb_planecount == 4 ||
+	       omfb_planecount == 1);
 
 	do {
 		uint8_t *d;
@@ -916,8 +915,8 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			/*
 			 * Optimized for 68030.
 			 *
-			 * On LUNA, it's faster than "MOVE.L (An)+,(An)+",
-			 * "MOVE.L (An,Dn),(An,Dn)", and "MOVEM.L", because 
+			 * On LUNA, this is faster than "MOVE.L (An)+,(An)+",
+			 * "MOVE.L (An,Dn),(An,Dn)", and "MOVEM.L", due to
 			 * the relationship of instruction overlaps and
 			 * access waits.
 			 *
