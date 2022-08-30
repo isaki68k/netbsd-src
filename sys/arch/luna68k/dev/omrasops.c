@@ -1294,9 +1294,9 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 		return;
 	}
 
-	lmask = (db == 0) ? 0 : (ALL1BITS >> db);
+	lmask = (db == 0) ? 0 : ALL1BITS >> db;
 	eb = (db + w) & ALIGNMASK;
-	rmask = (eb == 0) ? 0 : (ALL1BITS << (32 - eb));
+	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb);
 	lnum = (32 - db) & ALIGNMASK;
 	rnum = (dstx + w) & ALIGNMASK;
 
@@ -1305,7 +1305,7 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	else
 		full = w / 32;
 
-	sbover = (sb + lnum >= 32);
+	sbover = (sb + lnum) >= 32;
 
 	if (dstcol < srccol || srccol + ncols < dstcol) {
 		/* copy forward (left-to-right) */
@@ -1433,9 +1433,9 @@ omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 		return;
 	}
 
-	lmask = (db == 0) ? 0 : (ALL1BITS >> db);
+	lmask = (db == 0) ? 0 : ALL1BITS >> db;
 	eb = (db + w) & ALIGNMASK;
-	rmask = (eb == 0) ? 0 : (ALL1BITS << (32 - eb));
+	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb);
 	lnum = (32 - db) & ALIGNMASK;
 	rnum = (dstx + w) & ALIGNMASK;
 
@@ -1444,7 +1444,7 @@ omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	else
 		full = w / 32;
 
-	sbover = (sb + lnum >= 32);
+	sbover = (sb + lnum) >= 32;
 
 	if (dstcol < srccol || srccol + ncols < dstcol) {
 		/* copy forward (left-to-right) */
