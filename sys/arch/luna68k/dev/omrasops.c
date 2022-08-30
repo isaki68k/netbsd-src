@@ -1861,3 +1861,4 @@ omrasops_init(struct rasops_info *ri, int wantrows, int wantcols)
 
 	return 0;
 }
+
