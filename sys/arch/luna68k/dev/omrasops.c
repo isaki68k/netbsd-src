@@ -362,13 +362,14 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		"	seq	%[rop]				;\n"
 		"	andi.w	#0x3c,%[rop]			;\n"
 		"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
-		"	suba.l	#0x40000,%[ropfn]		;\n"
+		"	suba.l	%[PLANEOFFS],%[ropfn]		;\n"
 		"	dbra	%[plane],omfb_fill_color_rop	;\n"
 		    : [plane] "+&d" (plane),
 		      [ropfn] "+&a" (ropfn),
 		      [rop] "=&d" (rop)
 		    : [color] "d" (color),
-		      [mask] "g" (mask)
+		      [mask] "g" (mask),
+		      [PLANEOFFS] "g" (OMFB_PLANEOFFS)
 		    : "memory"
 		);
 #else
