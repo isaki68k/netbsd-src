@@ -265,7 +265,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
-	int16_t h16;
+	int16_t height_m1;
 
 	ASSUME(width > 0);
 	ASSUME(height > 0);
@@ -273,7 +273,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 	omfb_set_planemask(planemask);
 
-	h16 = height - 1;
+	height_m1 = height - 1;
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
 
@@ -293,7 +293,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 		d = dstptr;
 		dstptr += 4;
-		h = h16;
+		h = height_m1;
 
 #if USE_M68K_ASM
 		asm volatile("\n"
@@ -324,7 +324,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 {
 	uint32_t mask;
 	int dw;		/* 1 pass width bits */
-	int16_t h16;
+	int16_t height_m1;
 	int16_t lastplane;
 
 	ASSUME(width > 0);
@@ -336,7 +336,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
-	h16 = height - 1;
+	height_m1 = height - 1;
 	lastplane = omfb_planecount - 1;
 
 	do {
@@ -379,7 +379,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 		d = dstptr;
 		dstptr += 4;
-		h = h16;
+		h = height_m1;
 
 #if USE_M68K_ASM
 		asm volatile("\n"
