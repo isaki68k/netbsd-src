@@ -502,7 +502,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	do {
 		uint8_t *d;
 		uint8_t *f;
-		int16_t h;
+		int32_t h;
 
 		width -= dw;
 		if (width < 0) {
