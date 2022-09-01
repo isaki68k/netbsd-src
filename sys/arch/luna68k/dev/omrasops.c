@@ -1571,9 +1571,7 @@ static int
 om_mapchar(void *cookie, int c, u_int *cp)
 {
 	struct rasops_info *ri = cookie;
-	struct wsdisplay_font *wf;
-
-	wf = ri->ri_font;
+	struct wsdisplay_font *wf = ri->ri_font;
 
 	if (wf->encoding != WSDISPLAY_FONTENC_ISO) {
 		c = wsfont_map_unichar(wf, c);
