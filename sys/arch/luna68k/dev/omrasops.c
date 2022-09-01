@@ -1628,9 +1628,7 @@ om_cursor(void *cookie, int on, int row, int col)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
-	om_fill(hwplanemask, ROP_INV2,
-	    p, sl, scanspan,
-	    0, width, height);
+	om_fill(hwplanemask, ROP_INV2, p, sl, scanspan, 0, width, height);
 
 	ri->ri_flg ^= RI_CURSOR;
 
