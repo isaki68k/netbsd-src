@@ -86,23 +86,23 @@ typedef struct {
 } rowattr_t;
 
 /* wscons emulator operations */
-static void	omfb_cursor(void *, int, int, int);
-static int	omfb_mapchar(void *, int, u_int *);
-static void	omfb_putchar(void *, int, int, u_int, long);
-static void	omfb1_copycols(void *, int, int, int, int);
-static void	omfb4_copycols(void *, int, int, int, int);
-static void	omfb1_copyrows(void *, int, int, int num);
-static void	omfb4_copyrows(void *, int, int, int num);
-static void	omfb_erasecols(void *, int, int, int, long);
-static void	omfb_eraserows(void *, int, int, long);
-static int	omfb_allocattr(void *, int, int, int, long *);
+static void	om_cursor(void *, int, int, int);
+static int	om_mapchar(void *, int, u_int *);
+static void	om_putchar(void *, int, int, u_int, long);
+static void	om1_copycols(void *, int, int, int, int);
+static void	om4_copycols(void *, int, int, int, int);
+static void	om1_copyrows(void *, int, int, int num);
+static void	om4_copyrows(void *, int, int, int num);
+static void	om_erasecols(void *, int, int, int, long);
+static void	om_eraserows(void *, int, int, long);
+static int	om_allocattr(void *, int, int, int, long *);
 
-static void	omfb_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
-static void	omfb_fill_color(int, uint8_t *, int, int, int, int);
-static void	omfb_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
+static void	om_fill(int, int, uint8_t *, int, int, uint32_t, int, int);
+static void	om_fill_color(int, uint8_t *, int, int, int, int);
+static void	om_rascopy_single(uint8_t *, uint8_t *, int16_t, int16_t,
     uint8_t[]);
-static void	omfb4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
-static void	omfb_unpack_attr(long, uint8_t *, uint8_t *, int *);
+static void	om4_rascopy_multi(uint8_t *, uint8_t *, int16_t, int16_t);
+static void	om_unpack_attr(long, uint8_t *, uint8_t *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
@@ -121,7 +121,7 @@ static rowattr_t rowattr[43];
 
 #if 0 /* XXX not used yet */
 /*
- * internal attributes. see omfb_allocattr().
+ * internal attributes. see om_allocattr().
  */
 #define OMFB_ATTR_MULTICOLOR		(1U << 31)
 #define OMFB_ATTR_UNDERLINE		(1U << 17)
@@ -180,7 +180,7 @@ static rowattr_t rowattr[43];
 
 /* Set planemask for the common plane and the common ROP */
 static inline void
-omfb_set_planemask(int planemask)
+om_set_planemask(int planemask)
 {
 
 	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
@@ -188,7 +188,7 @@ omfb_set_planemask(int planemask)
 
 /* Get a ROP address */
 static inline volatile uint32_t *
-omfb_rop_addr(int plane, int rop)
+om_rop_addr(int plane, int rop)
 {
 
 	return (volatile uint32_t *)
@@ -197,15 +197,15 @@ omfb_rop_addr(int plane, int rop)
 
 /* Set ROP and ROP's mask for individual plane */
 static inline void
-omfb_set_rop(int plane, int rop, uint32_t mask)
+om_set_rop(int plane, int rop, uint32_t mask)
 {
 
-	*omfb_rop_addr(plane, rop) = mask;
+	*om_rop_addr(plane, rop) = mask;
 }
 
 /* Set ROP and ROP's mask for current setplanemask-ed plane(s) */
 static inline void
-omfb_set_rop_curplane(int rop, uint32_t mask)
+om_set_rop_curplane(int rop, uint32_t mask)
 {
 
 	((volatile uint32_t *)(OMFB_ROP_COMMON))[rop] = mask;
@@ -213,15 +213,15 @@ omfb_set_rop_curplane(int rop, uint32_t mask)
 
 /* Reset planemask and ROP */
 static inline void
-omfb_reset_planemask_and_rop(void)
+om_reset_planemask_and_rop(void)
 {
 
-	omfb_set_planemask(hwplanemask);
-	omfb_set_rop_curplane(ROP_THROUGH, ~0U);
+	om_set_planemask(hwplanemask);
+	om_set_rop_curplane(ROP_THROUGH, ~0U);
 }
 
 static inline void
-omfb_set_rowattr(int row, uint8_t fg, uint8_t bg)
+om_set_rowattr(int row, uint8_t fg, uint8_t bg)
 {
 
 	if (rowattr[row].fg == fg && rowattr[row].bg == bg)
@@ -245,7 +245,7 @@ omfb_set_rowattr(int row, uint8_t fg, uint8_t bg)
 }
 
 static inline void
-omfb_reset_rowattr(int row, uint8_t bg)
+om_reset_rowattr(int row, uint8_t bg)
 {
 
 	/* Setting fg equal to bg means 'reset' or 'erased'. */
@@ -260,7 +260,7 @@ omfb_reset_rowattr(int row, uint8_t bg)
  * regardless of bit offset of the destination.
  */
 static void
-omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
+om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
     uint32_t val, int width, int height)
 {
 	uint32_t mask;
@@ -271,7 +271,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	ASSUME(height > 0);
 	ASSUME(0 <= dstbitoffs && dstbitoffs < 32);
 
-	omfb_set_planemask(planemask);
+	om_set_planemask(planemask);
 
 	height_m1 = height - 1;
 	mask = ALL1BITS >> dstbitoffs;
@@ -289,7 +289,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 			width = 0;
 		}
 
-		omfb_set_rop_curplane(rop, mask);
+		om_set_rop_curplane(rop, mask);
 
 		d = dstptr;
 		dstptr += 4;
@@ -297,10 +297,10 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 #if USE_M68K_ASM
 		asm volatile("\n"
-		"omfb_fill_loop_h:\n"
+		"om_fill_loop_h:\n"
 		"	move.l	%[val],(%[d])		;\n"
 		"	add.l	%[dstspan],%[d]		;\n"
-		"	dbra	%[h],omfb_fill_loop_h	;\n"
+		"	dbra	%[h],om_fill_loop_h	;\n"
 		    : [d] "+&a" (d),
 		      [h] "+&d" (h)
 		    : [val] "d" (val),
@@ -319,7 +319,7 @@ omfb_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 }
 
 static void
-omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
+om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
     int width, int height)
 {
 	uint32_t mask;
@@ -332,7 +332,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	ASSUME(omfb_planecount > 0);
 
 	/* select all planes */
-	omfb_set_planemask(hwplanemask);
+	om_set_planemask(hwplanemask);
 
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
@@ -355,15 +355,15 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		}
 
 #if USE_M68K_ASM
-		volatile uint32_t *ropfn = omfb_rop_addr(lastplane, 0);
+		volatile uint32_t *ropfn = om_rop_addr(lastplane, 0);
 		asm volatile("\n"
-		"omfb_fill_color_rop:\n"
+		"om_fill_color_rop:\n"
 		"	btst	%[plane],%[color]		;\n"
 		"	seq	%[rop]				;\n"
 		"	andi.w	#0x3c,%[rop]			;\n"
 		"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
 		"	suba.l	%[PLANEOFFS],%[ropfn]		;\n"
-		"	dbra	%[plane],omfb_fill_color_rop	;\n"
+		"	dbra	%[plane],om_fill_color_rop	;\n"
 		    : [plane] "+&d" (plane),
 		      [ropfn] "+&a" (ropfn),
 		      [rop] "=&d" (rop)
@@ -375,7 +375,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 #else
 		do {
 			rop = (color & (1 << plane)) ? ROP_ONE : ROP_ZERO;
-			omfb_set_rop(plane, rop, mask);
+			om_set_rop(plane, rop, mask);
 		} while (--plane >= 0);
 #endif
 
@@ -385,11 +385,11 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 #if USE_M68K_ASM
 		asm volatile("\n"
-		"omfb_fill_color_loop_h:\n"
+		"om_fill_color_loop_h:\n"
 		/* you may write any data here since ROP_ONE or ZERO */
 		"	clr.l	(%[d])				;\n"
 		"	add.l	%[dstspan],%[d]			;\n"
-		"	dbra	%[h],omfb_fill_color_loop_h	;\n"
+		"	dbra	%[h],om_fill_color_loop_h	;\n"
 		    : [d] "+&a" (d),
 		      [h] "+&d" (h)
 		    : [dstspan] "r" (dstspan)
@@ -424,7 +424,7 @@ omfb_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
  * a single write to the common plane.
  */
 static inline int
-omfb_fgbg2rop(uint8_t fg, uint8_t bg)
+om_fgbg2rop(uint8_t fg, uint8_t bg)
 {
 	int t;
 
@@ -437,7 +437,7 @@ omfb_fgbg2rop(uint8_t fg, uint8_t bg)
  * This function modifies(breaks) the planemask and ROPs.
  */
 static void
-omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
+om_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *fontptr;
@@ -467,16 +467,16 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	fontptr = (uint8_t *)ri->ri_font->data +
 	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
 
-	omfb_unpack_attr(attr, &fg, &bg, NULL);
-	omfb_set_rowattr(row, fg, bg);
+	om_unpack_attr(attr, &fg, &bg, NULL);
+	om_set_rowattr(row, fg, bg);
 
 	if (last_fg != fg || last_bg != bg) {
 		last_fg = fg;
 		last_bg = bg;
 		/* calculate ROP */
 		for (plane = 0; plane < omfb_planecount; plane++) {
-			int t = omfb_fgbg2rop(fg, bg);
-			ropaddr[plane] = omfb_rop_addr(plane, t);
+			int t = om_fgbg2rop(fg, bg);
+			ropaddr[plane] = om_rop_addr(plane, t);
 			fg >>= 1;
 			bg >>= 1;
 		}
@@ -490,15 +490,15 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	dstcmn = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
 
 	/* select all plane */
-	omfb_set_planemask(hwplanemask);
+	om_set_planemask(hwplanemask);
 
 	fontx = 0;
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
 
-	ASSUME(omfb_planecount == 8 ||
+	ASSUME(omfb_planecount == 1 ||
 	       omfb_planecount == 4 ||
-	       omfb_planecount == 1);
+	       omfb_planecount == 8);
 
 	do {
 		uint8_t *d;
@@ -547,11 +547,11 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		dw = 32;
 	} while (width > 0);
 
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 }
 
 static void
-omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
+om_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -568,28 +568,28 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	startx = ri->ri_font->fontwidth * startcol;
 	width = ri->ri_font->fontwidth * ncols;
 	height = ri->ri_font->fontheight;
-	omfb_unpack_attr(attr, &fg, &bg, NULL);
+	om_unpack_attr(attr, &fg, &bg, NULL);
 	sh = startx >> 5;
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* I'm not sure */
-	omfb_set_rowattr(row, fg, bg);
+	om_set_rowattr(row, fg, bg);
 
 	if (bg == 0) {
-		/* omfb_fill seems slightly efficient */
-		omfb_fill(hwplanemask, ROP_ZERO,
+		/* om_fill seems slightly efficient */
+		om_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
-		omfb_fill_color(bg, p, sl, scanspan, width, height);
+		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
 
 	/* reset mask value */
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 }
 
 static void
-omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
+om_eraserows(void *cookie, int startrow, int nrows, long attr)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -607,28 +607,28 @@ omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 	startx = 0;
 	width = ri->ri_emuwidth;
 	height = ri->ri_font->fontheight * nrows;
-	omfb_unpack_attr(attr, &fg, &bg, NULL);
+	om_unpack_attr(attr, &fg, &bg, NULL);
 	sh = startx >> 5;
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	for (row = startrow; row < startrow + nrows; row++) {
-		omfb_reset_rowattr(row, bg);
+		om_reset_rowattr(row, bg);
 	}
 
 	if (bg == 0) {
-		/* omfb_fill seems slightly efficient */
-		omfb_fill(hwplanemask, ROP_ZERO,
+		/* om_fill seems slightly efficient */
+		om_fill(hwplanemask, ROP_ZERO,
 		    p, sl, scanspan, 0, width, height);
 	} else {
-		omfb_fill_color(bg, p, sl, scanspan, width, height);
+		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
 	/* reset mask value */
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 }
 
 static void
-omfb1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
+om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *p, *q;
@@ -679,7 +679,7 @@ omfb1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
  * This function modifies(breaks) the planemask and ROPs.
  */
 static void
-omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
+om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
     uint8_t rop[])
 {
 	uint32_t mask;
@@ -719,7 +719,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		wh--;	/* for dbra */
 		h = height_m1;
 		asm volatile("\n"
-		"omfb_rascopy_single_LL:\n"
+		"om_rascopy_single_LL:\n"
 		"	move.w	%[wh],%[w]				;\n"
 
 		"1:\n"
@@ -730,7 +730,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		"	adda.l	%[step8],%[src]				;\n"
 		"	adda.l	%[step8],%[dst]				;\n"
 
-		"	dbra	%[h],omfb_rascopy_single_LL		;\n"
+		"	dbra	%[h],om_rascopy_single_LL		;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -771,13 +771,13 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #if USE_M68K_ASM
 		h = height_m1;
 		asm volatile("\n"
-		"omfb_rascopy_single_L:\n"
+		"om_rascopy_single_L:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
 
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
 
-		"	dbra	%[h],omfb_rascopy_single_L	;\n"
+		"	dbra	%[h],om_rascopy_single_L	;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -816,19 +816,19 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	 * allow you to set the mask while keeping the ROP states.
 	 */
 	for (plane = 0; plane < omfb_planecount; plane++) {
-		omfb_set_rop(plane, rop[plane], mask);
+		om_set_rop(plane, rop[plane], mask);
 	}
 
 #if USE_M68K_ASM
 	h = height_m1;
 	asm volatile("\n"
-	"omfb_rascopy_single_bit:\n"
+	"om_rascopy_single_bit:\n"
 	"	move.l	(%[src]),(%[dst])		;\n"
 
 	"	adda.l	%[step],%[src]			;\n"
 	"	adda.l	%[step],%[dst]			;\n"
 
-	"	dbra	%[h],omfb_rascopy_single_bit	;\n"
+	"	dbra	%[h],om_rascopy_single_bit	;\n"
 	    : /* output */
 	      [src] "+&a" (src),
 	      [dst] "+&a" (dst),
@@ -847,7 +847,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 #endif
 
 	for (plane = 0; plane < omfb_planecount; plane++) {
-		omfb_set_rop(plane, rop[plane], ALL1BITS);
+		om_set_rop(plane, rop[plane], ALL1BITS);
 	}
 }
 
@@ -863,7 +863,7 @@ omfb_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
  * This function modifies(breaks) the planemask and ROPs.
  */
 static void
-omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
+om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 {
 	uint8_t *dst1, *dst2, *dst3;
 	int wh;
@@ -902,7 +902,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		wh--;	/* for dbra */
 		h = height_m1;
 		asm volatile("\n"
-		"omfb4_rascopy_multi_LL:\n"
+		"om4_rascopy_multi_LL:\n"
 		"	move.w	%[wh],%[w]		;\n"
 
 		"1:\n"
@@ -947,7 +947,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step8],%[dst2]	;\n"
 		"	adda.l	%[step8],%[dst3]	;\n"
 
-		"	dbra	%[h],omfb4_rascopy_multi_LL	;\n"
+		"	dbra	%[h],om4_rascopy_multi_LL	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
@@ -1022,7 +1022,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 #if USE_M68K_ASM
 		h = height_m1;
 		asm volatile("\n"
-		"omfb4_rascopy_multi_L:\n"
+		"om4_rascopy_multi_L:\n"
 		"	move.l	(%[src0]),(%[dst0])		;\n"
 		"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 		"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1037,7 +1037,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
 
-		"	dbra	%[h],omfb4_rascopy_multi_L	;\n"
+		"	dbra	%[h],om4_rascopy_multi_L	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
 		      [dst0] "+&a" (dst0),
@@ -1089,13 +1089,13 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	/* Then, transfer residual bits */
 
 	mask = ALL1BITS << (32 - wl);
-	omfb_set_planemask(hwplanemask);
-	omfb_set_rop_curplane(ROP_THROUGH, mask);
+	om_set_planemask(hwplanemask);
+	om_set_rop_curplane(ROP_THROUGH, mask);
 
 #if USE_M68K_ASM
 	h = height_m1;
 	asm volatile("\n"
-	"omfb4_rascopy_multi_bit:\n"
+	"om4_rascopy_multi_bit:\n"
 	"	move.l	(%[src0]),(%[dst0])		;\n"
 	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
 	"	move.l	(%[src0]),(%[dst1])		;\n"
@@ -1110,7 +1110,7 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	"	adda.l	%[step],%[dst2]			;\n"
 	"	adda.l	%[step],%[dst3]			;\n"
 
-	"	dbra	%[h],omfb4_rascopy_multi_bit	;\n"
+	"	dbra	%[h],om4_rascopy_multi_bit	;\n"
 	    : /* output */
 	      [src0] "+&a" (src0),
 	      [dst0] "+&a" (dst0),
@@ -1142,11 +1142,11 @@ omfb4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		dst3 += step;
 	}
 #endif
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 }
 
 static void
-omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
+om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *src, *dst;
@@ -1180,7 +1180,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	}
 	ptrstep = ri->ri_stride * rowheight;
 
-	omfb_set_planemask(hwplanemask);
+	om_set_planemask(hwplanemask);
 
 	srcplane = 0;
 	while (nrows > 0) {
@@ -1208,8 +1208,8 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			 */
 			uint8_t *src0 = src + OMFB_PLANEOFFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFFS;
-			omfb_set_rop_curplane(ROP_THROUGH, ALL1BITS);
-			omfb4_rascopy_multi(dst0, src0, width, rowheight * r);
+			om_set_rop_curplane(ROP_THROUGH, ALL1BITS);
+			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t *srcp;
 			uint8_t fg = rowattr[srcrow].fg;
@@ -1222,9 +1222,9 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			 * set.
 			 */
 			for (i = 0; i < omfb_planecount; i++) {
-				int t = omfb_fgbg2rop(fg, bg);
+				int t = om_fgbg2rop(fg, bg);
 				rop[i] = t;
-				omfb_set_rop(i, rop[i], ALL1BITS);
+				om_set_rop(i, rop[i], ALL1BITS);
 				if (t == ROP_THROUGH) {
 					srcplane = i;
 				}
@@ -1234,7 +1234,7 @@ omfb4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 
 			srcp = src + OMFB_PLANEOFFS + srcplane * OMFB_PLANEOFFS;
-			omfb_rascopy_single(dst, srcp, width, rowheight * r,
+			om_rascopy_single(dst, srcp, width, rowheight * r,
 			    rop);
 		}
 
@@ -1252,12 +1252,12 @@ skip:
 }
 
 /*
- * XXX omfb{1,4}_copycols can be merged, but these are not frequently executed
+ * XXX om{1,4}_copycols can be merged, but these are not frequently executed
  * and have low execution costs.  So I'm putting it off for now.
  */
 
 static void
-omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
+om1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *sp, *dp, *sq, *dq, *basep;
@@ -1277,7 +1277,7 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	sb = srcx & ALIGNMASK;
 	db = dstx & ALIGNMASK;
 
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 
 	if (db + w <= BLITWIDTH) {
 		/* Destination is contained within a single word */
@@ -1390,7 +1390,7 @@ omfb1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 }
 
 static void
-omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
+om4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 {
 	struct rasops_info *ri = cookie;
 	uint8_t *sp, *dp, *sq, *dq, *basep;
@@ -1410,7 +1410,7 @@ omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 	sb = srcx & ALIGNMASK;
 	db = dstx & ALIGNMASK;
 
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 
 	if (db + w <= BLITWIDTH) {
 		/* Destination is contained within a single word */
@@ -1568,7 +1568,7 @@ omfb4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
  * Map a character.
  */
 static int
-omfb_mapchar(void *cookie, int c, u_int *cp)
+om_mapchar(void *cookie, int c, u_int *cp)
 {
 	struct rasops_info *ri = cookie;
 	struct wsdisplay_font *wf;
@@ -1596,7 +1596,7 @@ omfb_mapchar(void *cookie, int c, u_int *cp)
  * Position|{enable|disable} the cursor at the specified location.
  */
 static void
-omfb_cursor(void *cookie, int on, int row, int col)
+om_cursor(void *cookie, int on, int row, int col)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -1630,14 +1630,14 @@ omfb_cursor(void *cookie, int on, int row, int col)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
-	omfb_fill(hwplanemask, ROP_INV2,
+	om_fill(hwplanemask, ROP_INV2,
 	    p, sl, scanspan,
 	    0, width, height);
 
 	ri->ri_flg ^= RI_CURSOR;
 
 	/* reset mask value */
-	omfb_reset_planemask_and_rop();
+	om_reset_planemask_and_rop();
 }
 
 /*
@@ -1664,7 +1664,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
  */
 #endif
 static int
-omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
+om_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 {
 	uint32_t a;
 	uint16_t c;
@@ -1728,7 +1728,7 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 }
 
 static void
-omfb_unpack_attr(long attr, uint8_t *fg, uint8_t *bg, int *underline)
+om_unpack_attr(long attr, uint8_t *fg, uint8_t *bg, int *underline)
 {
 	uint8_t f, b;
 
@@ -1751,14 +1751,14 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	omrasops_init(ri, wantrows, wantcols);
 
 	/* fill our own emulops */
-	ri->ri_ops.cursor    = omfb_cursor;
-	ri->ri_ops.mapchar   = omfb_mapchar;
-	ri->ri_ops.putchar   = omfb_putchar;
-	ri->ri_ops.copycols  = omfb1_copycols;
-	ri->ri_ops.erasecols = omfb_erasecols;
-	ri->ri_ops.copyrows  = omfb1_copyrows;
-	ri->ri_ops.eraserows = omfb_eraserows;
-	ri->ri_ops.allocattr = omfb_allocattr;
+	ri->ri_ops.cursor    = om_cursor;
+	ri->ri_ops.mapchar   = om_mapchar;
+	ri->ri_ops.putchar   = om_putchar;
+	ri->ri_ops.copycols  = om1_copycols;
+	ri->ri_ops.erasecols = om_erasecols;
+	ri->ri_ops.copyrows  = om1_copyrows;
+	ri->ri_ops.eraserows = om_eraserows;
+	ri->ri_ops.allocattr = om_allocattr;
 	ri->ri_caps = WSSCREEN_REVERSE;
 
 	ri->ri_flg |= RI_CFGDONE;
@@ -1773,14 +1773,14 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	omrasops_init(ri, wantrows, wantcols);
 
 	/* fill our own emulops */
-	ri->ri_ops.cursor    = omfb_cursor;
-	ri->ri_ops.mapchar   = omfb_mapchar;
-	ri->ri_ops.putchar   = omfb_putchar;
-	ri->ri_ops.copycols  = omfb4_copycols;
-	ri->ri_ops.erasecols = omfb_erasecols;
-	ri->ri_ops.copyrows  = omfb4_copyrows;
-	ri->ri_ops.eraserows = omfb_eraserows;
-	ri->ri_ops.allocattr = omfb_allocattr;
+	ri->ri_ops.cursor    = om_cursor;
+	ri->ri_ops.mapchar   = om_mapchar;
+	ri->ri_ops.putchar   = om_putchar;
+	ri->ri_ops.copycols  = om4_copycols;
+	ri->ri_ops.erasecols = om_erasecols;
+	ri->ri_ops.copyrows  = om4_copyrows;
+	ri->ri_ops.eraserows = om_eraserows;
+	ri->ri_ops.allocattr = om_allocattr;
 	ri->ri_caps = WSSCREEN_HILIT | WSSCREEN_WSCOLORS | WSSCREEN_REVERSE;
 
 	ri->ri_flg |= RI_CFGDONE;
