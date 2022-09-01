@@ -139,7 +139,7 @@ static rowattr_t rowattr[43];
 
 /*
  * macros to handle unaligned bit copy ops.
- * See src/sys/dev/rasops/rasops_mask.h for MI version.
+ * See src/sys/dev/rasops/rasops_masks.h for MI version.
  * Also refer src/sys/arch/hp300/dev/maskbits.h.
  * (which was implemented for ancient src/sys/arch/hp300/dev/grf_hy.c)
  */
