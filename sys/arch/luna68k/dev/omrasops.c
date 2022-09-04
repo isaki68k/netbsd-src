@@ -1683,10 +1683,10 @@ om_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 	}
 
 	if ((flags & WSATTR_REVERSE) != 0) {
-		int swap;
-		swap = fg;
+		int tmp;
+		tmp = fg;
 		fg = bg;
-		bg = swap;
+		bg = tmp;
 	}
 
 	if ((flags & WSATTR_HILIT) != 0) {
