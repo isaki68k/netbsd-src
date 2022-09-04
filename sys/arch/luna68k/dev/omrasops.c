@@ -915,10 +915,10 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 			/*
 			 * Optimized for 68030.
 			 *
-			 * On LUNA, this is faster than "MOVE.L (An)+,(An)+",
-			 * "MOVE.L (An,Dn),(An,Dn)", and "MOVEM.L", due to
-			 * the relationship of instruction overlaps and
-			 * access waits.
+			 * On LUNA, the following is faster than any of
+			 * "MOVE.L (An)+,(An)+", "MOVE.L (An,Dn),(An,Dn)", or
+			 * "MOVEM.L", due to the relationship of instruction
+			 *  overlaps and access waits.
 			 *
 			 * The head time of (An)+ as source operand is 0 and
 			 * the head time of ADDA instruction is 2.  If the
@@ -1633,7 +1633,7 @@ om_cursor(void *cookie, int on, int row, int col)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
-	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
+	/* ROP_INV2 ignores data from MPU and inverts the current VRAM data */
 	om_fill(hwplanemask, ROP_INV2, p, sl, scanspan, 0, width, height);
 
 	ri->ri_flg ^= RI_CURSOR;
