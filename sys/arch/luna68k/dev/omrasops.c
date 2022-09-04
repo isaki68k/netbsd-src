@@ -633,45 +633,6 @@ om_eraserows(void *cookie, int startrow, int nrows, long attr)
 	om_reset_planemask_and_rop();
 }
 
-static void
-om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
-{
-	struct rasops_info *ri = cookie;
-	uint8_t *p, *q;
-	int scanspan, offset, srcy, height, width, w;
-	uint32_t rmask;
-
-	scanspan = ri->ri_stride;
-	height = ri->ri_font->fontheight * nrows;
-	offset = (dstrow - srcrow) * scanspan * ri->ri_font->fontheight;
-	srcy = ri->ri_font->fontheight * srcrow;
-	if (srcrow < dstrow && srcrow + nrows > dstrow) {
-		scanspan = -scanspan;
-		srcy = srcy + height - 1;
-	}
-
-	p = (uint8_t *)ri->ri_bits + srcy * ri->ri_stride;
-	w = ri->ri_emuwidth;
-	width = w;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	q = p;
-	while (height > 0) {
-		*P0(p + offset) = *P0(p);		/* always aligned */
-		width -= 2 * BLITWIDTH;
-		while (width > 0) {
-			p += BYTESDONE;
-			*P0(p + offset) = *P0(p);
-			width -= BLITWIDTH;
-		}
-		p += BYTESDONE;
-		*P0(p + offset) = (*P0(p) & rmask) | (*P0(p + offset) & ~rmask);
-
-		p = (q += scanspan);
-		width = w;
-		height--;
-	}
-}
-
 /*
  * Single plane raster copy.
  *  dst: destination plane pointer.
@@ -1149,6 +1110,45 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	}
 #endif
 	om_reset_planemask_and_rop();
+}
+
+static void
+om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
+{
+	struct rasops_info *ri = cookie;
+	uint8_t *p, *q;
+	int scanspan, offset, srcy, height, width, w;
+	uint32_t rmask;
+
+	scanspan = ri->ri_stride;
+	height = ri->ri_font->fontheight * nrows;
+	offset = (dstrow - srcrow) * scanspan * ri->ri_font->fontheight;
+	srcy = ri->ri_font->fontheight * srcrow;
+	if (srcrow < dstrow && srcrow + nrows > dstrow) {
+		scanspan = -scanspan;
+		srcy = srcy + height - 1;
+	}
+
+	p = (uint8_t *)ri->ri_bits + srcy * ri->ri_stride;
+	w = ri->ri_emuwidth;
+	width = w;
+	rmask = ALL1BITS << (-width & ALIGNMASK);
+	q = p;
+	while (height > 0) {
+		*P0(p + offset) = *P0(p);		/* always aligned */
+		width -= 2 * BLITWIDTH;
+		while (width > 0) {
+			p += BYTESDONE;
+			*P0(p + offset) = *P0(p);
+			width -= BLITWIDTH;
+		}
+		p += BYTESDONE;
+		*P0(p + offset) = (*P0(p) & rmask) | (*P0(p + offset) & ~rmask);
+
+		p = (q += scanspan);
+		width = w;
+		height--;
+	}
 }
 
 static void
