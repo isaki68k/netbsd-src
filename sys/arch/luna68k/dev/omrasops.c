@@ -304,9 +304,9 @@ om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"om_fill_loop_h:\n"
-		"	move.l	%[val],(%[d])		;\n"
-		"	add.l	%[dstspan],%[d]		;\n"
-		"	dbra	%[h],om_fill_loop_h	;\n"
+		"	move.l	%[val],(%[d])			;\n"
+		"	add.l	%[dstspan],%[d]			;\n"
+		"	dbra	%[h],om_fill_loop_h		;\n"
 		    : [d] "+&a" (d),
 		      [h] "+&d" (h)
 		    : [val] "d" (val),
@@ -667,17 +667,17 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		h = height_m1;
 		asm volatile("\n"
 		"om_rascopy_single_LL:\n"
-		"	move.w	%[wh],%[w]				;\n"
+		"	move.w	%[wh],%[w]			;\n"
 
 		"1:\n"
-		"	move.l	(%[src])+,(%[dst])+			;\n"
-		"	move.l	(%[src])+,(%[dst])+			;\n"
-		"	dbra	%[w],1b					;\n"
+		"	move.l	(%[src])+,(%[dst])+		;\n"
+		"	move.l	(%[src])+,(%[dst])+		;\n"
+		"	dbra	%[w],1b				;\n"
 
-		"	adda.l	%[step8],%[src]				;\n"
-		"	adda.l	%[step8],%[dst]				;\n"
+		"	adda.l	%[step8],%[src]			;\n"
+		"	adda.l	%[step8],%[dst]			;\n"
 
-		"	dbra	%[h],om_rascopy_single_LL		;\n"
+		"	dbra	%[h],om_rascopy_single_LL	;\n"
 		    : /* output */
 		      [src] "+&a" (src),
 		      [dst] "+&a" (dst),
@@ -770,12 +770,12 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	h = height_m1;
 	asm volatile("\n"
 	"om_rascopy_single_bit:\n"
-	"	move.l	(%[src]),(%[dst])		;\n"
+	"	move.l	(%[src]),(%[dst])			;\n"
 
-	"	adda.l	%[step],%[src]			;\n"
-	"	adda.l	%[step],%[dst]			;\n"
+	"	adda.l	%[step],%[src]				;\n"
+	"	adda.l	%[step],%[dst]				;\n"
 
-	"	dbra	%[h],om_rascopy_single_bit	;\n"
+	"	dbra	%[h],om_rascopy_single_bit		;\n"
 	    : /* output */
 	      [src] "+&a" (src),
 	      [dst] "+&a" (dst),
@@ -1043,21 +1043,21 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	h = height_m1;
 	asm volatile("\n"
 	"om4_rascopy_multi_bit:\n"
-	"	move.l	(%[src0]),(%[dst0])		;\n"
-	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-	"	move.l	(%[src0]),(%[dst1])		;\n"
-	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-	"	move.l	(%[src0]),(%[dst2])		;\n"
-	"	adda.l	%[PLANEOFFS],%[src0]		;\n"
-	"	move.l	(%[src0]),(%[dst3])		;\n"
-	"	adda.l	%[rewind],%[src0]		;\n"
+	"	move.l	(%[src0]),(%[dst0])			;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]			;\n"
+	"	move.l	(%[src0]),(%[dst1])			;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]			;\n"
+	"	move.l	(%[src0]),(%[dst2])			;\n"
+	"	adda.l	%[PLANEOFFS],%[src0]			;\n"
+	"	move.l	(%[src0]),(%[dst3])			;\n"
+	"	adda.l	%[rewind],%[src0]			;\n"
 
-	"	adda.l	%[step],%[dst0]			;\n"
-	"	adda.l	%[step],%[dst1]			;\n"
-	"	adda.l	%[step],%[dst2]			;\n"
-	"	adda.l	%[step],%[dst3]			;\n"
+	"	adda.l	%[step],%[dst0]				;\n"
+	"	adda.l	%[step],%[dst1]				;\n"
+	"	adda.l	%[step],%[dst2]				;\n"
+	"	adda.l	%[step],%[dst3]				;\n"
 
-	"	dbra	%[h],om4_rascopy_multi_bit	;\n"
+	"	dbra	%[h],om4_rascopy_multi_bit		;\n"
 	    : /* output */
 	      [src0] "+&a" (src0),
 	      [dst0] "+&a" (dst0),
