@@ -307,11 +307,14 @@ om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		"	move.l	%[val],(%[d])			;\n"
 		"	add.l	%[dstspan],%[d]			;\n"
 		"	dbra	%[h],om_fill_loop_h		;\n"
-		    : [d] "+&a" (d),
+		    : /* output */
+		      [d] "+&a" (d),
 		      [h] "+&d" (h)
-		    : [val] "d" (val),
+		    : /* input */
+		      [val] "d" (val),
 		      [dstspan] "r" (dstspan)
-		    : "memory"
+		    : /* clobbers */
+		      "memory"
 		);
 #else
 		do {
@@ -372,10 +375,13 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		"	clr.l	(%[d])				;\n"
 		"	add.l	%[dstspan],%[d]			;\n"
 		"	dbra	%[h],om_fill_color_loop_h	;\n"
-		    : [d] "+&a" (d),
+		    : /* output */
+		      [d] "+&a" (d),
 		      [h] "+&d" (h)
-		    : [dstspan] "r" (dstspan)
-		    : "memory"
+		    : /* input */
+		      [dstspan] "r" (dstspan)
+		    : /* clobbers */
+		      "memory"
 		);
 #else
 		do {
