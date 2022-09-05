@@ -361,7 +361,7 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		}
 
 		for (plane = 0; plane < omfb_planecount; plane++) {
-			rop = (color & (1 << plane)) ? ROP_ONE : ROP_ZERO;
+			rop = (color & (1U << plane)) ? ROP_ONE : ROP_ZERO;
 			om_set_rop(plane, rop, mask);
 		}
 
