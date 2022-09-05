@@ -369,7 +369,6 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 #if USE_M68K_ASM
 		asm volatile("\n"
 		"om_fill_color_loop_h:\n"
-		/* you may write any data here since ROP_ONE or ZERO */
 		"	clr.l	(%[d])				;\n"
 		"	add.l	%[dstspan],%[d]			;\n"
 		"	dbra	%[h],om_fill_color_loop_h	;\n"
@@ -380,6 +379,10 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		);
 #else
 		do {
+			/*
+			 * ROP is either ONE or ZERO,
+			 * so any value can be written to *d.
+			 */
 			*(uint32_t *)d = 0;
 			d += dstspan;
 		} while (--h >= 0);
