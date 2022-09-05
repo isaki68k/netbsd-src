@@ -1197,8 +1197,27 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t *srcp;
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
+			uint8_t d = fg ^ bg;
+
+			if (d == 0) {
+				d = fg;
+			} else if ((d & fg) != 0) {
+				d &= fg;
+			} else {
+				uint8_t tmp;
+
+				d &= bg;
+				/* swap(fg, bg) */
+				tmp = fg;
+				fg = bg;
+				bg = tmp;
+			}
 
 			srcplane = 0;
+			if (d != 0) {
+				srcplane = 31 - __builtin_clz(d);
+			}
+
 			/*
 			 * The logic selecting ROP is the same as putchar.
 			 * srcplane is the plane that fg is set and bg is not
@@ -1208,9 +1227,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				int t = om_fgbg2rop(fg, bg);
 				rop[i] = t;
 				om_set_rop(i, rop[i], ALL1BITS);
-				if (t == ROP_THROUGH) {
-					srcplane = i;
-				}
 				fg >>= 1;
 				bg >>= 1;
 			}
