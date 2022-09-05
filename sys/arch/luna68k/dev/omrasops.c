@@ -380,7 +380,7 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		);
 #else
 		do {
-			*d = 0;
+			*(uint32_t *)d = 0;
 			d += dstspan;
 		} while (--h >= 0);
 #endif
