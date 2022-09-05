@@ -1231,7 +1231,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				bg >>= 1;
 			}
 
-
 			srcp = src + OMFB_PLANEOFFS + srcplane * OMFB_PLANEOFFS;
 			om_rascopy_single(dst, srcp, width, rowheight * r,
 			    rop);
