@@ -330,7 +330,6 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 {
 	uint32_t mask;
 	int32_t height_m1;
-	int32_t lastplane;
 	int dw;		/* 1 pass width bits */
 
 	ASSUME(width > 0);
@@ -343,7 +342,6 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	mask = ALL1BITS >> dstbitoffs;
 	dw = 32 - dstbitoffs;
 	height_m1 = height - 1;
-	lastplane = omfb_planecount - 1;
 
 	do {
 		/* TODO: re-setting mask can be ommitted in middle of loop */
@@ -352,7 +350,6 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		int32_t h;
 		int16_t rop;
 
-		plane = lastplane;
 		width -= dw;
 		if (width < 0) {
 			CLEAR_LOWER_BITS(mask, -width);
@@ -360,30 +357,10 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 			width = 0;
 		}
 
-#if USE_M68K_ASM
-		volatile uint32_t *ropfn = om_rop_addr(lastplane, 0);
-		asm volatile("\n"
-		"om_fill_color_rop:\n"
-		"	btst	%[plane],%[color]		;\n"
-		"	seq	%[rop]				;\n"
-		"	andi.w	#0x3c,%[rop]			;\n"
-		"	move.l	%[mask],(%[ropfn],%[rop].w)	;\n"
-		"	suba.l	%[PLANEOFFS],%[ropfn]		;\n"
-		"	dbra	%[plane],om_fill_color_rop	;\n"
-		    : [plane] "+&d" (plane),
-		      [ropfn] "+&a" (ropfn),
-		      [rop] "=&d" (rop)
-		    : [color] "d" (color),
-		      [mask] "g" (mask),
-		      [PLANEOFFS] "g" (OMFB_PLANEOFFS)
-		    : "memory"
-		);
-#else
-		do {
+		for (plane = 0; plane < omfb_planecount; plane++) {
 			rop = (color & (1 << plane)) ? ROP_ONE : ROP_ZERO;
 			om_set_rop(plane, rop, mask);
-		} while (--plane >= 0);
-#endif
+		}
 
 		d = dstptr;
 		dstptr += 4;
