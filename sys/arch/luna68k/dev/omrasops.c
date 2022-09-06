@@ -387,7 +387,7 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 		do {
 			/*
 			 * ROP is either ONE or ZERO,
-			 * so any value can be written to *d.
+			 * so don't care what you write to *d.
 			 */
 			*(uint32_t *)d = 0;
 			d += dstspan;
