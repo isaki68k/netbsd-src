@@ -1192,10 +1192,13 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t *srcp;
-			uint8_t fg = rowattr[srcrow].fg;
-			uint8_t bg = rowattr[srcrow].bg;
-			uint8_t set = fg ^ bg;
+			uint8_t fg;
+			uint8_t bg;
+			uint8_t set;
 
+			fg = rowattr[srcrow].fg;
+			bg = rowattr[srcrow].bg;
+			set = fg ^ bg;
 			if (set == 0) {
 				/* use fg since both can be acceptable */
 				set = fg;
