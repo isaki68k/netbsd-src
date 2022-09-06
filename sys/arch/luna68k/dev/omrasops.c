@@ -1197,29 +1197,28 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t set = fg ^ bg;
 
 			if (set == 0) {
+				/* use fg since both can be acceptable */
 				set = fg;
 			} else if ((set & fg) != 0) {
+				/*
+				 * set is the set of bits that set in fg and
+				 * cleared in bg.
+				 */
 				set &= fg;
 			} else {
+				/*
+				 * otherwise, set is the set of bits that
+				 * (probably) set in bg and cleared in fg.
+				 */
 				uint8_t tmp;
 
 				set &= bg;
-				/* swap(fg, bg) */
+				/* and swap fg and bg */
 				tmp = fg;
 				fg = bg;
 				bg = tmp;
 			}
 
-			srcplane = 0;
-			if (set != 0) {
-				srcplane = 31 - __builtin_clz(set);
-			}
-
-			/*
-			 * The logic selecting ROP is the same as putchar.
-			 * srcplane is the plane that fg is set and bg is not
-			 * set.
-			 */
 			for (i = 0; i < omfb_planecount; i++) {
 				int t = om_fgbg2rop(fg, bg);
 				rop[i] = t;
@@ -1228,9 +1227,16 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 				bg >>= 1;
 			}
 
+			/*
+			 * If any bit in 'set' is set, any of them can be used.
+			 * If all bits in 'set' are cleared, use plane 0.
+			 * srcplane is the plane that fg is set and bg is
+			 * cleared.
+			 */
+			srcplane = (set != 0) ? (31 - __builtin_clz(set)) : 0;
+
 			srcp = src + OMFB_PLANEOFFS + srcplane * OMFB_PLANEOFFS;
-			om_rascopy_single(dst, srcp, width, rowheight * r,
-			    rop);
+			om_rascopy_single(dst, srcp, width, rowheight * r, rop);
 		}
 
 skip:
