@@ -674,7 +674,6 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		asm volatile("\n"
 		"om_rascopy_single_LL:\n"
 		"	move.w	%[wh],%[w]			;\n"
-
 		"1:\n"
 		"	move.l	(%[src])+,(%[dst])+		;\n"
 		"	move.l	(%[src])+,(%[dst])+		;\n"
@@ -682,7 +681,6 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 		"	adda.l	%[step8],%[src]			;\n"
 		"	adda.l	%[step8],%[dst]			;\n"
-
 		"	dbra	%[h],om_rascopy_single_LL	;\n"
 		    : /* output */
 		      [src] "+&a" (src),
@@ -726,10 +724,8 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		asm volatile("\n"
 		"om_rascopy_single_L:\n"
 		"	move.l	(%[src]),(%[dst])		;\n"
-
 		"	adda.l	%[step],%[src]			;\n"
 		"	adda.l	%[step],%[dst]			;\n"
-
 		"	dbra	%[h],om_rascopy_single_L	;\n"
 		    : /* output */
 		      [src] "+&a" (src),
@@ -777,10 +773,8 @@ om_rascopy_single(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	asm volatile("\n"
 	"om_rascopy_single_bit:\n"
 	"	move.l	(%[src]),(%[dst])			;\n"
-
 	"	adda.l	%[step],%[src]				;\n"
 	"	adda.l	%[step],%[dst]				;\n"
-
 	"	dbra	%[h],om_rascopy_single_bit		;\n"
 	    : /* output */
 	      [src] "+&a" (src),
@@ -857,7 +851,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		asm volatile("\n"
 		"om4_rascopy_multi_LL:\n"
 		"	move.w	%[wh],%[w]		;\n"
-
 		"1:\n"
 			/*
 			 * Optimized for 68030.
@@ -880,7 +873,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	move.l	(%[src0]),(%[dst2])+	;\n"	/* P2 */
 		"	adda.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0]),(%[dst3])+	;\n"	/* P3 */
-
 			/* Expect an overlap, so don't use (An)+ */
 		"	addq.l	#4,%[src0]		;\n"
 
@@ -891,7 +883,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	move.l	(%[src0]),(%[dst1])+	;\n"	/* P1 */
 		"	suba.l	%[PLANEOFFS],%[src0]	;\n"
 		"	move.l	(%[src0])+,(%[dst0])+	;\n"	/* P0 */
-
 		"	dbra	%[w],1b			;\n"
 
 		"	adda.l	%[step8],%[src0]	;\n"
@@ -899,7 +890,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step8],%[dst1]	;\n"
 		"	adda.l	%[step8],%[dst2]	;\n"
 		"	adda.l	%[step8],%[dst3]	;\n"
-
 		"	dbra	%[h],om4_rascopy_multi_LL	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
@@ -989,7 +979,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"	adda.l	%[step],%[dst1]			;\n"
 		"	adda.l	%[step],%[dst2]			;\n"
 		"	adda.l	%[step],%[dst3]			;\n"
-
 		"	dbra	%[h],om4_rascopy_multi_L	;\n"
 		    : /* output */
 		      [src0] "+&a" (src0),
@@ -1062,7 +1051,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	"	adda.l	%[step],%[dst1]				;\n"
 	"	adda.l	%[step],%[dst2]				;\n"
 	"	adda.l	%[step],%[dst3]				;\n"
-
 	"	dbra	%[h],om4_rascopy_multi_bit		;\n"
 	    : /* output */
 	      [src0] "+&a" (src0),
