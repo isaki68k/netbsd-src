@@ -1194,16 +1194,16 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t *srcp;
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
-			uint8_t d = fg ^ bg;
+			uint8_t set = fg ^ bg;
 
-			if (d == 0) {
-				d = fg;
-			} else if ((d & fg) != 0) {
-				d &= fg;
+			if (set == 0) {
+				set = fg;
+			} else if ((set & fg) != 0) {
+				set &= fg;
 			} else {
 				uint8_t tmp;
 
-				d &= bg;
+				set &= bg;
 				/* swap(fg, bg) */
 				tmp = fg;
 				fg = bg;
@@ -1211,8 +1211,8 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			}
 
 			srcplane = 0;
-			if (d != 0) {
-				srcplane = 31 - __builtin_clz(d);
+			if (set != 0) {
+				srcplane = 31 - __builtin_clz(set);
 			}
 
 			/*
