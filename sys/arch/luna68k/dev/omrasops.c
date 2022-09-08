@@ -270,6 +270,7 @@ om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
     uint32_t val, int width, int height)
 {
 	uint32_t mask;
+	uint32_t prev_mask;
 	int32_t height_m1;
 	int dw;		/* 1 pass width bits */
 
@@ -281,6 +282,7 @@ om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 
 	height_m1 = height - 1;
 	mask = ALL1BITS >> dstbitoffs;
+	prev_mask = ~mask;
 	dw = 32 - dstbitoffs;
 
 	/* do-while loop seems slightly faster than a for loop */
@@ -295,7 +297,10 @@ om_fill(int planemask, int rop, uint8_t *dstptr, int dstbitoffs, int dstspan,
 			width = 0;
 		}
 
-		om_set_rop_curplane(rop, mask);
+		if (prev_mask != mask) {
+			om_set_rop_curplane(rop, mask);
+			prev_mask = mask;
+		}
 
 		d = dstptr;
 		dstptr += 4;
@@ -332,6 +337,7 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
     int width, int height)
 {
 	uint32_t mask;
+	uint32_t prev_mask;
 	int32_t height_m1;
 	int dw;		/* 1 pass width bits */
 
@@ -343,11 +349,12 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	om_set_planemask(hwplanemask);
 
 	mask = ALL1BITS >> dstbitoffs;
+	// 最初の 1 回目のために違う値にしておく
+	prev_mask = ~mask;
 	dw = 32 - dstbitoffs;
 	height_m1 = height - 1;
 
 	do {
-		/* TODO: re-setting mask can be ommitted in middle of loop */
 		uint8_t *d;
 		int32_t plane;
 		int32_t h;
@@ -360,9 +367,12 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 			width = 0;
 		}
 
-		for (plane = 0; plane < omfb_planecount; plane++) {
-			rop = (color & (1U << plane)) ? ROP_ONE : ROP_ZERO;
-			om_set_rop(plane, rop, mask);
+		if (prev_mask != mask) {
+			for (plane = 0; plane < omfb_planecount; plane++) {
+				rop = (color & (1U << plane)) ? ROP_ONE : ROP_ZERO;
+				om_set_rop(plane, rop, mask);
+			}
+			prev_mask = mask;
 		}
 
 		d = dstptr;
