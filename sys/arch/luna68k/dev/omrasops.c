@@ -349,7 +349,6 @@ om_fill_color(int color, uint8_t *dstptr, int dstbitoffs, int dstspan,
 	om_set_planemask(hwplanemask);
 
 	mask = ALL1BITS >> dstbitoffs;
-	// 最初の 1 回目のために違う値にしておく
 	prev_mask = ~mask;
 	dw = 32 - dstbitoffs;
 	height_m1 = height - 1;
