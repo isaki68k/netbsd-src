@@ -181,7 +181,7 @@ static rowattr_t rowattr[43];
 	    :								\
 	)
 #else
-#define CLEAR_LOWER_BITS(x, w)	x = (x & ~(1U << w)) + 1
+#define CLEAR_LOWER_BITS(x, w)	x = ((x) & ~(1U << (w))) + 1
 #endif
 
 /* Set planemask for the common plane and the common ROP */
