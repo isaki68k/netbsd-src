@@ -139,7 +139,6 @@ static rowattr_t rowattr[43];
 #define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 3))
 #define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFFS * 4))
 
-#ifdef luna68k
 /*
  * macros to handle unaligned bit copy ops.
  * See src/sys/dev/rasops/rasops_masks.h for MI version.
@@ -163,9 +162,6 @@ static rowattr_t rowattr[43];
 
 #define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
-#else
-#include <dev/rasops/rasops_masks.h>
-#endif
 
 /*
  * Clear lower w bits from x.
