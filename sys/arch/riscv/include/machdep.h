@@ -1,11 +1,11 @@
-/*	$NetBSD: htif_disk.c,v 1.2 2020/11/04 07:09:45 skrll Exp $	*/
+/*	$NetBSD: machdep.h,v 1.2 2022/09/28 06:05:28 skrll Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas of 3am Software Foundry.
+ * by Nick Hudson
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,15 +29,41 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _RISCV_MACHDEP_H_
+#define _RISCV_MACHDEP_H_
+
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: machdep.h,v 1.2 2022/09/28 06:05:28 skrll Exp $");
 
-__RCSID("$NetBSD: htif_disk.c,v 1.2 2020/11/04 07:09:45 skrll Exp $");
+#include <sys/proc.h>
+#include <sys/lwp.h>
+#include <sys/siginfo.h>
 
-#include <sys/param.h>
-#include <sys/device.h>
+static inline paddr_t
+riscv_kern_vtophys(vaddr_t va)
+{
+	extern unsigned long kern_vtopdiff;
 
-CFATTACH_DECL_NEW(htif_disk, 0,
-	NULL, NULL, NULL, NULL);
+	return va - kern_vtopdiff;
+}
 
-CFATTACH_DECL_NEW(ld_htifdisk, 0,
-	NULL, NULL, NULL, NULL);
+static inline vaddr_t
+riscv_kern_phystov(paddr_t pa)
+{
+	extern unsigned long kern_vtopdiff;
+
+	return pa + kern_vtopdiff;
+}
+
+#define KERN_VTOPHYS(va)	riscv_kern_vtophys((vaddr_t)va)
+#define KERN_PHYSTOV(pa)	riscv_kern_phystov((paddr_t)pa)
+
+
+void	uartputc(int);
+int	uartgetc(void);
+
+paddr_t	init_mmu(paddr_t);
+void	init_riscv(register_t, vaddr_t);
+
+
+#endif	/* _RISCV_MACHDEP_H_ */

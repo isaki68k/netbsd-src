@@ -1,4 +1,4 @@
-/*	$NetBSD: udl.c,v 1.28 2022/05/17 05:05:20 andvar Exp $	*/
+/*	$NetBSD: udl.c,v 1.33 2022/09/06 02:31:08 nat Exp $	*/
 
 /*-
  * Copyright (c) 2009 FUKAUMI Naoki.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udl.c,v 1.28 2022/05/17 05:05:20 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udl.c,v 1.33 2022/09/06 02:31:08 nat Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1541,7 +1541,9 @@ udl_cmd_send_async(struct udl_softc *sc)
 	mutex_enter(&sc->sc_mtx);
 	usbd_setup_xfer(cmdq->cq_xfer, cmdq, cmdq->cq_buf,
 	    len, 0, USBD_NO_TIMEOUT, udl_cmd_send_async_cb);
+	mutex_exit(&sc->sc_mtx);
 	error = usbd_transfer(cmdq->cq_xfer);
+	mutex_enter(&sc->sc_mtx);
 	if (error != USBD_NORMAL_COMPLETION && error != USBD_IN_PROGRESS) {
 		aprint_error_dev(sc->sc_dev, "%s: %s!\n", __func__,
 		    usbd_errstr(error));
@@ -1822,74 +1824,41 @@ static void
 udl_update_thread(void *v)
 {
 	struct udl_softc *sc = v;
-	int stride;
-#ifdef notyet
-	bool update = false;
-	int linecount, x, y;
 	uint16_t *fb, *fbcopy;
-	uint8_t *curfb;
-#else
-	uint16_t *fb;
-	int offs;
-#endif
+	int offs, stride, count = 0;
 
 	mutex_enter(&sc->sc_thread_mtx);
 
 	for (;;) {
-		stride = uimin(sc->sc_width, UDL_CMD_WIDTH_MAX - 8);
 		if (sc->sc_dying == true) {
 			mutex_exit(&sc->sc_thread_mtx);
 			kthread_exit(0);
 		}
 
-		if (sc->sc_thread_stop == true || sc->sc_fbmem == NULL)
+		if (sc->sc_thread_stop == true || sc->sc_fbmem == NULL ||
+		    sc->sc_fbmem_prev == NULL || sc->sc_width <= 0)
 			goto thread_wait;
 
-#ifdef notyet
-		curfb = kmem_zalloc(UDL_FBMEM_SIZE(sc), KM_SLEEP);
-		memcpy(curfb, sc->sc_fbmem, sc->sc_height * sc->sc_width * 2);
-		fb = (uint16_t *)curfb;
+		if (sc->sc_clear == true)
+			count = 0;
+		sc->sc_clear = false;
+
+		stride = uimin(sc->sc_width, UDL_CMD_WIDTH_MAX - 8);
+		stride /= 8;
+		fb = (uint16_t *)sc->sc_fbmem;
 		fbcopy = (uint16_t *)sc->sc_fbmem_prev;
-		for (y = 0; y < sc->sc_height; y++) {
-			linecount = 0;
-			update = false;
-			for (x = 0; x < sc->sc_width; x++) {
-				if (linecount >= stride) {
-					udl_draw_line(sc, &fb[y * sc->sc_width
-					    + x - linecount], y * sc->sc_width
-					    + x - linecount, linecount);
-					linecount = 0;
-					update = false;
-				}
-				if (fb[y * sc->sc_width + x] ^ fbcopy[y *
-				    sc->sc_width + x]) {
-					update = true;
-					linecount ++;
-				} else if (update == true) {
-					udl_draw_line(sc, &fb[y * sc->sc_width
-					    + x - linecount], y * sc->sc_width
-					    + x - linecount, linecount);
-					linecount = 0;
-					update = false;
-				}
-			}
-			if (linecount) {
-				udl_draw_line(sc, &fb[y * sc->sc_width + x -
-				    linecount], y * sc->sc_width  + x -
-				    linecount, linecount);
+		for (offs = 0; offs < (sc->sc_height * sc->sc_width) - stride;
+		    offs += stride) {
+			if (count % (hz / 5) == 0 || memcmp(&fb[offs],
+			    &fbcopy[offs], stride * sizeof(uint16_t)) != 0) {
+				udl_draw_line(sc, &fb[offs], offs, stride);
+				memcpy(&fbcopy[offs], &fb[offs], stride *
+				   sizeof(uint16_t));
 			}
 		}
-		memcpy(sc->sc_fbmem_prev, curfb, sc->sc_height * sc->sc_width
-		    * 2);
-		kmem_free(curfb, UDL_FBMEM_SIZE(sc));
-#else
-		fb = (uint16_t *)sc->sc_fbmem;
-		for (offs = 0; offs < sc->sc_height * sc->sc_width; offs += stride)
-			udl_draw_line(sc, &fb[offs], offs, stride);
+		count++;
 
-#endif
-
-		kpause("udlslp", false, (40 * hz)/1000 + 1, &sc->sc_thread_mtx);
+		kpause("udlslp", false, 1, &sc->sc_thread_mtx);
 		continue;
 
 thread_wait:
@@ -1902,7 +1871,9 @@ udl_startstop(struct udl_softc *sc, bool stop)
 {
 	mutex_enter(&sc->sc_thread_mtx);
 	sc->sc_thread_stop = stop;
-	if (!stop)
+	if (!stop) {
+		sc->sc_clear = true;
 		cv_broadcast(&sc->sc_thread_cv);
+	}
 	mutex_exit(&sc->sc_thread_mtx);
 }

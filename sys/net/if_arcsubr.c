@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arcsubr.c,v 1.83 2021/06/16 00:21:19 riastradh Exp $	*/
+/*	$NetBSD: if_arcsubr.c,v 1.85 2022/09/03 02:47:59 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Ignatios Souvatzis
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arcsubr.c,v 1.83 2021/06/16 00:21:19 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arcsubr.c,v 1.85 2022/09/03 02:47:59 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -53,7 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_arcsubr.c,v 1.83 2021/06/16 00:21:19 riastradh Ex
 #include <sys/cpu.h>
 
 #include <net/if.h>
-#include <net/netisr.h>
 #include <net/route.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
@@ -508,9 +507,7 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 {
 	pktqueue_t *pktq = NULL;
 	struct arc_header *ah;
-	struct ifqueue *inq;
 	uint8_t atype;
-	int isr = 0;
 
 	if ((ifp->if_flags & IFF_UP) == 0) {
 		m_freem(m);
@@ -546,8 +543,7 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 
 	case ARCTYPE_ARP:
 		m_adj(m, ARC_HDRNEWLEN);
-		isr = NETISR_ARP;
-		inq = &arpintrq;
+		pktq = arp_pktq;
 #ifdef ARCNET_ALLOW_BROKEN_ARP
 		mtod(m, struct arphdr *)->ar_pro = htons(ETHERTYPE_IP);
 #endif
@@ -555,8 +551,7 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 
 	case ARCTYPE_ARP_OLD:
 		m_adj(m, ARC_HDRLEN);
-		isr = NETISR_ARP;
-		inq = &arpintrq;
+		pktq = arp_pktq;
 #ifdef ARCNET_ALLOW_BROKEN_ARP
 		mtod(m, struct arphdr *)->ar_pro = htons(ETHERTYPE_IP);
 #endif
@@ -573,14 +568,10 @@ arc_input(struct ifnet *ifp, struct mbuf *m)
 		return;
 	}
 
-	if (__predict_true(pktq)) {
-		if (__predict_false(!pktq_enqueue(pktq, m, 0))) {
-			m_freem(m);
-		}
-		return;
+	KASSERT(pktq != NULL);
+	if (__predict_false(!pktq_enqueue(pktq, m, 0))) {
+		m_freem(m);
 	}
-
-	IFQ_ENQUEUE_ISR(inq, m, isr);
 }
 
 /*

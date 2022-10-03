@@ -1,4 +1,4 @@
-/* $NetBSD: genfb_machdep.c,v 1.17 2022/07/16 06:27:24 mlelstv Exp $ */
+/* $NetBSD: genfb_machdep.c,v 1.19 2022/09/13 09:45:36 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2009 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.17 2022/07/16 06:27:24 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.19 2022/09/13 09:45:36 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>

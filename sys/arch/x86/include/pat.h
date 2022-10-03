@@ -1,11 +1,8 @@
-/*	$NetBSD: htif_cons.c,v 1.2 2020/11/04 07:09:45 skrll Exp $	*/
+/*	$NetBSD: pat.h,v 1.1 2022/08/20 23:13:51 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas of 3am Software Foundry.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,38 +26,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
+#ifndef	_X86_PAT_H_
+#define	_X86_PAT_H_
 
-__RCSID("$NetBSD: htif_cons.c,v 1.2 2020/11/04 07:09:45 skrll Exp $");
+#define	PATENTRY(n, type)	((type) << ((n) * 8))
+#define	PAT_UC			0x0ULL
+#define	PAT_WC			0x1ULL
+#define	PAT_WT			0x4ULL
+#define	PAT_WP			0x5ULL
+#define	PAT_WB			0x6ULL
+#define	PAT_UCMINUS		0x7ULL
 
-#include <sys/param.h>
-#include <sys/device.h>
-
-#include <riscv/htif/htif_var.h>
-
-static int htif_cons_match(device_t, cfdata_t, void *);
-static void htif_cons_attach(device_t, device_t, void *);
-
-struct htif_cons_softc {
-	device_t sc_dev;
-};
-
-CFATTACH_DECL_NEW(htif_cons, sizeof(struct htif_cons_softc),
-    htif_cons_match, htif_cons_attach, NULL, NULL);
-
-int
-htif_cons_match(device_t parent, cfdata_t cf, void *aux)
-{
-	struct htif_attach_args * const haa = aux;
-
-	return !strcmp(haa->haa_name, cf->cf_name);
-}
-
-static void
-htif_cons_attach(device_t parent, device_t self, void *aux)
-{
-	//struct htif_attach_args * const haa = aux;
-	struct htif_cons_softc * const sc = device_private(self);
-
-	sc->sc_dev = self;
-}
+#endif	/* _X86_PAT_H_ */

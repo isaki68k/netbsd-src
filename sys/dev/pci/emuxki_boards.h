@@ -1,11 +1,11 @@
-/* $NetBSD: htif_var.h,v 1.2 2020/11/04 07:09:45 skrll Exp $ */
+/*	$NetBSD: emuxki_boards.h,v 1.1 2022/09/07 03:34:43 khorben Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2001, 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas of 3am Software Foundry.
+ * by Yannick Montulet, and by Andrew Doran.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,26 +29,30 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _RISCV_HTIF_HTIF_VAR_H_
-#define _RISCV_HTIF_HTIF_VAR_H_
+#ifndef _DEV_PCI_EMUXKI_BOARDS_H_
+#define _DEV_PCI_EMUXKI_BOARDS_H_
 
-#define	HTIF_CMD_READ_MEM		0
-#define	HTIF_CMD_WRITE_MEM		1
-#define	HTIF_CMD_READ_CONTROL_REG	2
-#define	HTIF_CMD_WRITE_CONTROL_REG	3
-#define	HTIF_CMD_ACK			4
-#define	HTIF_CMD_NACK			5
+#include <sys/types.h>
+#include <sys/device.h>
 
-struct htif_packet_header {
-	uint64_t hphp_hdr;
-#define	HTIF_PHDR_CMD			__BITS(3,0)
-#define	HTIF_PHDR_DATA_DWORDS		__BITS(15,4)
-#define	HTIF_PHDR_SEQNO			__BITS(23,16)
-#define	HTIF_PHDR_ADDR			__BITS(63,24)
+#include <dev/pci/pcidevs.h>
+#include <dev/pci/pcireg.h>
+#include <dev/pci/pcivar.h>
+
+#include <dev/pci/emuxkireg.h>
+
+struct emuxki_board {
+	const char		 sb_board[8];
+	const char		*sb_name;
+	pci_vendor_id_t		 sb_vendor;
+	pci_product_id_t	 sb_product;
+	uint32_t		 sb_subsystem;
+	uint8_t			 sb_revision;
+
+	uint32_t		 sb_flags;
 };
 
-struct htif_attach_args {
-	const char *haa_name;
-};
+const struct emuxki_board *
+emuxki_board_lookup(pci_vendor_id_t, pci_product_id_t, uint32_t, uint8_t);
 
-#endif /* _RISCV_HTIF_HTIF_VAR_H_ */
+#endif /* _DEV_PCI_EMUXKI_BOARDS_H_ */

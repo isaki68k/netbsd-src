@@ -1,4 +1,4 @@
-/*	$NetBSD: nvme.c,v 1.61 2022/07/31 12:02:28 mlelstv Exp $	*/
+/*	$NetBSD: nvme.c,v 1.67 2022/09/13 10:14:20 riastradh Exp $	*/
 /*	$OpenBSD: nvme.c,v 1.49 2016/04/18 05:59:50 dlg Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.61 2022/07/31 12:02:28 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.67 2022/09/13 10:14:20 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -88,6 +88,9 @@ static void	nvme_ccbs_free(struct nvme_queue *);
 
 static struct nvme_ccb *
 		nvme_ccb_get(struct nvme_queue *, bool);
+static struct nvme_ccb *
+		nvme_ccb_get_bio(struct nvme_softc *, struct buf *,
+		    struct nvme_queue **);
 static void	nvme_ccb_put(struct nvme_queue *, struct nvme_ccb *);
 
 static int	nvme_poll(struct nvme_softc *, struct nvme_queue *,
@@ -591,8 +594,6 @@ nvme_suspend(struct nvme_softc *sc)
 int
 nvme_resume(struct nvme_softc *sc)
 {
-	int ioq_entries = nvme_ioq_size;
-	uint64_t cap;
 	int i, error;
 
 	error = nvme_disable(sc);
@@ -610,23 +611,12 @@ nvme_resume(struct nvme_softc *sc)
 	}
 
 	for (i = 0; i < sc->sc_nq; i++) {
-		cap = nvme_read8(sc, NVME_CAP);
-		if (ioq_entries > NVME_CAP_MQES(cap))
-			ioq_entries = NVME_CAP_MQES(cap);
-		sc->sc_q[i] = nvme_q_alloc(sc, i + 1, ioq_entries,
-		    sc->sc_dstrd);
-		if (sc->sc_q[i] == NULL) {
-			error = ENOMEM;
-			device_printf(sc->sc_dev, "unable to allocate io q %d"
-			    "\n", i);
-			goto disable;
-		}
+		nvme_q_reset(sc, sc->sc_q[i]);
 		if (nvme_q_create(sc, sc->sc_q[i]) != 0) {
 			error = EIO;
 			device_printf(sc->sc_dev, "unable to create io q %d"
 			    "\n", i);
-			nvme_q_free(sc, sc->sc_q[i]);
-			goto free_q;
+			goto disable;
 		}
 	}
 
@@ -634,9 +624,6 @@ nvme_resume(struct nvme_softc *sc)
 
 	return 0;
 
-free_q:
-	while (i --> 0)
-		nvme_q_free(sc, sc->sc_q[i]);
 disable:
 	(void)nvme_disable(sc);
 
@@ -768,12 +755,12 @@ nvme_ns_dobio(struct nvme_softc *sc, uint16_t nsid, void *cookie,
     struct buf *bp, void *data, size_t datasize,
     int secsize, daddr_t blkno, int flags, nvme_nnc_done nnc_done)
 {
-	struct nvme_queue *q = nvme_get_q(sc, bp, false);
+	struct nvme_queue *q;
 	struct nvme_ccb *ccb;
 	bus_dmamap_t dmap;
 	int i, error;
 
-	ccb = nvme_ccb_get(q, false);
+	ccb = nvme_ccb_get_bio(sc, bp, &q);
 	if (ccb == NULL)
 		return EAGAIN;
 
@@ -910,7 +897,7 @@ nvme_ns_sync_finished(void *cookie)
 int
 nvme_ns_sync(struct nvme_softc *sc, uint16_t nsid, int flags)
 {
-	struct nvme_queue *q = nvme_get_q(sc, NULL, true);
+	struct nvme_queue *q = nvme_get_q(sc);
 	struct nvme_ccb *ccb;
 	int result = 0;
 
@@ -1277,7 +1264,7 @@ nvme_command_passthrough(struct nvme_softc *sc, struct nvme_pt_command *pt,
 	    (pt->buf != NULL && (pt->len == 0 || pt->len > sc->sc_mdts)))
 		return EINVAL;
 
-	q = is_adminq ? sc->sc_admin_q : nvme_get_q(sc, NULL, true);
+	q = is_adminq ? sc->sc_admin_q : nvme_get_q(sc);
 	ccb = nvme_ccb_get(q, true);
 	KASSERT(ccb != NULL);
 
@@ -1504,6 +1491,14 @@ nvme_q_complete(struct nvme_softc *sc, struct nvme_queue *q)
 		flags = lemtoh16(&cqe->flags);
 		if ((flags & NVME_CQE_PHASE) != q->q_cq_phase)
 			break;
+
+		/*
+		 * Make sure we have read the flags _before_ we read
+		 * the cid.  Otherwise the CPU might speculatively read
+		 * the cid before the entry has been assigned to our
+		 * phase.
+		 */
+		nvme_dmamem_sync(sc, q->q_cq_dmamem, BUS_DMASYNC_POSTREAD);
 
 		ccb = &q->q_ccbs[lemtoh16(&cqe->cid)];
 
@@ -1852,6 +1847,40 @@ again:
 	return ccb;
 }
 
+static struct nvme_ccb *
+nvme_ccb_get_bio(struct nvme_softc *sc, struct buf *bp,
+    struct nvme_queue **selq)
+{
+	u_int cpuindex = cpu_index((bp && bp->b_ci) ? bp->b_ci : curcpu());
+
+	/*
+	 * Find a queue with available ccbs, preferring the originating
+	 * CPU's queue.
+	 */
+
+	for (u_int qoff = 0; qoff < sc->sc_nq; qoff++) {
+		struct nvme_queue *q = sc->sc_q[(cpuindex + qoff) % sc->sc_nq];
+		struct nvme_ccb *ccb;
+
+		mutex_enter(&q->q_ccb_mtx);
+		ccb = SIMPLEQ_FIRST(&q->q_ccb_list);
+		if (ccb != NULL) {
+			SIMPLEQ_REMOVE_HEAD(&q->q_ccb_list, ccb_entry);
+#ifdef DEBUG
+			ccb->ccb_cookie = NULL;
+#endif
+		}
+		mutex_exit(&q->q_ccb_mtx);
+
+		if (ccb != NULL) {
+			*selq = q;
+			return ccb;
+		}
+	}
+
+	return NULL;
+}
+
 static void
 nvme_ccb_put(struct nvme_queue *q, struct nvme_ccb *ccb)
 {
@@ -2032,8 +2061,10 @@ nvme_intr_msi(void *xq)
 {
 	struct nvme_queue *q = xq;
 
-	KASSERT(q && q->q_sc && q->q_sc->sc_softih
-	    && q->q_sc->sc_softih[q->q_id]);
+	KASSERT(q);
+	KASSERT(q->q_sc);
+	KASSERT(q->q_sc->sc_softih);
+	KASSERT(q->q_sc->sc_softih[q->q_id]);
 
 	/*
 	 * MSI/MSI-X are edge triggered, so can handover processing to softint

@@ -1,4 +1,4 @@
-/*	$NetBSD: device_impl.h,v 1.1 2022/03/28 12:38:59 riastradh Exp $	*/
+/*	$NetBSD: device_impl.h,v 1.5 2022/09/13 09:43:33 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2022 The NetBSD Foundation, Inc.
@@ -111,6 +111,16 @@
 
 #include <sys/device.h>
 
+struct device_lock {
+	int		dvl_nwait;
+	int		dvl_nlock;
+	lwp_t		*dvl_holder;
+	kmutex_t	dvl_mtx;
+	kcondvar_t	dvl_cv;
+};
+
+#define	DEVICE_SUSPENSORS_MAX	16
+
 struct device {
 	devhandle_t	dv_handle;	/* this device's handle;
 					   new device_t's get INVALID */
@@ -137,7 +147,8 @@ struct device {
 
 	struct lwp	*dv_attaching;	/* thread not yet finished in attach */
 	struct lwp	*dv_detaching;	/* detach lock (config_misc_lock/cv) */
-	bool		dv_detached;	/* config_misc_lock */
+	bool		dv_detach_committed;	/* config_misc_lock */
+	bool		dv_detach_done;		/* dv_detaching */
 
 	size_t		dv_activity_count;
 	void		(**dv_activity_handlers)(device_t, devactive_t);
@@ -145,7 +156,7 @@ struct device {
 	bool		(*dv_driver_suspend)(device_t, const pmf_qual_t *);
 	bool		(*dv_driver_resume)(device_t, const pmf_qual_t *);
 	bool		(*dv_driver_shutdown)(device_t, int);
-	bool		(*dv_driver_child_register)(device_t);
+	void		(*dv_driver_child_register)(device_t);
 
 	void		*dv_bus_private;
 	bool		(*dv_bus_suspend)(device_t, const pmf_qual_t *);
@@ -179,5 +190,31 @@ struct device {
 #define	DVF_DRIVER_SUSPENDED	0x0010	/* device driver suspend was called */
 #define	DVF_BUS_SUSPENDED	0x0020	/* device bus suspend was called */
 #define	DVF_ATTACH_INPROGRESS	0x0040	/* device attach is in progress */
+
+bool		device_pmf_is_registered(device_t);
+
+bool		device_pmf_driver_suspend(device_t, const pmf_qual_t *);
+bool		device_pmf_driver_resume(device_t, const pmf_qual_t *);
+bool		device_pmf_driver_shutdown(device_t, int);
+
+void		device_pmf_driver_register(device_t,
+		    bool (*)(device_t, const pmf_qual_t *),
+		    bool (*)(device_t, const pmf_qual_t *),
+		    bool (*)(device_t, int));
+void		device_pmf_driver_deregister(device_t);
+
+device_lock_t	device_getlock(device_t);
+void		device_pmf_unlock(device_t);
+bool		device_pmf_lock(device_t);
+
+void		*device_pmf_class_private(device_t);
+bool		device_pmf_class_suspend(device_t, const pmf_qual_t *);
+bool		device_pmf_class_resume(device_t, const pmf_qual_t *);
+
+void		device_pmf_class_register(device_t, void *,
+		    bool (*)(device_t, const pmf_qual_t *),
+		    bool (*)(device_t, const pmf_qual_t *),
+		    void (*)(device_t));
+void		device_pmf_class_deregister(device_t);
 
 #endif	/* _SYS_DEVICE_IMPL_H_ */

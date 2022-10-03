@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.91 2022/04/02 11:16:07 skrll Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.95 2022/09/30 06:39:54 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.91 2022/04/02 11:16:07 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.95 2022/09/30 06:39:54 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bootconfig.h"
@@ -43,39 +43,40 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.91 2022/04/02 11:16:07 skrll Exp $
 #include "wsdisplay.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bus.h>
+#include <sys/types.h>
+
 #include <sys/atomic.h>
+#include <sys/bootblock.h>
+#include <sys/bus.h>
+#include <sys/conf.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/disk.h>
+#include <sys/disklabel.h>
 #include <sys/endian.h>
 #include <sys/exec.h>
+#include <sys/fcntl.h>
+#include <sys/kauth.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
 #include <sys/ksyms.h>
+#include <sys/md5.h>
 #include <sys/msgbuf.h>
 #include <sys/proc.h>
-#include <sys/reboot.h>
-#include <sys/termios.h>
-#include <sys/bootblock.h>
-#include <sys/disklabel.h>
-#include <sys/vnode.h>
-#include <sys/kauth.h>
-#include <sys/fcntl.h>
-#include <sys/uuid.h>
-#include <sys/disk.h>
-#include <sys/md5.h>
 #include <sys/pserialize.h>
+#include <sys/reboot.h>
 #include <sys/rnd.h>
 #include <sys/rndsource.h>
+#include <sys/systm.h>
+#include <sys/termios.h>
+#include <sys/vnode.h>
+#include <sys/uuid.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
 
 #include <dev/cons.h>
 #include <uvm/uvm_extern.h>
-
-#include <sys/conf.h>
 
 #include <machine/db_machdep.h>
 #include <ddb/db_sym.h>
@@ -321,7 +322,7 @@ fdt_map_range(uint64_t start, uint64_t end, uint64_t *psize,
 
 	const vaddr_t voff = start & PAGE_MASK;
 
-	va = uvm_km_alloc(kernel_map, *psize, 0, UVM_KMF_VAONLY|UVM_KMF_NOWAIT);
+	va = uvm_km_alloc(kernel_map, *psize, 0, UVM_KMF_VAONLY | UVM_KMF_NOWAIT);
 	if (va == 0) {
 		printf("Failed to allocate VA for %s\n", purpose);
 		return NULL;
@@ -329,7 +330,7 @@ fdt_map_range(uint64_t start, uint64_t end, uint64_t *psize,
 	ptr = (void *)(va + voff);
 
 	for (pa = startpa; pa < endpa; pa += PAGE_SIZE, va += PAGE_SIZE)
-		pmap_kenter_pa(va, pa, VM_PROT_READ|VM_PROT_WRITE, 0);
+		pmap_kenter_pa(va, pa, VM_PROT_READ | VM_PROT_WRITE, 0);
 	pmap_update(pmap_kernel());
 
 	return ptr;
@@ -341,9 +342,12 @@ fdt_unmap_range(void *ptr, uint64_t size)
 	const char *start = ptr, *end = start + size;
 	const vaddr_t startva = trunc_page((vaddr_t)(uintptr_t)start);
 	const vaddr_t endva = round_page((vaddr_t)(uintptr_t)end);
+	const vsize_t sz = endva - startva;
 
-	pmap_kremove(startva, endva - startva);
+	pmap_kremove(startva, sz);
 	pmap_update(pmap_kernel());
+
+	uvm_km_free(kernel_map, startva, sz, UVM_KMF_VAONLY);
 }
 
 static void
@@ -548,7 +552,7 @@ initarm(void *arg)
 
 #if BYTE_ORDER == BIG_ENDIAN
 	/*
-	 * Most boards are configured to little-endian mode in initial, and
+	 * Most boards are configured to little-endian mode initially, and
 	 * switched to big-endian mode after kernel is loaded. In this case,
 	 * framebuffer seems byte-swapped to CPU. Override FDT to let
 	 * drivers know.
