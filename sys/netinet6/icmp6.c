@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.250 2021/02/19 14:52:00 christos Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.252 2022/08/29 09:14:02 knakahara Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.250 2021/02/19 14:52:00 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.252 2022/08/29 09:14:02 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -151,6 +151,8 @@ static int icmp6errpps_count = 0;
 static struct timeval icmp6errppslim_last;
 extern int icmp6_nodeinfo;
 
+bool icmp6_dynamic_rt_msg = false;
+
 /*
  * List of callbacks to notify when Path MTU changes are made.
  */
@@ -180,6 +182,8 @@ static int icmp6_redirect_lowat = -1;
 
 /* Protect mtudisc and redirect stuffs */
 static kmutex_t icmp6_mtx __cacheline_aligned;
+
+static bool icmp6_reflect_pmtu = false;
 
 static void icmp6_errcount(u_int, int, int);
 static int icmp6_rip6_input(struct mbuf **, int);
@@ -2058,6 +2062,7 @@ icmp6_reflect(struct mbuf *m, size_t off)
 	struct ifnet *rcvif;
 	int s;
 	bool ip6_src_filled = false;
+	int flags;
 
 	/* too short to reflect */
 	if (off < sizeof(struct ip6_hdr)) {
@@ -2202,12 +2207,14 @@ icmp6_reflect(struct mbuf *m, size_t off)
 	m->m_flags &= ~(M_BCAST|M_MCAST);
 
 	/*
+	 * Note for icmp6_reflect_pmtu == false
 	 * To avoid a "too big" situation at an intermediate router
 	 * and the path MTU discovery process, specify the IPV6_MINMTU flag.
 	 * Note that only echo and node information replies are affected,
 	 * since the length of ICMP6 errors is limited to the minimum MTU.
 	 */
-	if (ip6_output(m, NULL, NULL, IPV6_MINMTU, NULL, NULL, &outif) != 0 &&
+	flags = icmp6_reflect_pmtu ? 0 : IPV6_MINMTU;
+	if (ip6_output(m, NULL, NULL, flags, NULL, NULL, &outif) != 0 &&
 	    outif)
 		icmp6_ifstat_inc(outif, ifs6_out_error);
 	if (outif)
@@ -2833,6 +2840,7 @@ icmp6_mtudisc_clone(struct sockaddr *dst)
 			return NULL;
 		}
 		nrt->rt_rmx = rt->rt_rmx;
+		rt_newmsg_dynamic(RTM_ADD, nrt);
 		rt_unref(rt);
 		rt = nrt;
 	}
@@ -2862,6 +2870,7 @@ icmp6_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 	    (RTF_DYNAMIC | RTF_HOST)) {
 		rtrequest(RTM_DELETE, rt_getkey(rt),
 		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_newmsg_dynamic(RTM_DELETE, retrt);
 		rt_unref(rt);
 		rt_free(retrt);
 	} else {
@@ -2882,6 +2891,7 @@ icmp6_redirect_timeout(struct rtentry *rt, struct rttimer *r)
 	    (RTF_GATEWAY | RTF_DYNAMIC | RTF_HOST)) {
 		rtrequest(RTM_DELETE, rt_getkey(rt),
 		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_newmsg_dynamic(RTM_DELETE, retrt);
 		rt_unref(rt);
 		rt_free(retrt);
 	}
@@ -3105,6 +3115,20 @@ sysctl_net_inet6_icmp6_setup(struct sysctllog **clog)
 		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
 		       OICMPV6CTL_ND6_PRLIST, CTL_EOL);
 #endif
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "reflect_pmtu",
+		       SYSCTL_DESCR("Use path MTU Discovery for icmpv6 reflect"),
+		       NULL, 0, &icmp6_reflect_pmtu, 0,
+		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
+		       ICMPV6CTL_REFLECT_PMTU, CTL_EOL);
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "dynamic_rt_msg",
+		       SYSCTL_DESCR("Send routing message for RTF_DYNAMIC"),
+		       NULL, 0, &icmp6_dynamic_rt_msg, 0,
+		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
+		       ICMPV6CTL_DYNAMIC_RT_MSG, CTL_EOL);
 }
 
 void

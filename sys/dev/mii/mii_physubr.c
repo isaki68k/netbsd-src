@@ -1,4 +1,4 @@
-/*	$NetBSD: mii_physubr.c,v 1.97 2021/12/28 12:00:48 riastradh Exp $	*/
+/*	$NetBSD: mii_physubr.c,v 1.101 2022/08/23 01:05:50 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mii_physubr.c,v 1.97 2021/12/28 12:00:48 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mii_physubr.c,v 1.101 2022/08/23 01:05:50 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -282,6 +282,8 @@ mii_phy_auto(struct mii_softc *sc)
 		sc->mii_flags |= MIIF_DOINGAUTO;
 		kpause("miiaut", false, hz >> 1, mii->mii_media.ifm_lock);
 		mii_phy_auto_timeout_locked(sc);
+		KASSERT((sc->mii_flags & MIIF_DOINGAUTO) == 0);
+		cv_broadcast(&sc->mii_nway_cv);
 	} else if ((sc->mii_flags & MIIF_DOINGAUTO) == 0) {
 		sc->mii_flags |= MIIF_DOINGAUTO;
 		callout_reset(&sc->mii_nway_ch, hz >> 1,
@@ -308,6 +310,9 @@ static void
 mii_phy_auto_timeout_locked(struct mii_softc *sc)
 {
 
+	KASSERT(mii_locked(sc->mii_pdata));
+	KASSERT(sc->mii_flags & MIIF_DOINGAUTO);
+
 	if (!device_is_active(sc->mii_dev))
 		return;
 
@@ -321,6 +326,8 @@ static void
 mii_phy_auto_timeout(void *arg)
 {
 	struct mii_softc *sc = arg;
+
+	KASSERT((sc->mii_flags & MIIF_AUTOTSLEEP) == 0);
 
 	if (!device_is_active(sc->mii_dev))
 		return;
@@ -428,22 +435,24 @@ mii_phy_down(struct mii_softc *sc)
 
 	KASSERT(mii_locked(sc->mii_pdata));
 
-	if (sc->mii_flags & MIIF_DOINGAUTO) {
-		/*
-		 * Try to stop it.
-		 *
-		 * - If we stopped it before it expired, callout_stop
-		 *   returns 0, and it is our responsibility to clear
-		 *   MIIF_DOINGAUTO.
-		 *
-		 * - Otherwise, we're too late -- the callout has
-		 *   already begun, and we must leave MIIF_DOINGAUTO
-		 *   set so mii_phy_detach will wait for it to
-		 *   complete.
-		 */
-		if (!callout_stop(&sc->mii_nway_ch))
+	if (sc->mii_flags & MIIF_AUTOTSLEEP) {
+		while (sc->mii_flags & MIIF_DOINGAUTO) {
+			cv_wait(&sc->mii_nway_cv,
+			    sc->mii_pdata->mii_media.ifm_lock);
+		}
+	} else {
+		if ((sc->mii_flags & MIIF_DOINGAUTO) != 0 &&
+		    callout_halt(&sc->mii_nway_ch,
+			sc->mii_pdata->mii_media.ifm_lock) == 0) {
+			/*
+			 * The callout was scheduled, and we prevented
+			 * it from running before it expired, so we are
+			 * now responsible for clearing the flag.
+			 */
 			sc->mii_flags &= ~MIIF_DOINGAUTO;
+		}
 	}
+	KASSERT((sc->mii_flags & MIIF_DOINGAUTO) == 0);
 }
 
 void
@@ -683,14 +692,13 @@ mii_phy_detach(device_t self, int flags)
 {
 	struct mii_softc *sc = device_private(self);
 
-	mii_lock(sc->mii_pdata);
-	if (sc->mii_flags & MIIF_DOINGAUTO) {
-		callout_halt(&sc->mii_nway_ch,
-		    sc->mii_pdata->mii_media.ifm_lock);
-	}
-	mii_unlock(sc->mii_pdata);
+	/* No mii_lock because mii_flags should be stable by now.  */
+	KASSERT((sc->mii_flags & MIIF_DOINGAUTO) == 0);
 
-	callout_destroy(&sc->mii_nway_ch);
+	if (sc->mii_flags & MIIF_AUTOTSLEEP)
+		cv_destroy(&sc->mii_nway_cv);
+	else
+		callout_destroy(&sc->mii_nway_ch);
 
 	mii_phy_delete_media(sc);
 

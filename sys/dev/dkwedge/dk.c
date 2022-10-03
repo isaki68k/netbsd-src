@@ -1,4 +1,4 @@
-/*	$NetBSD: dk.c,v 1.112 2022/06/11 18:17:00 martin Exp $	*/
+/*	$NetBSD: dk.c,v 1.124 2022/09/27 17:04:52 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2005, 2006, 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.112 2022/06/11 18:17:00 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.124 2022/09/27 17:04:52 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_dkwedge.h"
@@ -97,7 +97,8 @@ static void	dkiodone(struct buf *);
 static void	dkrestart(void *);
 static void	dkminphys(struct buf *);
 
-static int	dklastclose(struct dkwedge_softc *);
+static int	dkfirstopen(struct dkwedge_softc *, int);
+static void	dklastclose(struct dkwedge_softc *);
 static int	dkwedge_cleanup_parent(struct dkwedge_softc *, int);
 static int	dkwedge_detach(device_t, int);
 static void	dkwedge_delall1(struct disk *, bool);
@@ -581,16 +582,16 @@ dkwedge_cleanup_parent(struct dkwedge_softc *sc, int flags)
 
 	rc = 0;
 	mutex_enter(&dk->dk_openlock);
-	if (dk->dk_openmask == 0)
+	if (dk->dk_openmask == 0) {
 		/* nothing to do */
-		mutex_exit(&dk->dk_openlock);
-	else if ((flags & DETACH_FORCE) == 0) {
+	} else if ((flags & DETACH_FORCE) == 0) {
 		rc = EBUSY;
-		mutex_exit(&dk->dk_openlock);
 	}  else {
 		mutex_enter(&sc->sc_parent->dk_rawlock);
-		rc = dklastclose(sc); /* releases locks */
+		dklastclose(sc);
+		mutex_exit(&sc->sc_parent->dk_rawlock);
 	}
+	mutex_exit(&sc->sc_dk.dk_openlock);
 
 	return rc;
 }
@@ -1132,10 +1133,7 @@ static int
 dkopen(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct dkwedge_softc *sc = dkwedge_lookup(dev);
-	struct dkwedge_softc *nsc;
-	struct vnode *vp;
 	int error = 0;
-	int mode;
 
 	if (sc == NULL)
 		return (ENODEV);
@@ -1151,35 +1149,9 @@ dkopen(dev_t dev, int flags, int fmt, struct lwp *l)
 	mutex_enter(&sc->sc_dk.dk_openlock);
 	mutex_enter(&sc->sc_parent->dk_rawlock);
 	if (sc->sc_dk.dk_openmask == 0) {
-		if (sc->sc_parent->dk_rawopens == 0) {
-			KASSERT(sc->sc_parent->dk_rawvp == NULL);
-			/*
-			 * Try open read-write. If this fails for EROFS
-			 * and wedge is read-only, retry to open read-only.
-			 */
-			mode = FREAD | FWRITE;
-			error = dk_open_parent(sc->sc_pdev, mode, &vp);
-			if (error == EROFS && (flags & FWRITE) == 0) {
-				mode &= ~FWRITE;
-				error = dk_open_parent(sc->sc_pdev, mode, &vp);
-			}
-			if (error)
-				goto popen_fail;
-			sc->sc_parent->dk_rawvp = vp;
-		} else {
-			/*
-			 * Retrieve mode from an already opened wedge.
-			 */
-			mode = 0;
-			LIST_FOREACH(nsc, &sc->sc_parent->dk_wedges, sc_plink) {
-				if (nsc == sc || nsc->sc_dk.dk_openmask == 0)
-					continue;
-				mode = nsc->sc_mode;
-				break;
-			}
-		}
-		sc->sc_mode = mode;
-		sc->sc_parent->dk_rawopens++;
+		error = dkfirstopen(sc, flags);
+		if (error)
+			goto popen_fail;
 	}
 	KASSERT(sc->sc_mode != 0);
 	if (flags & ~sc->sc_mode & FWRITE) {
@@ -1199,35 +1171,66 @@ dkopen(dev_t dev, int flags, int fmt, struct lwp *l)
 	return (error);
 }
 
-/*
- * Caller must hold sc->sc_dk.dk_openlock and sc->sc_parent->dk_rawlock.
- */
 static int
-dklastclose(struct dkwedge_softc *sc)
+dkfirstopen(struct dkwedge_softc *sc, int flags)
 {
+	struct dkwedge_softc *nsc;
 	struct vnode *vp;
-	int error = 0, mode;
+	int mode;
+	int error;
 
-	mode = sc->sc_mode;
+	KASSERT(mutex_owned(&sc->sc_dk.dk_openlock));
+	KASSERT(mutex_owned(&sc->sc_parent->dk_rawlock));
 
-	vp = NULL;
-	if (sc->sc_parent->dk_rawopens > 0) {
-		if (--sc->sc_parent->dk_rawopens == 0) {
-			KASSERT(sc->sc_parent->dk_rawvp != NULL);
-			vp = sc->sc_parent->dk_rawvp;
-			sc->sc_parent->dk_rawvp = NULL;
-			sc->sc_mode = 0;
+	if (sc->sc_parent->dk_rawopens == 0) {
+		KASSERT(sc->sc_parent->dk_rawvp == NULL);
+		/*
+		 * Try open read-write. If this fails for EROFS
+		 * and wedge is read-only, retry to open read-only.
+		 */
+		mode = FREAD | FWRITE;
+		error = dk_open_parent(sc->sc_pdev, mode, &vp);
+		if (error == EROFS && (flags & FWRITE) == 0) {
+			mode &= ~FWRITE;
+			error = dk_open_parent(sc->sc_pdev, mode, &vp);
+		}
+		if (error)
+			return error;
+		sc->sc_parent->dk_rawvp = vp;
+	} else {
+		/*
+		 * Retrieve mode from an already opened wedge.
+		 */
+		mode = 0;
+		LIST_FOREACH(nsc, &sc->sc_parent->dk_wedges, sc_plink) {
+			if (nsc == sc || nsc->sc_dk.dk_openmask == 0)
+				continue;
+			mode = nsc->sc_mode;
+			break;
 		}
 	}
+	sc->sc_mode = mode;
+	sc->sc_parent->dk_rawopens++;
 
-	mutex_exit(&sc->sc_parent->dk_rawlock);
-	mutex_exit(&sc->sc_dk.dk_openlock);
+	return 0;
+}
 
-	if (vp) {
+static void
+dklastclose(struct dkwedge_softc *sc)
+{
+
+	KASSERT(mutex_owned(&sc->sc_dk.dk_openlock));
+	KASSERT(mutex_owned(&sc->sc_parent->dk_rawlock));
+
+	if (--sc->sc_parent->dk_rawopens == 0) {
+		struct vnode *const vp = sc->sc_parent->dk_rawvp;
+		const int mode = sc->sc_mode;
+
+		sc->sc_parent->dk_rawvp = NULL;
+		sc->sc_mode = 0;
+
 		dk_close_parent(vp, mode);
 	}
-
-	return error;
 }
 
 /*
@@ -1239,17 +1242,16 @@ static int
 dkclose(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct dkwedge_softc *sc = dkwedge_lookup(dev);
-	int error = 0;
 
 	if (sc == NULL)
-		return (ENODEV);
+		return ENODEV;
 	if (sc->sc_state != DKW_STATE_RUNNING)
-		return (ENXIO);
-
-	KASSERT(sc->sc_dk.dk_openmask != 0);
+		return ENXIO;
 
 	mutex_enter(&sc->sc_dk.dk_openlock);
 	mutex_enter(&sc->sc_parent->dk_rawlock);
+
+	KASSERT(sc->sc_dk.dk_openmask != 0);
 
 	if (fmt == S_IFCHR)
 		sc->sc_dk.dk_copenmask &= ~1;
@@ -1259,13 +1261,13 @@ dkclose(dev_t dev, int flags, int fmt, struct lwp *l)
 	    sc->sc_dk.dk_copenmask | sc->sc_dk.dk_bopenmask;
 
 	if (sc->sc_dk.dk_openmask == 0) {
-		error = dklastclose(sc); /* releases locks */
-	} else {
-		mutex_exit(&sc->sc_parent->dk_rawlock);
-		mutex_exit(&sc->sc_dk.dk_openlock);
+		dklastclose(sc);
 	}
 
-	return (error);
+	mutex_exit(&sc->sc_parent->dk_rawlock);
+	mutex_exit(&sc->sc_dk.dk_openlock);
+
+	return 0;
 }
 
 /*

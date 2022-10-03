@@ -1,4 +1,4 @@
-/*	$NetBSD: at91emac.c,v 1.33 2021/11/04 06:57:51 skrll Exp $	*/
+/*	$NetBSD: at91emac.c,v 1.35 2022/09/27 06:36:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.33 2021/11/04 06:57:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.35 2022/09/27 06:36:41 skrll Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -40,7 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.33 2021/11/04 06:57:51 skrll Exp $");
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
 #include <sys/proc.h>
-#include <sys/malloc.h>
 #include <sys/time.h>
 #include <sys/device.h>
 #include <uvm/uvm_extern.h>
@@ -180,7 +179,6 @@ emac_attach(device_t parent, device_t self, void *aux)
 static int
 emac_gctx(struct emac_softc *sc)
 {
-	struct ifnet * ifp = &sc->sc_ec.ec_if;
 	uint32_t tsr;
 
 	tsr = EMAC_READ(ETH_TSR);
@@ -204,8 +202,8 @@ emac_gctx(struct emac_softc *sc)
 	}
 
 	// mark we're free
-	if (ifp->if_flags & IFF_OACTIVE) {
-		ifp->if_flags &= ~IFF_OACTIVE;
+	if (sc->tx_busy) {
+		sc->tx_busy = false;
 		/* Disable transmit-buffer-free interrupt */
 		/*EMAC_WRITE(ETH_IDR, ETH_ISR_TBRE);*/
 	}
@@ -615,7 +613,7 @@ start:
 	if (emac_gctx(sc) == 0) {
 		/* Enable transmit-buffer-free interrupt */
 		EMAC_WRITE(ETH_IER, ETH_ISR_TBRE);
-		ifp->if_flags |= IFF_OACTIVE;
+		sc->tx_busy = true;
 		ifp->if_timer = 10;
 		splx(s);
 		return;
@@ -754,7 +752,7 @@ emac_ifstop(struct ifnet *ifp, int disable)
 	/* Down the MII. */
 	mii_down(&sc->sc_mii);
 
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 	ifp->if_timer = 0;
 	sc->sc_mii.mii_media_status &= ~IFM_ACTIVE;
 }

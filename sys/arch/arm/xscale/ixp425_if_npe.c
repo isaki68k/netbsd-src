@@ -1,4 +1,4 @@
-/*	$NetBSD: ixp425_if_npe.c,v 1.51 2022/05/22 11:27:34 andvar Exp $ */
+/*	$NetBSD: ixp425_if_npe.c,v 1.53 2022/09/27 06:13:42 skrll Exp $ */
 
 /*-
  * Copyright (c) 2006 Sam Leffler.  All rights reserved.
@@ -28,7 +28,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/arm/xscale/ixp425/if_npe.c,v 1.1 2006/11/19 23:55:23 sam Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.51 2022/05/22 11:27:34 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.53 2022/09/27 06:13:42 skrll Exp $");
 
 /*
  * Intel XScale NPE Ethernet driver.
@@ -52,8 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.51 2022/05/22 11:27:34 andvar Ex
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/callout.h>
+#include <sys/kmem.h>
 #include <sys/mbuf.h>
-#include <sys/malloc.h>
 #include <sys/socket.h>
 #include <sys/endian.h>
 #include <sys/ioctl.h>
@@ -468,9 +468,7 @@ npe_dma_setup(struct npe_softc *sc, struct npedma *dma,
 		goto unmap_dmamem;
 	}
 
-	/* XXX M_TEMP */
-	dma->buf = malloc(nbuf * sizeof(struct npebuf), M_TEMP,
-	    M_WAITOK | M_ZERO);
+	dma->buf = kmem_zalloc(nbuf * sizeof(struct npebuf), KM_SLEEP);
 	dma->buf_phys = dma->buf_map->dm_segs[0].ds_addr;
 	for (i = 0; i < dma->nbuf; i++) {
 		struct npebuf *npe = &dma->buf[i];
@@ -514,7 +512,7 @@ npe_dma_destroy(struct npe_softc *sc, struct npedma *dma)
 		bus_dmamap_destroy(sc->sc_dt, dma->buf_map);
 	}
 	if (dma->buf != NULL)
-		free(dma->buf, M_TEMP);
+		kmem_free(dma->buf, dma->nbuf * sizeof(struct npebuf));
 	memset(dma, 0, sizeof(*dma));
 }
 #endif
@@ -788,7 +786,6 @@ npe_txdone_finish(struct npe_softc *sc, const struct txdone *td)
 	 * start routine to xmit more packets.
 	 */
 	if_statadd(ifp, if_opackets, td->count);
-	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;
 	if_schedule_deferred_start(ifp);
 }
@@ -1174,7 +1171,6 @@ npeinit_locked(void *xsc)
 	npe_startrecv(sc);
 
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;		/* just in case */
 
 	/* Enable transmitter and receiver in the MAC */
@@ -1244,7 +1240,7 @@ npestart(struct ifnet *ifp)
 	int nseg, len, error, i;
 	uint32_t next;
 
-	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return;
 
 	while (sc->tx_free != NULL) {
@@ -1308,8 +1304,6 @@ npestart(struct ifnet *ifp)
 
 		ifp->if_timer = 5;
 	}
-	if (sc->tx_free == NULL)
-		ifp->if_flags |= IFF_OACTIVE;
 }
 
 static void
@@ -1380,7 +1374,7 @@ npestop(struct ifnet *ifp, int disable)
 	WR4(sc, NPE_MAC_CORE_CNTRL, NPE_CORE_MDC_EN);
 
 	ifp->if_timer = 0;
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 }
 
 void

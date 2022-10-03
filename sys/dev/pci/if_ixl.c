@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.85 2022/06/17 06:26:00 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.88 2022/09/16 03:12:03 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.85 2022/06/17 06:26:00 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.88 2022/09/16 03:12:03 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -718,7 +718,7 @@ static bool		 ixl_param_nomsix = false;
 static int		 ixl_param_stats_interval = IXL_STATS_INTERVAL_MSEC;
 static int		 ixl_param_nqps_limit = IXL_QUEUE_NUM;
 static unsigned int	 ixl_param_tx_ndescs = 512;
-static unsigned int	 ixl_param_rx_ndescs = 256;
+static unsigned int	 ixl_param_rx_ndescs = 512;
 
 static enum i40e_mac_type
 	    ixl_mactype(pci_product_id_t);
@@ -785,7 +785,6 @@ static int	ixl_detach(device_t, int);
 static void	ixl_media_add(struct ixl_softc *);
 static int	ixl_media_change(struct ifnet *);
 static void	ixl_media_status(struct ifnet *, struct ifmediareq *);
-static void	ixl_watchdog(struct ifnet *);
 static int	ixl_ioctl(struct ifnet *, u_long, void *);
 static void	ixl_start(struct ifnet *);
 static int	ixl_transmit(struct ifnet *, struct mbuf *);
@@ -1300,7 +1299,6 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	ifp->if_ioctl = ixl_ioctl;
 	ifp->if_start = ixl_start;
 	ifp->if_transmit = ixl_transmit;
-	ifp->if_watchdog = ixl_watchdog;
 	ifp->if_init = ixl_init;
 	ifp->if_stop = ixl_stop;
 	IFQ_SET_MAXLEN(&ifp->if_snd, sc->sc_tx_ring_ndescs);
@@ -1675,11 +1673,6 @@ ixl_media_change(struct ifnet *ifp)
 	return ixl_set_phy_config(sc, link_speed, abilities, false);
 }
 
-static void
-ixl_watchdog(struct ifnet *ifp)
-{
-
-}
 
 static void
 ixl_del_all_multiaddr(struct ixl_softc *sc)
@@ -2890,6 +2883,11 @@ ixl_transmit(struct ifnet *ifp, struct mbuf *m)
 		return ENOBUFS;
 	}
 
+#ifdef IXL_ALWAYS_TXDEFER
+	kpreempt_disable();
+	softint_schedule(txr->txr_si);
+	kpreempt_enable();
+#else
 	if (mutex_tryenter(&txr->txr_lock)) {
 		ixl_tx_common_locked(ifp, txr, true);
 		mutex_exit(&txr->txr_lock);
@@ -2898,6 +2896,7 @@ ixl_transmit(struct ifnet *ifp, struct mbuf *m)
 		softint_schedule(txr->txr_si);
 		kpreempt_enable();
 	}
+#endif
 
 	return 0;
 }

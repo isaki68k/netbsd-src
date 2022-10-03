@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ppp.c,v 1.169 2022/07/06 08:07:23 riastradh Exp $	*/
+/*	$NetBSD: if_ppp.c,v 1.172 2022/09/03 02:47:59 thorpej Exp $	*/
 /*	Id: if_ppp.c,v 1.6 1997/03/04 03:33:00 paulus Exp 	*/
 
 /*
@@ -102,7 +102,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.169 2022/07/06 08:07:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.172 2022/09/03 02:47:59 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "ppp.h"
@@ -137,7 +137,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.169 2022/07/06 08:07:23 riastradh Exp $
 
 #include <net/if.h>
 #include <net/if_types.h>
-#include <net/netisr.h>
 #include <net/route.h>
 
 #include <netinet/in.h>
@@ -319,9 +318,12 @@ ppp_create(const char *name, int unit)
 	sc->sc_if.if_start = ppp_ifstart;
 #endif
 	IFQ_SET_MAXLEN(&sc->sc_if.if_snd, IFQ_MAXLEN);
-	sc->sc_inq.ifq_maxlen = IFQ_MAXLEN;
-	sc->sc_fastq.ifq_maxlen = IFQ_MAXLEN;
-	sc->sc_rawq.ifq_maxlen = IFQ_MAXLEN;
+	IFQ_SET_MAXLEN(&sc->sc_inq, IFQ_MAXLEN);
+	IFQ_SET_MAXLEN(&sc->sc_fastq, IFQ_MAXLEN);
+	IFQ_SET_MAXLEN(&sc->sc_rawq, IFQ_MAXLEN);
+
+	IFQ_LOCK_INIT(&sc->sc_fastq);
+
 	/* Ratio of 1:2 packets between the regular and the fast queue */
 	sc->sc_maxfastq = 2;
 	IFQ_SET_READY(&sc->sc_if.if_snd);
@@ -351,6 +353,8 @@ ppp_clone_destroy(struct ifnet *ifp)
 
 	bpf_detach(ifp);
 	if_detach(ifp);
+
+	IFQ_LOCK_DESTROY(&sc->sc_fastq);
 
 	free(sc, M_DEVBUF);
 	return 0;

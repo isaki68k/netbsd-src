@@ -1,4 +1,4 @@
-/*	$NetBSD: hypervisor_machdep.c,v 1.43 2022/05/31 18:01:22 bouyer Exp $	*/
+/*	$NetBSD: hypervisor_machdep.c,v 1.45 2022/09/07 00:40:19 knakahara Exp $	*/
 
 /*
  *
@@ -54,7 +54,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hypervisor_machdep.c,v 1.43 2022/05/31 18:01:22 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hypervisor_machdep.c,v 1.45 2022/09/07 00:40:19 knakahara Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,6 +66,7 @@ __KERNEL_RCSID(0, "$NetBSD: hypervisor_machdep.c,v 1.43 2022/05/31 18:01:22 bouy
 
 #include <machine/vmparam.h>
 #include <machine/pmap.h>
+#include <machine/pmap_private.h>
 
 #include <x86/machdep.h>
 #include <x86/cpuvar.h>
@@ -273,7 +274,7 @@ do_hypervisor_callback(struct intrframe *regs)
 	volatile shared_info_t *s = HYPERVISOR_shared_info;
 	struct cpu_info *ci;
 	volatile struct vcpu_info *vci;
-	int level __diagused;
+	uint64_t level __diagused;
 
 	ci = curcpu();
 	vci = ci->ci_vcpu;
@@ -303,9 +304,9 @@ do_hypervisor_callback(struct intrframe *regs)
 
 #ifdef DIAGNOSTIC
 	if (level != ci->ci_ilevel)
-		printf("hypervisor done %08x level %d/%d ipending %08x\n",
+		printf("hypervisor done %08x level %" PRIu64 "/%" PRIu64 " ipending %0" PRIx64 "\n",
 		    (uint)vci->evtchn_pending_sel,
-		    level, ci->ci_ilevel, ci->ci_ipending);
+		    level, (uint64_t)ci->ci_ilevel, (uint64_t)ci->ci_ipending);
 #endif
 }
 
@@ -418,7 +419,7 @@ hypervisor_enable_sir(unsigned int sir)
 }
 
 void
-hypervisor_set_ipending(uint32_t imask, int l1, int l2)
+hypervisor_set_ipending(uint64_t imask, int l1, int l2)
 {
 
 	/* This function is not re-entrant */

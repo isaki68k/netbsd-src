@@ -1,4 +1,4 @@
-/*	$NetBSD: ichlpcib.c,v 1.54 2021/08/07 16:19:07 thorpej Exp $	*/
+/*	$NetBSD: ichlpcib.c,v 1.58 2022/09/22 14:42:29 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ichlpcib.c,v 1.54 2021/08/07 16:19:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ichlpcib.c,v 1.58 2022/09/22 14:42:29 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -85,8 +85,8 @@ struct lpcib_softc {
 	pcireg_t		sc_rcba_reg;
 
 	/* Power management variables. */
-	bus_space_tag_t		sc_iot;
-	bus_space_handle_t	sc_ioh;
+	bus_space_tag_t		sc_pmt;
+	bus_space_handle_t	sc_pmh;
 	bus_size_t		sc_iosize;
 
 	/* HPET variables. */
@@ -339,10 +339,10 @@ lpcibattach(device_t parent, device_t self, void *aux)
 	 * than LPCIB_PCI_PM_SIZE. It makes impossible to use
 	 * pci_mapreg_submap() because the function does range check.
 	 */
-	sc->sc_iot = pa->pa_iot;
+	sc->sc_pmt = pa->pa_iot;
 	pmbase = pci_conf_read(pa->pa_pc, pa->pa_tag, LPCIB_PCI_PMBASE);
-	if (bus_space_map(sc->sc_iot, PCI_MAPREG_IO_ADDR(pmbase),
-	    LPCIB_PCI_PM_SIZE, 0, &sc->sc_ioh) != 0) {
+	if (bus_space_map(sc->sc_pmt, PCI_MAPREG_IO_ADDR(pmbase),
+	    LPCIB_PCI_PM_SIZE, 0, &sc->sc_pmh) != 0) {
 		aprint_error_dev(self,
 	    	"can't map power management i/o space\n");
 		return;
@@ -517,7 +517,7 @@ lpcibdetach(device_t self, int flags)
 	if (sc->sc_has_rcba)
 		bus_space_unmap(sc->sc_rcbat, sc->sc_rcbah, LPCIB_RCBA_SIZE);
 
-	bus_space_unmap(sc->sc_iot, sc->sc_ioh, sc->sc_iosize);
+	bus_space_unmap(sc->sc_pmt, sc->sc_pmh, sc->sc_iosize);
 
 	return pcibdetach(self, flags);
 }
@@ -606,8 +606,8 @@ pmtimer_configure(device_t self)
 	}
 
 	/* Attach our PM timer with the generic acpipmtimer function */
-	sc->sc_pmtimer = acpipmtimer_attach(self, sc->sc_iot, sc->sc_ioh,
-	    LPCIB_PM1_TMR, 0);
+	sc->sc_pmtimer = acpipmtimer_attach(self, sc->sc_pmt, sc->sc_pmh,
+	    PMC_PM1_TMR, 0);
 }
 
 static int
@@ -633,14 +633,17 @@ static void
 tcotimer_configure(device_t self)
 {
 	struct lpcib_softc *sc = device_private(self);
-	struct lpcib_tco_attach_args arg;
+	struct tco_attach_args arg;
 
-	arg.ta_iot = sc->sc_iot;
-	arg.ta_ioh = sc->sc_ioh;
+	if (sc->sc_has_rcba)
+		arg.ta_version = TCO_VERSION_RCBA;
+	else
+		arg.ta_version = TCO_VERSION_PCIB;
+	arg.ta_pmt = sc->sc_pmt;
+	arg.ta_pmh = sc->sc_pmh;
 	arg.ta_rcbat = sc->sc_rcbat;
 	arg.ta_rcbah = sc->sc_rcbah;
-	arg.ta_has_rcba = sc->sc_has_rcba;
-	arg.ta_pcib = &(sc->sc_pcib);
+	arg.ta_pcib = &sc->sc_pcib;
 
 	sc->sc_tco = config_found(self, &arg, NULL,
 	    CFARGS(.iattr = "tcoichbus"));
@@ -664,9 +667,9 @@ tcotimer_unconfigure(device_t self, int flags)
  * Intel ICH SpeedStep support.
  */
 #define SS_READ(sc, reg) \
-	bus_space_read_1((sc)->sc_iot, (sc)->sc_ioh, (reg))
+	bus_space_read_1((sc)->sc_pmt, (sc)->sc_pmh, (reg))
 #define SS_WRITE(sc, reg, val) \
-	bus_space_write_1((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
+	bus_space_write_1((sc)->sc_pmt, (sc)->sc_pmh, (reg), (val))
 
 /*
  * Linux driver says that SpeedStep on older chipsets cause
@@ -762,9 +765,9 @@ speedstep_sysctl_helper(SYSCTLFN_ARGS)
 	 * sysctl_lookup() which can both copyin and copyout.
 	 */
 	s = splserial();
-	state = SS_READ(sc, LPCIB_PM_SS_CNTL);
+	state = SS_READ(sc, PMC_PM_SS_CNTL);
 	splx(s);
-	if ((state & LPCIB_PM_SS_STATE_LOW) == 0)
+	if ((state & PMC_PM_SS_STATE_LOW) == 0)
 		ostate = 1;
 	else
 		ostate = 0;
@@ -784,8 +787,8 @@ speedstep_sysctl_helper(SYSCTLFN_ARGS)
 	}
 
 	s = splserial();
-	state2 = SS_READ(sc, LPCIB_PM_SS_CNTL);
-	if ((state2 & LPCIB_PM_SS_STATE_LOW) == 0)
+	state2 = SS_READ(sc, PMC_PM_SS_CNTL);
+	if ((state2 & PMC_PM_SS_STATE_LOW) == 0)
 		ostate = 1;
 	else
 		ostate = 0;
@@ -794,17 +797,17 @@ speedstep_sysctl_helper(SYSCTLFN_ARGS)
 		uint8_t cntl;
 
 		if (nstate == 0)
-			state2 |= LPCIB_PM_SS_STATE_LOW;
+			state2 |= PMC_PM_SS_STATE_LOW;
 		else
-			state2 &= ~LPCIB_PM_SS_STATE_LOW;
+			state2 &= ~PMC_PM_SS_STATE_LOW;
 
 		/*
 		 * Must disable bus master arbitration during the change.
 		 */
-		cntl = SS_READ(sc, LPCIB_PM_CTRL);
-		SS_WRITE(sc, LPCIB_PM_CTRL, cntl | LPCIB_PM_SS_CNTL_ARB_DIS);
-		SS_WRITE(sc, LPCIB_PM_SS_CNTL, state2);
-		SS_WRITE(sc, LPCIB_PM_CTRL, cntl);
+		cntl = SS_READ(sc, PMC_PM_CTRL);
+		SS_WRITE(sc, PMC_PM_CTRL, cntl | PMC_PM_SS_CNTL_ARB_DIS);
+		SS_WRITE(sc, PMC_PM_SS_CNTL, state2);
+		SS_WRITE(sc, PMC_PM_CTRL, cntl);
 	}
 	splx(s);
 out:

@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.230 2021/12/05 04:57:38 msaitoh Exp $	*/
+/*	$NetBSD: route.c,v 1.234 2022/09/20 02:23:37 knakahara Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.230 2021/12/05 04:57:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.234 2022/09/20 02:23:37 knakahara Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -884,6 +884,8 @@ rtredirect(const struct sockaddr *dst, const struct sockaddr *gateway,
 			error = rtrequest1(RTM_ADD, &info, &rt);
 			if (rt != NULL)
 				flags = rt->rt_flags;
+			if (error == 0)
+				rt_newmsg_dynamic(RTM_ADD, rt);
 			stat = &rtstat.rts_dynamic;
 		} else {
 			/*
@@ -1053,35 +1055,6 @@ rtrequest(int req, const struct sockaddr *dst, const struct sockaddr *gateway,
 	info.rti_info[RTAX_GATEWAY] = gateway;
 	info.rti_info[RTAX_NETMASK] = netmask;
 	return rtrequest1(req, &info, ret_nrt);
-}
-
-/*
- * It's a utility function to add/remove a route to/from the routing table
- * and tell user processes the addition/removal on success.
- */
-int
-rtrequest_newmsg(const int req, const struct sockaddr *dst,
-	const struct sockaddr *gateway, const struct sockaddr *netmask,
-	const int flags)
-{
-	int error;
-	struct rtentry *ret_nrt = NULL;
-
-	KASSERT(req == RTM_ADD || req == RTM_DELETE);
-
-	error = rtrequest(req, dst, gateway, netmask, flags, &ret_nrt);
-	if (error != 0)
-		return error;
-
-	KASSERT(ret_nrt != NULL);
-
-	rt_newmsg(req, ret_nrt); /* tell user process */
-	if (req == RTM_DELETE)
-		rt_free(ret_nrt);
-	else
-		rt_unref(ret_nrt);
-
-	return 0;
 }
 
 static struct ifnet *
@@ -1565,6 +1538,51 @@ rt_newmsg(const int cmd, const struct rtentry *rt)
 	memset((void *)&info, 0, sizeof(info));
 	info.rti_info[RTAX_DST] = rt_getkey(rt);
 	info.rti_info[RTAX_GATEWAY] = rt->rt_gateway;
+	info.rti_info[RTAX_NETMASK] = rt_mask(rt);
+	if (rt->rt_ifp) {
+		info.rti_info[RTAX_IFP] = rt->rt_ifp->if_dl->ifa_addr;
+		info.rti_info[RTAX_IFA] = rt->rt_ifa->ifa_addr;
+	}
+
+	rt_missmsg(cmd, &info, rt->rt_flags, 0);
+}
+
+/*
+ * Inform the routing socket of a route change for RTF_DYNAMIC.
+ */
+void
+rt_newmsg_dynamic(const int cmd, const struct rtentry *rt)
+{
+	struct rt_addrinfo info;
+	struct sockaddr *gateway = rt->rt_gateway;
+
+	if (gateway == NULL)
+		return;
+
+	switch(gateway->sa_family) {
+#ifdef INET
+	case AF_INET: {
+		extern bool icmp_dynamic_rt_msg;
+		if (!icmp_dynamic_rt_msg)
+			return;
+		break;
+	}
+#endif
+#ifdef INET6
+	case AF_INET6: {
+		extern bool icmp6_dynamic_rt_msg;
+		if (!icmp6_dynamic_rt_msg)
+			return;
+		break;
+	}
+#endif
+	default:
+		return;
+	}
+
+	memset((void *)&info, 0, sizeof(info));
+	info.rti_info[RTAX_DST] = rt_getkey(rt);
+	info.rti_info[RTAX_GATEWAY] = gateway;
 	info.rti_info[RTAX_NETMASK] = rt_mask(rt);
 	if (rt->rt_ifp) {
 		info.rti_info[RTAX_IFP] = rt->rt_ifp->if_dl->ifa_addr;
@@ -2273,7 +2291,7 @@ rt_check_reject_route(const struct rtentry *rt, const struct ifnet *ifp)
 
 void
 rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *),
-    void *v)
+    void *v, bool notify)
 {
 
 	for (;;) {
@@ -2290,6 +2308,7 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 			return;
 		}
 		rt_ref(rt);
+		RT_REFCNT_TRACE(rt);
 		splx(s);
 		RT_UNLOCK();
 
@@ -2298,12 +2317,16 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 		if (error == 0) {
 			KASSERT(retrt == rt);
 			KASSERT((retrt->rt_flags & RTF_UP) == 0);
+			if (notify)
+				rt_newmsg(RTM_DELETE, retrt);
 			retrt->rt_ifp = NULL;
 			rt_unref(rt);
+			RT_REFCNT_TRACE(rt);
 			rt_free(retrt);
 		} else if (error == ESRCH) {
 			/* Someone deleted the entry already. */
 			rt_unref(rt);
+			RT_REFCNT_TRACE(rt);
 		} else {
 			log(LOG_ERR, "%s: unable to delete rtentry @ %p, "
 			    "error = %d\n", rt->rt_ifp->if_xname, rt, error);
@@ -2318,6 +2341,53 @@ rt_walktree_locked(sa_family_t family, int (*f)(struct rtentry *, void *),
 {
 
 	return rtbl_walktree(family, f, v);
+}
+
+void
+rt_replace_ifa_matched_entries(sa_family_t family,
+    int (*f)(struct rtentry *, void *), void *v, struct ifaddr *ifa)
+{
+
+	for (;;) {
+		int s;
+#ifdef NET_MPSAFE
+		int error;
+#endif
+		struct rtentry *rt;
+
+		RT_RLOCK();
+		s = splsoftnet();
+		rt = rtbl_search_matched_entry(family, f, v);
+		if (rt == NULL) {
+			splx(s);
+			RT_UNLOCK();
+			return;
+		}
+		rt_ref(rt);
+		RT_REFCNT_TRACE(rt);
+		splx(s);
+		RT_UNLOCK();
+
+#ifdef NET_MPSAFE
+		error = rt_update_prepare(rt);
+		if (error == 0) {
+			rt_replace_ifa(rt, ifa);
+			rt_update_finish(rt);
+			rt_newmsg(RTM_CHANGE, rt);
+		} else {
+			/*
+			 * If error != 0, the rtentry is being
+			 * destroyed, so doing nothing doesn't
+			 * matter.
+			 */
+		}
+#else
+		rt_replace_ifa(rt, ifa);
+		rt_newmsg(RTM_CHANGE, rt);
+#endif
+		rt_unref(rt);
+		RT_REFCNT_TRACE(rt);
+	}
 }
 
 int

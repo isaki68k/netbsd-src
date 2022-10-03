@@ -1,4 +1,4 @@
-/*	$NetBSD: route.h,v 1.129 2021/08/09 20:49:10 andvar Exp $	*/
+/*	$NetBSD: route.h,v 1.132 2022/09/20 02:23:37 knakahara Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -437,6 +437,7 @@ int	rt_update_prepare(struct rtentry *);
 void	rt_update_finish(struct rtentry *);
 
 void	rt_newmsg(const int, const struct rtentry *);
+void	rt_newmsg_dynamic(const int, const struct rtentry *);
 struct rtentry *
 	rtalloc1(const struct sockaddr *, int);
 int	rtinit(struct ifaddr *, int, int);
@@ -447,8 +448,6 @@ int	rtrequest(int, const struct sockaddr *,
 	    const struct sockaddr *, const struct sockaddr *, int,
 	    struct rtentry **);
 int	rtrequest1(int, struct rt_addrinfo *, struct rtentry **);
-int	rtrequest_newmsg(const int, const struct sockaddr *,
-	    const struct sockaddr *, const struct sockaddr *, const int);
 
 int	rt_ifa_addlocal(struct ifaddr *);
 int	rt_ifa_remlocal(struct ifaddr *, struct ifaddr *);
@@ -464,7 +463,9 @@ struct sockaddr *
 
 int	rt_check_reject_route(const struct rtentry *, const struct ifnet *);
 void	rt_delete_matched_entries(sa_family_t,
-	    int (*)(struct rtentry *, void *), void *);
+	    int (*)(struct rtentry *, void *), void *, bool);
+void	rt_replace_ifa_matched_entries(sa_family_t,
+	    int (*)(struct rtentry *, void *), void *, struct ifaddr *);
 int	rt_walktree(sa_family_t, int (*)(struct rtentry *, void *), void *);
 
 static __inline void

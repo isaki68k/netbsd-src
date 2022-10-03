@@ -1,4 +1,4 @@
-/*	$NetBSD: tco.h,v 1.1 2015/05/03 02:50:59 pgoyette Exp $	*/
+/*	$NetBSD: tco.h,v 1.4 2022/09/22 14:42:29 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -36,10 +36,13 @@
 #ifndef _X86_PCI_TCO_H_
 #define _X86_PCI_TCO_H_
 
-struct lpcib_tco_attach_args {  
-	int			ta_has_rcba;
-	bus_space_tag_t		ta_iot;
-	bus_space_handle_t	ta_ioh;
+struct tco_attach_args {
+	enum {
+		TCO_VERSION_PCIB = 0,
+		TCO_VERSION_RCBA = 1,
+	}			ta_version;
+	bus_space_tag_t		ta_pmt;
+	bus_space_handle_t	ta_pmh;
 	bus_space_tag_t		ta_rcbat;
 	bus_space_handle_t	ta_rcbah;
 	struct pcib_softc *	ta_pcib;

@@ -1,4 +1,4 @@
-/* $NetBSD: if_vge.c,v 1.84 2022/05/23 13:53:37 rin Exp $ */
+/* $NetBSD: if_vge.c,v 1.86 2022/09/24 18:12:43 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2004
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.84 2022/05/23 13:53:37 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.86 2022/09/24 18:12:43 thorpej Exp $");
 
 /*
  * VIA Networking Technologies VT612x PCI gigabit ethernet NIC driver.
@@ -94,7 +94,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.84 2022/05/23 13:53:37 rin Exp $");
 #include <sys/device.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
-#include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
 
@@ -1399,10 +1398,6 @@ vge_txeof(struct vge_softc *sc)
 
 	sc->sc_tx_considx = idx;
 
-	if (sc->sc_tx_free > 0) {
-		ifp->if_flags &= ~IFF_OACTIVE;
-	}
-
 	/*
 	 * If not all descriptors have been released reaped yet,
 	 * reload the timer so that we will eventually get another
@@ -1647,7 +1642,7 @@ vge_start(struct ifnet *ifp)
 	sc = ifp->if_softc;
 
 	if (!sc->sc_link ||
-	    (ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING) {
+	    (ifp->if_flags & IFF_RUNNING) == 0) {
 		return;
 	}
 
@@ -1661,19 +1656,11 @@ vge_start(struct ifnet *ifp)
 	 * until we drain the queue, or use up all available transmit
 	 * descriptors.
 	 */
-	for (;;) {
+	while (sc->sc_tx_free != 0) {
 		/* Grab a packet off the queue. */
 		IFQ_POLL(&ifp->if_snd, m_head);
 		if (m_head == NULL)
 			break;
-
-		if (sc->sc_tx_free == 0) {
-			/*
-			 * All slots used, stop for now.
-			 */
-			ifp->if_flags |= IFF_OACTIVE;
-			break;
-		}
 
 		txs = &sc->sc_txsoft[idx];
 		KASSERT(txs->txs_mbuf == NULL);
@@ -1691,8 +1678,6 @@ vge_start(struct ifnet *ifp)
 			/*
 			 * Short on resources, just stop for now.
 			 */
-			if (error == ENOBUFS)
-				ifp->if_flags |= IFF_OACTIVE;
 			break;
 		}
 
@@ -1926,7 +1911,6 @@ vge_init(struct ifnet *ifp)
 		goto out;
 
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 
 	sc->sc_if_flags = 0;
 	sc->sc_link = 0;
@@ -2071,7 +2055,7 @@ vge_stop(struct ifnet *ifp, int disable)
 	s = splnet();
 	ifp->if_timer = 0;
 
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 #ifdef DEVICE_POLLING
 	ether_poll_deregister(ifp);
 #endif /* DEVICE_POLLING */

@@ -1,4 +1,4 @@
-/* $NetBSD: omrasopsvar.h,v 1.5 2019/09/22 05:49:16 rin Exp $ */
+/* $NetBSD: omrasopsvar.h,v 1.7 2022/10/01 13:41:12 tsutsui Exp $ */
 /*
  * Copyright (c) 2013 Kenji Aoyama
  *
@@ -52,7 +52,7 @@ extern int hwplanecount;
 
 /* operation		index	the video RAM contents will be */
 #define ROP_ZERO	 0	/* all 0	*/
-#define ROP_AND1	 1	/* D & M	*/ 
+#define ROP_AND1	 1	/* D & M	*/
 #define ROP_AND2	 2	/* ~D & M	*/
 /* Not used on LUNA	 3			*/
 #define ROP_AND3	 4	/* D & ~M	*/

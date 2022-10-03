@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.299 2022/07/28 15:15:29 skrll Exp $	*/
+/*	$NetBSD: if.h,v 1.302 2022/09/18 16:58:54 martin Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -393,7 +393,7 @@ typedef struct ifnet {
 	void		*if_pf_groups;	/* ?: pf interface groups */
 	/*
 	 * During an ifnet's lifetime, it has only one if_index, but
-	 * and if_index is not sufficient to identify an ifnet
+	 * an if_index is not sufficient to identify an ifnet
 	 * because during the lifetime of the system, many ifnets may occupy a
 	 * given if_index.  Let us tell different ifnets at the same
 	 * if_index apart by their if_index_gen, a unique number that each ifnet
@@ -414,7 +414,7 @@ typedef struct ifnet {
 	kmutex_t	*if_ioctl_lock;	/* :: */
 	char		*if_description;	/* i: interface description */
 #ifdef _KERNEL /* XXX kvm(3) */
-	struct callout	*if_slowtimo_ch;/* :: */
+	struct if_slowtimo_data *if_slowtimo_data; /* :: */
 	struct krwlock	*if_afdata_lock;/* :: */
 	struct if_percpuq
 			*if_percpuq;	/* :: we should remove it in the future */
@@ -1087,20 +1087,6 @@ do {									\
 #define	IFQ_DEC_LEN(ifq)		(--(ifq)->ifq_len)
 #define	IFQ_INC_DROPS(ifq)		((ifq)->ifq_drops++)
 #define	IFQ_SET_MAXLEN(ifq, len)	((ifq)->ifq_maxlen = (len))
-
-#define	IFQ_ENQUEUE_ISR(ifq, m, isr)					\
-do {									\
-	IFQ_LOCK(inq);							\
-	if (IF_QFULL(inq)) {						\
-		IF_DROP(inq);						\
-		IFQ_UNLOCK(inq);					\
-		m_freem(m);						\
-	} else {							\
-		IF_ENQUEUE(inq, m);					\
-		IFQ_UNLOCK(inq);					\
-		schednetisr(isr);					\
-	}								\
-} while (/*CONSTCOND*/ 0)
 
 #include <sys/mallocvar.h>
 MALLOC_DECLARE(M_IFADDR);

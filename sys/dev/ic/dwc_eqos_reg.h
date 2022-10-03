@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_eqos_reg.h,v 1.4 2022/03/17 05:45:23 mrg Exp $ */
+/* $NetBSD: dwc_eqos_reg.h,v 1.6 2022/08/24 19:21:41 ryo Exp $ */
 
 /*-
  * Copyright (c) 2022 Jared McNeill <jmcneill@invisible.ca>
@@ -66,8 +66,10 @@
 #define	 GMAC_MAC_RX_FLOW_CTRL_RFE		(1U << 0)
 #define	GMAC_RXQ_CTRL0				0x00A0
 #define	 GMAC_RXQ_CTRL0_EN_MASK			0x3
+#define	 GMAC_RXQ_CTRL0_EN_AVB			0x1
 #define	 GMAC_RXQ_CTRL0_EN_DCB			0x2
 #define	GMAC_RXQ_CTRL1				0x00A4
+#define	GMAC_RXQ_CTRL2				0x00A8
 #define	GMAC_MAC_INTERRUPT_STATUS		0x00B0
 #define	GMAC_MAC_INTERRUPT_ENABLE		0x00B4
 #define	GMAC_MAC_RX_TX_STATUS			0x00B8
@@ -91,6 +93,8 @@
 #define	 GMAC_MAC_VERSION_SNPSVER_MASK		0xFFU
 #define	GMAC_MAC_DEBUG				0x0114
 #define	GMAC_MAC_HW_FEATURE(n)			(0x011C + 0x4 * (n))
+#define	 GMAC_MAC_HW_FEATURE1_TXFIFOSIZE	__BITS(10,6)
+#define	 GMAC_MAC_HW_FEATURE1_RXFIFOSIZE	__BITS(5,0)
 #define	 GMAC_MAC_HW_FEATURE1_ADDR64_SHIFT	14
 #define	 GMAC_MAC_HW_FEATURE1_ADDR64_MASK	(0x3U << GMAC_MAC_HW_FEATURE1_ADDR64_SHIFT)
 #define	 GMAC_MAC_HW_FEATURE1_ADDR64_32BIT	(0x0U << GMAC_MAC_HW_FEATURE1_ADDR64_SHIFT)
@@ -196,6 +200,8 @@
 #define	 GMAC_MTL_INTERRUPT_STATUS_DBGIS	(1U << 17)
 #define	 GMAC_MTL_INTERRUPT_STATUS_Q0IS		(1U << 0)
 #define	GMAC_MTL_TXQ0_OPERATION_MODE		0x0D00
+#define	 GMAC_MTL_TXQ0_OPERATION_MODE_TQS		__BITS(24,16)
+#define	 GMAC_MTL_TXQ0_OPERATION_MODE_TTC		__BITS(6,4)
 #define	 GMAC_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT	2
 #define	 GMAC_MTL_TXQ0_OPERATION_MODE_TXQEN_MASK	(0x3U << GMAC_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT)
 #define	 GMAC_MTL_TXQ0_OPERATION_MODE_TXQEN_EN		(2U << GMAC_MTL_TXQ0_OPERATION_MODE_TXQEN_SHIFT)
@@ -209,6 +215,10 @@
 #define	 GMAC_MTL_Q0_INTERRUPT_CTRL_STATUS_TXUIE	(1U << 8)
 #define	 GMAC_MTL_Q0_INTERRUPT_CTRL_STATUS_TXUNFIS	(1U << 0)
 #define	GMAC_MTL_RXQ0_OPERATION_MODE		0x0D30
+#define  GMAC_MTL_RXQ0_OPERATION_MODE_RQS		__BITS(29,20)
+#define  GMAC_MTL_RXQ0_OPERATION_MODE_RFD		__BITS(19,14)
+#define  GMAC_MTL_RXQ0_OPERATION_MODE_RFA		__BITS(13,8)
+#define	 GMAC_MTL_RXQ0_OPERATION_MODE_EHFC		(1U << 7)
 #define	 GMAC_MTL_RXQ0_OPERATION_MODE_RSF		(1U << 5)
 #define	 GMAC_MTL_RXQ0_OPERATION_MODE_FEP		(1U << 4)
 #define	 GMAC_MTL_RXQ0_OPERATION_MODE_FUP		(1U << 3)
@@ -277,16 +287,27 @@ struct eqos_dma_desc {
 	uint32_t	tdes0;
 	uint32_t	tdes1;
 	uint32_t	tdes2;
-#define	EQOS_TDES2_IOC				(1U << 31)	/* TX */
+#define	EQOS_TDES2_TX_IOC			(1U << 31)	/* TX */
 	uint32_t	tdes3;
-#define	EQOS_TDES3_OWN				(1U << 31)	/* TX and RX */
-#define	EQOS_TDES3_IOC				(1U << 30)	/* RX */
-#define	EQOS_TDES3_FD				(1U << 29)	/* TX */
-#define	EQOS_TDES3_LD				(1U << 28)	/* TX */
-#define	EQOS_TDES3_BUF1V			(1U << 24)	/* RX */
-#define	EQOS_TDES3_DE				(1U << 23)	/* TX (WB) */
-#define	EQOS_TDES3_ES				(1U << 15)	/* TX (WB) */
-#define	EQOS_TDES3_LENGTH_MASK			0x7FFFU		/* RX */
+#define	EQOS_TDES3_TX_OWN			(1U << 31)	/* TX */
+#define	EQOS_TDES3_TX_FD			(1U << 29)	/* TX */
+#define	EQOS_TDES3_TX_LD			(1U << 28)	/* TX */
+#define	EQOS_TDES3_TX_DE			(1U << 23)	/* TX (WB) */
+#define	EQOS_TDES3_TX_ES			(1U << 15)	/* TX (WB) */
+#define	EQOS_TDES3_RX_OWN			(1U << 31)	/* RX */
+#define	EQOS_TDES3_RX_IOC			(1U << 30)	/* RX */
+#define	EQOS_TDES3_RX_BUF1V			(1U << 24)	/* RX */
+#define	EQOS_TDES3_RX_CTXT			(1U << 30)	/* RX (WB) */
+#define	EQOS_TDES3_RX_FD			(1U << 29)	/* RX (WB) */
+#define	EQOS_TDES3_RX_LD			(1U << 28)	/* RX (WB) */
+#define	EQOS_TDES3_RX_CE			(1U << 24)	/* RX (WB) */
+#define	EQOS_TDES3_RX_GP			(1U << 23)	/* RX (WB) */
+#define	EQOS_TDES3_RX_RWT			(1U << 22)	/* RX (WB) */
+#define	EQOS_TDES3_RX_OE			(1U << 21)	/* RX (WB) */
+#define	EQOS_TDES3_RX_RE			(1U << 20)	/* RX (WB) */
+#define	EQOS_TDES3_RX_DE			(1U << 19)	/* RX (WB) */
+#define	EQOS_TDES3_RX_ES			(1U << 15)	/* RX (WB) */
+#define	EQOS_TDES3_RX_LENGTH_MASK		0x7FFFU		/* RX */
 } __aligned (64);
 
 #endif /* !_DWC_EQOS_REG_H */

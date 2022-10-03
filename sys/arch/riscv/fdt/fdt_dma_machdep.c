@@ -1,11 +1,11 @@
-/*	$NetBSD: htif.c,v 1.4 2021/08/07 16:19:03 thorpej Exp $	*/
+/*	$NetBSD: fdt_dma_machdep.c,v 1.1 2022/09/11 15:31:12 skrll Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas of 3am Software Foundry.
+ * by Nick Hudson
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,45 +30,17 @@
  */
 
 #include <sys/cdefs.h>
-
-__RCSID("$NetBSD: htif.c,v 1.4 2021/08/07 16:19:03 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_dma_machdep.c,v 1.1 2022/09/11 15:31:12 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/device.h>
+#include <sys/bus.h>
+#include <sys/kmem.h>
 
-#include <riscv/locore.h>
-#include <riscv/htif/htif_var.h>
+#include <dev/fdt/fdtvar.h>
 
-static int htif_mainbus_match(device_t, cfdata_t, void *);
-static void htif_mainbus_attach(device_t, device_t, void *);
-
-CFATTACH_DECL_NEW(htif_mainbus, 0,
-    htif_mainbus_match, htif_mainbus_attach, NULL, NULL);
-
-int
-htif_mainbus_match(device_t parent, cfdata_t cf, void *aux)
+bus_dma_tag_t
+fdtbus_dma_tag_create(int phandle, const struct fdt_dma_range *ranges,
+    u_int nranges)
 {
-	struct mainbus_attach_args * const maa = aux;
-
-	if (strcmp(maa->maa_name, cf->cf_name))
-		return 0;
-
-	return 0;
-}
-
-static int
-htif_mainbus_print(void *aux, const char *name)
-{
-	return QUIET;
-}
-
-void
-htif_mainbus_attach(device_t parent, device_t self, void *aux)
-{
-	struct htif_attach_args haa;
-
-	haa.haa_name = "htifcons";
-	config_found(self, &haa, htif_mainbus_print, CFARGS_NONE);
-	haa.haa_name = "htifdisk";
-	config_found(self, &haa, htif_mainbus_print, CFARGS_NONE);
+	return NULL;
 }

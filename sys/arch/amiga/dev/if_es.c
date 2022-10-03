@@ -1,4 +1,4 @@
-/*	$NetBSD: if_es.c,v 1.66 2022/05/24 20:50:18 andvar Exp $ */
+/*	$NetBSD: if_es.c,v 1.68 2022/09/17 19:03:31 thorpej Exp $ */
 
 /*
  * Copyright (c) 1995 Michael L. Hitch
@@ -33,7 +33,7 @@
 #include "opt_ns.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_es.c,v 1.66 2022/05/24 20:50:18 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_es.c,v 1.68 2022/09/17 19:03:31 thorpej Exp $");
 
 
 #include <sys/param.h>
@@ -86,6 +86,7 @@ struct	es_softc {
 	void	*sc_base;		/* base address of board */
 	short	sc_iflags;
 	unsigned short sc_intctl;
+	bool	sc_txbusy;
 #ifdef ESDEBUG
 	int	sc_debug;
 	short	sc_intbusy;		/* counter for interrupt rentered */
@@ -289,7 +290,7 @@ esinit(struct es_softc *sc)
 
 	/* Interface is now 'running', with no output active. */
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
+	sc->sc_txbusy = false;
 
 	/* Attempt to start output, if any. */
 	if_schedule_deferred_start(ifp);
@@ -359,7 +360,7 @@ esintr(void *arg)
 			while (smc->b2.mmucr & MMUCR_BUSY)
 				;
 			smc->b2.pnr = save_pnr;
-			ifp->if_flags &= ~IFF_OACTIVE;
+			sc->sc_txbusy = false;
 			ifp->if_timer = 0;
 		}
 #ifdef ESDEBUG
@@ -757,8 +758,7 @@ esstart(struct ifnet *ifp)
 	int i;
 	u_char active_pnr;
 
-	if ((sc->sc_ethercom.ec_if.if_flags & (IFF_RUNNING | IFF_OACTIVE)) !=
-	    IFF_RUNNING)
+	if ((sc->sc_ethercom.ec_if.if_flags & IFF_RUNNING) == 0)
 		return;
 
 #ifdef ESDEBUG
@@ -772,7 +772,7 @@ esstart(struct ifnet *ifp)
 		smc->b2.bsr = BSR_BANK2;
 	}
 #endif
-	for (;;) {
+	while (!sc->sc_txbusy) {
 #ifdef ESDEBUG
 		u_short start_ptr, end_ptr;
 #endif
@@ -780,7 +780,7 @@ esstart(struct ifnet *ifp)
 		 * Sneak a peek at the next packet to get the length
 		 * and see if the SMC 91C90 can accept it.
 		 */
-		m = sc->sc_ethercom.ec_if.if_snd.ifq_head;
+		IF_POLL(&sc->sc_ethercom.ec_if.if_snd, m);
 		if (!m)
 			break;
 #ifdef ESDEBUG
@@ -801,7 +801,7 @@ esstart(struct ifnet *ifp)
 			if ((smc->b2.arr & ARR_FAILED) == 0)
 				break;
 		if (smc->b2.arr & ARR_FAILED) {
-			sc->sc_ethercom.ec_if.if_flags |= IFF_OACTIVE;
+			sc->sc_txbusy = true;
 			sc->sc_intctl |= MSK_ALLOC;
 			sc->sc_ethercom.ec_if.if_timer = 5;
 			break;
@@ -815,7 +815,6 @@ esstart(struct ifnet *ifp)
 			smc->b2.bsr = BSR_BANK2;
 		}
 #endif
-		IF_DEQUEUE(&sc->sc_ethercom.ec_if.if_snd, m);
 		smc->b2.ptr = PTR_AUTOINCR;
 		(void) smc->b2.mmucr;
 		data = (volatile u_short *)&smc->b2.data;
@@ -912,10 +911,10 @@ esstart(struct ifnet *ifp)
 			    start_ptr, end_ptr, SWAP(smc->b2.ptr));
 			--sc->sc_smcbusy;
 #endif
-			IF_PREPEND(&sc->sc_ethercom.ec_if.if_snd, m0);
 			esinit(sc);	/* It's really hosed - reset */
 			return;
 		}
+		IF_DEQUEUE(&sc->sc_ethercom.ec_if.if_snd, m);
 		smc->b2.mmucr = MMUCR_ENQ_TX;
 		if (smc->b2.pnr != active_pnr)
 			printf("%s: esstart - PNR changed %x->%x\n",

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.596 2022/08/07 02:52:23 simonb Exp $
+# $NetBSD: GENERIC,v 1.599 2022/09/29 10:10:05 riastradh Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.596 $"
+#ident		"GENERIC-$Revision: 1.599 $"
 
 maxusers	64		# estimated number of users
 
@@ -91,7 +91,7 @@ hyperv0 	at cpu0		# Microsoft Hyper-V
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 vmt0		at cpu0		# VMware Tools
 
-#Xen PV support for HVM guests
+#Xen PV support for PVH and HVM guests
 options 	XENPVHVM
 options 	XEN
 hypervisor*	at mainbus?		# Xen hypervisor
@@ -99,6 +99,12 @@ xenbus*	 	at hypervisor?		# Xen virtual bus
 xencons*	at hypervisor?		# Xen virtual console
 xennet*  	at xenbus?		# Xen virtual network interface
 xbd*		at xenbus?		# Xen virtual block device
+# experimental: PVH dom0 support
+#options 	DOM0OPS
+#pseudo-device  xenevt
+#pseudo-device  xvif
+#pseudo-device  xbdback
+
 
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
@@ -1205,6 +1211,7 @@ pseudo-device	lockstat		# lock profiling
 pseudo-device	bcsp			# BlueCore Serial Protocol
 pseudo-device	btuart			# Bluetooth HCI UART (H4)
 #pseudo-device	nvmm			# NetBSD Virtual Machine Monitor
+pseudo-device 	swwdog			# software watchdog timer -- swwdog(4)
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor
@@ -1218,6 +1225,10 @@ pseudo-device	pad
 
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device	drvctl
+
+# EFI runtime support
+options 	EFI_RUNTIME
+pseudo-device 	efi			# /dev/efi
 
 include "dev/veriexec.config"
 

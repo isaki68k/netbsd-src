@@ -1,4 +1,4 @@
-/*	$NetSBD$	*/
+/*	$NetBSD: viocon.c,v 1.5 2022/08/13 17:31:32 riastradh Exp $	*/
 /*	$OpenBSD: viocon.c,v 1.8 2021/11/05 11:38:29 mpi Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: viocon.c,v 1.1 2022/08/12 11:15:42 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: viocon.c,v 1.5 2022/08/13 17:31:32 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -93,6 +93,8 @@ struct virtio_console_control_resize {
 
 #define	BUFSIZE		128
 
+#define	VIOCONDEV(u,p)	makedev(cdevsw_lookup_major(&viocon_cdevsw),	      \
+			    ((u) << 4) | (p))
 #define VIOCONUNIT(x)	(minor(x) >> 4)
 #define VIOCONPORT(x)	(minor(x) & 0x0f)
 
@@ -127,8 +129,6 @@ struct viocon_softc {
 
 	unsigned int		 sc_max_ports;
 	struct viocon_port	**sc_ports;
-
-	bus_dmamap_t		 sc_dmamap;
 };
 
 int	viocon_match(struct device *, struct cfdata *, void *);
@@ -307,7 +307,7 @@ viocon_port_create(struct viocon_softc *sc, int portidx)
 	tp->t_oproc = vioconstart;
 	tp->t_param = vioconparam;
 	tp->t_hwiflow = vioconhwiflow;
-	tp->t_dev = (device_unit(sc->sc_dev) << 4) | portidx;
+	tp->t_dev = VIOCONDEV(device_unit(sc->sc_dev), portidx);
 	vp->vp_tty = tp;
 	DPRINTF("%s: tty: %p\n", __func__, tp);
 
@@ -330,7 +330,7 @@ viocon_tx_drain(struct viocon_port *vp, struct virtqueue *vq)
 	while (virtio_dequeue(vsc, vq, &slot, &len) == 0) {
 		bus_dmamap_sync(virtio_dmat(vsc), vp->vp_dmamap,
 		    vp->vp_tx_buf - vp->vp_rx_buf + slot * BUFSIZE, BUFSIZE,
-		    BUS_DMASYNC_POSTREAD);
+		    BUS_DMASYNC_POSTWRITE);
 		virtio_dequeue_commit(vsc, vq, slot);
 		ndone++;
 	}
