@@ -1,4 +1,4 @@
-/* $NetBSD: acpipchb.c,v 1.28 2021/08/10 15:31:38 jmcneill Exp $ */
+/* $NetBSD: acpipchb.c,v 1.30 2022/08/13 20:08:36 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.28 2021/08/10 15:31:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.30 2022/08/13 20:08:36 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.28 2021/08/10 15:31:38 jmcneill Exp $
 #include <sys/cpu.h>
 
 #include <arm/cpufunc.h>
+#include <arm/bootconfig.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -126,6 +127,7 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	ACPI_INTEGER seg, nomsi;
 	ACPI_STATUS rv;
 	uint16_t bus_start;
+	int val;
 
 	sc->sc_dev = self;
 	sc->sc_memt = aa->aa_memt;
@@ -151,6 +153,10 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	if (ACPI_FAILURE(acpi_dsd_integer(sc->sc_handle, "linux,pcie-nomsi",
 	    &nomsi))) {
 		nomsi = 0;
+	}
+	if (get_bootconf_option(boot_args, "nopcimsi",
+				BOOTOPT_TYPE_BOOLEAN, &val) && val) {
+		nomsi = 1;
 	}
 
 	aprint_naive("\n");
@@ -190,9 +196,13 @@ acpipchb_configure_bus(struct acpipchb_softc *sc, struct pcibus_attach_args *pba
 	struct acpi_pci_context *ap = md_pc->pc_conf_v;
 	struct pciconf_resources *pcires;
 	ACPI_STATUS rv;
-	int error;
+	int error, val;
 
 	if (!acpi_pci_ignore_boot_config(sc->sc_handle)) {
+		return;
+	}
+	if (get_bootconf_option(boot_args, "nopciconf",
+				BOOTOPT_TYPE_BOOLEAN, &val) && val) {
 		return;
 	}
 

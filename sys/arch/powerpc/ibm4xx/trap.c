@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.87 2022/05/30 14:09:01 rin Exp $	*/
+/*	$NetBSD: trap.c,v 1.99 2022/09/12 08:06:36 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -69,7 +69,7 @@
 #define	__UFETCHSTORE_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.87 2022/05/30 14:09:01 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.99 2022/09/12 08:06:36 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -427,16 +427,19 @@ extern void vunmaprange(vaddr_t, vsize_t);
 static int bigcopyin(const void *, void *, size_t );
 static int bigcopyout(const void *, void *, size_t );
 
+#ifdef __clang__
+#pragma clang optimize off
+#endif
 int
-copyin(const void *udaddr, void *kaddr, size_t len)
+copyin(const void *uaddr, void *kaddr, size_t len)
 {
 	struct pmap *pm = curproc->p_vmspace->vm_map.pmap;
-	int rv, msr, pid, tmp, ctx, count = 0;
+	int rv, msr, pid, tmp, ctx;
 	struct faultbuf env;
 
 	/* For bigger buffers use the faster copy */
 	if (len > 1024)
-		return (bigcopyin(udaddr, kaddr, len));
+		return (bigcopyin(uaddr, kaddr, len));
 
 	if ((rv = setfault(&env))) {
 		curpcb->pcb_onfault = NULL;
@@ -450,60 +453,71 @@ copyin(const void *udaddr, void *kaddr, size_t len)
 	}
 
 	__asm volatile(
-		"   mfmsr %[msr];"		/* Save MSR */
-		"   li %[pid],0x20;"
-		"   andc %[pid],%[msr],%[pid]; mtmsr %[pid];" /* Disable IMMU */
-		"   isync;"
-		"   mfpid %[pid];"		/* Save old PID */
+		"mfmsr	%[msr];"		/* Save MSR */
+		"li	%[tmp],0x20;"		/* Disable IMMU */
+		"andc	%[tmp],%[msr],%[tmp];"
+		"mtmsr	%[tmp];"
+		"isync;"
+		MFPID(%[pid])			/* Save old PID */
 
-		"   srwi. %[count],%[len],0x2;"	/* How many words? */
-		"   beq- 2f;"			/* No words. Go do bytes */
-		"   mtctr %[count];"
-		"1: mtpid %[ctx]; isync;"
-#ifdef PPC_IBM403
-		"   lswi %[tmp],%[udaddr],4;"	/* Load user word */
-#else
-		"   lwz %[tmp],0(%[udaddr]);"
-#endif
-		"   addi %[udaddr],%[udaddr],0x4;" /* next udaddr word */
-		"   sync;"
-		"   mtpid %[pid]; isync;"
-#ifdef PPC_IBM403
-		"   stswi %[tmp],%[kaddr],4;"	/* Store kernel word */
-#else
-		"   stw %[tmp],0(%[kaddr]);"
-#endif
-		"   dcbst 0,%[kaddr];"		/* flush cache */
-		"   addi %[kaddr],%[kaddr],0x4;" /* next udaddr word */
-		"   sync;"
-		"   bdnz 1b;"			/* repeat */
+		"srwi.	%[tmp],%[len],0x2;"	/* How many words? */
+		"beq-	2f;"			/* No words. Go do bytes */
+		"mtctr	%[tmp];"
 
-		"2: andi. %[count],%[len],0x3;"	/* How many remaining bytes? */
-		"   addi %[count],%[count],0x1;"
-		"   mtctr %[count];"
-		"3: bdz 10f;"			/* while count */
-		"   mtpid %[ctx]; isync;"
-		"   lbz %[tmp],0(%[udaddr]);"	/* Load user byte */
-		"   addi %[udaddr],%[udaddr],0x1;" /* next udaddr byte */
-		"   sync;"
-		"   mtpid %[pid]; isync;"
-		"   stb %[tmp],0(%[kaddr]);"	/* Store kernel byte */
-		"   dcbst 0,%[kaddr];"		/* flush cache */
-		"   addi %[kaddr],%[kaddr],0x1;"
-		"   sync;"
-		"   b 3b;"
-		"10:mtpid %[pid]; mtmsr %[msr]; isync;"
-						/* Restore PID and MSR */
+	"1:"	MTPID(%[ctx])
+		"isync;"
+#ifdef PPC_IBM403
+		"lswi	%[tmp],%[uaddr],4;"	/* Load user word */
+#else
+		"lwz	%[tmp],0(%[uaddr]);"
+#endif
+		"addi	%[uaddr],%[uaddr],0x4;"	/* next uaddr word */
+		"sync;"
+
+		MTPID(%[pid])
+		"isync;"
+#ifdef PPC_IBM403
+		"stswi	%[tmp],%[kaddr],4;"	/* Store kernel word */
+#else
+		"stw	%[tmp],0(%[kaddr]);"
+#endif
+		"dcbst	0,%[kaddr];"		/* flush cache */
+		"addi	%[kaddr],%[kaddr],0x4;"	/* next kaddr word */
+		"sync;"
+		"bdnz	1b;"			/* repeat */
+
+	"2:"	"andi.	%[tmp],%[len],0x3;"	/* How many remaining bytes? */
+		"beq	10f;"
+		"mtxer	%[tmp];"
+
+		MTPID(%[ctx])
+		"isync;"
+		"lswx	%[tmp],0,%[uaddr];"	/* Load user bytes */
+		"sync;"
+
+		MTPID(%[pid])
+		"isync;"
+		"stswx	%[tmp],0,%[kaddr];"	/* Store kernel bytes */
+		"dcbst	0,%[kaddr];"		/* flush cache */
+		"sync;"
+
+	"10:"	"mtmsr	%[msr];"		/* Restore MSR */
+		"isync;"
+
 		: [msr] "=&r" (msr), [pid] "=&r" (pid), [tmp] "=&r" (tmp)
-		: [udaddr] "b" (udaddr), [ctx] "b" (ctx), [kaddr] "b" (kaddr),
-		  [len] "b" (len), [count] "b" (count));
+		: [uaddr] "b" (uaddr), [kaddr] "b" (kaddr),
+		  [ctx] "r" (ctx), [len] "r" (len)
+		: "cr0", "ctr", "xer");
 
 	curpcb->pcb_onfault = NULL;
 	return 0;
 }
+#ifdef __clang__
+#pragma clang optimize on
+#endif
 
 static int
-bigcopyin(const void *udaddr, void *kaddr, size_t len)
+bigcopyin(const void *uaddr, void *kaddr, size_t len)
 {
 	const char *up;
 	char *kp = kaddr;
@@ -517,11 +531,11 @@ bigcopyin(const void *udaddr, void *kaddr, size_t len)
 	/*
 	 * Stolen from physio():
 	 */
-	error = uvm_vslock(p->p_vmspace, __UNCONST(udaddr), len, VM_PROT_READ);
+	error = uvm_vslock(p->p_vmspace, __UNCONST(uaddr), len, VM_PROT_READ);
 	if (error) {
 		return error;
 	}
-	up = (char *)vmaprange(p, (vaddr_t)udaddr, len, VM_PROT_READ);
+	up = (char *)vmaprange(p, (vaddr_t)uaddr, len, VM_PROT_READ);
 
 	if ((error = setfault(&env)) == 0) {
 		memcpy(kp, up, len);
@@ -529,21 +543,24 @@ bigcopyin(const void *udaddr, void *kaddr, size_t len)
 
 	curpcb->pcb_onfault = NULL;
 	vunmaprange((vaddr_t)up, len);
-	uvm_vsunlock(p->p_vmspace, __UNCONST(udaddr), len);
+	uvm_vsunlock(p->p_vmspace, __UNCONST(uaddr), len);
 
 	return error;
 }
 
+#ifdef __clang__
+#pragma clang optimize off
+#endif
 int
-copyout(const void *kaddr, void *udaddr, size_t len)
+copyout(const void *kaddr, void *uaddr, size_t len)
 {
 	struct pmap *pm = curproc->p_vmspace->vm_map.pmap;
-	int rv, msr, pid, tmp, ctx, count = 0;
+	int rv, msr, pid, tmp, ctx;
 	struct faultbuf env;
 
 	/* For big copies use more efficient routine */
 	if (len > 1024)
-		return (bigcopyout(kaddr, udaddr, len));
+		return (bigcopyout(kaddr, uaddr, len));
 
 	if ((rv = setfault(&env))) {
 		curpcb->pcb_onfault = NULL;
@@ -557,60 +574,72 @@ copyout(const void *kaddr, void *udaddr, size_t len)
 	}
 
 	__asm volatile(
-		"   mfmsr %[msr];"		/* Save MSR */
-		"   li %[pid],0x20;"
-		"   andc %[pid],%[msr],%[pid]; mtmsr %[pid];" /* Disable IMMU */
-		"   isync;"
-		"   mfpid %[pid];"		/* Save old PID */
+		"mfmsr	%[msr];"		/* Save MSR */
+		"li	%[tmp],0x20;"		/* Disable IMMU */
+		"andc	%[tmp],%[msr],%[tmp];"
+		"mtmsr	%[tmp];"
+		"isync;"
+		MFPID(%[pid])			/* Save old PID */
 
-		"   srwi. %[count],%[len],0x2;"	/* How many words? */
-		"   beq- 2f;"			/* No words. Go do bytes */
-		"   mtctr %[count];"
-		"1: mtpid %[pid]; isync;"
-#ifdef PPC_IBM403
-		"   lswi %[tmp],%[kaddr],4;"	/* Load kernel word */
-#else
-		"   lwz %[tmp],0(%[kaddr]);"
-#endif
-		"   addi %[kaddr],%[kaddr],0x4;" /* next kaddr word */
-		"   sync;"
-		"   mtpid %[ctx]; isync;"
-#ifdef PPC_IBM403
-		"   stswi %[tmp],%[udaddr],4;"	/* Store user word */
-#else
-		"   stw %[tmp],0(%[udaddr]);"
-#endif
-		"   dcbst 0,%[udaddr];"		/* flush cache */
-		"   addi %[udaddr],%[udaddr],0x4;" /* next udaddr word */
-		"   sync;"
-		"   bdnz 1b;"			/* repeat */
+		"srwi.	%[tmp],%[len],0x2;"	/* How many words? */
+		"beq-	2f;"			/* No words. Go do bytes */
+		"mtctr	%[tmp];"
 
-		"2: andi. %[count],%[len],0x3;"	/* How many remaining bytes? */
-		"   addi %[count],%[count],0x1;"
-		"   mtctr %[count];"
-		"3: bdz  10f;"			/* while count */
-		"   mtpid %[pid]; isync;"
-		"   lbz %[tmp],0(%[kaddr]);"	/* Load kernel byte */
-		"   addi %[kaddr],%[kaddr],0x1;" /* next kaddr byte */
-		"   sync;"
-		"   mtpid %[ctx]; isync;"
-		"   stb %[tmp],0(%[udaddr]);"	/* Store user byte */
-		"   dcbst 0,%[udaddr];"		/* flush cache */
-		"   addi %[udaddr],%[udaddr],0x1;"
-		"   sync;"
-		"   b 3b;"
-		"10:mtpid %[pid]; mtmsr %[msr]; isync;"
-						/* Restore PID and MSR */
+	"1:"
+#ifdef PPC_IBM403
+		"lswi	%[tmp],%[kaddr],4;"	/* Load kernel word */
+#else
+		"lwz	%[tmp],0(%[kaddr]);"
+#endif
+		"addi	%[kaddr],%[kaddr],0x4;"	/* next kaddr word */
+		"sync;"
+
+		MTPID(%[ctx])
+		"isync;"
+#ifdef PPC_IBM403
+		"stswi	%[tmp],%[uaddr],4;"	/* Store user word */
+#else
+		"stw	%[tmp],0(%[uaddr]);"
+#endif
+		"dcbst	0,%[uaddr];"		/* flush cache */
+		"addi	%[uaddr],%[uaddr],0x4;"	/* next uaddr word */
+		"sync;"
+
+		MTPID(%[pid])
+		"isync;"
+		"bdnz	1b;"			/* repeat */
+
+	"2:"	"andi.	%[tmp],%[len],0x3;"	/* How many remaining bytes? */
+		"beq	10f;"
+		"mtxer	%[tmp];"
+
+		"lswx	%[tmp],0,%[kaddr];"	/* Load kernel bytes */
+		"sync;"
+
+		MTPID(%[ctx])
+		"isync;"
+		"stswx	%[tmp],0,%[uaddr];"	/* Store user bytes */
+		"dcbst	0,%[uaddr];"		/* flush cache */
+		"sync;"
+
+		MTPID(%[pid])			/* Restore PID and MSR */
+	"10:"	"mtmsr	%[msr];"
+		"isync;"
+
 		: [msr] "=&r" (msr), [pid] "=&r" (pid), [tmp] "=&r" (tmp)
-		: [udaddr] "b" (udaddr), [ctx] "b" (ctx), [kaddr] "b" (kaddr),
-		  [len] "b" (len), [count] "b" (count));
+		: [uaddr] "b" (uaddr), [kaddr] "b" (kaddr),
+		  [ctx] "r" (ctx), [len] "r" (len)
+		: "cr0", "ctr", "xer");
 
 	curpcb->pcb_onfault = NULL;
 	return 0;
 }
+#ifdef __clang__
+#pragma clang optimize on
+#endif
 
 static int
-bigcopyout(const void *kaddr, void *udaddr, size_t len)
+bigcopyout(const void *kaddr, void *uaddr, size_t len)
 {
 	char *up;
 	const char *kp = (const char *)kaddr;
@@ -624,11 +653,11 @@ bigcopyout(const void *kaddr, void *udaddr, size_t len)
 	/*
 	 * Stolen from physio():
 	 */
-	error = uvm_vslock(p->p_vmspace, udaddr, len, VM_PROT_WRITE);
+	error = uvm_vslock(p->p_vmspace, uaddr, len, VM_PROT_WRITE);
 	if (error) {
 		return error;
 	}
-	up = (char *)vmaprange(p, (vaddr_t)udaddr, len,
+	up = (char *)vmaprange(p, (vaddr_t)uaddr, len,
 	    VM_PROT_READ | VM_PROT_WRITE);
 
 	if ((error = setfault(&env)) == 0) {
@@ -637,7 +666,7 @@ bigcopyout(const void *kaddr, void *udaddr, size_t len)
 
 	curpcb->pcb_onfault = NULL;
 	vunmaprange((vaddr_t)up, len);
-	uvm_vsunlock(p->p_vmspace, udaddr, len);
+	uvm_vsunlock(p->p_vmspace, uaddr, len);
 
 	return error;
 }

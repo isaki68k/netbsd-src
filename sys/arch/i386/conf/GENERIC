@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.1240 2022/08/07 02:52:26 simonb Exp $
+# $NetBSD: GENERIC,v 1.1242 2022/09/29 10:10:07 riastradh Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.1240 $"
+#ident		"GENERIC-$Revision: 1.1242 $"
 
 maxusers	64		# estimated number of users
 
@@ -1496,6 +1496,7 @@ pseudo-device	lockstat		# lock profiling
 pseudo-device	bcsp			# BlueCore Serial Protocol
 pseudo-device	btuart			# Bluetooth HCI UART (H4)
 #pseudo-device	gpiosim		1	# GPIO simulator
+pseudo-device 	swwdog			# software watchdog timer -- swwdog(4)
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor
@@ -1506,6 +1507,10 @@ pseudo-device	cmos
 
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device	drvctl
+
+# EFI runtime support -- not yet tested
+#options 	EFI_RUNTIME
+#pseudo-device 	efi			# /dev/efi
 
 include "dev/veriexec.config"
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: rmixl_intr.c,v 1.13 2022/04/09 23:34:50 riastradh Exp $	*/
+/*	$NetBSD: rmixl_intr.c,v 1.15 2022/09/29 07:00:47 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rmixl_intr.c,v 1.13 2022/04/09 23:34:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rmixl_intr.c,v 1.15 2022/09/29 07:00:47 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -77,7 +77,6 @@ __KERNEL_RCSID(0, "$NetBSD: rmixl_intr.c,v 1.13 2022/04/09 23:34:50 riastradh Ex
 #include <sys/device.h>
 #include <sys/intr.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/systm.h>
 
@@ -391,7 +390,7 @@ dclz(uint64_t val)
 
 	asm volatile("dclz %0, %1;"
 		: "=r"(nlz) : "r"(val));
-	
+
 	return nlz;
 }
 
@@ -590,7 +589,7 @@ rmixl_irt_thread_mask(int cpumask)
 	 * discount cpus not present
 	 */
 	cpumask &= cpu_present_mask;
-	
+
 	switch (MIPS_PRID_IMPL(mips_options.mips_cpu_id)) {
 	case MIPS_XLS104:
 	case MIPS_XLS204:

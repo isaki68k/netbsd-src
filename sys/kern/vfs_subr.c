@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.493 2022/03/28 12:38:33 riastradh Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.495 2022/09/13 09:13:19 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019, 2020
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.493 2022/03/28 12:38:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.495 2022/09/13 09:13:19 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -827,11 +827,11 @@ sched_sync(void *arg)
 				 *
 				 * If we locked it yet arrive here, it's
 				 * likely that lazy sync is in progress and
-				 * so the vnode still has dirty metadata. 
+				 * so the vnode still has dirty metadata.
 				 * syncdelay is mainly to get this vnode out
 				 * of the way so we do not consider it again
 				 * "soon" in this loop, so the delay time is
-				 * not critical as long as it is not "soon". 
+				 * not critical as long as it is not "soon".
 				 * While write-back strategy is the file
 				 * system's domain, we expect write-back to
 				 * occur no later than syncdelay seconds
@@ -1385,15 +1385,28 @@ vtype2dt(enum vtype vt)
 int
 VFS_MOUNT(struct mount *mp, const char *a, void *b, size_t *c)
 {
+	int mpsafe = mp->mnt_iflag & IMNT_MPSAFE;
 	int error;
 
-	KERNEL_LOCK(1, NULL);
+	/*
+	 * Note: The first time through, the vfs_mount function may set
+	 * IMNT_MPSAFE, so we have to cache it on entry in order to
+	 * avoid leaking a kernel lock.
+	 *
+	 * XXX Maybe the MPSAFE bit should be set in struct vfsops and
+	 * not in struct mount.
+	 */
+	if (mpsafe) {
+		KERNEL_LOCK(1, NULL);
+	}
 	error = (*(mp->mnt_op->vfs_mount))(mp, a, b, c);
-	KERNEL_UNLOCK_ONE(NULL);
+	if (mpsafe) {
+		KERNEL_UNLOCK_ONE(NULL);
+	}
 
 	return error;
 }
-	
+
 int
 VFS_START(struct mount *mp, int a)
 {
@@ -1409,15 +1422,19 @@ VFS_START(struct mount *mp, int a)
 
 	return error;
 }
-	
+
 int
 VFS_UNMOUNT(struct mount *mp, int a)
 {
 	int error;
 
-	KERNEL_LOCK(1, NULL);
+	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
+		KERNEL_LOCK(1, NULL);
+	}
 	error = (*(mp->mnt_op->vfs_unmount))(mp, a);
-	KERNEL_UNLOCK_ONE(NULL);
+	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
+		KERNEL_UNLOCK_ONE(NULL);
+	}
 
 	return error;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: gffb.c,v 1.20 2022/03/10 18:13:31 andvar Exp $	*/
+/*	$NetBSD: gffb.c,v 1.22 2022/09/25 17:52:25 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2013 Michael Lorenz
@@ -35,13 +35,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.20 2022/03/10 18:13:31 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.22 2022/09/25 17:52:25 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/lwp.h>
 #include <sys/kauth.h>
 #include <sys/atomic.h>
@@ -811,11 +810,6 @@ gffb_init(struct gffb_softc *sc)
 	GFFB_WRITE_4(GFFB_PTIMER + 0x840, 3);
 	GFFB_WRITE_4(GFFB_PTIMER + 0x500, 0);
 	GFFB_WRITE_4(GFFB_PTIMER + 0x400, 0xffffffff);
-	for (i = 0; i < 8; i++) {
-		GFFB_WRITE_4(GFFB_PMC + 0x240 + (i * 0x10), 0);
-		GFFB_WRITE_4(GFFB_PMC + 0x244 + (i * 0x10),
-		    sc->sc_vramsize - 1);
-	}
 
 	for (i = 0; i < 8; i++) {
 		GFFB_WRITE_4(GFFB_PFB + 0x0240 + (i * 0x10), 0);

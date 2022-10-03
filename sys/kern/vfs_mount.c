@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.94 2022/07/08 07:43:19 hannken Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.97 2022/09/13 09:35:31 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.94 2022/07/08 07:43:19 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.97 2022/09/13 09:35:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -220,23 +220,41 @@ void
 vfs_getnewfsid(struct mount *mp)
 {
 	static u_short xxxfs_mntid;
+	struct mountlist_entry *me;
 	fsid_t tfsid;
 	int mtype;
 
 	mutex_enter(&mntid_lock);
-	mtype = makefstype(mp->mnt_op->vfs_name);
-	mp->mnt_stat.f_fsidx.__fsid_val[0] = makedev(mtype, 0);
-	mp->mnt_stat.f_fsidx.__fsid_val[1] = mtype;
-	mp->mnt_stat.f_fsid = mp->mnt_stat.f_fsidx.__fsid_val[0];
 	if (xxxfs_mntid == 0)
 		++xxxfs_mntid;
+	mtype = makefstype(mp->mnt_op->vfs_name);
 	tfsid.__fsid_val[0] = makedev(mtype & 0xff, xxxfs_mntid);
 	tfsid.__fsid_val[1] = mtype;
-	while (vfs_getvfs(&tfsid)) {
-		tfsid.__fsid_val[0]++;
-		xxxfs_mntid++;
+	/* Always increment to not return the same fsid to parallel mounts. */
+	xxxfs_mntid++;
+
+	/*
+	 * Directly walk mountlist to prevent deadlock through
+	 * mountlist_iterator_next() -> vfs_busy().
+	 */
+	mutex_enter(&mountlist_lock);
+	for (me = TAILQ_FIRST(&mountlist); me != TAILQ_END(&mountlist); ) {
+		if (me->me_type == ME_MOUNT &&
+		    me->me_mount->mnt_stat.f_fsidx.__fsid_val[0] ==
+		    tfsid.__fsid_val[0] &&
+		    me->me_mount->mnt_stat.f_fsidx.__fsid_val[1] ==
+		    tfsid.__fsid_val[1]) {
+			tfsid.__fsid_val[0]++;
+			xxxfs_mntid++;
+			me = TAILQ_FIRST(&mountlist);
+		} else {
+			me = TAILQ_NEXT(me, me_list);
+		}
 	}
+	mutex_exit(&mountlist_lock);
+
 	mp->mnt_stat.f_fsidx.__fsid_val[0] = tfsid.__fsid_val[0];
+	mp->mnt_stat.f_fsidx.__fsid_val[1] = tfsid.__fsid_val[1];
 	mp->mnt_stat.f_fsid = mp->mnt_stat.f_fsidx.__fsid_val[0];
 	mutex_exit(&mntid_lock);
 }
@@ -531,6 +549,7 @@ vflushnext(struct vnode_iterator *marker, int *when)
 		yield();
 		*when = getticks() + hz / 10;
 	}
+	preempt_point();
 	return vfs_vnode_iterator_next1(marker, NULL, NULL, true);
 }
 
@@ -929,14 +948,12 @@ dounmount(struct mount *mp, int flags, struct lwp *l)
 	 * vfs_busy() from succeeding.
 	 */
 	mp->mnt_iflag |= IMNT_GONE;
+	if ((coveredvp = mp->mnt_vnodecovered) != NULLVP) {
+		coveredvp->v_mountedhere = NULL;
+	}
 	if (!was_suspended)
 		vfs_resume(mp);
 
-	if ((coveredvp = mp->mnt_vnodecovered) != NULLVP) {
-		vn_lock(coveredvp, LK_EXCLUSIVE | LK_RETRY);
-		coveredvp->v_mountedhere = NULL;
-		VOP_UNLOCK(coveredvp);
-	}
 	mountlist_remove(mp);
 	if (TAILQ_FIRST(&mp->mnt_vnodelist) != NULL)
 		panic("unmount: dangling vnode");

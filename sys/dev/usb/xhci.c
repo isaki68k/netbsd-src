@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.167 2022/05/24 20:50:19 andvar Exp $	*/
+/*	$NetBSD: xhci.c,v 1.172 2022/09/25 07:23:07 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.167 2022/05/24 20:50:19 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.172 2022/09/25 07:23:07 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -318,12 +318,6 @@ xhci_write_4(const struct xhci_softc * const sc, bus_size_t offset,
 }
 #endif /* unused */
 
-static inline void
-xhci_barrier(const struct xhci_softc * const sc, int flags)
-{
-	bus_space_barrier(sc->sc_iot, sc->sc_ioh, 0, sc->sc_ios, flags);
-}
-
 static inline uint32_t
 xhci_cap_read_4(const struct xhci_softc * const sc, bus_size_t offset)
 {
@@ -605,11 +599,13 @@ xhci_childdet(device_t self, device_t child)
 {
 	struct xhci_softc * const sc = device_private(self);
 
+	mutex_enter(&sc->sc_intr_lock);
 	KASSERT((sc->sc_child == child) || (sc->sc_child2 == child));
 	if (child == sc->sc_child2)
 		sc->sc_child2 = NULL;
 	else if (child == sc->sc_child)
 		sc->sc_child = NULL;
+	mutex_exit(&sc->sc_intr_lock);
 }
 
 int
@@ -663,6 +659,7 @@ xhci_detach(struct xhci_softc *sc, int flags)
 		kmem_free(sc->sc_rhportmap[j], sc->sc_maxports * sizeof(int));
 	}
 
+	mutex_destroy(&sc->sc_rhlock);
 	mutex_destroy(&sc->sc_lock);
 	mutex_destroy(&sc->sc_intr_lock);
 
@@ -896,6 +893,16 @@ xhci_suspend(device_t self, const pmf_qual_t *qual)
 	ok = true;
 
 out:	mutex_exit(&sc->sc_rhlock);
+	if (!ok) {
+		/*
+		 * If suspend failed, resume command issuance.
+		 */
+		mutex_enter(&sc->sc_lock);
+		KASSERT(sc->sc_suspender == curlwp);
+		sc->sc_suspender = NULL;
+		cv_broadcast(&sc->sc_cmdbusy_cv);
+		mutex_exit(&sc->sc_lock);
+	}
 	return ok;
 }
 
@@ -1092,17 +1099,22 @@ xhci_resume(device_t self, const pmf_qual_t *qual)
 		goto out;
 	}
 
-	/* Resume command issuance.  */
+	/* Success!  */
+	ok = true;
+
+out:	/*
+	 * Resume command issuance.  If the hardware failed to resume,
+	 * well, tough -- deadlocking because everything is held up on
+	 * the suspension, with no opportunity to detach, isn't better
+	 * than timing out waiting for dead hardware.
+	 */
 	mutex_enter(&sc->sc_lock);
 	KASSERT(sc->sc_suspender);
 	sc->sc_suspender = NULL;
 	cv_broadcast(&sc->sc_cmdbusy_cv);
 	mutex_exit(&sc->sc_lock);
 
-	/* Success!  */
-	ok = true;
-
-out:	mutex_exit(&sc->sc_rhlock);
+	mutex_exit(&sc->sc_rhlock);
 	return ok;
 }
 
@@ -1625,8 +1637,6 @@ xhci_init(struct xhci_softc *sc)
 	xhci_op_write_8(sc, XHCI_DCBAAP, DMAADDR(&sc->sc_dcbaa_dma, 0));
 	xhci_op_write_8(sc, XHCI_CRCR, xhci_ring_trbp(sc->sc_cr, 0) |
 	    sc->sc_cr->xr_cs);
-
-	xhci_barrier(sc, BUS_SPACE_BARRIER_WRITE);
 
 	HEXDUMP("eventst", KERNADDR(&sc->sc_eventst_dma, 0),
 	    XHCI_ERSTE_SIZE * XHCI_EVENT_RING_SEGMENTS);

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.262 2022/03/07 04:06:20 knakahara Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.266 2022/09/03 02:47:59 thorpej Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.262 2022/03/07 04:06:20 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.266 2022/09/03 02:47:59 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -72,7 +72,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.262 2022/03/07 04:06:20 knakahara 
 #include <sys/cpu.h>
 
 #include <net/if.h>
-#include <net/netisr.h>
 #include <net/if_types.h>
 #include <net/route.h>
 #include <net/ppp_defs.h>
@@ -639,10 +638,11 @@ sppp_input(struct ifnet *ifp, struct mbuf *m)
 {
 	struct ppp_header *h = NULL;
 	pktqueue_t *pktq = NULL;
-	struct ifqueue *inq = NULL;
 	uint16_t protocol;
 	struct sppp *sp = (struct sppp *)ifp;
-	int isr = 0;
+
+	/* No RPS for not-IP. */
+	pktq_rps_hash_func_t rps_hash = NULL;
 
 	SPPP_LOCK(sp, RW_READER);
 
@@ -747,6 +747,7 @@ sppp_input(struct ifnet *ifp, struct mbuf *m)
 		if (sp->scp[IDX_IPCP].state == STATE_OPENED) {
 			sp->pp_last_activity = time_uptime;
 			pktq = ip_pktq;
+			rps_hash = atomic_load_relaxed(&sppp_pktq_rps_hash_p);
 		}
 		break;
 #endif
@@ -770,40 +771,22 @@ sppp_input(struct ifnet *ifp, struct mbuf *m)
 		if (sp->scp[IDX_IPV6CP].state == STATE_OPENED) {
 			sp->pp_last_activity = time_uptime;
 			pktq = ip6_pktq;
+			rps_hash = atomic_load_relaxed(&sppp_pktq_rps_hash_p);
 		}
 		break;
 #endif
 	}
 
-	if ((ifp->if_flags & IFF_UP) == 0 || (!inq && !pktq)) {
+	if ((ifp->if_flags & IFF_UP) == 0 || pktq == NULL) {
 		goto drop;
 	}
 
 	/* Check queue. */
-	if (__predict_true(pktq)) {
-		uint32_t hash = pktq_rps_hash(&sppp_pktq_rps_hash_p, m);
-
-		if (__predict_false(!pktq_enqueue(pktq, m, hash))) {
-			goto drop;
-		}
-		SPPP_UNLOCK(sp);
-		return;
-	}
-
-	SPPP_UNLOCK(sp);
-
-	IFQ_LOCK(inq);
-	if (IF_QFULL(inq)) {
-		/* Queue overflow. */
-		IF_DROP(inq);
-		IFQ_UNLOCK(inq);
-		SPPP_DLOG(sp,"protocol queue overflow\n");
-		SPPP_LOCK(sp, RW_READER);
+	const uint32_t hash = rps_hash ? pktq_rps_hash(&rps_hash, m) : 0;
+	if (__predict_false(!pktq_enqueue(pktq, m, hash))) {
 		goto drop;
 	}
-	IF_ENQUEUE(inq, m);
-	IFQ_UNLOCK(inq);
-	schednetisr(isr);
+	SPPP_UNLOCK(sp);
 	return;
 
 drop:
@@ -1078,8 +1061,9 @@ sppp_attach(struct ifnet *ifp)
 
 	sp->pp_if.if_type = IFT_PPP;
 	sp->pp_if.if_output = sppp_output;
-	sp->pp_fastq.ifq_maxlen = 32;
-	sp->pp_cpq.ifq_maxlen = 20;
+	IFQ_SET_MAXLEN(&sp->pp_fastq, 32);
+	IFQ_LOCK_INIT(&sp->pp_fastq);
+	IFQ_SET_MAXLEN(&sp->pp_cpq, 20);
 	sp->pp_loopcnt = 0;
 	sp->pp_alivecnt = 0;
 	sp->pp_alive_interval = SPPP_ALIVE_INTERVAL;
@@ -1161,6 +1145,8 @@ sppp_detach(struct ifnet *ifp)
 	if (sp->myauth.secret) free(sp->myauth.secret, M_DEVBUF);
 	if (sp->hisauth.name) free(sp->hisauth.name, M_DEVBUF);
 	if (sp->hisauth.secret) free(sp->hisauth.secret, M_DEVBUF);
+
+	IFQ_LOCK_DESTROY(&sp->pp_fastq);
 	rw_destroy(&sp->pp_lock);
 }
 

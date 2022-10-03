@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bgevar.h,v 1.31 2022/08/07 08:37:48 skrll Exp $	*/
+/*	$NetBSD: if_bgevar.h,v 1.40 2022/09/04 08:50:25 skrll Exp $	*/
 /*
  * Copyright (c) 2001 Wind River Systems
  * Copyright (c) 1997, 1998, 1999, 2001
@@ -68,20 +68,23 @@
 
 #include <sys/bus.h>
 #include <sys/rndsource.h>
+#include <sys/time.h>
+
 #include <net/if_ether.h>
+
 #include <dev/pci/pcivar.h>
 
-#define BGE_HOSTADDR(x, y)						\
-	do {								\
-		(x).bge_addr_lo = BUS_ADDR_LO32(y);			\
-		if (sizeof (bus_addr_t) == 8)				\
-			(x).bge_addr_hi = BUS_ADDR_HI32(y);		\
-		else							\
-			(x).bge_addr_hi = 0;				\
+#define BGE_HOSTADDR(x, y)						      \
+	do {								      \
+		(x).bge_addr_lo = BUS_ADDR_LO32(y);			      \
+		if (sizeof (bus_addr_t) == 8)				      \
+			(x).bge_addr_hi = BUS_ADDR_HI32(y);		      \
+		else							      \
+			(x).bge_addr_hi = 0;				      \
 	} while(0)
 
-#define RCB_WRITE_4(sc, rcb, offset, val) \
-	bus_space_write_4(sc->bge_btag, sc->bge_bhandle, \
+#define RCB_WRITE_4(sc, rcb, offset, val)				      \
+	bus_space_write_4(sc->bge_btag, sc->bge_bhandle,		      \
 			  rcb + offsetof(struct bge_rcb, offset), val)
 
 /*
@@ -94,54 +97,54 @@
  * accesses and all registers must be accessed with 32 bit operations.
  */
 
-#define CSR_WRITE_4(sc, reg, val)	\
+#define CSR_WRITE_4(sc, reg, val)					      \
 	bus_space_write_4(sc->bge_btag, sc->bge_bhandle, reg, val)
 
-#define CSR_READ_4(sc, reg)		\
+#define CSR_READ_4(sc, reg)						      \
 	bus_space_read_4(sc->bge_btag, sc->bge_bhandle, reg)
 
-#define CSR_WRITE_4_FLUSH(sc, reg, val)		\
-	do {					\
-		CSR_WRITE_4(sc, reg, val);	\
-		CSR_READ_4(sc, reg);		\
-	} while(0)
+#define CSR_WRITE_4_FLUSH(sc, reg, val)					      \
+	do {								      \
+		CSR_WRITE_4(sc, reg, val);				      \
+		CSR_READ_4(sc, reg);					      \
+	} while (0)
 
-#define BGE_SETBIT(sc, reg, x)	\
+#define BGE_SETBIT(sc, reg, x)						      \
 	CSR_WRITE_4(sc, reg, (CSR_READ_4(sc, reg) | (x)))
-#define BGE_SETBIT_FLUSH(sc, reg, x)	\
-	do {				\
-		BGE_SETBIT(sc, reg, x);	\
-		CSR_READ_4(sc, reg);	\
-	} while(0)
-#define BGE_CLRBIT(sc, reg, x)	\
+#define BGE_SETBIT_FLUSH(sc, reg, x)					      \
+	do {								      \
+		BGE_SETBIT(sc, reg, x);					      \
+		CSR_READ_4(sc, reg);					      \
+	} while (0)
+#define BGE_CLRBIT(sc, reg, x)						      \
 	CSR_WRITE_4(sc, reg, (CSR_READ_4(sc, reg) & ~(x)))
-#define BGE_CLRBIT_FLUSH(sc, reg, x)	\
-	do {				\
-		BGE_CLRBIT(sc, reg, x);	\
-		CSR_READ_4(sc, reg);	\
-	} while(0)
+#define BGE_CLRBIT_FLUSH(sc, reg, x)					      \
+	do {								      \
+		BGE_CLRBIT(sc, reg, x);					      \
+		CSR_READ_4(sc, reg);					      \
+	} while (0)
 
 /* BAR2 APE register access macros. */
-#define	APE_WRITE_4(sc, reg, val)	\
+#define	APE_WRITE_4(sc, reg, val)					      \
 	bus_space_write_4(sc->bge_apetag, sc->bge_apehandle, reg, val)
 
-#define	APE_READ_4(sc, reg)		\
+#define	APE_READ_4(sc, reg)						      \
 	bus_space_read_4(sc->bge_apetag, sc->bge_apehandle, reg)
 
-#define	APE_WRITE_4_FLUSH(sc, reg, val)		\
-	do {					\
-		APE_WRITE_4(sc, reg, val);	\
-		APE_READ_4(sc, reg);		\
-	} while(0)
+#define	APE_WRITE_4_FLUSH(sc, reg, val)					      \
+	do {								      \
+		APE_WRITE_4(sc, reg, val);				      \
+		APE_READ_4(sc, reg);					      \
+	} while (0)
 
 #define	APE_SETBIT(sc, reg, x)						      \
 	APE_WRITE_4(sc, reg, (APE_READ_4(sc, reg) | (x)))
-#define	APE_CLRBIT(sc, reg, x)	\
+#define	APE_CLRBIT(sc, reg, x)						      \
 	APE_WRITE_4(sc, reg, (APE_READ_4(sc, reg) & ~(x)))
 
 #define PCI_SETBIT(pc, tag, reg, x)					      \
 	pci_conf_write(pc, tag, reg, (pci_conf_read(pc, tag, reg) | (x)))
-#define PCI_CLRBIT(pc, tag, reg, x)	\
+#define PCI_CLRBIT(pc, tag, reg, x)					      \
 	pci_conf_write(pc, tag, reg, (pci_conf_read(pc, tag, reg) & ~(x)))
 
 /*
@@ -154,12 +157,12 @@
 #define BGE_MSLOTS	256
 #define BGE_JSLOTS	384
 
-#define BGE_JRAWLEN (BGE_JUMBO_FRAMELEN + ETHER_ALIGN)
-#define BGE_JLEN (BGE_JRAWLEN + (sizeof(uint64_t) - \
-	(BGE_JRAWLEN % sizeof(uint64_t))))
-#define BGE_JPAGESZ PAGE_SIZE
-#define BGE_RESID (BGE_JPAGESZ - (BGE_JLEN * BGE_JSLOTS) % BGE_JPAGESZ)
-#define BGE_JMEM ((BGE_JLEN * BGE_JSLOTS) + BGE_RESID)
+#define BGE_JRAWLEN	(BGE_JUMBO_FRAMELEN + ETHER_ALIGN)
+#define BGE_JLEN	(BGE_JRAWLEN + (sizeof(uint64_t) - 		      \
+			    (BGE_JRAWLEN % sizeof(uint64_t))))
+#define BGE_JPAGESZ 	PAGE_SIZE
+#define BGE_RESID 	(BGE_JPAGESZ - (BGE_JLEN * BGE_JSLOTS) % BGE_JPAGESZ)
+#define BGE_JMEM 	((BGE_JLEN * BGE_JSLOTS) + BGE_RESID)
 
 /*
  * Ring structures. Most of these reside in host memory and we tell
@@ -178,8 +181,8 @@ struct bge_ring_data {
 	struct bge_gib		bge_info;
 };
 
-#define BGE_RING_DMA_ADDR(sc, offset) \
-	((sc)->bge_ring_map->dm_segs[0].ds_addr + \
+#define BGE_RING_DMA_ADDR(sc, offset)					      \
+	((sc)->bge_ring_map->dm_segs[0].ds_addr +			      \
 	offsetof(struct bge_ring_data, offset))
 
 /*
@@ -282,7 +285,6 @@ struct bge_softc {
 	bool			bge_dma64;
 	uint32_t		bge_pcixcap;
 	uint32_t		bge_pciecap;
-	uint32_t		bge_msicap;
 	uint16_t		bge_mps;
 	int			bge_expmrq;
 	uint32_t		bge_lasttag;
@@ -303,8 +305,8 @@ struct bge_softc {
 	int			bge_ring_rseg;
 	uint16_t		bge_tx_saved_considx;
 	uint16_t		bge_rx_saved_considx;
-	uint16_t		bge_ev_saved_considx;
 	uint16_t		bge_std;	/* current std ring head */
+	uint16_t		bge_std_cnt;
 	uint16_t		bge_jumbo;	/* current jumo ring head */
 	SLIST_HEAD(__bge_jfreehead, bge_jpool_entry)	bge_jfree_listhead;
 	SLIST_HEAD(__bge_jinusehead, bge_jpool_entry)	bge_jinuse_listhead;
@@ -313,7 +315,6 @@ struct bge_softc {
 	uint32_t		bge_tx_coal_ticks;
 	uint32_t		bge_rx_max_coal_bds;
 	uint32_t		bge_tx_max_coal_bds;
-	uint32_t		bge_tx_buf_ratio;
 	uint32_t		bge_sts;
 #define BGE_STS_LINK		__BIT(0)	/* MAC link status */
 #define BGE_STS_LINK_EVT	__BIT(1)	/* pending link event */
@@ -325,6 +326,11 @@ struct bge_softc {
 	uint32_t		bge_flags;
 	uint32_t		bge_phy_flags;
 	int			bge_flowflags;
+	time_t			bge_tx_lastsent;
+	bool			bge_stopping;
+	bool			bge_txrx_stopping;
+	bool			bge_tx_sending;
+
 #ifdef BGE_EVENT_COUNTERS
 	/*
 	 * Event counters.
@@ -342,14 +348,22 @@ struct bge_softc {
 	uint64_t		bge_if_collisions;
 	int			bge_txcnt;
 	struct callout		bge_timeout;
-	int			bge_pending_rxintr_change;
-	int			bge_detaching;
+	bool			bge_pending_rxintr_change;
+	bool			bge_detaching;
 	SLIST_HEAD(, txdmamap_pool_entry) txdma_list;
 	struct txdmamap_pool_entry *txdma[BGE_TX_RING_CNT];
 
 	struct sysctllog	*bge_log;
 
 	krndsource_t	rnd_source;	/* random source */
+
+	kmutex_t *sc_core_lock;		/* lock for softc operations */
+	kmutex_t *sc_intr_lock;		/* lock for interrupt operations */
+	struct workqueue *sc_reset_wq;
+	struct work sc_reset_work;
+	volatile unsigned sc_reset_pending;
+
+	bool sc_trigger_reset;
 };
 
 #endif /* _DEV_PCI_IF_BGEVAR_H_ */

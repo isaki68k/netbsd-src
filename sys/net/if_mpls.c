@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mpls.c,v 1.38 2022/07/29 15:25:51 skrll Exp $ */
+/*	$NetBSD: if_mpls.c,v 1.41 2022/09/03 20:29:31 thorpej Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mpls.c,v 1.38 2022/07/29 15:25:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mpls.c,v 1.41 2022/09/03 20:29:31 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -47,7 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_mpls.c,v 1.38 2022/07/29 15:25:51 skrll Exp $");
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_types.h>
-#include <net/netisr.h>
 #include <net/route.h>
 #include <sys/device.h>
 #include <sys/module.h>
@@ -105,6 +104,9 @@ extern int mpls_defttl, mpls_mapttl_inet, mpls_mapttl_inet6, mpls_icmp_respond,
     mpls_rfc4182;
 
 static u_int mpls_count;
+
+void	mplsattach(int);
+
 /* ARGSUSED */
 void
 mplsattach(int count)
@@ -189,18 +191,11 @@ mpls_input(struct ifnet *ifp, struct mbuf *m)
 }
 
 void
-mplsintr(void)
+mplsintr(void *arg __unused)
 {
 	struct mbuf *m;
 
-	for (;;) {
-		IFQ_LOCK(&mplsintrq);
-		IF_DEQUEUE(&mplsintrq, m);
-		IFQ_UNLOCK(&mplsintrq);
-
-		if (!m)
-			return;
-
+	while ((m = pktq_dequeue(mpls_pktq)) != NULL) {
 		if (((m->m_flags & M_PKTHDR) == 0) ||
 		    (m->m_pkthdr.rcvif_index == 0))
 			panic("mplsintr(): no pkthdr or rcvif");

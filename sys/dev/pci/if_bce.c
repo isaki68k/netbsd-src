@@ -1,4 +1,4 @@
-/* $NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $	 */
+/* $NetBSD: if_bce.c,v 1.62 2022/09/25 12:41:46 andvar Exp $	 */
 
 /*
  * Copyright (c) 2003 Clifford Wright. All rights reserved.
@@ -35,14 +35,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.62 2022/09/25 12:41:46 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/callout.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
-#include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/socket.h>
@@ -885,7 +884,7 @@ bce_init(struct ifnet *ifp)
 	/* Cancel any pending I/O. */
 	bce_stop(ifp, 0);
 
-	/* enable pci inerrupts, bursts, and prefetch */
+	/* enable pci interrupts, bursts, and prefetch */
 
 	/* remap the pci registers to the Sonics config registers */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: drmfb.c,v 1.14 2022/02/18 18:31:18 wiz Exp $	*/
+/*	$NetBSD: drmfb.c,v 1.16 2022/09/01 17:54:47 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drmfb.c,v 1.14 2022/02/18 18:31:18 wiz Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drmfb.c,v 1.16 2022/09/01 17:54:47 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "vga.h"
@@ -87,14 +87,15 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	struct drm_connector_list_iter conn_iter;
 	struct drm_connector *connector;
 	const prop_dictionary_t dict = device_properties(da->da_dev);
+	const device_t parent = device_parent(da->da_dev);
+	const prop_dictionary_t pdict = device_properties(parent);
 #if NVGA > 0
 	struct drm_device *const dev = da->da_fb_helper->dev;
 #endif
 	static const struct genfb_ops zero_genfb_ops;
 	struct genfb_ops genfb_ops = zero_genfb_ops;
-	enum { CONS_VGA, CONS_GENFB, CONS_NONE } what_was_cons;
 	bool is_console;
-	int error;
+	int error __diagused;
 
 	/* genfb requires this.  */
 	KASSERTMSG((void *)&sc->sc_genfb == device_private(da->da_dev),
@@ -114,28 +115,35 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	prop_dictionary_set_uint64(dict, "mode_callback",
 	    (uint64_t)(uintptr_t)&drmfb_genfb_mode_callback);
 
-	if (!prop_dictionary_get_bool(dict, "is_console", &is_console)) {
-		/* XXX Whattakludge!  */
-#if NVGA > 0
-		if ((da->da_params->dp_is_vga_console != NULL) &&
-		    (*da->da_params->dp_is_vga_console)(dev)) {
-			what_was_cons = CONS_VGA;
-			prop_dictionary_set_bool(dict, "is_console", true);
-			vga_cndetach();
-			if (da->da_params->dp_disable_vga)
-				(*da->da_params->dp_disable_vga)(dev);
-		} else
-#endif
-		if (genfb_is_console() && genfb_is_enabled()) {
-			what_was_cons = CONS_GENFB;
-			prop_dictionary_set_bool(dict, "is_console", true);
-		} else {
-			what_was_cons = CONS_NONE;
-			prop_dictionary_set_bool(dict, "is_console", false);
-		}
+	/*
+	 * Determine whether MD firmware logic has set the console to
+	 * go through this device.
+	 */
+	if (prop_dictionary_get_bool(pdict, "is_console", &is_console)) {
+		/* nothing */
+	} else if (genfb_is_console() && genfb_is_enabled()) {
+		is_console = true;
 	} else {
-		what_was_cons = CONS_NONE;
+		is_console = false;
 	}
+
+#if NVGA > 0
+	/*
+	 * Whether or not we were told to be the console, if the
+	 * console was configured to go through a vga resource that we
+	 * now own and that vga(4) is not going to take over, kick out
+	 * the vga console before we take over as genfb console.
+	 */
+	if ((da->da_params->dp_is_vga_console != NULL) &&
+	    (*da->da_params->dp_is_vga_console)(dev)) {
+		vga_cndetach();
+		if (da->da_params->dp_disable_vga)
+			(*da->da_params->dp_disable_vga)(dev);
+		is_console = true;
+	}
+#endif
+
+	prop_dictionary_set_bool(dict, "is_console", is_console);
 
 	/* Make the first EDID we find available to wsfb */
 	drm_connector_list_iter_begin(da->da_fb_helper->dev, &conn_iter);
@@ -159,28 +167,10 @@ drmfb_attach(struct drmfb_softc *sc, const struct drmfb_attach_args *da)
 	KERNEL_LOCK(1, NULL);
 	error = genfb_attach(&sc->sc_genfb, &genfb_ops);
 	KERNEL_UNLOCK_ONE(NULL);
-	if (error) {
-		aprint_error_dev(sc->sc_da.da_dev,
-		    "failed to attach genfb: %d\n", error);
-		goto fail0;
-	}
+	KASSERTMSG(error == 0, "genfb_attach failed, error=%d", error);
 
 	/* Success!  */
 	return 0;
-
-fail0:	KASSERT(error);
-	/* XXX Restore console...  */
-	switch (what_was_cons) {
-	case CONS_VGA:
-		break;
-	case CONS_GENFB:
-		break;
-	case CONS_NONE:
-		break;
-	default:
-		break;
-	}
-	return error;
 }
 
 int

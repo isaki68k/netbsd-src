@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.315 2022/06/20 12:22:00 martin Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.320 2022/09/03 02:47:59 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.315 2022/06/20 12:22:00 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.320 2022/09/03 02:47:59 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -92,7 +92,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.315 2022/06/20 12:22:00 martin Ex
 #include <sys/hook.h>
 
 #include <net/if.h>
-#include <net/netisr.h>
 #include <net/route.h>
 #include <net/if_llc.h>
 #include <net/if_dl.h>
@@ -574,8 +573,7 @@ bad:
 static void
 ether_input_llc(struct ifnet *ifp, struct mbuf *m, struct ether_header *eh)
 {
-	struct ifqueue *inq = NULL;
-	int isr = 0;
+	pktqueue_t *pktq = NULL;
 	struct llc *l;
 
 	if (m->m_len < sizeof(*eh) + sizeof(struct llc))
@@ -594,10 +592,9 @@ ether_input_llc(struct ifnet *ifp, struct mbuf *m, struct ether_header *eh)
 			    at_org_code, sizeof(at_org_code)) == 0 &&
 			    ntohs(l->llc_snap_ether_type) ==
 			    ETHERTYPE_ATALK) {
-				inq = &atintrq2;
+				pktq = at_pktq2;
 				m_adj(m, sizeof(struct ether_header)
 				    + sizeof(struct llc));
-				isr = NETISR_ATALK;
 				break;
 			}
 
@@ -621,8 +618,10 @@ ether_input_llc(struct ifnet *ifp, struct mbuf *m, struct ether_header *eh)
 		goto noproto;
 	}
 
-	KASSERT(inq != NULL);
-	IFQ_ENQUEUE_ISR(inq, m, isr);
+	KASSERT(pktq != NULL);
+	if (__predict_false(!pktq_enqueue(pktq, m, 0))) {
+		m_freem(m);
+	}
 	return;
 
 noproto:
@@ -648,12 +647,13 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	struct ethercom *ec = (struct ethercom *) ifp;
 #endif
 	pktqueue_t *pktq = NULL;
-	struct ifqueue *inq = NULL;
 	uint16_t etype;
 	struct ether_header *eh;
 	size_t ehlen;
 	static int earlypkts;
-	int isr = 0;
+
+	/* No RPS for not-IP. */
+	pktq_rps_hash_func_t rps_hash = NULL;
 
 	KASSERT(!cpu_intr_p());
 	KASSERT((m->m_flags & M_PKTHDR) != 0);
@@ -897,11 +897,11 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 			return;
 #endif
 		pktq = ip_pktq;
+		rps_hash = atomic_load_relaxed(&ether_pktq_rps_hash_p);
 		break;
 
 	case ETHERTYPE_ARP:
-		isr = NETISR_ARP;
-		inq = &arpintrq;
+		pktq = arp_pktq;
 		break;
 
 	case ETHERTYPE_REVARP:
@@ -918,13 +918,13 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 			return;
 #endif
 		pktq = ip6_pktq;
+		rps_hash = atomic_load_relaxed(&ether_pktq_rps_hash_p);
 		break;
 #endif
 
 #ifdef NETATALK
 	case ETHERTYPE_ATALK:
-		isr = NETISR_ATALK;
-		inq = &atintrq1;
+		pktq = at_pktq1;
 		break;
 
 	case ETHERTYPE_AARP:
@@ -934,8 +934,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 
 #ifdef MPLS
 	case ETHERTYPE_MPLS:
-		isr = NETISR_MPLS;
-		inq = &mplsintrq;
+		pktq = mpls_pktq;
 		break;
 #endif
 
@@ -943,20 +942,11 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		goto noproto;
 	}
 
-	if (__predict_true(pktq)) {
-		const uint32_t h = pktq_rps_hash(&ether_pktq_rps_hash_p, m);
-		if (__predict_false(!pktq_enqueue(pktq, m, h))) {
-			m_freem(m);
-		}
-		return;
+	KASSERT(pktq != NULL);
+	const uint32_t h = rps_hash ? pktq_rps_hash(&rps_hash, m) : 0;
+	if (__predict_false(!pktq_enqueue(pktq, m, h))) {
+		m_freem(m);
 	}
-
-	if (__predict_false(!inq)) {
-		/* Should not happen. */
-		goto error;
-	}
-
-	IFQ_ENQUEUE_ISR(inq, m, isr);
 	return;
 
 drop:

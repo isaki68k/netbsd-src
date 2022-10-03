@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.152 2022/08/20 23:48:51 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.152 2022/08/20 23:48:51 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh 
 #include <sys/extent.h>
 #include <sys/rnd.h>
 
+#include <x86/bootspace.h>
 #include <x86/cpuvar.h>
 #include <x86/cputypes.h>
 #include <x86/efi.h>
@@ -68,6 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh 
 #include <dev/mm.h>
 
 #include <machine/bootinfo.h>
+#include <machine/pmap_private.h>
 #include <machine/vmparam.h>
 
 #include <uvm/uvm_extern.h>

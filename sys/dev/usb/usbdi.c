@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.242 2022/04/06 22:01:45 mlelstv Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.247 2022/09/13 10:32:58 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.242 2022/04/06 22:01:45 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.247 2022/09/13 10:32:58 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -137,7 +137,6 @@ static void *usbd_alloc_buffer(struct usbd_xfer *, uint32_t);
 static void usbd_free_buffer(struct usbd_xfer *);
 static struct usbd_xfer *usbd_alloc_xfer(struct usbd_device *, unsigned int);
 static void usbd_free_xfer(struct usbd_xfer *);
-static void usbd_request_async_cb(struct usbd_xfer *, void *, usbd_status);
 static void usbd_xfer_timeout(void *);
 static void usbd_xfer_timeout_task(void *);
 static bool usbd_xfer_probe_timeout(struct usbd_xfer *);
@@ -502,10 +501,10 @@ usbd_transfer(struct usbd_xfer *xfer)
 			break;
 		}
 	}
-	SDT_PROBE2(usb, device, xfer, done,  xfer, xfer->ux_status);
-	/* XXX Race to read xfer->ux_status?  */
+	err = xfer->ux_status;
+	SDT_PROBE2(usb, device, xfer, done,  xfer, err);
 	usbd_unlock_pipe(pipe);
-	return xfer->ux_status;
+	return err;
 }
 
 /* Like usbd_transfer(), but waits for completion. */
@@ -1333,36 +1332,6 @@ usbd_do_request_len(struct usbd_device *dev, usb_device_request_t *req,
 	return err;
 }
 
-static void
-usbd_request_async_cb(struct usbd_xfer *xfer, void *priv, usbd_status status)
-{
-	usbd_destroy_xfer(xfer);
-}
-
-/*
- * Execute a request without waiting for completion.
- * Can be used from interrupt context.
- */
-usbd_status
-usbd_request_async(struct usbd_device *dev, struct usbd_xfer *xfer,
-    usb_device_request_t *req, void *priv, usbd_callback callback)
-{
-	usbd_status err;
-
-	if (callback == NULL)
-		callback = usbd_request_async_cb;
-
-	usbd_setup_default_xfer(xfer, dev, priv,
-	    USBD_DEFAULT_TIMEOUT, req, NULL, UGETW(req->wLength), 0,
-	    callback);
-	err = usbd_transfer(xfer);
-	if (err != USBD_IN_PROGRESS) {
-		usbd_destroy_xfer(xfer);
-		return (err);
-	}
-	return (USBD_NORMAL_COMPLETION);
-}
-
 const struct usbd_quirks *
 usbd_get_quirks(struct usbd_device *dev)
 {
@@ -1541,6 +1510,10 @@ usbd_xfer_trycomplete(struct usbd_xfer *xfer)
 
 	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx status %jd",
+	    (uintptr_t)xfer, xfer->ux_status, 0, 0);
+
 	/*
 	 * If software has completed it, either by synchronous abort or
 	 * by timeout, too late.
@@ -1577,6 +1550,10 @@ usbd_xfer_abort(struct usbd_xfer *xfer)
 	struct usbd_bus *bus = xfer->ux_bus;
 
 	KASSERT(mutex_owned(bus->ub_lock));
+
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx status %jd",
+	    (uintptr_t)xfer, xfer->ux_status, 0, 0);
 
 	/*
 	 * If host controller interrupt or timer interrupt has
@@ -1625,13 +1602,23 @@ usbd_xfer_timeout(void *cookie)
 	/* Acquire the lock so we can transition the timeout state.  */
 	mutex_enter(bus->ub_lock);
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx status %jd",
+	    (uintptr_t)xfer, xfer->ux_status, 0, 0);
+
 	/*
 	 * Use usbd_xfer_probe_timeout to check whether the timeout is
 	 * still valid, or to reschedule the callout if necessary.  If
 	 * it is still valid, schedule the task.
 	 */
-	if (usbd_xfer_probe_timeout(xfer))
+	if (usbd_xfer_probe_timeout(xfer)) {
+		USBHIST_LOG(usbdebug, "xfer %#jx schedule timeout task",
+		    (uintptr_t)xfer, 0, 0, 0);
 		usb_add_task(dev, &xfer->ux_aborttask, USB_TASKQ_HC);
+	} else {
+		USBHIST_LOG(usbdebug, "xfer %#jx timeout cancelled",
+		    (uintptr_t)xfer, 0, 0, 0);
+	}
 
 	/*
 	 * Notify usbd_xfer_cancel_timeout_async that we may have
@@ -1662,6 +1649,10 @@ usbd_xfer_timeout_task(void *cookie)
 	/* Acquire the lock so we can transition the timeout state.  */
 	mutex_enter(bus->ub_lock);
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx status %jd",
+	    (uintptr_t)xfer, xfer->ux_status, 0, 0);
+
 	/*
 	 * Use usbd_xfer_probe_timeout to check whether the timeout is
 	 * still valid, or to reschedule the callout if necessary.  If
@@ -1669,8 +1660,20 @@ usbd_xfer_timeout_task(void *cookie)
 	 * cancelled, or the xfer has already been resubmitted -- then
 	 * we're done here.
 	 */
-	if (!usbd_xfer_probe_timeout(xfer))
+	if (!usbd_xfer_probe_timeout(xfer)) {
+		USBHIST_LOG(usbdebug, "xfer %#jx timeout cancelled",
+		    (uintptr_t)xfer, 0, 0, 0);
 		goto out;
+	}
+
+	/*
+	 * After this point, no further timeout probing will happen for
+	 * the current incarnation of the timeout, so make the next
+	 * usbd_xfer_schedule_timout schedule a new callout.
+	 * usbd_xfer_probe_timeout has already processed any reset.
+	 */
+	KASSERT(!xfer->ux_timeout_reset);
+	xfer->ux_timeout_set = false;
 
 	/*
 	 * May have completed or been aborted, but we're the only one
@@ -1678,14 +1681,19 @@ usbd_xfer_timeout_task(void *cookie)
 	 * no need to timeout.
 	 */
 	KASSERT(xfer->ux_status != USBD_TIMEOUT);
-	if (xfer->ux_status != USBD_IN_PROGRESS)
+	if (xfer->ux_status != USBD_IN_PROGRESS) {
+		USBHIST_LOG(usbdebug, "xfer %#jx timeout raced",
+		    (uintptr_t)xfer, 0, 0, 0);
 		goto out;
+	}
 
 	/*
 	 * We beat everyone else.  Claim the status as timed out, do
 	 * the bus-specific dance to abort the hardware, and complete
 	 * the xfer.
 	 */
+	USBHIST_LOG(usbdebug, "xfer %#jx timed out",
+	    (uintptr_t)xfer, 0, 0, 0);
 	xfer->ux_status = USBD_TIMEOUT;
 	bus->ub_methods->ubm_abortx(xfer);
 	usb_transfer_complete(xfer);
@@ -1708,6 +1716,12 @@ usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
 	struct usbd_bus *bus = xfer->ux_bus;
 	bool valid;
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx timeout %jdms"
+	    " set %jd reset %jd",
+	    (uintptr_t)xfer, xfer->ux_timeout,
+	    xfer->ux_timeout_set, xfer->ux_timeout_reset);
+
 	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
 
 	/* The timeout must be set.  */
@@ -1723,6 +1737,8 @@ usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
 	/* There are a few cases... */
 	if (bus->ub_methods->ubm_dying(bus)) {
 		/* Host controller dying.  Drop it all on the floor.  */
+		USBHIST_LOG(usbdebug, "xfer %#jx bus dying, not rescheduling",
+		    (uintptr_t)xfer, 0, 0, 0);
 		xfer->ux_timeout_set = false;
 		xfer->ux_timeout_reset = false;
 		valid = false;
@@ -1735,11 +1751,17 @@ usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
 		 */
 		xfer->ux_timeout_reset = false;
 		if (xfer->ux_timeout && !bus->ub_usepolling) {
+			USBHIST_LOG(usbdebug, "xfer %#jx resubmitted,"
+			    " rescheduling timer for %jdms",
+			    (uintptr_t)xfer, xfer->ux_timeout, 0, 0);
 			KASSERT(xfer->ux_timeout_set);
 			callout_schedule(&xfer->ux_callout,
 			    mstohz(xfer->ux_timeout));
 		} else {
 			/* No more callout or task scheduled.  */
+			USBHIST_LOG(usbdebug, "xfer %#jx resubmitted"
+			    " and completed, not rescheduling",
+			    (uintptr_t)xfer, 0, 0, 0);
 			xfer->ux_timeout_set = false;
 		}
 		valid = false;
@@ -1750,6 +1772,9 @@ usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
 		 * timeout must be unset, and is no longer valid for
 		 * the caller.
 		 */
+		USBHIST_LOG(usbdebug, "xfer %#jx timeout lost race,"
+		    " status=%jd, not rescheduling",
+		    (uintptr_t)xfer, xfer->ux_status, 0, 0);
 		xfer->ux_timeout_set = false;
 		valid = false;
 	} else {
@@ -1757,6 +1782,8 @@ usbd_xfer_probe_timeout(struct usbd_xfer *xfer)
 		 * The xfer has not yet completed, so the timeout is
 		 * valid.
 		 */
+		USBHIST_LOG(usbdebug, "xfer %#jx timing out",
+		    (uintptr_t)xfer, 0, 0, 0);
 		valid = true;
 	}
 
@@ -1805,6 +1832,12 @@ usbd_xfer_schedule_timeout(struct usbd_xfer *xfer)
 {
 	struct usbd_bus *bus = xfer->ux_bus;
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx timeout %jdms"
+	    " set %jd reset %jd",
+	    (uintptr_t)xfer, xfer->ux_timeout,
+	    xfer->ux_timeout_set, xfer->ux_timeout_reset);
+
 	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
 
 	if (xfer->ux_timeout_set) {
@@ -1847,13 +1880,22 @@ usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
 
 	KASSERT(bus->ub_usepolling || mutex_owned(bus->ub_lock));
 
+	USBHIST_FUNC();
+	USBHIST_CALLARGS(usbdebug, "xfer %#jx timeout %jdms"
+	    " set %jd reset %jd",
+	    (uintptr_t)xfer, xfer->ux_timeout,
+	    xfer->ux_timeout_set, xfer->ux_timeout_reset);
+
 	/*
 	 * If the timer wasn't running anyway, forget about it.  This
 	 * can happen if we are completing an isochronous transfer
 	 * which doesn't use the same timeout logic.
 	 */
-	if (!xfer->ux_timeout_set)
+	if (!xfer->ux_timeout_set) {
+		USBHIST_LOG(usbdebug, "xfer %#jx timer not running",
+		    (uintptr_t)xfer, 0, 0, 0);
 		return;
+	}
 
 	xfer->ux_timeout_reset = false;
 	if (!callout_stop(&xfer->ux_callout)) {
@@ -1861,6 +1903,8 @@ usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
 		 * We stopped the callout before it ran.  The timeout
 		 * is no longer set.
 		 */
+		USBHIST_LOG(usbdebug, "xfer %#jx timer stopped",
+		    (uintptr_t)xfer, 0, 0, 0);
 		xfer->ux_timeout_set = false;
 	} else if (callout_invoking(&xfer->ux_callout)) {
 		/*
@@ -1876,6 +1920,8 @@ usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
 		 * cases, the callout will DTRT, so no further action
 		 * is needed here.
 		 */
+		USBHIST_LOG(usbdebug, "xfer %#jx timer fired",
+		    (uintptr_t)xfer, 0, 0, 0);
 	} else if (usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask)) {
 		/*
 		 * The callout had fired and scheduled the task, but we
@@ -1888,7 +1934,12 @@ usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
 		 * xfer->ux_timeout_set is false, or by the callout or
 		 * task itself when xfer->ux_timeout_reset is true.
 		 */
+		USBHIST_LOG(usbdebug, "xfer %#jx task fired",
+		    (uintptr_t)xfer, 0, 0, 0);
 		xfer->ux_timeout_set = false;
+	} else {
+		USBHIST_LOG(usbdebug, "xfer %#jx task stopped",
+		    (uintptr_t)xfer, 0, 0, 0);
 	}
 
 	/*

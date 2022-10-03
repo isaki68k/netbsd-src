@@ -1,4 +1,4 @@
-/*	$NetBSD: tpm.c,v 1.25 2022/01/29 12:27:30 riastradh Exp $	*/
+/*	$NetBSD: tpm.c,v 1.27 2022/09/25 18:43:32 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tpm.c,v 1.25 2022/01/29 12:27:30 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tpm.c,v 1.27 2022/09/25 18:43:32 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -58,7 +58,6 @@ __KERNEL_RCSID(0, "$NetBSD: tpm.c,v 1.25 2022/01/29 12:27:30 riastradh Exp $");
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/pmf.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
@@ -543,7 +542,7 @@ tpm12_rng(struct tpm_softc *sc, unsigned *entropybitsp)
 
 	/* Verify the response header looks sensible.  */
 	if (nread != sizeof(response.hdr)) {
-		device_printf(sc->sc_dev, "read %zu bytes, expected %zu",
+		device_printf(sc->sc_dev, "read %zu bytes, expected %zu\n",
 		    nread, sizeof(response.hdr));
 		goto out;
 	}
