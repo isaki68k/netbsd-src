@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.205 2022/06/11 04:57:57 tsutsui Exp $
+# $NetBSD: GENERIC,v 1.207 2022/09/29 10:10:10 riastradh Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include 	"arch/x68k/conf/std.x68k"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.205 $"
+#ident 		"GENERIC-$Revision: 1.207 $"
 
 makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-unwind-tables -fno-omit-frame-pointer"
 	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
@@ -175,14 +175,14 @@ file-system	TMPFS		# Efficient memory file-system
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
 
 ## File system options.
-#options 	NFSSERVER	# Sun NFS-compatible filesystem server
+#options 	FFS_EI		# FFS Endian Independent support
+options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 #options 	QUOTA		# legacy UFS quotas
 #options 	QUOTA2		# new, in-filesystem UFS quotas
-#options 	FFS_EI		# FFS Endian Independent support
-options 	WAPBL		# File system journaling support
-#options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
-options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
+#options 	UFS_DIRHASH	# UFS Large Directory Hashing
 #options 	UFS_EXTATTR	# Extended attribute support for UFS1
+options 	WAPBL		# File system journaling support
+#options 	NFSSERVER	# Network File System server
 
 ## Network protocol support.  In most environments, INET is required.
 options 	INET		# IP (Internet Protocol) v4
@@ -499,6 +499,7 @@ pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	drvctl			# user control of drive subsystem
 pseudo-device	ksyms			# /dev/ksyms
 #pseudo-device	fss			# file system snapshot device
+pseudo-device 	swwdog			# software watchdog timer -- swwdog(4)
 
 # pseudo audio device driver
 pseudo-device	pad
