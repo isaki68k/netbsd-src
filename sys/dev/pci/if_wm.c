@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.764 2022/09/08 02:40:10 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.767 2022/12/08 08:14:28 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.764 2022/09/08 02:40:10 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.767 2022/12/08 08:14:28 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_wm.h"
@@ -478,6 +478,7 @@ struct wm_queue {
 	char sysctlname[32];		/* Name for sysctl */
 
 	bool wmq_txrx_use_workqueue;
+	bool wmq_wq_enqueued;
 	struct work wmq_cookie;
 	void *wmq_si;
 };
@@ -5579,6 +5580,11 @@ wm_reset(struct wm_softc *sc)
 		CSR_WRITE(sc, WMREG_CTRL, reg);
 		/* Don't insert a completion barrier when reset */
 		delay(20*1000);
+		/*
+		 * The EXTCNFCTR_MDIO_SW_OWNERSHIP bit is cleared by the reset,
+		 * so don't use sc->phy.release(sc). Release sc_ich_phymtx
+		 * only. See also wm_get_swflag_ich8lan().
+		 */
 		mutex_exit(sc->sc_ich_phymtx);
 		break;
 	case WM_T_82580:
@@ -8922,12 +8928,12 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	 * however it does not cause problems.
 	 */
 	/* Fill in the context descriptor. */
-	txq->txq_nq_descs[txq->txq_next].nqrx_ctx.nqtxc_vl_len =
+	txq->txq_nq_descs[txq->txq_next].nqtx_ctx.nqtxc_vl_len =
 	    htole32(vl_len);
-	txq->txq_nq_descs[txq->txq_next].nqrx_ctx.nqtxc_sn = 0;
-	txq->txq_nq_descs[txq->txq_next].nqrx_ctx.nqtxc_cmd =
+	txq->txq_nq_descs[txq->txq_next].nqtx_ctx.nqtxc_sn = 0;
+	txq->txq_nq_descs[txq->txq_next].nqtx_ctx.nqtxc_cmd =
 	    htole32(cmdc);
-	txq->txq_nq_descs[txq->txq_next].nqrx_ctx.nqtxc_mssidx =
+	txq->txq_nq_descs[txq->txq_next].nqtx_ctx.nqtxc_mssidx =
 	    htole32(mssidx);
 	wm_cdtxsync(txq, txq->txq_next, 1, BUS_DMASYNC_PREWRITE);
 	DPRINTF(sc, WM_DEBUG_TX,
@@ -10303,9 +10309,13 @@ static inline void
 wm_sched_handle_queue(struct wm_softc *sc, struct wm_queue *wmq)
 {
 
-	if (wmq->wmq_txrx_use_workqueue)
-		workqueue_enqueue(sc->sc_queue_wq, &wmq->wmq_cookie, curcpu());
-	else
+	if (wmq->wmq_txrx_use_workqueue) {
+		if (!wmq->wmq_wq_enqueued) {
+			wmq->wmq_wq_enqueued = true;
+			workqueue_enqueue(sc->sc_queue_wq, &wmq->wmq_cookie,
+			    curcpu());
+		}
+	} else
 		softint_schedule(wmq->wmq_si);
 }
 
@@ -10588,8 +10598,10 @@ wm_handle_queue_work(struct work *wk, void *context)
 	struct wm_queue *wmq = container_of(wk, struct wm_queue, wmq_cookie);
 
 	/*
-	 * "enqueued flag" is not required here.
+	 * Some qemu environment workaround.  They don't stop interrupt
+	 * immediately.
 	 */
+	wmq->wmq_wq_enqueued = false;
 	wm_handle_queue(wmq);
 }
 

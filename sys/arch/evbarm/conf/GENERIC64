@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.205 2022/08/23 05:40:46 ryo Exp $
+#	$NetBSD: GENERIC64,v 1.207 2022/12/24 15:46:50 nia Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -24,7 +24,6 @@ options 	SOC_SUN50I_A64
 options 	SOC_SUN50I_H5
 options 	SOC_SUN50I_H6
 options 	SOC_TEGRA210
-options 	SOC_VIRT
 options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
@@ -432,8 +431,9 @@ m25p*		at spi?
 spiflash*	at spiflashbus?
 
 # Broadcom VCHIQ, etc
-vchiq0		at fdt?
-vcaudio0 	at vchiq0
+vchiq*		at fdt?
+vchiq*		at acpi?
+vcaudio0 	at vchiq?
 
 # Audio support
 hdaudio*	at fdt?			# Intel HDA

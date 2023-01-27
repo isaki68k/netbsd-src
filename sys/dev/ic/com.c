@@ -1,4 +1,4 @@
-/* $NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $ */
+/* $NetBSD: com.c,v 1.382 2022/12/09 00:35:58 knakahara Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2004, 2008 The NetBSD Foundation, Inc.
@@ -63,10 +63,14 @@
 /*
  * COM driver, uses National Semiconductor NS16450/NS16550AF UART
  * Supports automatic hardware flow control on StarTech ST16C650A UART
+ *
+ * Lock order:
+ *	tty_lock (IPL_VM)
+ *	-> sc->sc_lock (IPL_HIGH)
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.382 2022/12/09 00:35:58 knakahara Exp $");
 
 #include "opt_com.h"
 #include "opt_ddb.h"
@@ -115,8 +119,9 @@ __KERNEL_RCSID(0, "$NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $");
 #include <sys/rndsource.h>
 #endif
 
-
 #include <sys/bus.h>
+
+#include <ddb/db_active.h>
 
 #include <dev/ic/comreg.h>
 #include <dev/ic/comvar.h>
@@ -172,12 +177,11 @@ int	comcngetc(dev_t);
 void	comcnputc(dev_t, int);
 void	comcnpollc(dev_t, int);
 
-#define	integrate	static inline
 void	comsoft(void *);
-integrate void com_rxsoft(struct com_softc *, struct tty *);
-integrate void com_txsoft(struct com_softc *, struct tty *);
-integrate void com_stsoft(struct com_softc *, struct tty *);
-integrate void com_schedrx(struct com_softc *);
+static inline void com_rxsoft(struct com_softc *, struct tty *);
+static inline void com_txsoft(struct com_softc *, struct tty *);
+static inline void com_stsoft(struct com_softc *, struct tty *);
+static inline void com_schedrx(struct com_softc *);
 void	comdiag(void *);
 
 dev_type_open(comopen);
@@ -895,19 +899,6 @@ com_config(struct com_softc *sc)
 		com_enable_debugport(sc);
 }
 
-#if 0
-static int
-comcngetc_detached(dev_t dev)
-{
-	return 0;
-}
-
-static void
-comcnputc_detached(dev_t dev, int c)
-{
-}
-#endif
-
 int
 com_detach(device_t self, int flags)
 {
@@ -987,9 +978,9 @@ com_shutdown(struct com_softc *sc)
 	com_break(sc, 0);
 
 	/*
-	 * Hang up if necessary.  Wait a bit, so the other side has time to
-	 * notice even if we immediately open the port again.
-	 * Avoid tsleeping above splhigh().
+	 * Hang up if necessary.  Record when we hung up, so if we
+	 * immediately open the port again, we will wait a bit until
+	 * the other side has had time to notice that we hung up.
 	 */
 	if (ISSET(tp->t_cflag, HUPCL)) {
 		com_modem(sc, 0);
@@ -1398,7 +1389,7 @@ comioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	return (error);
 }
 
-integrate void
+static inline void
 com_schedrx(struct com_softc *sc)
 {
 
@@ -1939,18 +1930,16 @@ comstart(struct tty *tp)
 	struct com_softc *sc =
 	    device_lookup_private(&com_cd, COMUNIT(tp->t_dev));
 	struct com_regs *regsp = &sc->sc_regs;
-	int s;
 
 	if (COM_ISALIVE(sc) == 0)
 		return;
 
-	s = spltty();
 	if (ISSET(tp->t_state, TS_BUSY | TS_TIMEOUT | TS_TTSTOP))
-		goto out;
+		return;
 	if (sc->sc_tx_stopped)
-		goto out;
+		return;
 	if (!ttypull(tp))
-		goto out;
+		return;
 
 	/* Grab the first contiguous region of buffer space. */
 	{
@@ -1988,9 +1977,6 @@ comstart(struct tty *tp)
 	}
 
 	mutex_spin_exit(&sc->sc_lock);
-out:
-	splx(s);
-	return;
 }
 
 /*
@@ -2033,7 +2019,7 @@ comdiag(void *arg)
 	    floods, floods == 1 ? "" : "s");
 }
 
-integrate void
+static inline void
 com_rxsoft(struct com_softc *sc, struct tty *tp)
 {
 	int (*rint)(int, struct tty *) = tp->t_linesw->l_rint;
@@ -2137,7 +2123,7 @@ com_rxsoft(struct com_softc *sc, struct tty *tp)
 	}
 }
 
-integrate void
+static inline void
 com_txsoft(struct com_softc *sc, struct tty *tp)
 {
 
@@ -2149,7 +2135,7 @@ com_txsoft(struct com_softc *sc, struct tty *tp)
 	(*tp->t_linesw->l_start)(tp);
 }
 
-integrate void
+static inline void
 com_stsoft(struct com_softc *sc, struct tty *tp)
 {
 	u_char msr, delta;
@@ -2531,10 +2517,7 @@ com_common_getc(dev_t dev, struct com_regs *regsp)
 	stat = CSR_READ_1(regsp, COM_REG_IIR);
 	{
 		int cn_trapped = 0;	/* required by cn_trap, see above */
-#ifdef DDB
-		extern int db_active;
 		if (!db_active)
-#endif
 			cn_check_magic(dev, c, com_cnm_state);
 	}
 	splx(s);
@@ -2788,8 +2771,10 @@ com_kgdb_putc(void *arg, int c)
 }
 #endif /* KGDB */
 
-/* helper function to identify the com ports used by
- console or KGDB (and not yet autoconf attached) */
+/*
+ * helper function to identify the com ports used by
+ * console or KGDB (and not yet autoconf attached)
+ */
 int
 com_is_console(bus_space_tag_t iot, bus_addr_t iobase, bus_space_handle_t *ioh)
 {
@@ -2833,11 +2818,6 @@ bool
 com_suspend(device_t self, const pmf_qual_t *qual)
 {
 	struct com_softc *sc = device_private(self);
-
-#if 0
-	if (ISSET(sc->sc_hwflags, COM_HW_CONSOLE) && cn_tab == &comcons)
-		cn_tab = &comcons_suspend;
-#endif
 
 	CSR_WRITE_1(&sc->sc_regs, COM_REG_IER, 0);
 	(void)CSR_READ_1(&sc->sc_regs, COM_REG_IIR);

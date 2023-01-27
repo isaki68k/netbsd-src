@@ -1,4 +1,4 @@
-/*	$NetBSD: ser.c,v 1.84 2021/10/21 13:21:54 andvar Exp $ */
+/*	$NetBSD: ser.c,v 1.86 2022/10/26 23:38:06 riastradh Exp $ */
 
 /*
  * Copyright (c) 1982, 1986, 1990 The Regents of the University of California.
@@ -40,7 +40,7 @@
 #include "opt_kgdb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ser.c,v 1.84 2021/10/21 13:21:54 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ser.c,v 1.86 2022/10/26 23:38:06 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -63,6 +63,8 @@ __KERNEL_RCSID(0, "$NetBSD: ser.c,v 1.84 2021/10/21 13:21:54 andvar Exp $");
 #include <amiga/amiga/cc.h>
 
 #include <dev/cons.h>
+
+#include <ddb/db_active.h>
 
 #include "ser.h"
 #if NSER > 0
@@ -175,8 +177,6 @@ u_char	even_parity[] = {
  */
 
 u_char	last_ciab_pra;
-
-extern struct tty *constty;
 
 extern int ser_open_speed;	/* current speed of open serial device */
 
@@ -607,8 +607,6 @@ sereint(int stat)
 		break_in_progress = 1;
 #ifdef DDB
 		if (serconsole == 0) {
-			extern int db_active;
-
 			if (!db_active) {
 				console_debugger();
 				return;

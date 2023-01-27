@@ -1,4 +1,4 @@
-/*	$NetBSD: riscv_machdep.c,v 1.19 2022/09/28 06:05:28 skrll Exp $	*/
+/*	$NetBSD: riscv_machdep.c,v 1.25 2022/11/17 13:11:08 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2014, 2019, 2022 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_riscv_debug.h"
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: riscv_machdep.c,v 1.19 2022/09/28 06:05:28 skrll Exp $");
+__RCSID("$NetBSD: riscv_machdep.c,v 1.25 2022/11/17 13:11:08 simonb Exp $");
 
 #include <sys/param.h>
 
@@ -57,22 +57,22 @@ __RCSID("$NetBSD: riscv_machdep.c,v 1.19 2022/09/28 06:05:28 skrll Exp $");
 #include <riscv/machdep.h>
 #include <riscv/pte.h>
 
-int cpu_printfataltraps;
-char machine[] = MACHINE;
-char machine_arch[] = MACHINE_ARCH;
-
 #include <libfdt.h>
 #include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_memory.h>
 
+int cpu_printfataltraps;
+char machine[] = MACHINE;
+char machine_arch[] = MACHINE_ARCH;
+
 #ifdef VERBOSE_INIT_RISCV
-#define VPRINTF(...)	printf(__VA_ARGS__)
+#define	VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	__nothing
+#define	VPRINTF(...)	__nothing
 #endif
 
 #ifndef FDT_MAX_BOOT_STRING
-#define FDT_MAX_BOOT_STRING 1024
+#define	FDT_MAX_BOOT_STRING 1024
 #endif
 
 char bootargs[FDT_MAX_BOOT_STRING] = "";
@@ -122,9 +122,9 @@ delay(unsigned long us)
 {
 	const uint32_t cycles_per_us = curcpu()->ci_data.cpu_cc_freq / 1000000;
 	const uint64_t cycles = (uint64_t)us * cycles_per_us;
-	const uint64_t finish = riscvreg_cycle_read() + cycles;
+	const uint64_t finish = csr_cycle_read() + cycles;
 
-	while (riscvreg_cycle_read() < finish) {
+	while (csr_cycle_read() < finish) {
 		/* spin, baby spin */
 	}
 }
@@ -156,7 +156,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	tf->tf_sp = (intptr_t)stack_align(stack);
 	tf->tf_pc = (intptr_t)pack->ep_entry & ~1;
 #ifdef _LP64
-	tf->tf_sr = (p->p_flag & PK_32) ? SR_USER32 : SR_USER;
+	tf->tf_sr = (p->p_flag & PK_32) ? SR_USER32 : SR_USER64;
 #else
 	tf->tf_sr = SR_USER;
 #endif
@@ -431,14 +431,15 @@ parse_bi_bootargs(char *args)
 
 
 void
-init_riscv(register_t hartid, vaddr_t vdtb)
+init_riscv(register_t hartid, paddr_t dtb)
 {
 
 	/* set temporally to work printf()/panic() even before consinit() */
 	cn_tab = &earlycons;
 
 	/* Load FDT */
-	void *fdt_data = (void *)vdtb;
+	const vaddr_t dtbva = VM_KERNEL_DTB_BASE + (dtb & (NBSEG - 1));
+	void *fdt_data = (void *)dtbva;
 	int error = fdt_check_header(fdt_data);
 	if (error != 0)
 	    panic("fdt_check_header failed: %s", fdt_strerror(error));
@@ -515,8 +516,6 @@ init_riscv(register_t hartid, vaddr_t vdtb)
 
 	parse_bi_bootargs(boot_args);
 
-
-	// initarm_common
 	extern char __kernel_text[];
 	extern char _end[];
 
@@ -532,7 +531,7 @@ init_riscv(register_t hartid, vaddr_t vdtb)
 
 	kernelvmstart = kernend_mega;
 
-#define DPRINTF(v)	VPRINTF("%24s = 0x%16lx\n", #v, (unsigned long)v);
+#define	DPRINTF(v)	VPRINTF("%24s = 0x%16lx\n", #v, (unsigned long)v);
 
 	VPRINTF("------------------------------------------\n");
 	DPRINTF(kern_vtopdiff);

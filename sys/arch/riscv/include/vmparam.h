@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.10 2022/09/20 07:18:23 skrll Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.13 2022/10/16 06:14:53 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
@@ -108,7 +108,7 @@
  * User/kernel map constants.
  */
 #define VM_MIN_ADDRESS		((vaddr_t)0x00000000)
-#ifdef _LP64	/* Sv39 */
+#ifdef _LP64	/* Sv39 / Sv48 / Sv57 */
 /*
  * kernel virtual space layout:
  *   0xffff_ffc0_0000_0000  -   64GiB  KERNEL VM Space (inc. text/data/bss)
@@ -129,9 +129,11 @@
 #define VM_KERNEL_BASE		VM_MIN_KERNEL_ADDRESS
 #define VM_KERNEL_SIZE		0x2000000	/* 32 MiB (8 / 16 megapages) */
 #define VM_KERNEL_DTB_BASE	(VM_KERNEL_BASE + VM_KERNEL_SIZE)
-#define VM_KERNEL_DTB_SIZE	0x2000000	/* 32 MiB (8 / 16 megapages) */
+#define VM_KERNEL_DTB_SIZE	0x1000000	/* 16 MiB (4 / 8 megapages) */
+#define VM_KERNEL_IO_BASE	(VM_KERNEL_DTB_BASE + VM_KERNEL_DTB_SIZE)
+#define VM_KERNEL_IO_SIZE	0x1000000	/* 16 MiB (4 / 8 megapages) */
 
-#define VM_KERNEL_RESERVED	(VM_KERNEL_SIZE + VM_KERNEL_DTB_SIZE)
+#define VM_KERNEL_RESERVED	(VM_KERNEL_SIZE + VM_KERNEL_DTB_SIZE + VM_KERNEL_IO_SIZE)
 
 #define VM_KERNEL_VM_BASE	(VM_MIN_KERNEL_ADDRESS + VM_KERNEL_RESERVED)
 #define VM_KERNEL_VM_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_VM_BASE)
@@ -142,10 +144,10 @@
 #ifdef _LP64
 /*
  * Since we have the address space, we map all of physical memory (RAM)
- * using block page table entries.
+ * using gigapages on SV39, terapages on SV48 and petapages on SV57.
  */
 #define RISCV_DIRECTMAP_MASK	((vaddr_t) 0xffffffe000000000L)
-#define RISCV_DIRECTMAP_SIZE	(-RISCV_DIRECTMAP_MASK)	/* 128GiB */
+#define RISCV_DIRECTMAP_SIZE	(-RISCV_DIRECTMAP_MASK - PAGE_SIZE)	/* 128GiB */
 #define RISCV_DIRECTMAP_START	RISCV_DIRECTMAP_MASK
 #define RISCV_DIRECTMAP_END	(RISCV_DIRECTMAP_START + RISCV_DIRECTMAP_SIZE)
 #define RISCV_KVA_P(va)	(((vaddr_t) (va) & RISCV_DIRECTMAP_MASK) != 0)
@@ -173,7 +175,7 @@
 
 /* VM_PHYSSEG_MAX defined by platform-dependent code. */
 #ifndef VM_PHYSSEG_MAX
-#define VM_PHYSSEG_MAX		1
+#define VM_PHYSSEG_MAX		16
 #endif
 #if VM_PHYSSEG_MAX == 1
 #define	VM_PHYSSEG_STRAT	VM_PSTRAT_BIGFIRST

@@ -1,5 +1,5 @@
 /*	$KAME: sctp_pcb.h,v 1.21 2005/07/16 01:18:47 suz Exp $	*/
-/*	$NetBSD: sctp_pcb.h,v 1.5 2022/05/24 20:50:20 andvar Exp $ */
+/*	$NetBSD: sctp_pcb.h,v 1.7 2022/10/28 05:26:29 ozaki-r Exp $ */
 
 #ifndef __SCTP_PCB_H__
 #define __SCTP_PCB_H__
@@ -41,6 +41,7 @@
  * we would not allocate enough for Net/Open BSD :-<
  */
 #include <net/if.h>
+#include <netinet/in_pcb.h>
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
 #include <netinet6/ip6protosw.h>
@@ -750,6 +751,24 @@ sctp_initiate_iterator(asoc_func af, uint32_t, uint32_t, void *, uint32_t,
 
 void in6_sin6_2_sin (struct sockaddr_in *,
                             struct sockaddr_in6 *sin6);
+
+#ifdef __NetBSD__
+#ifndef sotoin6pcb
+#define sotoin6pcb(so)	((struct in6pcb *)((so)->so_pcb))
+#endif
+#ifndef in6p_flags
+#define in6p_flags	in6p_pcb.inp_flags
+#endif
+#ifndef in6p_af
+#define in6p_af		in6p_pcb.inp_af
+#endif
+#ifndef inpcb_hdr
+#define inpcb_hdr	inpcb
+#endif
+#ifndef sp_inph
+#define sp_inph		sp_inp
+#endif
+#endif
 
 #endif /* _KERNEL */
 #endif /* !__SCTP_PCB_H__ */

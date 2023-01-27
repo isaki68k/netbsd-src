@@ -1,4 +1,4 @@
-/* $NetBSD: types.h,v 1.13 2022/09/11 15:31:12 skrll Exp $ */
+/* $NetBSD: types.h,v 1.15 2022/11/08 13:34:17 simonb Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -38,6 +38,9 @@
 
 #if defined(_KERNEL) || defined(_KMEMUSER) || defined(_KERNTYPES) || defined(_STANDALONE)
 
+/* XLEN is the native base integer ISA width */
+#define	XLEN		(sizeof(long) * NBBY)
+
 typedef __uint64_t	paddr_t;
 typedef __uint64_t	psize_t;
 #define	PRIxPADDR	PRIx64
@@ -63,7 +66,7 @@ typedef signed int register32_t;
 typedef unsigned int uregister32_t;
 #define	PRIxREGISTER32	"x"
 
-typedef unsigned short	tlb_asid_t;
+typedef unsigned int tlb_asid_t;
 #endif
 
 #if defined(_KERNEL)

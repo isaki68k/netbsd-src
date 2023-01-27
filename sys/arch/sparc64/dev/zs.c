@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.78 2021/09/11 20:28:05 andvar Exp $	*/
+/*	$NetBSD: zs.c,v 1.80 2022/10/26 23:59:56 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.78 2021/09/11 20:28:05 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.80 2022/10/26 23:59:56 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -66,6 +66,8 @@ __KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.78 2021/09/11 20:28:05 andvar Exp $");
 #include <dev/cons.h>
 #include <dev/ic/z8530reg.h>
 #include <dev/sun/kbd_ms_ttyvar.h>
+
+#include <ddb/db_active.h>
 #include <ddb/db_output.h>
 
 #include <dev/sbus/sbusvar.h>
@@ -539,8 +541,8 @@ zssoft(void *arg)
 	struct zsc_softc *zsc = arg;
 
 #if 0 /* not yet */
-	/* Make sure we call the tty layer with tty_lock held. */
-	mutex_spin_enter(&tty_lock);
+	/* Make sure we call the tty layer with ttylock held. */
+	ttylock(tp);
 #endif
 	(void)zsc_intr_soft(zsc);
 #ifdef TTY_DEBUG
@@ -556,7 +558,7 @@ zssoft(void *arg)
 	}
 #endif
 #if 0 /* not yet */
-	mutex_spin_exit(&tty_lock);
+	ttyunlock(tp);
 #endif
 }
 
@@ -738,15 +740,11 @@ zs_abort(struct zs_chanstate *cs)
 #if defined(KGDB)
 	zskgdb(cs);
 #elif defined(DDB)
-	{
-		extern int db_active;
-		
-		if (!db_active)
-			Debugger();
-		else
-			/* Debugger is probably hozed */
-			callrom();
-	}
+	if (!db_active)
+		Debugger();
+	else
+		/* Debugger is probably hozed */
+		callrom();
 #else
 	printf("stopping on keyboard abort\n");
 	callrom();

@@ -1,4 +1,4 @@
-/*	$NetBSD: vmwgfx_drv.h,v 1.6 2022/02/17 01:21:02 riastradh Exp $	*/
+/*	$NetBSD: vmwgfx_drv.h,v 1.9 2022/10/25 23:36:21 riastradh Exp $	*/
 
 /* SPDX-License-Identifier: GPL-2.0 OR MIT */
 /**************************************************************************
@@ -30,9 +30,14 @@
 #ifndef _VMWGFX_DRV_H_
 #define _VMWGFX_DRV_H_
 
+#ifdef __NetBSD__
+#include <sys/workqueue.h>
+#endif
+
 #include <linux/notifier.h>
 #include <linux/suspend.h>
 #include <linux/sync_file.h>
+#include <linux/uaccess.h>
 
 #include <drm/drm_auth.h>
 #include <drm/drm_device.h>
@@ -458,10 +463,8 @@ struct vmw_private {
 #ifdef __NetBSD__
 	bus_space_tag_t iot;
 	bus_space_handle_t ioh;
-	bus_size_t iosz;
-#else
-	unsigned int io_start;
 #endif
+	unsigned int io_start;
 	uint32_t vram_start;
 	uint32_t vram_size;
 	uint32_t prim_bb_mem;
@@ -475,6 +478,10 @@ struct vmw_private {
 	uint32_t stdu_max_height;
 	uint32_t initial_width;
 	uint32_t initial_height;
+#ifdef __NetBSD__
+	bus_space_tag_t mmio_bst;
+	bus_space_handle_t mmio_bsh;
+#endif
 	u32 *mmio_virt;
 	uint32_t capabilities;
 	uint32_t capabilities2;
@@ -538,7 +545,9 @@ struct vmw_private {
 
 	atomic_t marker_seq;
 	drm_waitqueue_t fence_queue;
+	spinlock_t fence_lock;
 	drm_waitqueue_t fifo_queue;
+	spinlock_t fifo_lock;
 	spinlock_t waiter_lock;
 	int fence_queue_waiters; /* Protected by waiter_lock */
 	int goal_queue_waiters; /* Protected by waiter_lock */
@@ -624,6 +633,11 @@ struct vmw_private {
 
 	struct vmw_cmdbuf_man *cman;
 	DECLARE_BITMAP(irqthread_pending, VMW_IRQTHREAD_MAX);
+#ifdef __NetBSD__
+	struct workqueue *irqthread_wq;
+	struct work irqthread_work;
+	volatile unsigned irqthread_scheduled;
+#endif
 
 	/* Validation memory reservation */
 	struct vmw_validation_mem vvm;

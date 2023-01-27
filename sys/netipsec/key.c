@@ -1,4 +1,4 @@
-/*	$NetBSD: key.c,v 1.276 2022/08/09 08:03:22 knakahara Exp $	*/
+/*	$NetBSD: key.c,v 1.280 2022/12/08 08:07:07 knakahara Exp $	*/
 /*	$FreeBSD: key.c,v 1.3.2.3 2004/02/14 22:23:23 bms Exp $	*/
 /*	$KAME: key.c,v 1.191 2001/06/27 10:46:49 sakane Exp $	*/
 
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.276 2022/08/09 08:03:22 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.280 2022/12/08 08:07:07 knakahara Exp $");
 
 /*
  * This code is referred to RFC 2367
@@ -871,6 +871,13 @@ key_sp_refcnt(const struct secpolicy *sp)
 	return 0;
 }
 
+void
+key_sp_touch(struct secpolicy *sp)
+{
+
+	sp->lastused = time_uptime;
+}
+
 static void
 key_spd_pserialize_perform(void)
 {
@@ -965,7 +972,7 @@ found:
 		KEY_CHKSPDIR(sp->spidx.dir, dir);
 
 		/* found a SPD entry */
-		sp->lastused = time_uptime;
+		key_sp_touch(sp);
 		key_sp_ref(sp, where, tag);
 	}
 	pserialize_read_exit(s);
@@ -1042,7 +1049,7 @@ key_gettunnel(const struct sockaddr *osrc,
 	sp = NULL;
 found:
 	if (sp) {
-		sp->lastused = time_uptime;
+		key_sp_touch(sp);
 		key_sp_ref(sp, where, tag);
 	}
 	pserialize_read_exit(s);
@@ -2089,6 +2096,8 @@ key_sp2msg(const struct secpolicy *sp, int mflag)
 	xpl->sadb_x_policy_type = sp->policy;
 	xpl->sadb_x_policy_dir = sp->spidx.dir;
 	xpl->sadb_x_policy_id = sp->id;
+	if (sp->origin == IPSEC_SPORIGIN_KERNEL)
+		xpl->sadb_x_policy_flags |= IPSEC_POLICY_FLAG_ORIGIN_KERNEL;
 	p = (char *)xpl + sizeof(*xpl);
 
 	/* if is the policy for ipsec ? */
@@ -8763,10 +8772,7 @@ key_savlut_writer_insert_head(struct secasvar *sav)
 	KASSERT(mutex_owned(&key_sad.lock));
 	KASSERT(!sav->savlut_added);
 
-	if (sav->sah->saidx.proto == IPPROTO_IPCOMP)
-		hash_key = sav->alg_comp;
-	else
-		hash_key = sav->spi;
+	hash_key = sav->spi;
 
 	hash = key_savluthash(&sav->sah->saidx.dst.sa,
 	    sav->sah->saidx.proto, hash_key, key_sad.savlutmask);

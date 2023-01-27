@@ -1,4 +1,4 @@
-/*	$NetBSD: tty.h,v 1.97 2022/04/07 21:46:51 riastradh Exp $	*/
+/*	$NetBSD: tty.h,v 1.103 2022/10/26 23:41:49 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -149,6 +149,7 @@ struct tty {
 	int	t_sigcount;		/* # pending signals */
 	TAILQ_ENTRY(tty) t_sigqueue;	/* entry on pending signal list */
 	void	*t_softc;		/* pointer to driver's softc. */
+	volatile unsigned t_refcnt;	/* reference count for constty */
 };
 
 #ifdef TTY_ALLOW_PRIVATE
@@ -252,6 +253,8 @@ TAILQ_HEAD(ttylist_head, tty);		/* the ttylist is a TAILQ */
 #ifdef _KERNEL
 
 extern kmutex_t	tty_lock;
+extern kmutex_t	constty_lock;
+extern struct tty *volatile constty;
 
 extern	int tty_count;			/* number of ttys in global ttylist */
 extern	struct ttychars ttydefaults;
@@ -313,6 +316,12 @@ void	 tty_free(struct tty *);
 u_char	*firstc(struct clist *, int *);
 bool	 ttypull(struct tty *);
 int	 tty_unit(dev_t);
+void	 tty_acquire(struct tty *);
+void	 tty_release(struct tty *);
+
+void	 ttylock(struct tty *);
+void	 ttyunlock(struct tty *);
+bool	 ttylocked(struct tty *);
 
 int	clalloc(struct clist *, int, int);
 void	clfree(struct clist *);

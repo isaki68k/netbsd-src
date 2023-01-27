@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.139 2022/08/19 08:17:32 ryo Exp $	*/
+/*	$NetBSD: pmap.c,v 1.147 2022/10/30 14:08:09 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.139 2022/08/19 08:17:32 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.147 2022/10/30 14:08:09 riastradh Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
@@ -199,15 +199,17 @@ static int _pmap_get_pdp(struct pmap *, vaddr_t, bool, int, paddr_t *,
     struct vm_page **);
 
 static struct pmap kernel_pmap __cacheline_aligned;
-static struct pmap efirt_pmap __cacheline_aligned;
-
 struct pmap * const kernel_pmap_ptr = &kernel_pmap;
+
+#if defined(EFI_RUNTIME)
+static struct pmap efirt_pmap __cacheline_aligned;
 
 pmap_t
 pmap_efirt(void)
 {
 	return &efirt_pmap;
 }
+#endif
 
 static vaddr_t pmap_maxkvaddr;
 
@@ -469,7 +471,8 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	PMAP_HIST_INIT();	/* init once */
 
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLED(pmaphist);
+	UVMHIST_CALLARGS(pmaphist, "vstart=%#jx vend=%#jx", (uintptr_t)vstart,
+	    (uintptr_t)vend, 0, 0);
 
 	uvmexp.ncolors = aarch64_cache_vindexsize / PAGE_SIZE;
 
@@ -844,7 +847,7 @@ pmap_extract_coherency(struct pmap *pm, vaddr_t va, paddr_t *pap,
 			 * have no physical memory haven't been mapped.
 			 * fast lookup by using the S1E1R/PAR_EL1 registers.
 			 */
-			register_t s = daif_disable(DAIF_I|DAIF_F);
+			register_t s = daif_disable(DAIF_I | DAIF_F);
 			reg_s1e1r_write(va);
 			isb();
 			uint64_t par = reg_par_el1_read();
@@ -882,7 +885,7 @@ pmap_extract_coherency(struct pmap *pm, vaddr_t va, paddr_t *pap,
 	switch (pte & LX_BLKPAG_ATTR_MASK) {
 	case LX_BLKPAG_ATTR_NORMAL_NC:
 	case LX_BLKPAG_ATTR_DEVICE_MEM:
-	case LX_BLKPAG_ATTR_DEVICE_MEM_SO:
+	case LX_BLKPAG_ATTR_DEVICE_MEM_NP:
 		coherency = true;
 		break;
 	}
@@ -1009,7 +1012,7 @@ pmap_icache_sync_range(pmap_t pm, vaddr_t sva, vaddr_t eva)
 			cpu_icache_sync_range(va, len);
 		} else {
 			/*
-			 * change to accessible temporally
+			 * change to accessible temporarily
 			 * to do cpu_icache_sync_range()
 			 */
 			struct pmap_asid_info * const pai = PMAP_PAI(pm,
@@ -1064,7 +1067,7 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 	pt_entry_t xn;
 
 	masked = prot & refmod;
-	pte &= ~(LX_BLKPAG_OS_RWMASK|LX_BLKPAG_AF|LX_BLKPAG_DBM|LX_BLKPAG_AP);
+	pte &= ~(LX_BLKPAG_OS_RWMASK | LX_BLKPAG_AF | LX_BLKPAG_DBM | LX_BLKPAG_AP);
 
 	/*
 	 * keep actual prot in the pte as OS_{READ|WRITE} for ref/mod emulation,
@@ -1072,9 +1075,9 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 	 */
 	pte |= LX_BLKPAG_OS_READ;	/* a valid pte can always be readable */
 	if (prot & VM_PROT_WRITE)
-		pte |= LX_BLKPAG_OS_WRITE|LX_BLKPAG_DBM;
+		pte |= LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM;
 
-	switch (masked & (VM_PROT_READ|VM_PROT_WRITE)) {
+	switch (masked & (VM_PROT_READ | VM_PROT_WRITE)) {
 	case 0:
 	default:
 		/*
@@ -1092,7 +1095,7 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 		pte |= LX_BLKPAG_AP_RO;
 		break;
 	case VM_PROT_WRITE:
-	case VM_PROT_READ|VM_PROT_WRITE:
+	case VM_PROT_READ | VM_PROT_WRITE:
 		/* fully readable and writable */
 		pte |= LX_BLKPAG_AF;
 		pte |= LX_BLKPAG_AP_RW;
@@ -1100,7 +1103,7 @@ _pmap_pte_adjust_prot(pt_entry_t pte, vm_prot_t prot, vm_prot_t refmod,
 	}
 
 	/* executable for kernel or user? first set never exec both */
-	pte |= (LX_BLKPAG_UXN|LX_BLKPAG_PXN);
+	pte |= (LX_BLKPAG_UXN | LX_BLKPAG_PXN);
 	/* and either to executable */
 	xn = user ? LX_BLKPAG_UXN : LX_BLKPAG_PXN;
 	if (prot & VM_PROT_EXECUTE)
@@ -1115,9 +1118,9 @@ _pmap_pte_adjust_cacheflags(pt_entry_t pte, u_int flags)
 
 	pte &= ~LX_BLKPAG_ATTR_MASK;
 
-	switch (flags & (PMAP_CACHE_MASK|PMAP_DEV_MASK)) {
-	case PMAP_DEV_SO ... PMAP_DEV_SO | PMAP_CACHE_MASK:
-		pte |= LX_BLKPAG_ATTR_DEVICE_MEM_SO;	/* Device-nGnRnE */
+	switch (flags & (PMAP_CACHE_MASK | PMAP_DEV_MASK)) {
+	case PMAP_DEV_NP ... PMAP_DEV_NP | PMAP_CACHE_MASK:
+		pte |= LX_BLKPAG_ATTR_DEVICE_MEM_NP;	/* Device-nGnRnE */
 		break;
 	case PMAP_DEV ... PMAP_DEV | PMAP_CACHE_MASK:
 		pte |= LX_BLKPAG_ATTR_DEVICE_MEM;	/* Device-nGnRE */
@@ -1348,7 +1351,7 @@ _pmap_protect_pv(struct pmap_page *pp, struct pv_entry *pv, vm_prot_t prot)
 
 	/* get prot mask from pte */
 	pteprot = VM_PROT_READ;	/* a valid pte can always be readable */
-	if ((pte & (LX_BLKPAG_OS_WRITE|LX_BLKPAG_DBM)) != 0)
+	if ((pte & (LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM)) != 0)
 		pteprot |= VM_PROT_WRITE;
 	if (l3pte_executable(pte, user))
 		pteprot |= VM_PROT_EXECUTE;
@@ -1407,9 +1410,7 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 #ifdef UVMHIST
 		pt_entry_t opte;
 #endif
-		struct vm_page *pg;
 		struct pmap_page *pp;
-		paddr_t pa;
 		uint32_t mdattr;
 		bool executable;
 
@@ -1425,24 +1426,30 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 			continue;
 		}
 
-		pa = lxpde_pa(pte);
-		pg = PHYS_TO_VM_PAGE(pa);
-		if (pg != NULL) {
-			pp = VM_PAGE_TO_PP(pg);
-			PMAP_COUNT(protect_managed);
-		} else {
+		if ((pte & LX_BLKPAG_OS_WIRED) == 0) {
+			const paddr_t pa = lxpde_pa(pte);
+			struct vm_page *const pg = PHYS_TO_VM_PAGE(pa);
+
+			if (pg != NULL) {
+				pp = VM_PAGE_TO_PP(pg);
+				PMAP_COUNT(protect_managed);
+			} else {
 #ifdef __HAVE_PMAP_PV_TRACK
-			pp = pmap_pv_tracked(pa);
+				pp = pmap_pv_tracked(pa);
 #ifdef PMAPCOUNTERS
-			if (pp != NULL)
-				PMAP_COUNT(protect_pvmanaged);
-			else
-				PMAP_COUNT(protect_unmanaged);
+				if (pp != NULL)
+					PMAP_COUNT(protect_pvmanaged);
+				else
+					PMAP_COUNT(protect_unmanaged);
 #endif
 #else
+				pp = NULL;
+				PMAP_COUNT(protect_unmanaged);
+#endif /* __HAVE_PMAP_PV_TRACK */
+			}
+		} else {	/* kenter */
 			pp = NULL;
 			PMAP_COUNT(protect_unmanaged);
-#endif /* __HAVE_PMAP_PV_TRACK */
 		}
 
 		if (pp != NULL) {
@@ -2071,9 +2078,9 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	 * read permission is treated as an access permission internally.
 	 * require to add PROT_READ even if only PROT_WRITE or PROT_EXEC
 	 */
-	if (prot & (VM_PROT_WRITE|VM_PROT_EXECUTE))
+	if (prot & (VM_PROT_WRITE | VM_PROT_EXECUTE))
 		prot |= VM_PROT_READ;
-	if (flags & (VM_PROT_WRITE|VM_PROT_EXECUTE))
+	if (flags & (VM_PROT_WRITE | VM_PROT_EXECUTE))
 		flags |= VM_PROT_READ;
 
 	mdattr = VM_PROT_READ | VM_PROT_WRITE;
@@ -2434,7 +2441,7 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 		return;
 	}
 
-	if ((prot & (VM_PROT_READ|VM_PROT_WRITE|VM_PROT_EXECUTE)) ==
+	if ((prot & (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE)) ==
 	    VM_PROT_NONE) {
 		pmap_page_remove(pp, prot);
 	} else {
@@ -2549,7 +2556,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	 * If DBM is 1, it is considered a writable page.
 	 */
 	pmap_prot = VM_PROT_READ;
-	if ((pte & (LX_BLKPAG_OS_WRITE|LX_BLKPAG_DBM)) != 0)
+	if ((pte & (LX_BLKPAG_OS_WRITE | LX_BLKPAG_DBM)) != 0)
 		pmap_prot |= VM_PROT_WRITE;
 
 	if (l3pte_executable(pte, pm != pmap_kernel()))
@@ -2559,7 +2566,7 @@ pmap_fault_fixup(struct pmap *pm, vaddr_t va, vm_prot_t accessprot, bool user)
 	    va, pmap_prot, accessprot, 0);
 
 	/* ignore except read/write */
-	accessprot &= (VM_PROT_READ|VM_PROT_WRITE|VM_PROT_EXECUTE);
+	accessprot &= (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
 
 	/* PROT_EXEC requires implicit PROT_READ */
 	if (accessprot & VM_PROT_EXECUTE)
@@ -2869,7 +2876,6 @@ kvtopte(vaddr_t va)
 }
 
 #ifdef DDB
-
 void
 pmap_db_pmap_print(struct pmap *pm,
     void (*pr)(const char *, ...) __printflike(1, 2))
@@ -2882,4 +2888,3 @@ pmap_db_pmap_print(struct pmap *pm,
 	pr(" pm_activated  = %d\n\n", pm->pm_activated);
 }
 #endif /* DDB */
-

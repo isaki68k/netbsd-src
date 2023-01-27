@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.87 2022/08/23 05:31:12 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.89 2022/10/29 07:32:54 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,21 +38,21 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.87 2022/08/23 05:31:12 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.89 2022/10/29 07:32:54 skrll Exp $")
 
-#ifdef AARCH64_DEVICE_MEM_STRONGLY_ORDERED
+#ifdef AARCH64_DEVICE_MEM_NONPOSTED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE
 #else
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRE
 #endif
-#define	MAIR_DEVICE_MEM_SO	MAIR_DEVICE_nGnRnE
+#define	MAIR_DEVICE_MEM_NP	MAIR_DEVICE_nGnRnE
 
 /*#define DEBUG_LOCORE			// debug print */
 /*#define DEBUG_LOCORE_PRINT_LOCK	// avoid mixing AP's output */
 
 #define LOCORE_EL2
 
-#define BOOT_AP_STACKSIZE	256	/* size of temporally stack for APs */
+#define BOOT_AP_STACKSIZE	256	/* size of temporary stack for APs */
 #define PMAPBOOT_PAGEALLOCMAX	(1024 * 1024)	/* reserved size from _end[] */
 
 #if (defined(VERBOSE_INIT_ARM) || defined(DEBUG_LOCORE)) && defined(EARLYCONS)
@@ -952,7 +952,7 @@ mair_setting:
 	    __SHIFTIN(MAIR_NORMAL_NC, MAIR_ATTR1) |	\
 	    __SHIFTIN(MAIR_NORMAL_WT, MAIR_ATTR2) |	\
 	    __SHIFTIN(MAIR_DEVICE_MEM, MAIR_ATTR3) |	\
-	    __SHIFTIN(MAIR_DEVICE_MEM_SO, MAIR_ATTR4))
+	    __SHIFTIN(MAIR_DEVICE_MEM_NP, MAIR_ATTR4))
 
 #define VIRT_BIT	48
 

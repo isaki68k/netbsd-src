@@ -1,4 +1,4 @@
-/*	$NetBSD: mbuf.h,v 1.232 2021/02/19 14:51:59 christos Exp $	*/
+/*	$NetBSD: mbuf.h,v 1.237 2022/12/16 08:42:55 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1999, 2001, 2007 The NetBSD Foundation, Inc.
@@ -710,6 +710,7 @@ struct mbstat_cpu {
 #define MBUF_MCLLOWAT		5	/* int: mbuf cluster low water mark */
 #define MBUF_STATS		6	/* struct: mbstat */
 #define MBUF_MOWNERS		7	/* struct: m_owner[] */
+#define MBUF_NMBCLUSTERS_LIMIT	8	/* int: limit of nmbclusters */
 
 #ifdef _KERNEL
 extern struct mbstat mbstat;
@@ -800,6 +801,7 @@ int	m_tag_copy_chain(struct mbuf *, struct mbuf *);
 					    */
 #define PACKET_TAG_MPLS			29 /* Indicate it's for MPLS */
 #define PACKET_TAG_SRCROUTE		30 /* IPv4 source routing */
+#define PACKET_TAG_ETHERNET_SRC		31 /* Ethernet source address */
 
 /*
  * Return the number of bytes in the mbuf chain, m.

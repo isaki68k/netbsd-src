@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_machdep.c,v 1.5 2022/09/29 06:51:17 skrll Exp $	*/
+/*	$NetBSD: vm_machdep.c,v 1.7 2022/12/04 16:23:48 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.5 2022/09/29 06:51:17 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.7 2022/12/04 16:23:48 skrll Exp $");
 
 #define _PMAP_PRIVATE
 
@@ -77,8 +77,7 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	struct trapframe *tf;
 
 	KASSERT(l1 == curlwp || l1 == &lwp0);
-
-	l2->l_md.md_astpending = 0;
+	KASSERT(l2->l_md.md_astpending == 0);
 
 	/* Copy the PCB from parent. */
 	*pcb2 = *pcb1;
@@ -111,7 +110,7 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	 */
 	--tf;	/* cpu_switchto uses trapframes */
 
-	tf->tf_sr = riscvreg_status_read();
+	tf->tf_sr = csr_sstatus_read();
 	tf->tf_s0 = (intptr_t)func;			/* S0 */
 	tf->tf_s1 = (intptr_t)arg;			/* S1 */
 	tf->tf_ra = (intptr_t)cpu_lwp_trampoline;	/* RA */
