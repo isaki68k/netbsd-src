@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.61 2022/05/02 10:13:15 skrll Exp $ */
+/* $NetBSD: armreg.h,v 1.63 2022/12/01 00:32:52 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -248,6 +248,10 @@ AARCH64REG_READ_INLINE(id_aa64dfr0_el1)
 #define	 ID_AA64DFR0_EL1_PMUVER_NONE	 0
 #define	 ID_AA64DFR0_EL1_PMUVER_V3	 1
 #define	 ID_AA64DFR0_EL1_PMUVER_NOV3	 2
+#define	 ID_AA64DFR0_EL1_PMUVER_V3P1	 4
+#define	 ID_AA64DFR0_EL1_PMUVER_V3P4	 5
+#define	 ID_AA64DFR0_EL1_PMUVER_V3P5	 6
+#define	 ID_AA64DFR0_EL1_PMUVER_V3P7	 7
 #define	 ID_AA64DFR0_EL1_PMUVER_IMPL	 15
 #define	ID_AA64DFR0_EL1_TRACEVER	__BITS(4,7)
 #define	 ID_AA64DFR0_EL1_TRACEVER_NONE	 0
@@ -1221,6 +1225,7 @@ AARCH64REG_WRITE_INLINE(pmcr_el0)
 #define	PMCR_IMP		__BITS(31,24)	// Implementor code
 #define	PMCR_IDCODE		__BITS(23,16)	// Identification code
 #define	PMCR_N			__BITS(15,11)	// Number of event counters
+#define	PMCR_LP			__BIT(7)	// Long event counter enable
 #define	PMCR_LC			__BIT(6)	// Long cycle counter enable
 #define	PMCR_DP			__BIT(5)	// Disable cycle counter when event
 						// counting is prohibited
@@ -1250,9 +1255,15 @@ AARCH64REG_WRITE_INLINE(pmevtyper1_el0)
 AARCH64REG_WRITE_INLINE(pmintenclr_el1)
 AARCH64REG_WRITE_INLINE(pmintenset_el1)
 
+#define PMINTEN_C		__BIT(31)	// for the cycle counter
+#define PMINTEN_P		__BITS(30,0)	// for event counters (0-30)
+
 AARCH64REG_WRITE_INLINE(pmovsclr_el0)
 AARCH64REG_READ_INLINE(pmovsset_el0)
 AARCH64REG_WRITE_INLINE(pmovsset_el0)
+
+#define PMOVS_C			__BIT(31)	// for the cycle counter
+#define PMOVS_P			__BITS(30,0)	// for event counters (0-30)
 
 AARCH64REG_WRITE_INLINE(pmselr_el0)
 

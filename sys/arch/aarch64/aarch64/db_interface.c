@@ -1,4 +1,4 @@
-/* $NetBSD: db_interface.c,v 1.19 2022/09/19 17:23:14 ryo Exp $ */
+/* $NetBSD: db_interface.c,v 1.22 2022/11/02 08:37:32 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.19 2022/09/19 17:23:14 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.22 2022/11/02 08:37:32 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -170,7 +170,7 @@ db_write_text(vaddr_t addr, size_t size, const char *data)
 		 * will stop...
 		 */
 		/* old pte is returned by pmap_kvattr */
-		pte = pmap_kvattr(ptep, VM_PROT_EXECUTE|VM_PROT_READ|VM_PROT_WRITE);
+		pte = pmap_kvattr(ptep, VM_PROT_EXECUTE | VM_PROT_READ | VM_PROT_WRITE);
 		aarch64_tlbi_all();
 
 		s = size;
@@ -431,8 +431,8 @@ db_pte_print(pt_entry_t pte, int level,
 		case LX_BLKPAG_ATTR_DEVICE_MEM:
 			pr(", DEV");
 			break;
-		case LX_BLKPAG_ATTR_DEVICE_MEM_SO:
-			pr(", DEV(SO)");
+		case LX_BLKPAG_ATTR_DEVICE_MEM_NP:
+			pr(", DEV(NP)");
 			break;
 		default:
 			pr(", ATTR(%lu)", __SHIFTOUT(pte, LX_BLKPAG_ATTR_INDX));
@@ -566,7 +566,7 @@ dump_ln_table(bool countmode, pd_entry_t *pdp, int level, int lnindex,
 	if (pg == NULL) {
 		pr("%sL%d: pa=%lx pg=NULL\n", spc, level, pa);
 	} else {
-		pr("%sL%d: pa=%lx pg=%p", spc, level, pa, pg);
+		pr("%sL%d: pa=%lx pg=%p\n", spc, level, pa, pg);
 	}
 
 	for (i = n = 0; i < Ln_ENTRIES; i++) {

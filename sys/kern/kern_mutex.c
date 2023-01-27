@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.99 2022/04/09 23:46:10 riastradh Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.102 2023/01/27 09:28:41 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.99 2022/04/09 23:46:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.102 2023/01/27 09:28:41 ozaki-r Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -145,20 +145,18 @@ do {								\
 
 #define	MUTEX_SPIN_SPLRAISE(mtx)					\
 do {									\
-	struct cpu_info *x__ci;						\
-	int x__cnt, s;							\
-	s = splraiseipl(MUTEX_SPIN_IPL(mtx));				\
-	x__ci = curcpu();						\
-	x__cnt = x__ci->ci_mtx_count--;					\
+	const int s = splraiseipl(MUTEX_SPIN_IPL(mtx));			\
+	struct cpu_info * const x__ci = curcpu();			\
+	const int x__cnt = x__ci->ci_mtx_count--;			\
 	__insn_barrier();						\
 	if (x__cnt == 0)						\
-		x__ci->ci_mtx_oldspl = (s);				\
+		x__ci->ci_mtx_oldspl = s;				\
 } while (/* CONSTCOND */ 0)
 
 #define	MUTEX_SPIN_SPLRESTORE(mtx)					\
 do {									\
-	struct cpu_info *x__ci = curcpu();				\
-	int s = x__ci->ci_mtx_oldspl;					\
+	struct cpu_info * const x__ci = curcpu();			\
+	const int s = x__ci->ci_mtx_oldspl;				\
 	__insn_barrier();						\
 	if (++(x__ci->ci_mtx_count) == 0)				\
 		splx(s);						\
@@ -348,7 +346,6 @@ mutex_abort(const char *func, size_t line, const kmutex_t *mtx, const char *msg)
  *	sleeps - see comments in mutex_vector_enter() about releasing
  *	mutexes unlocked.
  */
-void _mutex_init(kmutex_t *, kmutex_type_t, int, uintptr_t);
 void
 _mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl,
     uintptr_t return_address)
@@ -519,7 +516,7 @@ mutex_vector_enter(kmutex_t *mtx)
 	MUTEX_ASSERT(mtx, !cpu_intr_p());
 	MUTEX_WANTLOCK(mtx);
 
-	if (panicstr == NULL) {
+	if (__predict_true(panicstr == NULL)) {
 		KDASSERT(pserialize_not_in_read_section());
 		LOCKDEBUG_BARRIER(&kernel_lock, 1);
 	}

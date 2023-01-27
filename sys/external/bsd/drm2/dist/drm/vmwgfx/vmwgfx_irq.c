@@ -1,4 +1,4 @@
-/*	$NetBSD: vmwgfx_irq.c,v 1.3 2021/12/18 23:45:45 riastradh Exp $	*/
+/*	$NetBSD: vmwgfx_irq.c,v 1.6 2022/10/25 23:36:21 riastradh Exp $	*/
 
 // SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
@@ -28,9 +28,11 @@
  **************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vmwgfx_irq.c,v 1.3 2021/12/18 23:45:45 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vmwgfx_irq.c,v 1.6 2022/10/25 23:36:21 riastradh Exp $");
 
 #include <linux/sched/signal.h>
+
+#include <drm/drm_irq.h>
 
 #include "vmwgfx_drv.h"
 
@@ -47,16 +49,28 @@ __KERNEL_RCSID(0, "$NetBSD: vmwgfx_irq.c,v 1.3 2021/12/18 23:45:45 riastradh Exp
  * vmw_irq_handler has returned with IRQ_WAKE_THREAD.
  *
  */
+#ifdef __NetBSD__
+static void
+vmw_thread_fn(struct work *work, void *arg)
+#else
 static irqreturn_t vmw_thread_fn(int irq, void *arg)
+#endif
 {
 	struct drm_device *dev = (struct drm_device *)arg;
 	struct vmw_private *dev_priv = vmw_priv(dev);
 	irqreturn_t ret = IRQ_NONE;
 
+#ifdef __NetBSD__
+	atomic_store_relaxed(&dev_priv->irqthread_scheduled, false);
+#endif
+
 	if (test_and_clear_bit(VMW_IRQTHREAD_FENCE,
 			       dev_priv->irqthread_pending)) {
+		spin_lock(&dev_priv->fence_lock);
 		vmw_fences_update(dev_priv->fman);
-		wake_up_all(&dev_priv->fence_queue);
+		DRM_SPIN_WAKEUP_ALL(&dev_priv->fence_queue,
+		    &dev_priv->fence_lock);
+		spin_unlock(&dev_priv->fence_lock);
 		ret = IRQ_HANDLED;
 	}
 
@@ -66,7 +80,9 @@ static irqreturn_t vmw_thread_fn(int irq, void *arg)
 		ret = IRQ_HANDLED;
 	}
 
+#ifndef __NetBSD__
 	return ret;
+#endif
 }
 
 /**
@@ -87,17 +103,31 @@ static irqreturn_t vmw_irq_handler(int irq, void *arg)
 	uint32_t status, masked_status;
 	irqreturn_t ret = IRQ_HANDLED;
 
+#ifdef __NetBSD__
+	status = bus_space_read_4(dev_priv->iot, dev_priv->ioh,
+	    VMWGFX_IRQSTATUS_PORT);
+#else
 	status = inl(dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
+#endif
 	masked_status = status & READ_ONCE(dev_priv->irq_mask);
 
 	if (likely(status))
+#ifdef __NetBSD__
+		bus_space_write_4(dev_priv->iot, dev_priv->ioh,
+		    VMWGFX_IRQSTATUS_PORT, status);
+#else
 		outl(status, dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
+#endif
 
 	if (!status)
 		return IRQ_NONE;
 
-	if (masked_status & SVGA_IRQFLAG_FIFO_PROGRESS)
-		wake_up_all(&dev_priv->fifo_queue);
+	if (masked_status & SVGA_IRQFLAG_FIFO_PROGRESS) {
+		spin_lock(&dev_priv->fifo_lock);
+		DRM_SPIN_WAKEUP_ALL(&dev_priv->fifo_queue,
+		    &dev_priv->fifo_lock);
+		spin_unlock(&dev_priv->fifo_lock);
+	}
 
 	if ((masked_status & (SVGA_IRQFLAG_ANY_FENCE |
 			      SVGA_IRQFLAG_FENCE_GOAL)) &&
@@ -109,6 +139,16 @@ static irqreturn_t vmw_irq_handler(int irq, void *arg)
 	    !test_and_set_bit(VMW_IRQTHREAD_CMDBUF,
 			      dev_priv->irqthread_pending))
 		ret = IRQ_WAKE_THREAD;
+
+#ifdef __NetBSD__
+	if (ret == IRQ_WAKE_THREAD) {
+		if (atomic_swap_uint(&dev_priv->irqthread_scheduled, 1) == 0) {
+			workqueue_enqueue(dev_priv->irqthread_wq,
+			    &dev_priv->irqthread_work, NULL);
+		}
+		ret = IRQ_HANDLED;
+	}
+#endif
 
 	return ret;
 }
@@ -125,6 +165,8 @@ void vmw_update_seqno(struct vmw_private *dev_priv,
 	u32 *fifo_mem = dev_priv->mmio_virt;
 	uint32_t seqno = vmw_mmio_read(fifo_mem + SVGA_FIFO_FENCE);
 
+	assert_spin_locked(&dev_priv->fence_lock);
+
 	if (dev_priv->last_read_seqno != seqno) {
 		dev_priv->last_read_seqno = seqno;
 		vmw_marker_pull(&fifo_state->marker_queue, seqno);
@@ -137,6 +179,8 @@ bool vmw_seqno_passed(struct vmw_private *dev_priv,
 {
 	struct vmw_fifo_state *fifo_state;
 	bool ret;
+
+	assert_spin_locked(&dev_priv->fence_lock);
 
 	if (likely(dev_priv->last_read_seqno - seqno < VMW_FENCE_WRAP))
 		return true;
@@ -175,7 +219,9 @@ int vmw_fallback_wait(struct vmw_private *dev_priv,
 	int ret;
 	unsigned long end_jiffies = jiffies + timeout;
 	bool (*wait_condition)(struct vmw_private *, uint32_t);
+#ifndef __NetBSD__
 	DEFINE_WAIT(__wait);
+#endif
 
 	wait_condition = (fifo_idle) ? &vmw_fifo_idle :
 		&vmw_seqno_passed;
@@ -194,10 +240,40 @@ int vmw_fallback_wait(struct vmw_private *dev_priv,
 		}
 	}
 
+	spin_lock(&dev_priv->fence_lock);
+
 	signal_seq = atomic_read(&dev_priv->marker_seq);
 	ret = 0;
 
 	for (;;) {
+#ifdef __NetBSD__
+		if (!lazy) {
+			if (wait_condition(dev_priv, seqno))
+				break;
+			spin_unlock(&dev_priv->fence_lock);
+			if ((++count & 0xf) == 0)
+				yield();
+			spin_lock(&dev_priv->fence_lock);
+		} else if (interruptible) {
+			DRM_SPIN_TIMED_WAIT_UNTIL(ret, &dev_priv->fence_queue,
+			    &dev_priv->fence_lock, /*timeout*/1,
+			    wait_condition(dev_priv, seqno));
+		} else {
+			DRM_SPIN_TIMED_WAIT_NOINTR_UNTIL(ret,
+			    &dev_priv->fence_queue,
+			    &dev_priv->fence_lock, /*timeout*/1,
+			    wait_condition(dev_priv, seqno));
+		}
+		if (ret) {	/* success or error but not timeout */
+			if (ret > 0) /* success */
+				ret = 0;
+			break;
+		}
+		if (time_after_eq(jiffies, end_jiffies)) {
+			DRM_ERROR("SVGA device lockup.\n");
+			break;
+		}
+#else
 		prepare_to_wait(&dev_priv->fence_queue, &__wait,
 				(interruptible) ?
 				TASK_INTERRUPTIBLE : TASK_UNINTERRUPTIBLE);
@@ -225,14 +301,22 @@ int vmw_fallback_wait(struct vmw_private *dev_priv,
 			ret = -ERESTARTSYS;
 			break;
 		}
+#endif
 	}
+#ifndef __NetBSD__
 	finish_wait(&dev_priv->fence_queue, &__wait);
+#endif
 	if (ret == 0 && fifo_idle) {
 		u32 *fifo_mem = dev_priv->mmio_virt;
 
 		vmw_mmio_write(signal_seq, fifo_mem + SVGA_FIFO_FENCE);
 	}
+#ifdef __NetBSD__
+	DRM_SPIN_WAKEUP_ALL(&dev_priv->fence_queue, &dev_priv->fence_lock);
+	spin_unlock(&dev_priv->fence_lock);
+#else
 	wake_up_all(&dev_priv->fence_queue);
+#endif
 out_err:
 	if (fifo_idle)
 		up_read(&fifo_state->rwsem);
@@ -245,7 +329,12 @@ void vmw_generic_waiter_add(struct vmw_private *dev_priv,
 {
 	spin_lock_bh(&dev_priv->waiter_lock);
 	if ((*waiter_count)++ == 0) {
+#ifdef __NetBSD__
+		bus_space_write_4(dev_priv->iot, dev_priv->ioh,
+		    VMWGFX_IRQSTATUS_PORT, flag);
+#else
 		outl(flag, dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
+#endif
 		dev_priv->irq_mask |= flag;
 		vmw_write(dev_priv, SVGA_REG_IRQMASK, dev_priv->irq_mask);
 	}
@@ -294,36 +383,45 @@ int vmw_wait_seqno(struct vmw_private *dev_priv,
 	long ret;
 	struct vmw_fifo_state *fifo = &dev_priv->fifo;
 
-	if (likely(dev_priv->last_read_seqno - seqno < VMW_FENCE_WRAP))
+	spin_lock(&dev_priv->fence_lock);
+	if (likely(dev_priv->last_read_seqno - seqno < VMW_FENCE_WRAP)) {
+		spin_unlock(&dev_priv->fence_lock);
 		return 0;
+	}
 
-	if (likely(vmw_seqno_passed(dev_priv, seqno)))
+	if (likely(vmw_seqno_passed(dev_priv, seqno))) {
+		spin_unlock(&dev_priv->fence_lock);
 		return 0;
+	}
 
 	vmw_fifo_ping_host(dev_priv, SVGA_SYNC_GENERIC);
 
-	if (!(fifo->capabilities & SVGA_FIFO_CAP_FENCE))
+	if (!(fifo->capabilities & SVGA_FIFO_CAP_FENCE)) {
+		spin_unlock(&dev_priv->fence_lock);
 		return vmw_fallback_wait(dev_priv, lazy, true, seqno,
 					 interruptible, timeout);
+	}
 
-	if (!(dev_priv->capabilities & SVGA_CAP_IRQMASK))
+	if (!(dev_priv->capabilities & SVGA_CAP_IRQMASK)) {
+		spin_unlock(&dev_priv->fence_lock);
 		return vmw_fallback_wait(dev_priv, lazy, false, seqno,
 					 interruptible, timeout);
+	}
 
 	vmw_seqno_waiter_add(dev_priv);
 
 	if (interruptible)
-		ret = wait_event_interruptible_timeout
-		    (dev_priv->fence_queue,
-		     vmw_seqno_passed(dev_priv, seqno),
-		     timeout);
+		DRM_SPIN_TIMED_WAIT_UNTIL(ret, &dev_priv->fence_queue,
+		    &dev_priv->fence_lock, timeout,
+		    vmw_seqno_passed(dev_priv, seqno));
 	else
-		ret = wait_event_timeout
-		    (dev_priv->fence_queue,
-		     vmw_seqno_passed(dev_priv, seqno),
-		     timeout);
+		DRM_SPIN_TIMED_WAIT_NOINTR_UNTIL(ret, &dev_priv->fence_queue,
+		    &dev_priv->fence_lock, timeout,
+		    vmw_seqno_passed(dev_priv, seqno));
 
 	vmw_seqno_waiter_remove(dev_priv);
+
+	spin_unlock(&dev_priv->fence_lock);
 
 	if (unlikely(ret == 0))
 		ret = -EBUSY;
@@ -338,8 +436,15 @@ static void vmw_irq_preinstall(struct drm_device *dev)
 	struct vmw_private *dev_priv = vmw_priv(dev);
 	uint32_t status;
 
+#ifdef __NetBSD__
+	status = bus_space_read_4(dev_priv->iot, dev_priv->ioh,
+	    VMWGFX_IRQSTATUS_PORT);
+	bus_space_write_4(dev_priv->iot, dev_priv->ioh, VMWGFX_IRQSTATUS_PORT,
+	    status);
+#else
 	status = inl(dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
 	outl(status, dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
+#endif
 }
 
 void vmw_irq_uninstall(struct drm_device *dev)
@@ -355,11 +460,24 @@ void vmw_irq_uninstall(struct drm_device *dev)
 
 	vmw_write(dev_priv, SVGA_REG_IRQMASK, 0);
 
+#ifdef __NetBSD__
+	status = bus_space_read_4(dev_priv->iot, dev_priv->ioh,
+	    VMWGFX_IRQSTATUS_PORT);
+	bus_space_write_4(dev_priv->iot, dev_priv->ioh, VMWGFX_IRQSTATUS_PORT,
+	    status);
+#else
 	status = inl(dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
 	outl(status, dev_priv->io_start + VMWGFX_IRQSTATUS_PORT);
+#endif
 
 	dev->irq_enabled = false;
+#ifdef __NetBSD__
+	int ret = drm_irq_uninstall(dev);
+	KASSERT(ret == 0);
+	workqueue_destroy(dev_priv->irqthread_wq);
+#else
 	free_irq(dev->irq, dev);
+#endif
 }
 
 /**
@@ -378,8 +496,21 @@ int vmw_irq_install(struct drm_device *dev, int irq)
 
 	vmw_irq_preinstall(dev);
 
+#ifdef __NetBSD__
+	/* XXX errno NetBSD->Linux */
+	ret = -workqueue_create(&vmw_priv(dev)->irqthread_wq, "vmwgfirq",
+	    vmw_thread_fn, dev, PRI_NONE, IPL_DRM, WQ_MPSAFE);
+	if (ret < 0)
+		return ret;
+	ret = drm_irq_install(dev);
+	if (ret < 0) {
+		workqueue_destroy(vmw_priv(dev)->irqthread_wq);
+		vmw_priv(dev)->irqthread_wq = NULL;
+	}
+#else
 	ret = request_threaded_irq(irq, vmw_irq_handler, vmw_thread_fn,
 				   IRQF_SHARED, VMWGFX_DRIVER_NAME, dev);
+#endif
 	if (ret < 0)
 		return ret;
 

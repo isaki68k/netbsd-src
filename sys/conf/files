@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1301 2022/07/24 18:04:48 mrg Exp $
+#	$NetBSD: files,v 1.1306 2022/12/28 18:19:44 jakllsch Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -144,10 +144,13 @@ defflag opt_todr.h		TODR_DEBUG
 
 defparam opt_maxlwp.h		MAXLWP
 
+defflag opt_efi.h		EFI_RUNTIME
+
 # compatibility options
 #
 defflag opt_compat_netbsd.h	COMPAT_NETBSD
-defflag	opt_compat_netbsd.h	COMPAT_90: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_100: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_90: COMPAT_100, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_80: COMPAT_90, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_80, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_60: COMPAT_70, COMPAT_NETBSD
@@ -434,6 +437,10 @@ file	dev/ic/ssdfb.c	ssdfb
 # Sparkfun Serial motor controller (attaches via I2C or SPI)
 device  scmd
 file	dev/ic/scmd.c	scmd
+
+# Bosch BMP280 / BME280 sensor (attaches via I2C or SPI)
+device  bmx280thp
+file	dev/ic/bmx280.c	bmx280thp
 
 # Generic HID support (used by USB, bluetooth and i2c)
 include "dev/hid/files.hid"
@@ -1157,6 +1164,11 @@ define	dwiic
 device dwiic: dwiic, i2cbus
 file	dev/ic/dwiic.c			dwiic
 
+# Cadence I2C controller
+define	cdnsiic
+device	cdnsiic: i2cbus
+file	dev/ic/cdnsiic.c		cdnsiic
+
 # ACPI power management timer (hardware access, independent of ACPI)
 #
 define acpipmtimer
@@ -1452,7 +1464,6 @@ defpseudo vlan:		ifnet, ether
 defpseudo bridge:	ifnet, ether
 defpseudo vether:	ifnet, ether
 defpseudo bpfilter:	ifnet, bpf_filter
-defpseudo strip:	ifnet
 defpseudo gre:		ifnet
 defpseudo gif:		ifnet
 defpseudo faith:	ifnet

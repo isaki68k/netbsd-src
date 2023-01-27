@@ -1,4 +1,4 @@
-/* $NetBSD: pte.h,v 1.8 2022/09/30 06:23:58 skrll Exp $ */
+/* $NetBSD: pte.h,v 1.11 2022/11/12 07:34:18 skrll Exp $ */
 
 /*
  * Copyright (c) 2014, 2019, 2021 The NetBSD Foundation, Inc.
@@ -31,33 +31,39 @@
  */
 
 #ifndef _RISCV_PTE_H_
-#define _RISCV_PTE_H_
+#define	_RISCV_PTE_H_
 
 #ifdef _LP64	/* Sv39 */
-#define PTE_PPN		__BITS(53, 10)
+#define	PTE_PPN		__BITS(53, 10)
 #define	PTE_PPN0	__BITS(18, 10)
 #define	PTE_PPN1	__BITS(27, 19)
 #define	PTE_PPN2	__BITS(53, 28)
 typedef uint64_t pt_entry_t;
 typedef uint64_t pd_entry_t;
-#define atomic_cas_pte	atomic_cas_64
+#define	atomic_cas_pte	atomic_cas_64
 #else		/* Sv32 */
-#define PTE_PPN		__BITS(31, 10)
+#define	PTE_PPN		__BITS(31, 10)
 #define	PTE_PPN0	__BITS(19, 10)
 #define	PTE_PPN1	__BITS(31, 20)
 typedef uint32_t pt_entry_t;
 typedef uint32_t pd_entry_t;
-#define atomic_cas_pte	atomic_cas_32
+#define	atomic_cas_pte	atomic_cas_32
 #endif
 
-#define PTE_PPN_SHIFT	10
+#define	PTE_PPN_SHIFT	10
 
-#define NPTEPG		(PAGE_SIZE / sizeof(pt_entry_t))
-#define NSEGPG		NPTEPG
-#define NPDEPG		NPTEPG
+#define	NPTEPG		(PAGE_SIZE / sizeof(pt_entry_t))
+#define	NSEGPG		NPTEPG
+#define	NPDEPG		NPTEPG
+
+
+/* HardWare PTE bits SV39 */
+#define PTE_N		__BIT(63)	// Svnapot
+#define PTE_PBMT	__BITS(62, 61)	// Svpbmt
+#define PTE_reserved0	__BITS(60, 54)	//
 
 /* Software PTE bits. */
-#define	PTE_RSW		__BITS(9,8)
+#define	PTE_RSW		__BITS(9, 8)
 #define	PTE_WIRED	__BIT(9)
 
 /* Hardware PTE bits. */
@@ -71,13 +77,13 @@ typedef uint32_t pd_entry_t;
 #define	PTE_R		__BIT(1)	// Read
 #define	PTE_V		__BIT(0)	// Valid
 
-#define PTE_HARDWIRED	(PTE_A | PTE_D)
-#define PTE_KERN	(PTE_V | PTE_G | PTE_A | PTE_D)
-#define PTE_RW		(PTE_R | PTE_W)
-#define PTE_RX		(PTE_R | PTE_X)
+#define	PTE_HARDWIRED	(PTE_A | PTE_D)
+#define	PTE_KERN	(PTE_V | PTE_G | PTE_A | PTE_D)
+#define	PTE_RW		(PTE_R | PTE_W)
+#define	PTE_RX		(PTE_R | PTE_X)
 
-#define PA_TO_PTE(pa)	(((pa) >> PAGE_SHIFT) << PTE_PPN_SHIFT)
-#define PTE_TO_PA(pte)	(((pte) >> PTE_PPN_SHIFT) << PAGE_SHIFT)
+#define	PA_TO_PTE(pa)	(((pa) >> PAGE_SHIFT) << PTE_PPN_SHIFT)
+#define	PTE_TO_PA(pte)	(((pte) >> PTE_PPN_SHIFT) << PAGE_SHIFT)
 
 #define	L2_SHIFT	30
 #define	L1_SHIFT	21
@@ -94,9 +100,9 @@ typedef uint32_t pd_entry_t;
 #define	Ln_ENTRIES	(1 << 9)
 #define	Ln_ADDR_MASK	(Ln_ENTRIES - 1)
 
-#define pl2_i(va)	(((va) >> L2_SHIFT) & Ln_ADDR_MASK)
-#define pl1_i(va)	(((va) >> L1_SHIFT) & Ln_ADDR_MASK)
-#define pl0_i(va)	(((va) >> L0_SHIFT) & Ln_ADDR_MASK)
+#define	pl2_i(va)	(((va) >> L2_SHIFT) & Ln_ADDR_MASK)
+#define	pl1_i(va)	(((va) >> L1_SHIFT) & Ln_ADDR_MASK)
+#define	pl0_i(va)	(((va) >> L0_SHIFT) & Ln_ADDR_MASK)
 
 static inline const size_t
 pte_index(vaddr_t va)
@@ -155,7 +161,7 @@ pte_to_paddr(pt_entry_t pte)
 static inline pt_entry_t
 pte_nv_entry(bool kernel_p)
 {
-	return kernel_p ? PTE_G : 0;
+	return 0;
 }
 
 static inline pt_entry_t
@@ -259,19 +265,19 @@ pte_invalid_pde(void)
 static inline pd_entry_t
 pte_pde_pdetab(paddr_t pa, bool kernel_p)
 {
-	return PTE_V | (pa >> PAGE_SHIFT) << L2_SHIFT;
+	return PTE_V | (pa >> PAGE_SHIFT) << PTE_PPN_SHIFT;
 }
 
 static inline pd_entry_t
 pte_pde_ptpage(paddr_t pa, bool kernel_p)
 {
-	return PTE_V | PTE_X | PTE_W | PTE_R | (pa >> PAGE_SHIFT) << L2_SHIFT;
+	return PTE_V | (pa >> PAGE_SHIFT) << PTE_PPN_SHIFT;
 }
 
 static inline bool
 pte_pde_valid_p(pd_entry_t pde)
 {
-	return (pde & (PTE_X | PTE_W | PTE_R)) == 0;
+	return (pde & (PTE_X | PTE_W | PTE_R | PTE_V)) == PTE_V;
 }
 
 static inline paddr_t

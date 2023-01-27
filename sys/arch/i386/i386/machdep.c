@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.837 2022/08/20 23:48:50 riastradh Exp $	*/
+/*	$NetBSD: machdep.c,v 1.839 2022/10/26 23:38:07 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.837 2022/08/20 23:48:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.839 2022/10/26 23:38:07 riastradh Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -106,6 +106,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.837 2022/08/20 23:48:50 riastradh Exp 
 #include <sys/ras.h>
 #include <sys/ksyms.h>
 #include <sys/device.h>
+#include <sys/timevar.h>
 
 #ifdef KGDB
 #include <sys/kgdb.h>
@@ -153,6 +154,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.837 2022/08/20 23:48:50 riastradh Exp 
 #include <dev/isa/isareg.h>
 #include <machine/isa_machdep.h>
 #include <dev/ic/i8042reg.h>
+
+#include <ddb/db_active.h>
 
 #ifdef DDB
 #include <machine/db_machdep.h>
@@ -249,8 +252,6 @@ void init386(paddr_t);
 void initgdt(union descriptor *);
 
 static void i386_proc0_pcb_ldt_init(void);
-
-extern int time_adjusted;
 
 int *esym;
 int *eblob;
@@ -769,12 +770,7 @@ cpu_reboot(int howto, char *bootstr)
 		       vfs_unmount_forceone(curlwp))
 			;	/* do nothing */
 	} else {
-		int ddb = 0;
-#ifdef DDB
-		extern int db_active; /* XXX */
-		ddb = db_active;
-#endif
-		if (!ddb)
+		if (!db_active)
 			suspendsched();
 	}
 

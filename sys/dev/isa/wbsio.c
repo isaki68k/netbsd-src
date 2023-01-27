@@ -1,4 +1,4 @@
-/*	$NetBSD: wbsio.c,v 1.28 2022/10/01 07:22:55 msaitoh Exp $	*/
+/*	$NetBSD: wbsio.c,v 1.30 2022/12/16 00:02:28 msaitoh Exp $	*/
 /*	$OpenBSD: wbsio.c,v 1.10 2015/03/14 03:38:47 jsg Exp $	*/
 /*
  * Copyright (c) 2008 Mark Kettenis <kettenis@openbsd.org>
@@ -98,6 +98,7 @@ static const struct wbsio_product {
 	{ WBSIO_ID_NCT6793D,	12,	"NCT6793D" },
 	{ WBSIO_ID_NCT6795D,	12,	"NCT6795D" },
 	{ WBSIO_ID_NCT6796D,	13,	"NCT6796D" },
+	{ WBSIO_ID_NCT6797D,	13,	"NCT6797D" },
 	{ WBSIO_ID_NCT6798D,	13,	"NCT6798D" },
 	{ WBSIO_ID_NCT6799D,	13,	"NCT6799D" },
 };
@@ -827,7 +828,7 @@ wbsio_wdog_attach(device_t self)
 	case WBSIO_ID_NCT6779D:
 		break;
 	default:
-		/* WDT is not supoorted */
+		/* WDT is not supported */
 		return;
 	}
 

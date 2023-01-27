@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.271 2022/09/07 11:26:23 martin Exp $
+#	$NetBSD: Makefile,v 1.275 2022/12/19 23:19:51 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -10,7 +10,7 @@ SUBDIR+=	compat_util
 SUBDIR+=	compat_43   compat_sysctl_09_43
 SUBDIR+=	compat_09   compat_10   compat_12   compat_13   compat_14
 SUBDIR+=	compat_16   compat_20   compat_30   compat_40   compat_50
-SUBDIR+=	compat_60   compat_70   compat_80   compat_90
+SUBDIR+=	compat_60   compat_70   compat_80   compat_90   compat_100
 
 SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
 
@@ -25,6 +25,7 @@ SUBDIR+=	accf_dataready
 SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
 SUBDIR+=	adiantum
+SUBDIR+=	aht20temp
 SUBDIR+=	aio
 SUBDIR+=	audio
 SUBDIR+=	autofs
@@ -32,6 +33,8 @@ SUBDIR+=	blake2s
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
+SUBDIR+=	bmx280thp
+SUBDIR+=	bmx280thpi2c
 SUBDIR+=	bufq_disksort
 SUBDIR+=	bufq_fcfs
 SUBDIR+=	bufq_priocscan
@@ -310,7 +313,7 @@ SUBDIR+=	compat_netbsd32_13	compat_netbsd32_16
 SUBDIR+=	compat_netbsd32_20	compat_netbsd32_30
 SUBDIR+=	compat_netbsd32_40	compat_netbsd32_50
 SUBDIR+=	compat_netbsd32_60	compat_netbsd32_80
-SUBDIR+=	compat_netbsd32_90
+SUBDIR+=	compat_netbsd32_90	compat_netbsd32_100
 SUBDIR+=	compat_netbsd32_43
 SUBDIR+=	compat_netbsd32_coredump
 SUBDIR+=	compat_netbsd32_mqueue

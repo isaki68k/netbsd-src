@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.363 2022/08/20 23:48:50 riastradh Exp $	*/
+/*	$NetBSD: machdep.c,v 1.366 2022/10/26 23:38:06 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.363 2022/08/20 23:48:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.366 2022/10/26 23:38:06 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -153,6 +153,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.363 2022/08/20 23:48:50 riastradh Exp 
 #include <sys/asan.h>
 #include <sys/csan.h>
 #include <sys/msan.h>
+#include <sys/module.h>
+#include <sys/timevar.h>
 
 #ifdef KGDB
 #include <sys/kgdb.h>
@@ -201,6 +203,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.363 2022/08/20 23:48:50 riastradh Exp 
 #include <xen/include/public/version.h>
 #include <xen/include/public/vcpu.h>
 #endif /* XEN */
+
+#include <ddb/db_active.h>
 
 #ifdef DDB
 #include <machine/db_machdep.h>
@@ -268,7 +272,6 @@ vaddr_t ldt_vaddr;
 paddr_t ldt_paddr;
 
 static struct vm_map module_map_store;
-extern struct vm_map *module_map;
 extern struct bootspace bootspace;
 extern struct slotspace slotspace;
 
@@ -302,8 +305,6 @@ void dodumpsys(void);
 void dumpsys(void);
 
 static void x86_64_proc0_pcb_ldt_init(void);
-
-extern int time_adjusted;	/* XXX no common header */
 
 void dump_misc_init(void);
 void dump_seg_prep(void);
@@ -702,12 +703,7 @@ cpu_reboot(int howto, char *bootstr)
 		       vfs_unmount_forceone(curlwp))
 			;	/* do nothing */
 	} else {
-		int ddb = 0;
-#ifdef DDB
-		extern int db_active; /* XXX */
-		ddb = db_active;
-#endif
-		if (!ddb)
+		if (!db_active)
 			suspendsched();
 	}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $	*/
+/*	$NetBSD: vfs_init.c,v 1.59 2022/11/18 00:10:03 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.59 2022/11/18 00:10:03 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -85,6 +85,10 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $"
 #include <sys/sysctl.h>
 #include <sys/kauth.h>
 
+#include <miscfs/deadfs/deadfs.h>
+#include <miscfs/fifofs/fifo.h>
+#include <miscfs/specfs/specdev.h>
+
 /*
  * Sigh, such primitive tools are these...
  */
@@ -97,19 +101,10 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $"
 pool_cache_t pnbuf_cache;
 
 /*
- * The global list of vnode operations.
- */
-extern const struct vnodeop_desc * const vfs_op_descs[];
-
-/*
  * These vnodeopv_descs are listed here because they are not
  * associated with any particular file system, and thus cannot
  * be initialized by vfs_attach().
  */
-extern const struct vnodeopv_desc dead_vnodeop_opv_desc;
-extern const struct vnodeopv_desc fifo_vnodeop_opv_desc;
-extern const struct vnodeopv_desc spec_vnodeop_opv_desc;
-
 const struct vnodeopv_desc * const vfs_special_vnodeopv_descs[] = {
 	&dead_vnodeop_opv_desc,
 	&fifo_vnodeop_opv_desc,
@@ -150,8 +145,6 @@ static struct sysctllog *vfs_sysctllog;
 static void
 sysctl_vfs_setup(void)
 {
-	extern int vfs_magiclinks;
-	extern int vfs_timestamp_precision;
 
 	sysctl_createv(&vfs_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,

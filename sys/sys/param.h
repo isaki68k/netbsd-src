@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.713 2022/09/20 02:24:18 knakahara Exp $	*/
+/*	$NetBSD: param.h,v 1.724 2022/12/21 18:03:48 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	999010000	/* NetBSD 9.99.100 */
+#define	__NetBSD_Version__	1099000200	/* NetBSD 10.99.2 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -259,7 +259,7 @@
 
 /*
  * Round p (pointer or byte index) up to a correctly-aligned value for all
- * data types (int, long, ...).   The result is u_int and must be cast to
+ * data types (int, long, ...).   The result is uintptr_t and must be cast to
  * any desired pointer type.
  *
  * ALIGNED_POINTER is a boolean macro that checks whether an address

@@ -1,4 +1,4 @@
-/* $NetBSD: pmap_machdep.c,v 1.11 2022/09/20 07:18:23 skrll Exp $ */
+/* $NetBSD: pmap_machdep.c,v 1.15 2022/12/23 10:44:25 skrll Exp $ */
 
 /*
  * Copyright (c) 2014, 2019, 2021 The NetBSD Foundation, Inc.
@@ -32,10 +32,10 @@
 
 #include "opt_riscv_debug.h"
 
-#define __PMAP_PRIVATE
+#define	__PMAP_PRIVATE
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pmap_machdep.c,v 1.11 2022/09/20 07:18:23 skrll Exp $");
+__RCSID("$NetBSD: pmap_machdep.c,v 1.15 2022/12/23 10:44:25 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -46,9 +46,9 @@ __RCSID("$NetBSD: pmap_machdep.c,v 1.11 2022/09/20 07:18:23 skrll Exp $");
 #include <riscv/sysreg.h>
 
 #ifdef VERBOSE_INIT_RISCV
-#define VPRINTF(...)	printf(__VA_ARGS__)
+#define	VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	__nothing
+#define	VPRINTF(...)	__nothing
 #endif
 
 int riscv_poolpage_vmfreelist = VM_FREELIST_DEFAULT;
@@ -168,14 +168,14 @@ pmap_md_xtab_activate(struct pmap *pmap, struct lwp *l)
 	    __SHIFTIN(pai->pai_asid, SATP_ASID) |
 	    __SHIFTIN(pmap->pm_md.md_ppn, SATP_PPN);
 
-	riscvreg_satp_write(satp);
+	csr_satp_write(satp);
 }
 
 void
 pmap_md_xtab_deactivate(struct pmap *pmap)
 {
 
-	riscvreg_satp_write(0);
+	csr_satp_write(0);
 }
 
 void
@@ -187,6 +187,12 @@ pmap_md_pdetab_init(struct pmap *pmap)
 	const paddr_t pdetabpa = pmap_md_direct_mapped_vaddr_to_paddr(pdetabva);
 	pmap->pm_md.md_pdetab[NPDEPG-1] = pmap_kernel()->pm_md.md_pdetab[NPDEPG-1];
 	pmap->pm_md.md_ppn = pdetabpa >> PAGE_SHIFT;
+}
+
+void
+pmap_md_pdetab_fini(struct pmap *pmap)
+{
+        KASSERT(pmap != NULL);
 }
 
 void
@@ -276,19 +282,20 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 tlb_asid_t
 tlb_get_asid(void)
 {
-	return riscvreg_asid_read();
+	return csr_asid_read();
 }
 
 void
 tlb_set_asid(tlb_asid_t asid, struct pmap *pm)
 {
-	riscvreg_asid_write(asid);
+	csr_asid_write(asid);
 }
 
 #if 0
 void    tlb_invalidate_all(void);
 void    tlb_invalidate_globals(void);
 #endif
+
 void
 tlb_invalidate_asids(tlb_asid_t lo, tlb_asid_t hi)
 {
@@ -318,11 +325,17 @@ tlb_invalidate_addr(vaddr_t va, tlb_asid_t asid)
 bool
 tlb_update_addr(vaddr_t va, tlb_asid_t asid, pt_entry_t pte, bool insert_p)
 {
-	KASSERT(asid != KERNEL_PID);
-	__asm __volatile("sfence.vma %[va], %[asid]"
-	    : /* output operands */
-	    : [va] "r" (va), [asid] "r" (asid)
-	    : "memory");
+	if (asid == KERNEL_PID) {
+		__asm __volatile("sfence.vma %[va]"
+		    : /* output operands */
+		    : [va] "r" (va)
+		    : "memory");
+	} else {
+		__asm __volatile("sfence.vma %[va], %[asid]"
+		    : /* output operands */
+		    : [va] "r" (va), [asid] "r" (asid)
+		    : "memory");
+	}
 	return false;
 }
 

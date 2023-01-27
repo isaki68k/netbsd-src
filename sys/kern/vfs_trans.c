@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_trans.c,v 1.68 2022/08/22 09:13:08 hannken Exp $	*/
+/*	$NetBSD: vfs_trans.c,v 1.70 2022/11/04 11:20:39 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_trans.c,v 1.68 2022/08/22 09:13:08 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_trans.c,v 1.70 2022/11/04 11:20:39 hannken Exp $");
 
 /*
  * File system transaction operations.
@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_trans.c,v 1.68 2022/08/22 09:13:08 hannken Exp $
 #include <sys/proc.h>
 #include <sys/pool.h>
 
+#include <miscfs/deadfs/deadfs.h>
 #include <miscfs/specfs/specdev.h>
 
 #define FSTRANS_MOUNT_HASHSIZE	32
@@ -123,8 +124,6 @@ static bool state_change_done(const struct fstrans_mount_info *);
 static bool cow_state_change_done(const struct fstrans_mount_info *);
 static void cow_change_enter(struct fstrans_mount_info *);
 static void cow_change_done(struct fstrans_mount_info *);
-
-extern struct mount *dead_rootmount;
 
 /*
  * Initialize.
@@ -284,6 +283,8 @@ fstrans_mount_dtor(struct fstrans_mount_info *fmi)
 
 	KASSERT(fstrans_gone_count > 0);
 	fstrans_gone_count -= 1;
+
+	KASSERT(fmi->fmi_mount->mnt_lower == NULL);
 
 	kmem_free(fmi->fmi_mount, sizeof(*fmi->fmi_mount));
 	kmem_free(fmi, sizeof(*fmi));
@@ -474,8 +475,8 @@ fstrans_get_lwp_info(struct mount *mp, bool do_alloc)
 	 */
 	for (fli = curlwp->l_fstrans; fli; fli = fli->fli_succ) {
 		if (fli->fli_mount == mp) {
-			KASSERT((mp->mnt_lower == NULL) ==
-			    (fli->fli_alias == NULL));
+			KASSERT(mp->mnt_lower == NULL ||
+			    fli->fli_alias != NULL);
 			if (fli->fli_alias != NULL)
 				fli = fli->fli_alias;
 			break;

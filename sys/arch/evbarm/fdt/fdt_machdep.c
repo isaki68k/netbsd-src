@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.95 2022/09/30 06:39:54 skrll Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.99 2022/11/04 10:51:17 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.95 2022/09/30 06:39:54 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.99 2022/11/04 10:51:17 jmcneill Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bootconfig.h"
@@ -185,9 +185,8 @@ fdt_add_dram_blocks(const struct fdt_memory *m, void *arg)
 	bc->dramblocks++;
 }
 
-#define MAX_PHYSMEM 64
 static int nfdt_physmem = 0;
-static struct boot_physmem fdt_physmem[MAX_PHYSMEM];
+static struct boot_physmem fdt_physmem[FDT_MEMORY_RANGES];
 
 static void
 fdt_add_boot_physmem(const struct fdt_memory *m, void *arg)
@@ -204,7 +203,7 @@ fdt_add_boot_physmem(const struct fdt_memory *m, void *arg)
 
 	struct boot_physmem *bp = &fdt_physmem[nfdt_physmem++];
 
-	KASSERT(nfdt_physmem <= MAX_PHYSMEM);
+	KASSERT(nfdt_physmem <= FDT_MEMORY_RANGES);
 
 	bp->bp_start = atop(saddr);
 	bp->bp_pages = atop(eaddr) - bp->bp_start;
@@ -239,8 +238,6 @@ fdt_build_bootconfig(uint64_t mem_start, uint64_t mem_end)
 
 	uint64_t addr, size;
 	int index;
-
-	fdt_memory_remove_reserved(mem_start, mem_end);
 
 	const uint64_t initrd_size =
 	    round_page(initrd_end) - trunc_page(initrd_start);
@@ -611,6 +608,8 @@ initarm(void *arg)
 	fdt_probe_rndseed(&rndseed_start, &rndseed_end);
 	fdt_probe_efirng(&efirng_start, &efirng_end);
 
+	fdt_memory_remove_reserved(memory_start, memory_end);
+
 	/*
 	 * Populate bootconfig structure for the benefit of dodumpsys
 	 */
@@ -662,7 +661,6 @@ initarm(void *arg)
 		    "loading in freelist %d\n", spa, epa, VM_FREELIST_DEFAULT);
 
 		uvm_page_physload(spg, epg, spg, epg, VM_FREELIST_DEFAULT);
-
 	}
 
 	return sp;

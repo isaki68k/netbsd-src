@@ -1,4 +1,4 @@
-/*	$NetBSD: vmwgfx_cmdbuf.c,v 1.4 2022/02/17 01:21:02 riastradh Exp $	*/
+/*	$NetBSD: vmwgfx_cmdbuf.c,v 1.7 2022/10/25 23:35:29 riastradh Exp $	*/
 
 // SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
@@ -28,7 +28,7 @@
  **************************************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vmwgfx_cmdbuf.c,v 1.4 2022/02/17 01:21:02 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vmwgfx_cmdbuf.c,v 1.7 2022/10/25 23:35:29 riastradh Exp $");
 
 #include <linux/dmapool.h>
 #include <linux/pci.h>
@@ -132,11 +132,15 @@ struct vmw_cmdbuf_man {
 	spinlock_t lock;
 	struct dma_pool *headers;
 	struct dma_pool *dheaders;
-	wait_queue_head_t alloc_queue;
-	wait_queue_head_t idle_queue;
+	drm_waitqueue_t alloc_queue;
+	drm_waitqueue_t idle_queue;
 	bool irq_on;
 	bool using_mob;
 	bool has_pool;
+#ifdef __NetBSD__
+	bus_dmamap_t dmamap;
+	bus_dma_segment_t dmaseg;
+#endif
 	dma_addr_t handle;
 	size_t size;
 	u32 num_contexts;
@@ -272,7 +276,7 @@ static void __vmw_cmdbuf_header_free(struct vmw_cmdbuf_header *header)
 	}
 
 	drm_mm_remove_node(&header->node);
-	wake_up_all(&man->alloc_queue);
+	DRM_SPIN_WAKEUP_ALL(&man->alloc_queue, &man->lock); /* XXX */
 	if (header->cb_header)
 		dma_pool_free(man->headers, header->cb_header,
 			      header->handle);
@@ -387,6 +391,8 @@ static void vmw_cmdbuf_ctx_process(struct vmw_cmdbuf_man *man,
 {
 	struct vmw_cmdbuf_header *entry, *next;
 
+	assert_spin_locked(&man->lock);
+
 	vmw_cmdbuf_ctx_submit(man, ctx);
 
 	list_for_each_entry_safe(entry, next, &ctx->hw_submitted, list) {
@@ -396,7 +402,7 @@ static void vmw_cmdbuf_ctx_process(struct vmw_cmdbuf_man *man,
 			break;
 
 		list_del(&entry->list);
-		wake_up_all(&man->idle_queue);
+		DRM_SPIN_WAKEUP_ONE(&man->idle_queue, &man->lock);
 		ctx->num_hw_submitted--;
 		switch (status) {
 		case SVGA_CB_STATUS_COMPLETED:
@@ -443,6 +449,8 @@ static void vmw_cmdbuf_man_process(struct vmw_cmdbuf_man *man)
 	int notempty;
 	struct vmw_cmdbuf_context *ctx;
 	int i;
+
+	assert_spin_locked(&man->lock);
 
 retry:
 	notempty = 0;
@@ -618,7 +626,9 @@ static void vmw_cmdbuf_work_func(struct work_struct *work)
 	/* Send a new fence in case one was removed */
 	if (send_fence) {
 		vmw_fifo_send_fence(man->dev_priv, &dummy);
-		wake_up_all(&man->idle_queue);
+		spin_lock(&man->lock);
+		DRM_SPIN_WAKEUP_ALL(&man->idle_queue, &man->lock);
+		spin_unlock(&man->lock);
 	}
 
 	mutex_unlock(&man->error_mutex);
@@ -638,20 +648,19 @@ static bool vmw_cmdbuf_man_idle(struct vmw_cmdbuf_man *man,
 	bool idle = false;
 	int i;
 
-	spin_lock(&man->lock);
+	assert_spin_locked(&man->lock);
+
 	vmw_cmdbuf_man_process(man);
 	for_each_cmdbuf_ctx(man, i, ctx) {
 		if (!list_empty(&ctx->submitted) ||
 		    !list_empty(&ctx->hw_submitted) ||
 		    (check_preempted && !list_empty(&ctx->preempted)))
-			goto out_unlock;
+			goto out;
 	}
 
 	idle = list_empty(&man->error);
 
-out_unlock:
-	spin_unlock(&man->lock);
-
+out:
 	return idle;
 }
 
@@ -728,18 +737,17 @@ int vmw_cmdbuf_idle(struct vmw_cmdbuf_man *man, bool interruptible,
 	int ret;
 
 	ret = vmw_cmdbuf_cur_flush(man, interruptible);
+	spin_lock(&man->lock);
 	vmw_generic_waiter_add(man->dev_priv,
 			       SVGA_IRQFLAG_COMMAND_BUFFER,
 			       &man->dev_priv->cmdbuf_waiters);
-
 	if (interruptible) {
-		ret = wait_event_interruptible_timeout
-			(man->idle_queue, vmw_cmdbuf_man_idle(man, true),
-			 timeout);
+		DRM_SPIN_TIMED_WAIT_UNTIL(ret, &man->idle_queue, &man->lock,
+		    timeout, vmw_cmdbuf_man_idle(man, true));
 	} else {
-		ret = wait_event_timeout
-			(man->idle_queue, vmw_cmdbuf_man_idle(man, true),
-			 timeout);
+		DRM_SPIN_TIMED_WAIT_NOINTR_UNTIL(ret, &man->idle_queue,
+		    &man->lock,
+		    timeout, vmw_cmdbuf_man_idle(man, true));
 	}
 	vmw_generic_waiter_remove(man->dev_priv,
 				  SVGA_IRQFLAG_COMMAND_BUFFER,
@@ -750,6 +758,7 @@ int vmw_cmdbuf_idle(struct vmw_cmdbuf_man *man, bool interruptible,
 		else
 			ret = 0;
 	}
+	spin_unlock(&man->lock);
 	if (ret > 0)
 		ret = 0;
 
@@ -821,6 +830,7 @@ static int vmw_cmdbuf_alloc_space(struct vmw_cmdbuf_man *man,
 	} else {
 		mutex_lock(&man->space_mutex);
 	}
+	spin_lock(&man->lock);
 
 	/* Try to allocate space without waiting. */
 	if (vmw_cmdbuf_try_alloc(man, &info))
@@ -833,23 +843,29 @@ static int vmw_cmdbuf_alloc_space(struct vmw_cmdbuf_man *man,
 	if (interruptible) {
 		int ret;
 
-		ret = wait_event_interruptible
-			(man->alloc_queue, vmw_cmdbuf_try_alloc(man, &info));
+		DRM_SPIN_WAIT_UNTIL(ret, &man->alloc_queue, &man->lock,
+		    vmw_cmdbuf_try_alloc(man, &info));
 		if (ret) {
 			vmw_generic_waiter_remove
 				(man->dev_priv, SVGA_IRQFLAG_COMMAND_BUFFER,
 				 &man->dev_priv->cmdbuf_waiters);
+			spin_unlock(&man->lock);
 			mutex_unlock(&man->space_mutex);
 			return ret;
 		}
 	} else {
-		wait_event(man->alloc_queue, vmw_cmdbuf_try_alloc(man, &info));
+		int ret;
+
+		DRM_SPIN_WAIT_NOINTR_UNTIL(ret, &man->alloc_queue, &man->lock,
+		    vmw_cmdbuf_try_alloc(man, &info));
+		BUG_ON(ret);
 	}
 	vmw_generic_waiter_remove(man->dev_priv,
 				  SVGA_IRQFLAG_COMMAND_BUFFER,
 				  &man->dev_priv->cmdbuf_waiters);
 
 out_unlock:
+	spin_unlock(&man->lock);
 	mutex_unlock(&man->space_mutex);
 
 	return 0;
@@ -1237,8 +1253,46 @@ int vmw_cmdbuf_set_pool_size(struct vmw_cmdbuf_man *man,
 
 	/* First, try to allocate a huge chunk of DMA memory */
 	size = PAGE_ALIGN(size);
+#ifdef __NetBSD__
+	int error, nseg, alloced = 0,  mapped = 0, loaded = 0;
+
+	do {
+		error = bus_dmamap_create(dev_priv->dev->dmat, size, 1, size,
+		    0, BUS_DMA_ALLOCNOW|BUS_DMA_WAITOK, &man->dmamap);
+		if (error)
+			break;
+		error = bus_dmamem_alloc(dev_priv->dev->dmat, size, 1, 0,
+		    &man->dmaseg, 1, &nseg, BUS_DMA_WAITOK);
+		if (error)
+			break;
+		KASSERT(nseg == 1);
+		alloced = 1;
+		error = bus_dmamem_map(dev_priv->dev->dmat, &man->dmaseg, 1,
+		    size, (void *)&man->map, BUS_DMA_COHERENT|BUS_DMA_WAITOK);
+		if (error)
+			break;
+		mapped = 1;
+		error = bus_dmamap_load(dev_priv->dev->dmat, man->dmamap,
+		    man->map, size, NULL, BUS_DMA_WAITOK);
+		if (error)
+			break;
+		loaded = 1;
+	} while (0);
+	if (error) {
+		if (loaded)
+			bus_dmamap_unload(dev_priv->dev->dmat, man->dmamap);
+		if (mapped)
+			bus_dmamem_unmap(dev_priv->dev->dmat, man->map, size);
+		if (alloced)
+			bus_dmamem_free(dev_priv->dev->dmat, &man->dmaseg, 1);
+		if (man->dmamap)
+			bus_dmamap_destroy(dev_priv->dev->dmat, man->dmamap);
+		man->map = NULL;
+	}
+#else
 	man->map = dma_alloc_coherent(&dev_priv->dev->pdev->dev, size,
 				      &man->handle, GFP_KERNEL);
+#endif
 	if (man->map) {
 		man->using_mob = false;
 	} else {
@@ -1319,7 +1373,11 @@ struct vmw_cmdbuf_man *vmw_cmdbuf_man_create(struct vmw_private *dev_priv)
 	man->num_contexts = (dev_priv->capabilities & SVGA_CAP_HP_CMD_QUEUE) ?
 		2 : 1;
 	man->headers = dma_pool_create("vmwgfx cmdbuf",
+#ifdef __NetBSD__
+				       dev_priv->dev->dmat,
+#else
 				       &dev_priv->dev->pdev->dev,
+#endif
 				       sizeof(SVGACBHeader),
 				       64, PAGE_SIZE);
 	if (!man->headers) {
@@ -1328,7 +1386,11 @@ struct vmw_cmdbuf_man *vmw_cmdbuf_man_create(struct vmw_private *dev_priv)
 	}
 
 	man->dheaders = dma_pool_create("vmwgfx inline cmdbuf",
+#ifdef __NetBSD__
+					dev_priv->dev->dmat,
+#else
 					&dev_priv->dev->pdev->dev,
+#endif
 					sizeof(struct vmw_cmdbuf_dheader),
 					64, PAGE_SIZE);
 	if (!man->dheaders) {
@@ -1345,8 +1407,8 @@ struct vmw_cmdbuf_man *vmw_cmdbuf_man_create(struct vmw_private *dev_priv)
 	mutex_init(&man->space_mutex);
 	mutex_init(&man->error_mutex);
 	man->default_size = VMW_CMDBUF_INLINE_SIZE;
-	init_waitqueue_head(&man->alloc_queue);
-	init_waitqueue_head(&man->idle_queue);
+	DRM_INIT_WAITQUEUE(&man->alloc_queue, "vmwgfxaq");
+	DRM_INIT_WAITQUEUE(&man->idle_queue, "vmwgfxiq");
 	man->dev_priv = dev_priv;
 	man->max_hw_submitted = SVGA_CB_MAX_QUEUED_PER_CONTEXT - 1;
 	INIT_WORK(&man->work, &vmw_cmdbuf_work_func);
@@ -1393,8 +1455,16 @@ void vmw_cmdbuf_remove_pool(struct vmw_cmdbuf_man *man)
 		ttm_bo_put(man->cmd_space);
 		man->cmd_space = NULL;
 	} else {
+#ifdef __NetBSD__
+		const bus_dma_tag_t dmat = man->dev_priv->dev->dmat;
+		bus_dmamap_unload(dmat, man->dmamap);
+		bus_dmamem_unmap(dmat, man->map, man->size);
+		bus_dmamem_free(dmat, &man->dmaseg, 1);
+		bus_dmamap_destroy(dmat, man->dmamap);
+#else
 		dma_free_coherent(&man->dev_priv->dev->pdev->dev,
 				  man->size, man->map, man->handle);
+#endif
 	}
 }
 
@@ -1418,8 +1488,11 @@ void vmw_cmdbuf_man_destroy(struct vmw_cmdbuf_man *man)
 	(void) cancel_work_sync(&man->work);
 	dma_pool_destroy(man->dheaders);
 	dma_pool_destroy(man->headers);
+	DRM_DESTROY_WAITQUEUE(&man->idle_queue);
+	DRM_DESTROY_WAITQUEUE(&man->alloc_queue);
 	mutex_destroy(&man->cur_mutex);
 	mutex_destroy(&man->space_mutex);
 	mutex_destroy(&man->error_mutex);
+	spin_lock_destroy(&man->lock);
 	kfree(man);
 }

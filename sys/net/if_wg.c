@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wg.c,v 1.69 2022/03/25 08:57:50 hannken Exp $	*/
+/*	$NetBSD: if_wg.c,v 1.74 2023/01/05 20:32:18 christos Exp $	*/
 
 /*
  * Copyright (C) Ryota Ozaki <ozaki.ryota@gmail.com>
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.69 2022/03/25 08:57:50 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.74 2023/01/05 20:32:18 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altq_enabled.h"
@@ -3266,12 +3266,7 @@ wg_socreate(struct wg_softc *wg, int af, struct socket **sop)
 	so->so_upcallarg = wg;
 	so->so_upcall = wg_so_upcall;
 	so->so_rcv.sb_flags |= SB_UPCALL;
-	if (af == AF_INET)
-		in_pcb_register_overudp_cb(sotoinpcb(so), wg_overudp_cb, wg);
-#if INET6
-	else
-		in6_pcb_register_overudp_cb(sotoin6pcb(so), wg_overudp_cb, wg);
-#endif
+	inpcb_register_overudp_cb(sotoinpcb(so), wg_overudp_cb, wg);
 	sounlock(so);
 
 	*sop = so;
@@ -3924,7 +3919,7 @@ wg_send_udp(struct wg_peer *wgp, struct mbuf *m)
 		error = udp_send(so, m, wgsatosa(wgsa), NULL, curlwp);
 	} else {
 #ifdef INET6
-		error = udp6_output(sotoin6pcb(so), m, wgsatosin6(wgsa),
+		error = udp6_output(sotoinpcb(so), m, wgsatosin6(wgsa),
 		    NULL, curlwp);
 #else
 		m_freem(m);
@@ -4454,6 +4449,17 @@ out:
 	return error;
 }
 
+static bool
+wg_is_authorized(struct wg_softc *wg, u_long cmd)
+{
+	int au = cmd == SIOCGDRVSPEC ?
+	    KAUTH_REQ_NETWORK_INTERFACE_WG_GETPRIV :
+	    KAUTH_REQ_NETWORK_INTERFACE_WG_SETPRIV;
+	return kauth_authorize_network(kauth_cred_get(),
+	    KAUTH_NETWORK_INTERFACE_WG, au, &wg->wg_if,
+	    (void *)cmd, NULL) == 0;
+}
+
 static int
 wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 {
@@ -4468,9 +4474,11 @@ wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 	if (prop_dict == NULL)
 		goto error;
 
-	if (!prop_dictionary_set_data(prop_dict, "private_key", wg->wg_privkey,
-		WG_STATIC_KEY_LEN))
-		goto error;
+	if (wg_is_authorized(wg, SIOCGDRVSPEC)) {
+		if (!prop_dictionary_set_data(prop_dict, "private_key",
+			wg->wg_privkey, WG_STATIC_KEY_LEN))
+			goto error;
+	}
 
 	if (wg->wg_listen_port != 0) {
 		if (!prop_dictionary_set_uint16(prop_dict, "listen_port",
@@ -4512,10 +4520,12 @@ wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 		uint8_t psk_zero[WG_PRESHARED_KEY_LEN] = {0};
 		if (!consttime_memequal(wgp->wgp_psk, psk_zero,
 			sizeof(wgp->wgp_psk))) {
-			if (!prop_dictionary_set_data(prop_peer,
-				"preshared_key",
-				wgp->wgp_psk, sizeof(wgp->wgp_psk)))
-				goto next;
+			if (wg_is_authorized(wg, SIOCGDRVSPEC)) {
+				if (!prop_dictionary_set_data(prop_peer,
+					"preshared_key",
+					wgp->wgp_psk, sizeof(wgp->wgp_psk)))
+					goto next;
+			}
 		}
 
 		wgsa = wg_get_endpoint_sa(wgp, &wgsa_psref);
@@ -4654,6 +4664,9 @@ wg_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		}
 		return error;
 	case SIOCSDRVSPEC:
+		if (!wg_is_authorized(wg, cmd)) {
+			return EPERM;
+		}
 		switch (ifd->ifd_cmd) {
 		case WG_IOCTL_SET_PRIVATE_KEY:
 			error = wg_ioctl_set_private_key(wg, ifd);
