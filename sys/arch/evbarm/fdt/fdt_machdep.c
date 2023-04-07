@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.99 2022/11/04 10:51:17 jmcneill Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.102 2023/04/07 08:55:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.99 2022/11/04 10:51:17 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.102 2023/04/07 08:55:31 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bootconfig.h"
@@ -92,6 +92,8 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.99 2022/11/04 10:51:17 jmcneill Ex
 #include <evbarm/fdt/platform.h>
 
 #include <arm/fdt/arm_fdtvar.h>
+
+#include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_private.h>
 #include <dev/fdt/fdt_memory.h>
 
@@ -489,7 +491,7 @@ fdt_map_efi_runtime(const char *prop, enum arm_efirt_mem_type type)
 vaddr_t
 initarm(void *arg)
 {
-	const struct arm_platform *plat;
+	const struct fdt_platform *plat;
 	uint64_t memory_start, memory_end;
 
 	/* set temporally to work printf()/panic() even before consinit() */
@@ -511,7 +513,7 @@ initarm(void *arg)
 	fdtbus_init(fdt_data);
 
 	/* Lookup platform specific backend */
-	plat = arm_fdt_platform();
+	plat = fdt_platform_find();
 	if (plat == NULL)
 		panic("Kernel does not support this device");
 
@@ -533,12 +535,12 @@ initarm(void *arg)
 	 * l1pt VA is fine
 	 */
 
-	VPRINTF("devmap %p\n", plat->ap_devmap());
+	VPRINTF("devmap %p\n", plat->fp_devmap());
 	extern char ARM_BOOTSTRAP_LxPT[];
-	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, plat->ap_devmap());
+	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, plat->fp_devmap());
 
 	VPRINTF("bootstrap\n");
-	plat->ap_bootstrap();
+	plat->fp_bootstrap();
 
 	/*
 	 * If stdout-path is specified on the command line, override the
@@ -637,8 +639,8 @@ initarm(void *arg)
 	error = 0;
 	if ((boothowto & RB_MD1) == 0) {
 		VPRINTF("mpstart\n");
-		if (plat->ap_mpstart)
-			error = plat->ap_mpstart();
+		if (plat->fp_mpstart)
+			error = plat->fp_mpstart();
 	}
 
 	if (error)
@@ -696,7 +698,7 @@ void
 consinit(void)
 {
 	static bool initialized = false;
-	const struct arm_platform *plat = arm_fdt_platform();
+	const struct fdt_platform *plat = fdt_platform_find();
 	const struct fdt_console *cons = fdtbus_get_console();
 	struct fdt_attach_args faa;
 	u_int uart_freq = 0;
@@ -704,11 +706,11 @@ consinit(void)
 	if (initialized || cons == NULL)
 		return;
 
-	plat->ap_init_attach_args(&faa);
+	plat->fp_init_attach_args(&faa);
 	faa.faa_phandle = fdtbus_get_stdout_phandle();
 
-	if (plat->ap_uart_freq != NULL)
-		uart_freq = plat->ap_uart_freq();
+	if (plat->fp_uart_freq != NULL)
+		uart_freq = plat->fp_uart_freq();
 
 	cons->consinit(&faa, uart_freq);
 
@@ -733,24 +735,15 @@ cpu_startup_hook(void)
 void
 delay(u_int us)
 {
-	const struct arm_platform *plat = arm_fdt_platform();
+	const struct fdt_platform *plat = fdt_platform_find();
 
-	plat->ap_delay(us);
+	plat->fp_delay(us);
 }
 
 static void
 fdt_detect_root_device(device_t dev)
 {
-	struct mbr_sector mbr;
-	uint8_t buf[DEV_BSIZE];
-	uint8_t hash[16];
-	const uint8_t *rhash;
-	char rootarg[64];
-	struct vnode *vp;
-	MD5_CTX md5ctx;
 	int error, len;
-	size_t resid;
-	u_int part;
 
 	const int chosen = OF_finddevice("/chosen");
 	if (chosen < 0)
@@ -758,6 +751,14 @@ fdt_detect_root_device(device_t dev)
 
 	if (of_hasprop(chosen, "netbsd,mbr") &&
 	    of_hasprop(chosen, "netbsd,partition")) {
+		struct mbr_sector mbr;
+		uint8_t buf[DEV_BSIZE];
+		uint8_t hash[16];
+		const uint8_t *rhash;
+		struct vnode *vp;
+		MD5_CTX md5ctx;
+		size_t resid;
+		u_int part;
 
 		/*
 		 * The bootloader has passed in a partition index and MD5 hash
@@ -787,22 +788,29 @@ fdt_detect_root_device(device_t dev)
 		MD5Update(&md5ctx, (void *)&mbr, sizeof(mbr));
 		MD5Final(hash, &md5ctx);
 
-		if (memcmp(rhash, hash, 16) != 0)
-			return;
+		if (memcmp(rhash, hash, 16) == 0) {
+			booted_device = dev;
+			booted_partition = part;
+		}
 
-		snprintf(rootarg, sizeof(rootarg), " root=%s%c", device_xname(dev), part + 'a');
-		strcat(boot_args, rootarg);
+		return;
 	}
 
 	if (of_hasprop(chosen, "netbsd,gpt-guid")) {
-		char guidbuf[UUID_STR_LEN];
-		const struct uuid *guid = fdtbus_get_prop(chosen, "netbsd,gpt-guid", &len);
+		const struct uuid *guid =
+		    fdtbus_get_prop(chosen, "netbsd,gpt-guid", &len);
+
 		if (guid == NULL || len != 16)
 			return;
 
-		uuid_snprintf(guidbuf, sizeof(guidbuf), guid);
-		snprintf(rootarg, sizeof(rootarg), " root=wedge:%s", guidbuf);
-		strcat(boot_args, rootarg);
+		char guidstr[UUID_STR_LEN];
+		uuid_snprintf(guidstr, sizeof(guidstr), guid);
+
+		device_t dv = dkwedge_find_by_wname(guidstr);
+		if (dv != NULL)
+			booted_device = dv;
+
+		return;
 	}
 
 	if (of_hasprop(chosen, "netbsd,gpt-label")) {
@@ -813,14 +821,19 @@ fdt_detect_root_device(device_t dev)
 		device_t dv = dkwedge_find_by_wname(label);
 		if (dv != NULL)
 			booted_device = dv;
+
+		return;
 	}
 
 	if (of_hasprop(chosen, "netbsd,booted-mac-address")) {
-		const uint8_t *macaddr = fdtbus_get_prop(chosen, "netbsd,booted-mac-address", &len);
+		const uint8_t *macaddr =
+		    fdtbus_get_prop(chosen, "netbsd,booted-mac-address", &len);
+		struct ifnet *ifp;
+
 		if (macaddr == NULL || len != 6)
 			return;
+
 		int s = pserialize_read_enter();
-		struct ifnet *ifp;
 		IFNET_READER_FOREACH(ifp) {
 			if (memcmp(macaddr, CLLADDR(ifp->if_sadl), len) == 0) {
 				device_t dv = device_find_by_xname(ifp->if_xname);
@@ -830,13 +843,15 @@ fdt_detect_root_device(device_t dev)
 			}
 		}
 		pserialize_read_exit(s);
+
+		return;
 	}
 }
 
 static void
 fdt_device_register(device_t self, void *aux)
 {
-	const struct arm_platform *plat = arm_fdt_platform();
+	const struct fdt_platform *plat = fdt_platform_find();
 
 	if (device_is_a(self, "armfdt")) {
 		fdt_setup_initrd();
@@ -857,8 +872,8 @@ fdt_device_register(device_t self, void *aux)
 	}
 #endif
 
-	if (plat && plat->ap_device_register)
-		plat->ap_device_register(self, aux);
+	if (plat && plat->fp_device_register)
+		plat->fp_device_register(self, aux);
 }
 
 static void
@@ -878,7 +893,6 @@ fdt_cpu_rootconf(void)
 {
 	device_t dev;
 	deviter_t di;
-	char *ptr;
 
 	if (booted_device != NULL)
 		return;
@@ -887,11 +901,10 @@ fdt_cpu_rootconf(void)
 		if (device_class(dev) != DV_DISK)
 			continue;
 
-		if (get_bootconf_option(boot_args, "root", BOOTOPT_TYPE_STRING, &ptr) != 0)
-			break;
+		fdt_detect_root_device(dev);
 
-		if (device_is_a(dev, "ld") || device_is_a(dev, "sd") || device_is_a(dev, "wd"))
-			fdt_detect_root_device(dev);
+		if (booted_device != NULL)
+			break;
 	}
 	deviter_release(&di);
 }
@@ -899,12 +912,12 @@ fdt_cpu_rootconf(void)
 static void
 fdt_reset(void)
 {
-	const struct arm_platform *plat = arm_fdt_platform();
+	const struct fdt_platform *plat = fdt_platform_find();
 
 	fdtbus_power_reset();
 
-	if (plat && plat->ap_reset)
-		plat->ap_reset();
+	if (plat && plat->fp_reset)
+		plat->fp_reset();
 }
 
 static void

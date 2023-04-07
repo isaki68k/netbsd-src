@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.79 2022/08/20 11:34:08 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.86 2023/03/03 14:40:16 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.79 2022/08/20 11:34:08 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.86 2023/03/03 14:40:16 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -188,7 +188,7 @@ void
 fpuinit_mxcsr_mask(void)
 {
 #ifndef XENPV
-	union savefpu fpusave __aligned(16);
+	union savefpu fpusave __aligned(64);
 	u_long psl;
 
 	memset(&fpusave, 0, sizeof(fpusave));
@@ -373,6 +373,11 @@ fpu_lwp_abandon(struct lwp *l)
 void
 fpu_kern_enter(void)
 {
+	static const union savefpu safe_fpu __aligned(64) = {
+		.sv_xmm = {
+			.fx_mxcsr = __SAFE_MXCSR__,
+		},
+	};
 	struct lwp *l = curlwp;
 	struct cpu_info *ci;
 	int s;
@@ -407,6 +412,11 @@ fpu_kern_enter(void)
 	 * the last FPU usage requiring that we save the FPU state.
 	 */
 	clts();
+
+	/*
+	 * Zero the FPU registers and install safe control words.
+	 */
+	fpu_area_restore(&safe_fpu, x86_xsave_features, /*is_64bit*/false);
 }
 
 /*
@@ -436,7 +446,7 @@ fpu_kern_leave(void)
 	 * through Spectre-class attacks to userland, even if there are
 	 * no bugs in fpu state management.
 	 */
-	fpu_area_restore(&zero_fpu, x86_xsave_features, false);
+	fpu_area_restore(&zero_fpu, x86_xsave_features, /*is_64bit*/false);
 
 	/*
 	 * Set CR0_TS again so that the kernel can't accidentally use

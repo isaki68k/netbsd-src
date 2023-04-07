@@ -1,4 +1,4 @@
-/* $NetBSD: wsemul_vt100_subr.c,v 1.26 2023/01/18 17:02:17 christos Exp $ */
+/* $NetBSD: wsemul_vt100_subr.c,v 1.30 2023/02/26 14:00:42 uwe Exp $ */
 
 /*
  * Copyright (c) 1998
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100_subr.c,v 1.26 2023/01/18 17:02:17 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100_subr.c,v 1.30 2023/02/26 14:00:42 uwe Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -331,7 +331,7 @@ wsemul_vt100_handle_csi(struct vt100base_data *edp, u_char c)
 			{
 			int i, j, ps = 0;
 			char buf[20];
-			KASSERT(edp->tabs != 0);
+			KASSERT(edp->tabs != NULL);
 			wsdisplay_emulinput(edp->cbcookie, "\033P2$u", 5);
 			for (i = 0; i < edp->ncols; i++)
 				if (edp->tabs[i]) {
@@ -483,7 +483,7 @@ wsemul_vt100_handle_csi(struct vt100base_data *edp, u_char c)
 		edp->crow = uimin(DEF1_ARG(edp, 0) - 1, edp->nrows - 1);
  		break;
 	    case 'g': /* TBC */
-		KASSERT(edp->tabs != 0);
+		KASSERT(edp->tabs != NULL);
 		switch (ARG(edp, 0)) {
 		    case 0:
 			edp->tabs[edp->ccol] = 0;
@@ -766,19 +766,30 @@ wsemul_vt100_handle_dcs(struct vt100base_data *edp)
 	    case 0: /* not handled */
 		return;
 	    case DCSTYPE_TABRESTORE:
-		KASSERT(edp->tabs != 0);
+		KASSERT(edp->tabs != NULL);
+		KASSERT(edp->ncols <= 1024);
 		memset(edp->tabs, 0, edp->ncols);
 		pos = 0;
 		for (i = 0; i < edp->dcspos; i++) {
 			char c = edp->dcsarg[i];
 			switch (c) {
 			    case '0': case '1': case '2': case '3': case '4':
-			    case '5': case '6': case '7': case '8': case '9':
-				pos = pos * 10 + (edp->dcsarg[i] - '0');
+			    case '5': case '6': case '7': case '8': case '9': {
+				const int c0 = c - '0';
+				if (pos < 0 ||
+				    pos > INT_MAX/10 ||
+				    pos * 10 > edp->ncols - c0) {
+					pos = -1;
+					break;
+				}
+				pos = pos * 10 + c0;
 				break;
+			    }
 			    case '/':
-				if (pos > 0)
+				if (pos > 0) {
+					KASSERT(pos <= edp->ncols);
 					edp->tabs[pos - 1] = 1;
+				}
 				pos = 0;
 				break;
 			    default:
@@ -788,8 +799,10 @@ wsemul_vt100_handle_dcs(struct vt100base_data *edp)
 				break;
 			}
 		}
-		if (pos > 0)
+		if (pos > 0) {
+			KASSERT(pos <= edp->ncols);
 			edp->tabs[pos - 1] = 1;
+		}
 		break;
 	    default:
 		panic("wsemul_vt100_handle_dcs: bad type %d", edp->dcstype);
