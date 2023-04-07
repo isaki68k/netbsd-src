@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.235 2022/08/06 21:21:10 riastradh Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.237 2023/03/13 18:13:18 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.235 2022/08/06 21:21:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.237 2023/03/13 18:13:18 riastradh Exp $");
 
 #include "veriexec.h"
 
@@ -150,8 +150,8 @@ const struct fileops vnops = {
  *
  * XXX shouldn't cmode be mode_t?
  *
- * On success produces either a vnode in *ret_vp, or if that is NULL,
- * a file descriptor number in ret_fd.
+ * On success produces either a locked vnode in *ret_vp, or NULL in
+ * *ret_vp and a file descriptor number in *ret_fd.
  *
  * The caller may pass NULL for ret_fd (and ret_domove), in which case
  * EOPNOTSUPP will be produced in the cases that would otherwise return
@@ -242,9 +242,11 @@ vn_open(struct vnode *at_dvp, struct pathbuf *pb,
 					vput(nd.ni_dvp);
 				nd.ni_dvp = NULL;
 				vput(vp);
+				vp = NULL;
 			}
 		} else {
 			vput(vp);
+			vp = NULL;
 		}
 		goto out;
 	}
@@ -329,8 +331,10 @@ vn_open(struct vnode *at_dvp, struct pathbuf *pb,
 	}
 
 bad:
-	if (error)
+	if (error) {
 		vput(vp);
+		vp = NULL;
+	}
 out:
 	pathbuf_stringcopy_put(nd.ni_pathbuf, pathstring);
 
@@ -348,6 +352,7 @@ out:
 		error = 0;
 		break;
 	case 0:
+		KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 		*ret_vp = vp;
 		break;
 	}

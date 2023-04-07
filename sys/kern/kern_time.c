@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_time.c,v 1.218 2022/10/26 23:23:52 riastradh Exp $	*/
+/*	$NetBSD: kern_time.c,v 1.221 2023/02/23 02:57:17 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2005, 2007, 2008, 2009, 2020
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.218 2022/10/26 23:23:52 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.221 2023/02/23 02:57:17 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/resourcevar.h>
@@ -83,6 +83,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.218 2022/10/26 23:23:52 riastradh Ex
 kmutex_t	itimer_mutex __cacheline_aligned;	/* XXX static */
 static struct itlist itimer_realtime_changed_notify;
 
+static void	itimer_callout(void *);
 static void	ptimer_intr(void *);
 static void	*ptimer_sih __read_mostly;
 static TAILQ_HEAD(, ptimer) ptimer_queue;
@@ -685,6 +686,7 @@ itimer_init(struct itimer * const it, const struct itimer_ops * const ops,
 	if (!CLOCK_VIRTUAL_P(id)) {
 		KASSERT(itl == NULL);
 		callout_init(&it->it_ch, CALLOUT_MPSAFE);
+		callout_setfunc(&it->it_ch, itimer_callout, it);
 		if (id == CLOCK_REALTIME && ops->ito_realtime_changed != NULL) {
 			LIST_INSERT_HEAD(&itimer_realtime_changed_notify,
 			    it, it_rtchgq);
@@ -799,8 +801,6 @@ itimer_decr(struct itimer *it, int nsec)
 	return true;
 }
 
-static void itimer_callout(void *);
-
 /*
  * itimer_arm_real:
  *
@@ -809,15 +809,19 @@ static void itimer_callout(void *);
 static void
 itimer_arm_real(struct itimer * const it)
 {
+
+	KASSERT(!it->it_dying);
+	KASSERT(!CLOCK_VIRTUAL_P(it->it_clockid));
+	KASSERT(!callout_pending(&it->it_ch));
+
 	/*
 	 * Don't need to check tshzto() return value, here.
-	 * callout_reset() does it for us.
+	 * callout_schedule() does it for us.
 	 */
-	callout_reset(&it->it_ch,
+	callout_schedule(&it->it_ch,
 	    (it->it_clockid == CLOCK_MONOTONIC
 		? tshztoup(&it->it_time.it_value)
-		: tshzto(&it->it_time.it_value)),
-	    itimer_callout, it);
+		: tshzto(&it->it_time.it_value)));
 }
 
 /*
@@ -906,6 +910,7 @@ itimer_settime(struct itimer *it)
 	struct itlist *itl;
 
 	KASSERT(itimer_lock_held());
+	KASSERT(!it->it_dying);
 
 	if (!CLOCK_VIRTUAL_P(it->it_clockid)) {
 		/*
@@ -917,6 +922,7 @@ itimer_settime(struct itimer *it)
 		 */
 		if (callout_halt(&it->it_ch, &itimer_mutex))
 			return ERESTART;
+		KASSERT(!it->it_dying);
 
 		/* Now we can touch it and start it up again. */
 		if (timespecisset(&it->it_time.it_value))
@@ -972,6 +978,7 @@ itimer_gettime(const struct itimer *it, struct itimerspec *aits)
 	struct itimer *itn;
 
 	KASSERT(itimer_lock_held());
+	KASSERT(!it->it_dying);
 
 	*aits = it->it_time;
 	if (!CLOCK_VIRTUAL_P(it->it_clockid)) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: wsdisplay_vcons.c,v 1.64 2022/07/18 11:09:22 martin Exp $ */
+/*	$NetBSD: wsdisplay_vcons.c,v 1.67 2023/02/15 13:19:13 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.64 2022/07/18 11:09:22 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.67 2023/02/15 13:19:13 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -121,7 +121,7 @@ static void vcons_copycols_buffer(void *, int, int, int, int);
 static void vcons_erasecols_buffer(void *, int, int, int, long);
 static void vcons_copyrows_buffer(void *, int, int, int);
 static void vcons_eraserows_buffer(void *, int, int, long);
-static void vcons_putchar_buffer(void *, int, int, u_int, long);
+static int vcons_putchar_buffer(void *, int, int, u_int, long);
 
 /*
  * actual wrapper methods which call both the _buffer ones above and the
@@ -354,8 +354,10 @@ vcons_alloc_buffers(struct vcons_data *vd, struct vcons_screen *scr)
 #ifdef VCONS_DRAW_INTR
 	size = ri->ri_cols * ri->ri_rows;
 	if (size > vdp->cells) {
-		if (vdp->chars != NULL) free(vdp->chars, M_DEVBUF);
-		if (vdp->attrs != NULL) free(vdp->attrs, M_DEVBUF);
+		if (vdp->chars != NULL)
+			free(vdp->chars, M_DEVBUF);
+		if (vdp->attrs != NULL)
+			free(vdp->attrs, M_DEVBUF);
 		vdp->cells = size;
 		vdp->chars = malloc(size * sizeof(uint32_t), M_DEVBUF,
 		    M_WAITOK|M_ZERO);
@@ -478,7 +480,14 @@ vcons_load_font(void *v, void *cookie, struct wsdisplay_font *f)
 		flags |= WSFONT_FIND_ALPHA;
 	}
 
-	fcookie = wsfont_find(f->name, 0, 0, 0, 0, 0, flags);
+	fcookie = wsfont_find(f->name, 0, 0, 0,
+	    /* bitorder */
+	    scr->scr_flags & VCONS_FONT_BITS_R2L ?
+	      WSDISPLAY_FONTORDER_R2L : WSDISPLAY_FONTORDER_L2R,
+	    /* byteorder */
+	    scr->scr_flags & VCONS_FONT_BYTES_R2L ?
+	      WSDISPLAY_FONTORDER_R2L : WSDISPLAY_FONTORDER_L2R,
+	    flags);
 	if (fcookie == -1)
 		return EINVAL;
 
@@ -1237,22 +1246,26 @@ vcons_eraserows(void *cookie, int row, int nrows, long fillattr)
 	vcons_unlock(scr);
 }
 
-static void
+static int
 vcons_putchar_buffer(void *cookie, int row, int col, u_int c, long attr)
 {
 	struct rasops_info *ri = cookie;
 	struct vcons_screen *scr = ri->ri_hw;
 	int offset = vcons_offset_to_zero(scr);
-	int pos;
+	int pos, ret = 0;
 
 	if ((row >= 0) && (row < ri->ri_rows) && (col >= 0) &&
-	     (col < ri->ri_cols)) {
+	    (col < ri->ri_cols)) {
 		pos = col + row * ri->ri_cols;
+		ret = (scr->scr_attrs[pos + offset] != attr) ||
+		      (scr->scr_chars[pos + offset] != c);
 		scr->scr_attrs[pos + offset] = attr;
 		scr->scr_chars[pos + offset] = c;
 	}
 
-	vcons_dirty(scr);
+	if (ret)
+		vcons_dirty(scr);
+	return ret;
 }
 
 #ifdef VCONS_DRAW_INTR
@@ -1282,8 +1295,9 @@ vcons_putchar(void *cookie, int row, int col, u_int c, long attr)
 {
 	struct rasops_info *ri = cookie;
 	struct vcons_screen *scr = ri->ri_hw;
+	int need_draw;
 
-	vcons_putchar_buffer(cookie, row, col, c, attr);
+	need_draw = vcons_putchar_buffer(cookie, row, col, c, attr);
 
 	if (vcons_use_intr(scr))
 		return;
@@ -1291,12 +1305,14 @@ vcons_putchar(void *cookie, int row, int col, u_int c, long attr)
 	vcons_lock(scr);
 	if (SCREEN_IS_VISIBLE(scr) && SCREEN_CAN_DRAW(scr)) {
 #ifdef VCONS_DRAW_INTR
-		vcons_putchar_cached(cookie, row, col, c, attr);
+		if (need_draw)
+			vcons_putchar_cached(cookie, row, col, c, attr);
 #else
 		if (row == ri->ri_crow && col == ri->ri_ccol) {
 			ri->ri_flg &= ~RI_CURSOR;
-		}
-		scr->putchar(cookie, row, col, c, attr);
+			scr->putchar(cookie, row, col, c, attr);
+		} else if (need_draw)
+			scr->putchar(cookie, row, col, c, attr);
 #endif
 	}
 	vcons_unlock(scr);

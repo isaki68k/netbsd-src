@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.97 2022/10/26 23:38:08 riastradh Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.99 2023/02/19 11:19:51 simonb Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.97 2022/10/26 23:38:08 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.99 2023/02/19 11:19:51 simonb Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
@@ -185,12 +185,8 @@ db_read_bytes(vaddr_t addr, size_t size, char *data)
 	const char *src = (char *)addr;
 	int err;
 
-	/*
-	 * If asked to fetch from userspace, do it safely.
-	 * Note that MIPS_KSEG0_START is the proper address for
-	 * both 32-bit and 64-bit kernels.
-	 */
-	if (addr < (vaddr_t)MIPS_KSEG0_START) {
+	/* If asked to fetch from userspace, do it safely */
+	if (addr < VM_MAXUSER_ADDRESS) {
 		err = copyin(src, data, size);
 		if (err) {
 #ifdef DDB
@@ -227,8 +223,8 @@ db_write_bytes(vaddr_t addr, size_t size, const char *data)
 	size_t n = size;
 	int err;
 
-	/* If asked to fetch from userspace, do it safely */
-	if (addr < (vaddr_t)MIPS_KSEG0_START) {
+	/* If asked to store to userspace, do it safely */
+	if (addr < VM_MAXUSER_ADDRESS) {
 		err = copyout(data, p, size);
 		if (err) {
 #ifdef DDB

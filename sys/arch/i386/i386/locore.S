@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.190 2022/09/07 00:40:18 knakahara Exp $	*/
+/*	$NetBSD: locore.S,v 1.194 2023/03/03 14:32:27 riastradh Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.190 2022/09/07 00:40:18 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.194 2023/03/03 14:32:27 riastradh Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -415,7 +415,7 @@ multiboot1_loader:
 	pushl	%ebx		/* Address of Multiboot information */
 	call	_C_LABEL(multiboot1_pre_reloc)
 	addl	$4,%esp
-	jmp	2f
+	jmp	.Lstart_common
 
 efi_multiboot2_loader:
 	/*
@@ -1401,8 +1401,32 @@ ENTRY(cpu_switchto)
 	movl	PCB_ESP(%ebx),%esp
 
 	/*
-	 * Set curlwp.  This must be globally visible in order to permit
-	 * non-interlocked mutex release.
+	 * Issue XCHG, rather than MOV, to set ci_curlwp := newlwp in
+	 * order to coordinate mutex_exit on this CPU with
+	 * mutex_vector_enter on another CPU.
+	 *
+	 * 1. Any prior mutex_exit by oldlwp must be visible to other
+	 *    CPUs before we set ci_curlwp := newlwp on this one,
+	 *    requiring a store-before-store barrier.
+	 *
+	 *    (This is always guaranteed by the x86 memory model, TSO,
+	 *    but other architectures require a explicit barrier before
+	 *    the store to ci->ci_curlwp.)
+	 *
+	 * 2. ci_curlwp := newlwp must be visible on all other CPUs
+	 *    before any subsequent mutex_exit by newlwp can even test
+	 *    whether there might be waiters, requiring a
+	 *    store-before-load barrier.
+	 *
+	 *    (This is the only ordering x86 TSO ever requires any kind
+	 *    of barrier for -- in this case, we take advantage of the
+	 *    sequential consistency implied by XCHG to obviate the
+	 *    need for MFENCE or something.)
+	 *
+	 * See kern_mutex.c for details -- this is necessary for
+	 * adaptive mutexes to detect whether the lwp is on the CPU in
+	 * order to safely block without requiring atomic r/m/w in
+	 * mutex_exit.
 	 */
 	movl	%edi,%ecx
 	xchgl	%ecx,CPUVAR(CURLWP)

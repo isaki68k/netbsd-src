@@ -1,4 +1,4 @@
-/*      $NetBSD: lwproc.c,v 1.52 2022/11/02 09:01:42 ozaki-r Exp $	*/
+/*      $NetBSD: lwproc.c,v 1.54 2023/02/22 21:44:45 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
 #define RUMP__CURLWP_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.52 2022/11/02 09:01:42 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.54 2023/02/22 21:44:45 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -73,7 +73,7 @@ lwp_unsleep(lwp_t *l, bool cleanup)
 
 /*
  * Look up a live LWP within the specified process.
- * 
+ *
  * Must be called with p->p_lock held.
  */
 struct lwp *
@@ -334,11 +334,10 @@ lwproc_freelwp(struct lwp *l)
 	lwp_finispecific(l);
 
 	lwproc_curlwpop(RUMPUSER_LWP_DESTROY, l);
-	membar_exit();
 	kmem_free(l, sizeof(*l));
 
 	if (p->p_stat == SDEAD)
-		lwproc_proc_free(p);	
+		lwproc_proc_free(p);
 }
 
 extern kmutex_t unruntime_lock;
@@ -379,7 +378,6 @@ lwproc_makelwp(struct proc *p, bool doswitch, bool procmake)
 	lwp_initspecific(l);
 	PSREF_DEBUG_INIT_LWP(l);
 
-	membar_enter();
 	lwproc_curlwpop(RUMPUSER_LWP_CREATE, l);
 	if (doswitch) {
 		rump_lwproc_switch(l);

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.207 2022/12/24 15:46:50 nia Exp $
+#	$NetBSD: GENERIC64,v 1.210 2023/02/25 08:19:35 skrll Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -47,7 +47,9 @@ options 	INCLUDE_CONFIG_FILE
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 #options 	EARLYCONS=tegra, CONSADDR=0x70006000
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
-#options 	EARLYCONS=virt, CONSADDR=0x09000000
+
+# The QEMU virt machine
+#options 	EARLYCONS=plcom, CONSADDR=0x09000000
 
 # Hardware management of the Access flag and dirty state (HAFDBS).
 options 	ARMV81_HAFDBS
@@ -412,6 +414,7 @@ bwfm*		at sdmmc?		# Broadcom BCM43xxx WiFi Interface
 ahcisata*	at fdt?			# AHCI SATA
 ahcisata*	at acpi?
 ahcisata*	at pci? dev ? function ?
+siisata*	at pci? dev ? function ?
 atabus* 	at ata?
 atapibus*	at atapi?
 wd*		at atabus? drive ?
@@ -561,4 +564,5 @@ mpt*		at pci? dev ? function ?
 scsibus*	at scsi?
 sd*		at scsibus? target ? lun ?	# SCSI disk drives
 
-cinclude "arch/evbarm/conf/GENERIC64.local"
+# Pull in optional local configuration - always at end
+cinclude	"arch/evbarm/conf/GENERIC64.local"
