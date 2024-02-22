@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.h,v 1.26 2020/05/03 01:06:56 thorpej Exp $	*/
+/*	$NetBSD: linux_misc.h,v 1.29 2023/08/18 19:41:19 christos Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -33,21 +33,37 @@
 #define _LINUX_MISC_H
 
 /*
- * Options passed to the Linux wait4() system call.
+ * Options passed to the Linux wait4() and waitid() system calls.
  */
-#define LINUX_WAIT4_WNOHANG	0x00000001
-#define LINUX_WAIT4_WUNTRACED	0x00000002
-#define LINUX_WAIT4_WCONTINUED	0x00000008
-#define LINUX_WAIT4_WNOTHREAD	0x20000000
-#define LINUX_WAIT4_WALL	0x40000000
-#define LINUX_WAIT4_WCLONE	0x80000000
+#define LINUX_WNOHANG		0x00000001
+#define LINUX_WUNTRACED		0x00000002
+#define LINUX_WEXITED		0x00000004
+#define LINUX_WCONTINUED	0x00000008
+#define LINUX_WNOWAIT		0x01000000
+#define LINUX_WNOTHREAD		0x20000000
+#define LINUX_WALL		0x40000000
+#define LINUX_WCLONE		0x80000000
 
-#define LINUX_WAIT4_KNOWNFLAGS (LINUX_WAIT4_WNOHANG | \
-                                LINUX_WAIT4_WUNTRACED | \
-                                LINUX_WAIT4_WCONTINUED | \
-                                LINUX_WAIT4_WNOTHREAD | \
-                                LINUX_WAIT4_WALL | \
-                                LINUX_WAIT4_WCLONE)
+#define LINUX_WAIT4_KNOWNFLAGS (LINUX_WNOHANG | \
+                                LINUX_WUNTRACED | \
+                                LINUX_WCONTINUED | \
+                                LINUX_WNOTHREAD | \
+                                LINUX_WALL | \
+                                LINUX_WCLONE)
+
+#define LINUX_WAITID_KNOWNFLAGS (LINUX_WNOHANG | \
+				 LINUX_WEXITED | \
+				 LINUX_WUNTRACED | \
+				 LINUX_WCONTINUED | \
+				 LINUX_WNOWAIT)
+
+/*
+ * Passed as the first argument of waitid(2).
+ */
+#define LINUX_P_ALL	0
+#define LINUX_P_PID	1
+#define LINUX_P_PGID	2
+#define LINUX_P_PIDFD	3
 
 /* This looks very unportable to me, but this is how Linux defines it. */
 struct linux_sysinfo {
@@ -140,6 +156,16 @@ extern const int linux_fstypes_cnt;
  * (it's f(x)=x everywhere except S390)
  */
 #define linux_to_bsd_posix_fadv(advice) (advice)
+
+struct linux_epoll_event {
+	uint32_t	events;
+	uint64_t	data;
+}
+#if defined(__amd64__)
+/* Only for x86_64. See include/uapi/linux/eventpoll.h. */
+__packed
+#endif
+;
 
 #ifdef _KERNEL
 __BEGIN_DECLS

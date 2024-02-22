@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.807 2023/02/11 22:41:15 nia Exp $
+$NetBSD: usbdevs,v 1.813 2024/01/13 14:42:14 hgutch Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -520,6 +520,7 @@ vendor CONCEPTRONIC	0x14b2	Conceptronic
 vendor SUPERTOP		0x14cd	SuperTop
 vendor PLANEX3		0x14ea	Planex Communications
 vendor SILICONPORTALS	0x1527	Silicon Portals
+vendor TOPPING		0x152a	TOPPING Electronics & Technology co.
 vendor JMICRON		0x152d	JMicron
 vendor OQO		0x1557	OQO
 vendor UMEDIA		0x157e	U-MEDIA Communications
@@ -585,6 +586,7 @@ vendor HIROSE		0x2631	Hirose Electric
 vendor ONEPLUS		0x2717	ONEPLUS
 vendor NHJ		0x2770	NHJ
 vendor PLANEX		0x2c02	Planex Communications
+vendor MERCUSYS		0x2c4e	Mercusys
 vendor VIDZMEDIA	0x3275	VidzMedia Pte Ltd
 vendor AEI		0x3334	AEI
 vendor HANK		0x3353	Hank Connection
@@ -2287,6 +2289,9 @@ product MELCO WLIUCGNM		0x01a2	WLI-UC-GNM
 product MELCO WLIUCGNM2T	0x01ee	WLI-UC-GNM2T
 product MELCO WIU2300D		0x0241	WI-U2-300D
 
+/* Mercusys products */
+product	MERCUSYS MW150USV2	0x0102	MW150US V2
+
 /* Merlin products */
 product MERLIN V620		0x1110	Merlin V620
 
@@ -2363,6 +2368,7 @@ product MICROSOFT 24GHZ_XCVR10		0x071d	2.4GHz Transceiver V1.0
 product MICROSOFT 24GHZ_XCVR20		0x071f	2.4GHz Transceiver V2.0
 product MICROSOFT 24GHZ_XCVR70		0x0745	2.4GHz Transceiver V7.0
 product MICROSOFT 24GHZ_XCVR80		0x07b2	2.4GHz Transceiver V8.0
+product MICROSOFT 24GHZ_XCVR90		0x07a5	2.4GHz Transceiver V9.0
 product MICROSOFT CM6000		0x077d	Comfort Mouse 6000
 
 
@@ -2729,6 +2735,7 @@ product PINNACLE PCTV73E	0x0237	Pinnacle PCTV 73e
 
 /* PixArt */
 product PIXART RPIMOUSE		0x2510	Raspberry Pi Mouse
+product LENOVO OPTUSBMOUSE	0x600e	Lenovo USB Optical Mouse
 
 /* Planex Communications products */
 product PLANEX  GW_US11H	0x14ea	GW-US11H WLAN
@@ -2893,6 +2900,7 @@ product REALTEK RTL8150L	0x8150	RTL8150L USB-Ethernet Bridge
 product REALTEK RTL8151		0x8151	RTL8151 PNA
 product REALTEK RTL8152		0x8152	RTL8152
 product REALTEK RTL8153		0x8153	RTL8153
+product REALTEK RTL8156		0x8156	RTL8156
 product REALTEK RTL8188CE_0	0x8170	RTL8188CE
 product REALTEK RTL8171		0x8171	RTL8171
 product REALTEK RTL8172		0x8172	RTL8172
@@ -2919,6 +2927,7 @@ product REALTEK RTL8712		0x8712	RTL8712
 product REALTEK RTL8713		0x8713	RTL8713
 product REALTEK RTL8188CU_COMBO	0x8754	RTL8188CU
 product REALTEK RTL8192SU	0xc512	RTL8192SU
+product REALTEK RTL8188FU	0xf179	RTL8188FU
 
 /* Research In Motion */
 product RIM BLACKBERRY			0x0001	BlackBerry
@@ -3417,6 +3426,9 @@ product TODOS ARGOS_MINI	0x0002	Argos Mini Smartcard Reader
 
 /* Topfield Co. Ltd products */
 product TOPFIELD TF5000PVR	0x1000	TF5000PVR Digital Video Recorder
+
+/* TOPPING Electronics & Technology co. */
+product TOPPING DX3_PRO		0x8750	DX3 Pro
 
 /* Toshiba Corporation products */
 product TOSHIBA POCKETPC_E740	0x0706	PocketPC e740

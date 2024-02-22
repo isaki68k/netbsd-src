@@ -1,4 +1,4 @@
-/* $NetBSD: dw_hdmi.c,v 1.10 2022/03/25 23:16:04 tnn Exp $ */
+/* $NetBSD: dw_hdmi.c,v 1.12 2024/02/09 16:56:23 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dw_hdmi.c,v 1.10 2022/03/25 23:16:04 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dw_hdmi.c,v 1.12 2024/02/09 16:56:23 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -531,7 +531,7 @@ dwhdmi_audio_init(struct dwhdmi_softc *sc)
 	val &= ~HDMI_AUD_CONF0_I2S_IN_EN;
 	val |= __SHIFTIN(1, HDMI_AUD_CONF0_I2S_IN_EN);	/* XXX 2ch */
 	dwhdmi_write(sc, HDMI_AUD_CONF0, val);
-	
+
 	val = __SHIFTIN(16, HDMI_AUD_CONF1_I2S_WIDTH);
 	dwhdmi_write(sc, HDMI_AUD_CONF1, val);
 
@@ -729,7 +729,7 @@ dwhdmi_audio_swvol_codec(audio_filter_arg_t *arg)
 {
 	struct dwhdmi_softc * const sc = arg->context;
 	const aint_t *src;
-	aint_t *dst;
+	int16_t *dst;
 	u_int sample_count;
 	u_int i;
 

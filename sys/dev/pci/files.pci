@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.445 2022/10/14 22:10:15 jmcneill Exp $
+#	$NetBSD: files.pci,v 1.448 2023/10/20 10:09:43 msaitoh Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -649,6 +649,22 @@ device	stge: ether, ifnet, arp, mii, mii_bitbang
 attach	stge at pci
 file	dev/pci/if_stge.c		stge
 
+# Intel I225/I226 2.5-Gigabit Ethernet
+device	igc: ether, ifnet, arp, mii, mii_phy
+attach	igc at pci
+file	dev/pci/igc/if_igc.c		igc
+file	dev/pci/igc/igc_api.c		igc
+file	dev/pci/igc/igc_base.c		igc
+file	dev/pci/igc/igc_i225.c		igc
+file	dev/pci/igc/igc_mac.c		igc
+file	dev/pci/igc/igc_nvm.c		igc
+file	dev/pci/igc/igc_phy.c		igc
+defparam opt_if_igc.h	IGC_TX_PROCESS_LIMIT_DEFAULT
+			IGC_TX_INTR_PROCESS_LIMIT_DEFAULT
+			IGC_RX_PROCESS_LIMIT_DEFAULT
+			IGC_RX_INTR_PROCESS_LIMIT_DEFAULT
+			IGC_DISABLE_MSIX IGC_DISABLE_MSI
+
 # Intel i82598 & i82599 10-Gigabit Ethernet
 device	ixg: ether, ifnet, arp, mii, mii_phy
 attach	ixg at pci
@@ -980,8 +996,12 @@ device	nfsmb: i2cbus
 attach	nfsmb at nfsmbc
 file	dev/pci/nfsmb.c			nfsmbc | nfsmb
 
+# Intel ICH -- I/O or Platform Controller Hub
+# (most drivers under sys/arch/x86/pci)
+define	tcoichbus {}
+
 # Intel ICH SMBus controller
-device	ichsmb: i2cbus
+device	ichsmb: i2cbus, tcoichbus
 attach	ichsmb at pci
 file	dev/pci/ichsmb.c		ichsmb
 
@@ -1151,6 +1171,10 @@ attach	ena at pci
 file	dev/pci/if_ena.c			ena
 file	external/bsd/ena-com/ena_com.c		ena
 file	external/bsd/ena-com/ena_eth_com.c	ena
+
+# PCI based DesignWare Ethernet QoS
+attach	eqos at pci with eqos_pci
+file	dev/pci/if_eqos_pci.c eqos_pci
 
 # Intel QuickAssist
 device qat: opencrypto, firmload

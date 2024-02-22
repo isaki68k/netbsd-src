@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.506 2023/02/09 14:09:48 abs Exp $
+# $NetBSD: ALL,v 1.515 2024/01/29 18:27:13 christos Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,7 +17,7 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.506 $"
+#ident		"ALL-$Revision: 1.515 $"
 
 maxusers	64		# estimated number of users
 
@@ -131,6 +131,10 @@ options 	BIOHIST		# kernhist for buff I/O
 makeoptions	KCOV=1
 options		KCOV
 
+# Heartbeat checks
+options 	HEARTBEAT
+options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
+
 # Compatibility options
 include 	"conf/compat_netbsd09.config"
 options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
@@ -196,8 +200,6 @@ options 	LFS_DIRHASH	# LFS version of UFS_DIRHASH
 options 	LFS_QUOTA	# quotas for LFS - experimental
 options 	LFS_QUOTA2	# new-style quotas for LFS - experimental
 # ext2fs
-options 	EXT2FS_SYSTEM_FLAGS # makes ext2fs file flags (append and
-				# immutable) behave as system flags.
 # other
 options 	DISKLABEL_EI	# disklabel Endian Independent support
 options 	NFSSERVER	# Network File System server
@@ -353,6 +355,7 @@ acpibut*	at acpi?		# ACPI Button
 acpidalb*	at acpi?		# ACPI Direct Application Launch Button
 acpiec* 	at acpi?		# ACPI Embedded Controller (late)
 acpiecdt*	at acpi?		# ACPI Embedded Controller (early)
+options 	ACPIEC_DEBUG=-1
 acpifan*	at acpi?		# ACPI Fan
 acpilid*	at acpi?		# ACPI Lid Switch
 acpipmtr*	at acpi?		# ACPI Power Meter (experimental)
@@ -562,6 +565,13 @@ cardslot*	at cbb?
 # CardBus bus support
 cardbus*	at cardslot?
 pcmcia* 	at cardslot?
+
+# VME bridge support
+btvmei*		at pci? dev ? function ?
+btvmeii*	at pci? dev ? function ?
+
+# VME bus support
+vme*		at vmebus?
 
 # Console Devices
 
@@ -1810,9 +1820,9 @@ pseudo-device	pad
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device	drvctl
 
-# EFI runtime support -- doesn't build yet
-#options 	EFI_RUNTIME
-#pseudo-device 	efi			# /dev/efi
+# EFI runtime support
+options 	EFI_RUNTIME
+pseudo-device 	efi			# /dev/efi
 
 # Pass-to-Userspace Transporter
 pseudo-device	putter
@@ -2293,7 +2303,6 @@ options SMB_VNODE_DEBUG
 options SNAPPER_DEBUG
 options SNDEBUG
 options SOCKBUF_DEBUG
-options SONIC_DEBUG
 options SPARC_PCI_DEBUG
 options SPC_DEBUG
 options SPIC_DEBUG
@@ -2332,7 +2341,6 @@ options TROPICDEBUG
 options TRTCMISADEBUG
 options TSDEBUG
 options TSLOT_DEBUG
-options TTY_DEBUG
 options TUDEBUG
 options TULIP_DEBUG
 options TWA_DEBUG

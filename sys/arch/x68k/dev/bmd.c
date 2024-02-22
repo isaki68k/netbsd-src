@@ -1,4 +1,4 @@
-/*	$NetBSD: bmd.c,v 1.26 2022/05/26 14:33:29 tsutsui Exp $	*/
+/*	$NetBSD: bmd.c,v 1.28 2024/01/07 07:58:33 isaki Exp $	*/
 
 /*
  * Copyright (c) 2002 Tetsuya Isaki. All rights reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bmd.c,v 1.26 2022/05/26 14:33:29 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bmd.c,v 1.28 2024/01/07 07:58:33 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -152,7 +152,7 @@ bmd_match(device_t parent, cfdata_t cf, void *aux)
 		return (0);
 
 	/* Check CTRL addr */
- 	if (badaddr((void *)IIOV(ia->ia_addr)))
+	if (badaddr((void *)IIOV(ia->ia_addr)))
 		return (0);
 
 	ia->ia_size = 2;
@@ -232,7 +232,7 @@ bmdopen(dev_t dev, int oflags, int devtype, struct lwp *l)
 {
 	struct bmd_softc *sc;
 
-	DPRINTF(("%s%d\n", __func__, unit));
+	DPRINTF(("%s%d\n", __func__, BMD_UNIT(dev)));
 
 	sc = device_lookup_private(&bmd_cd, BMD_UNIT(dev));
 	if (sc == NULL)
@@ -291,7 +291,7 @@ bmdstrategy(struct buf *bp)
 		goto done;
 	}
 
-	DPRINTF(("bmdstrategy: %s blkno %d bcount %ld:",
+	DPRINTF(("bmdstrategy: %s blkno %" PRIx64 " bcount %d:",
 		(bp->b_flags & B_READ) ? "read " : "write",
 		bp->b_blkno, bp->b_bcount));
 

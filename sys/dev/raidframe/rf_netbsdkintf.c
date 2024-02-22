@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.411 2023/03/30 11:02:15 riastradh Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.417 2023/10/09 21:55:48 oster Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.411 2023/03/30 11:02:15 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.417 2023/10/09 21:55:48 oster Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_autoconfig.h"
@@ -136,7 +136,6 @@ __KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.411 2023/03/30 11:02:15 riastra
 #include <dev/raidframe/rf_paritymap.h>
 
 #include "rf_raid.h"
-#include "rf_copyback.h"
 #include "rf_dag.h"
 #include "rf_dagflags.h"
 #include "rf_desc.h"
@@ -157,6 +156,8 @@ int     rf_kdebug_level = 0;
 #else				/* DEBUG */
 #define db1_printf(a) { }
 #endif				/* DEBUG */
+
+#define DEVICE_XNAME(dev) dev ? device_xname(dev) : "null"
 
 #if (RF_INCLUDE_PARITY_DECLUSTERING_DS > 0)
 static rf_declare_mutex2(rf_sparet_wait_mutex);
@@ -296,7 +297,6 @@ static void rf_set_geometry(struct raid_softc *, RF_Raid_t *);
 
 static void rf_ReconThread(struct rf_recon_req_internal *);
 static void rf_RewriteParityThread(RF_Raid_t *raidPtr);
-static void rf_CopybackThread(RF_Raid_t *raidPtr);
 static void rf_ReconstructInPlaceThread(struct rf_recon_req_internal *);
 static int rf_autoconfig(device_t);
 static int rf_rescan(void);
@@ -524,6 +524,134 @@ rf_rescan(void)
 	return 0;
 }
 
+/*
+ * Example setup:
+ * dk1 at wd0: "raid@wd0", 171965 blocks at 32802, type: raidframe
+ * dk3 at wd1: "raid@wd1", 171965 blocks at 32802, type: raidframz
+ * raid1: Components: /dev/dk1 /dev/dk3
+ * dk4 at raid1: "empty@raid1", 8192 blocks at 34, type: msdos
+ * dk5 at raid1: "root@raid1", 163517 blocks at 8226, type: ffs
+ * 
+ * If booted from wd0, booted_device will be 
+ * disk wd0, startblk = 41092, nblks = 163517
+ *
+ * That is, dk5 with startblk computed from the beginning of wd0
+ * instead of beginning of raid1:
+ * 32802 + 64 (RF_PROTECTED_SECTORS) + 8226 = 41092
+ * 
+ * In order to find the boot wedge, we must iterate on each component, 
+ * find its offset from disk beginning, abd look for the boot wedge with 
+ * startblck adjusted.
+ */
+static device_t
+rf_find_bootwedge(struct raid_softc *rsc)
+{
+	RF_Raid_t *r = &rsc->sc_r;
+	const char *bootname;
+	size_t len;
+	device_t rdev = NULL;
+
+	if (booted_device == NULL)
+		goto out;
+		
+	bootname = device_xname(booted_device);
+	len = strlen(bootname);
+
+	aprint_debug("%s: booted_device %s, startblk = %"PRId64", "
+		     "nblks = %"PRId64"\n", __func__,
+		     bootname, booted_startblk, booted_nblks);
+
+	for (int col = 0; col < r->numCol; col++) {
+		const char *devname = r->Disks[col].devname;
+		const char *parent;
+		struct disk *dk;
+		u_int nwedges;
+		struct dkwedge_info *dkwi;
+		struct dkwedge_list dkwl;
+		size_t dkwi_len;
+		int i;
+
+		devname += sizeof("/dev/") - 1;
+		if (strncmp(devname, "dk", 2) != 0) 
+			continue;
+
+		parent = dkwedge_get_parent_name(r->Disks[col].dev);
+		if (parent == NULL) {
+			aprint_debug("%s: cannot find parent for "
+				     "component /dev/%s", __func__, devname); 
+			continue;
+		}
+
+		if (strncmp(parent, bootname, len) != 0)
+			continue;
+
+		aprint_debug("%s: looking up wedge %s in device %s\n",
+			     __func__, devname, parent);
+
+		dk = disk_find(parent);
+		nwedges = dk->dk_nwedges;
+		dkwi_len = sizeof(*dkwi) * nwedges;
+		dkwi = RF_Malloc(dkwi_len);
+
+		dkwl.dkwl_buf = dkwi;
+		dkwl.dkwl_bufsize = dkwi_len;
+		dkwl.dkwl_nwedges = 0;
+		dkwl.dkwl_ncopied = 0;
+
+		if (dkwedge_list(dk, &dkwl, curlwp) == 0) {
+			daddr_t startblk;
+
+			for (i = 0; i < dkwl.dkwl_ncopied; i++) {
+				if (strcmp(dkwi[i].dkw_devname, devname) == 0)
+					break;
+			}
+
+			KASSERT(i < dkwl.dkwl_ncopied);
+
+			aprint_debug("%s: wedge %s, "
+				     "startblk = %"PRId64", "
+				     "nblks = %"PRId64"\n",
+				     __func__,
+				     dkwi[i].dkw_devname,
+				     dkwi[i].dkw_offset,
+				     dkwi[i].dkw_size);
+
+			startblk = booted_startblk
+				 - dkwi[i].dkw_offset
+				 - RF_PROTECTED_SECTORS;
+			
+			aprint_debug("%s: looking for wedge in %s, "
+				     "startblk = %"PRId64", "
+				     "nblks = %"PRId64"\n",
+				     __func__,
+				     DEVICE_XNAME(rsc->sc_dksc.sc_dev),
+				     startblk, booted_nblks);
+
+			rdev = dkwedge_find_partition(rsc->sc_dksc.sc_dev,
+						      startblk,
+						      booted_nblks);
+			if (rdev) {
+				aprint_debug("%s: root candidate wedge %s "
+					     "shifted from %s\n", __func__,
+					     device_xname(rdev), 
+					     dkwi[i].dkw_devname);
+				goto done;
+			} else {
+				aprint_debug("%s: not found\n", __func__);
+			}
+		}
+
+		aprint_debug("%s: nothing found for col %d\n", __func__, col);
+done:
+		RF_Free(dkwi, dkwi_len);
+	}
+
+out:
+	if (!rdev)
+		aprint_debug("%s: nothing found\n", __func__);
+
+	return rdev;
+}
 
 static void
 rf_buildroothack(RF_ConfigSet_t *config_sets)
@@ -587,49 +715,33 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 	}
 
 	/* we found something bootable... */
-
-	/*
-	 * XXX: The following code assumes that the root raid
-	 * is the first ('a') partition. This is about the best
-	 * we can do with a BSD disklabel, but we might be able
-	 * to do better with a GPT label, by setting a specified
-	 * attribute to indicate the root partition. We can then
-	 * stash the partition number in the r->root_partition
-	 * high bits (the bottom 2 bits are already used). For
-	 * now we just set booted_partition to 0 when we override
-	 * root.
-	 */
 	if (num_root == 1) {
-		device_t candidate_root;
+		device_t candidate_root = NULL;
 		dksc = &rsc->sc_dksc;
+
 		if (dksc->sc_dkdev.dk_nwedges != 0) {
-			char cname[sizeof(cset->ac->devname)];
-			/* XXX: assume partition 'a' first */
-			snprintf(cname, sizeof(cname), "%s%c",
-			    device_xname(dksc->sc_dev), 'a');
-			candidate_root = dkwedge_find_by_wname(cname);
-			aprint_debug("%s: candidate wedge root=%s\n", __func__,
-			    cname);
+
+			/* Find the wedge we booted from */
+			candidate_root = rf_find_bootwedge(rsc);
+
+			/* Try first partition */
 			if (candidate_root == NULL) {
-				/*
-				 * If that is not found, because we don't use
-				 * disklabel, return the first dk child
-				 * XXX: we can skip the 'a' check above
-				 * and always do this...
-				 */
 				size_t i = 0;
 				candidate_root = dkwedge_find_by_parent(
 				    device_xname(dksc->sc_dev), &i);
 			}
-			aprint_debug("%s: candidate wedge root=%p\n", __func__,
-			    candidate_root);
-		} else
+			aprint_debug("%s: candidate wedge root %s\n",
+			    __func__, DEVICE_XNAME(candidate_root));
+		} else {
 			candidate_root = dksc->sc_dev;
-		aprint_debug("%s: candidate root=%p booted_device=%p "
-			     "root_partition=%d contains_boot=%d\n",
-		    __func__, candidate_root, booted_device,
-		    rsc->sc_r.root_partition,
+		}
+
+		aprint_debug("%s: candidate root = %s, booted_device = %s, "
+			     "root_partition = %d, contains_boot=%d\n",
+		    __func__, DEVICE_XNAME(candidate_root),
+		    DEVICE_XNAME(booted_device), rsc->sc_r.root_partition,
 		    rf_containsboot(&rsc->sc_r, booted_device));
+
 		/* XXX the check for booted_device == NULL can probably be
 		 * dropped, now that rf_containsboot handles that case.
 		 */
@@ -639,12 +751,12 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 			booted_device = candidate_root;
 			booted_method = "raidframe/single";
 			booted_partition = 0;	/* XXX assume 'a' */
-			aprint_debug("%s: set booted_device=%s(%p)\n", __func__,
-			    device_xname(booted_device), booted_device);
+			aprint_debug("%s: set booted_device = %s\n", __func__,
+			    DEVICE_XNAME(booted_device));
 		}
 	} else if (num_root > 1) {
-		aprint_debug("%s: many roots=%d, %p\n", __func__, num_root,
-		    booted_device);
+		aprint_debug("%s: many roots=%d, %s\n", __func__, num_root,
+		    DEVICE_XNAME(booted_device));
 
 		/*
 		 * Maybe the MD code can help. If it cannot, then
@@ -774,6 +886,7 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 
 	for (c = 0; c < raidPtr->numSpare; c++) {
 		sparecol = raidPtr->numCol + c;
+
 		if (raidPtr->Disks[sparecol].status ==  rf_ds_used_spare) {
 			/* How about this one? */
 			scol = -1;
@@ -1068,8 +1181,7 @@ raid_detach_unlocked(struct raid_softc *rs)
 
 	if (DK_BUSY(dksc, 0) ||
 	    raidPtr->recon_in_progress != 0 ||
-	    raidPtr->parity_rewrite_in_progress != 0 ||
-	    raidPtr->copyback_in_progress != 0)
+	    raidPtr->parity_rewrite_in_progress != 0)
 		return EBUSY;
 
 	if ((rs->sc_flags & RAIDF_INITED) == 0)
@@ -1112,9 +1224,7 @@ rf_fail_disk(RF_Raid_t *raidPtr, struct rf_recon_req *rr)
 
 	rf_lock_mutex2(raidPtr->mutex);
 	if (raidPtr->status == rf_rs_reconstructing) {
-		/* you can't fail a disk while we're reconstructing! */
-		/* XXX wrong for RAID6 */
-		goto out;
+		raidPtr->abortRecon[rr->col] = 1;
 	}
 	if ((raidPtr->Disks[rr->col].status == rf_ds_optimal) &&
 	    (raidPtr->numFailures > 0)) {
@@ -1123,8 +1233,18 @@ rf_fail_disk(RF_Raid_t *raidPtr, struct rf_recon_req *rr)
 		goto out;
 	}
 	if (raidPtr->Disks[rr->col].status == rf_ds_spared) {
-		/* Can't fail a spared disk! */
-		goto out;
+		int spareCol = raidPtr->Disks[rr->col].spareCol;
+
+		if (spareCol < raidPtr->numCol ||
+		    spareCol >= raidPtr->numCol + raidPtr->numSpare)
+			goto out;
+
+		/* 
+		 * Fail the spare disk so that we can 
+		 * reconstruct on another one.
+		 */
+		raidPtr->Disks[spareCol].status = rf_ds_failed;
+			
 	}
 	rf_unlock_mutex2(raidPtr->mutex);
 
@@ -1502,8 +1622,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 		if (DK_BUSY(dksc, pmask) ||
 		    raidPtr->recon_in_progress != 0 ||
-		    raidPtr->parity_rewrite_in_progress != 0 ||
-		    raidPtr->copyback_in_progress != 0)
+		    raidPtr->parity_rewrite_in_progress != 0)
 			retcode = EBUSY;
 		else {
 			/* detach and free on close */
@@ -1560,12 +1679,14 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		rf_copy_single_component(&component, data);
 		return rf_add_hot_spare(raidPtr, &component);
 
-	case RAIDFRAME_REMOVE_HOT_SPARE:
-		return retcode;
-
+	/* Remove a non hot-spare component, never implemented in userland */
 	case RAIDFRAME_DELETE_COMPONENT:
 		rf_copy_single_component(&component, data);
 		return rf_delete_component(raidPtr, &component);
+
+	case RAIDFRAME_REMOVE_COMPONENT:
+		rf_copy_single_component(&component, data);
+		return rf_remove_component(raidPtr, &component);
 
 	case RAIDFRAME_INCORPORATE_HOT_SPARE:
 		rf_copy_single_component(&component, data);
@@ -1641,22 +1762,9 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	case RAIDFRAME_FAIL_DISK:
 		return rf_fail_disk(raidPtr, data);
 
-		/* invoke a copyback operation after recon on whatever disk
-		 * needs it, if any */
+		/* copyback is no longer supported */
 	case RAIDFRAME_COPYBACK:
-
-		if (raidPtr->Layout.map->faultsTolerated == 0) {
-			/* This makes no sense on a RAID 0!! */
-			return EINVAL;
-		}
-
-		if (raidPtr->copyback_in_progress == 1) {
-			/* Copyback is already in progress! */
-			return EINVAL;
-		}
-
-		return RF_CREATE_THREAD(raidPtr->copyback_thread,
-		    rf_CopybackThread, raidPtr, "raid_copyback");
+		return EINVAL;
 
 		/* return the percentage completion of reconstruction */
 	case RAIDFRAME_CHECK_RECON_STATUS:
@@ -1687,17 +1795,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		return 0;
 
 	case RAIDFRAME_CHECK_COPYBACK_STATUS:
-		if (raidPtr->Layout.map->faultsTolerated == 0) {
-			/* This makes no sense on a RAID 0 */
-			*(int *) data = 100;
-			return 0;
-		}
-		if (raidPtr->copyback_in_progress == 1) {
-			*(int *) data = 100 * raidPtr->copyback_stripes_done /
-				raidPtr->Layout.numStripe;
-		} else {
-			*(int *) data = 100;
-		}
+		*(int *) data = 100;
 		return 0;
 
 	case RAIDFRAME_CHECK_COPYBACK_STATUS_EXT:
@@ -2556,8 +2654,9 @@ rf_markalldirty(RF_Raid_t *raidPtr)
 		}
 	}
 
-	for( c = 0; c < raidPtr->numSpare ; c++) {
+	for (c = 0; c < raidPtr->numSpare ; c++) {
 		sparecol = raidPtr->numCol + c;
+
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
 			/*
 
@@ -2629,8 +2728,9 @@ rf_update_component_labels(RF_Raid_t *raidPtr, int final)
 		/* else we don't touch it.. */
 	}
 
-	for( c = 0; c < raidPtr->numSpare ; c++) {
+	for (c = 0; c < raidPtr->numSpare ; c++) {
 		sparecol = raidPtr->numCol + c;
+
 		/* Need to ensure that the reconstruct actually completed! */
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
 			/*
@@ -2777,23 +2877,6 @@ rf_RewriteParityThread(RF_Raid_t *raidPtr)
 	/* That's all... */
 	kthread_exit(0);	/* does not return */
 }
-
-
-static void
-rf_CopybackThread(RF_Raid_t *raidPtr)
-{
-	int s;
-
-	raidPtr->copyback_in_progress = 1;
-	s = splbio();
-	rf_CopybackReconstructedData(raidPtr);
-	splx(s);
-	raidPtr->copyback_in_progress = 0;
-
-	/* That's all... */
-	kthread_exit(0);	/* does not return */
-}
-
 
 static void
 rf_ReconstructInPlaceThread(struct rf_recon_req_internal *req)
@@ -2956,7 +3039,6 @@ rf_find_raid_components(void)
 				continue;
 			}
 
-			VOP_UNLOCK(vp);
 			error = getdisksize(vp, &numsecs, &secsize);
 			if (error) {
 				/*
@@ -2968,7 +3050,6 @@ rf_find_raid_components(void)
 					printf("RAIDframe: can't get disk size"
 					    " for dev %s (%d)\n",
 					    device_xname(dv), error);
-				vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 				VOP_CLOSE(vp, FREAD | FWRITE, NOCRED);
 				vput(vp);
 				continue;
@@ -2980,19 +3061,18 @@ rf_find_raid_components(void)
 				if (error) {
 					printf("RAIDframe: can't get wedge info for "
 					    "dev %s (%d)\n", device_xname(dv), error);
-					vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 					VOP_CLOSE(vp, FREAD | FWRITE, NOCRED);
 					vput(vp);
 					continue;
 				}
 
 				if (strcmp(dkw.dkw_ptype, DKW_PTYPE_RAIDFRAME) != 0) {
-					vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 					VOP_CLOSE(vp, FREAD | FWRITE, NOCRED);
 					vput(vp);
 					continue;
 				}
 
+				VOP_UNLOCK(vp);
 				ac_list = rf_get_component(ac_list, dev, vp,
 				    device_xname(dv), dkw.dkw_size, numsecs, secsize);
 				rf_part_found = 1; /*There is a raid component on this disk*/
@@ -3013,7 +3093,6 @@ rf_find_raid_components(void)
 
 			/* don't need this any more.  We'll allocate it again
 			   a little later if we really do... */
-			vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 			VOP_CLOSE(vp, FREAD | FWRITE, NOCRED);
 			vput(vp);
 
@@ -3463,6 +3542,7 @@ rf_set_autoconfig(RF_Raid_t *raidPtr, int new_value)
 	}
 	for(column = 0; column < raidPtr->numSpare ; column++) {
 		sparecol = raidPtr->numCol + column;
+
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
 			clabel = raidget_component_label(raidPtr, sparecol);
 			clabel->autoconfigure = new_value;
@@ -3487,8 +3567,9 @@ rf_set_rootpartition(RF_Raid_t *raidPtr, int new_value)
 			raidflush_component_label(raidPtr, column);
 		}
 	}
-	for(column = 0; column < raidPtr->numSpare ; column++) {
+	for (column = 0; column < raidPtr->numSpare ; column++) {
 		sparecol = raidPtr->numCol + column;
+
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
 			clabel = raidget_component_label(raidPtr, sparecol);
 			clabel->root_partition = new_value;
@@ -3775,8 +3856,7 @@ rf_get_component_caches(RF_Raid_t *raidPtr, int *data)
 		 * Check any non-dead disk, even when currently being
 		 * reconstructed.
 		 */
-		if (!RF_DEAD_DISK(raidPtr->Disks[c].status)
-		    || raidPtr->Disks[c].status == rf_ds_reconstructing) {
+		if (!RF_DEAD_DISK(raidPtr->Disks[c].status)) {
 			error = VOP_IOCTL(raidPtr->raid_cinfo[c].ci_vp,
 			    DIOCGCACHE, &dkpart, FREAD, NOCRED);
 			if (error) {
@@ -3838,6 +3918,7 @@ rf_sync_component_caches(RF_Raid_t *raidPtr, int force)
 
 	for (c = 0; c < raidPtr->numSpare ; c++) {
 		int sparecol = raidPtr->numCol + c;
+
 		/* Need to ensure that the reconstruct actually completed! */
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
 			int e = rf_sync_component_cache(raidPtr, sparecol,
@@ -3889,16 +3970,9 @@ rf_check_copyback_status_ext(RF_Raid_t *raidPtr, RF_ProgressInfo_t *info)
 {
 
 	memset(info, 0, sizeof(*info));
-
-	if (raidPtr->copyback_in_progress == 1) {
-		info->total = raidPtr->Layout.numStripe;
-		info->completed = raidPtr->copyback_stripes_done;
-		info->remaining = info->total - info->completed;
-	} else {
-		info->remaining = 0;
-		info->completed = 100;
-		info->total = 100;
-	}
+	info->remaining = 0;
+	info->completed = 100;
+	info->total = 100;
 }
 
 /* Fill in config with the current info */
@@ -3922,10 +3996,10 @@ rf_get_info(RF_Raid_t *raidPtr, RF_DeviceConfig_t *config)
 		config->devs[d] = raidPtr->Disks[j];
 		d++;
 	}
-	for (j = config->cols, i = 0; i < config->nspares; i++, j++) {
-		config->spares[i] = raidPtr->Disks[j];
+	for (i = 0; i < config->nspares; i++) {
+		config->spares[i] = raidPtr->Disks[raidPtr->numCol + i];
 		if (config->spares[i].status == rf_ds_rebuilding_spare) {
-			/* XXX: raidctl(8) expects to see this as a used spare */
+			/* raidctl(8) expects to see this as a used spare */
 			config->spares[i].status = rf_ds_used_spare;
 		}
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: sequencer.c,v 1.81 2022/07/01 01:04:59 riastradh Exp $	*/
+/*	$NetBSD: sequencer.c,v 1.84 2023/10/17 09:59:46 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sequencer.c,v 1.81 2022/07/01 01:04:59 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sequencer.c,v 1.84 2023/10/17 09:59:46 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "midi.h"
@@ -122,12 +122,12 @@ extern struct cfdriver sequencer_cd;
 	)
 
 #ifdef AUDIO_DEBUG
-#define DPRINTF(x)	if (sequencerdebug) printf x
-#define DPRINTFN(n,x)	if (sequencerdebug >= (n)) printf x
+#define DPRINTF(x)	do { if (sequencerdebug) printf x; } while (0)
+#define DPRINTFN(n,x)	do { if (sequencerdebug >= (n)) printf x; } while (0)
 int	sequencerdebug = 0;
 #else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTF(x)	do { } while (0)
+#define DPRINTFN(n,x)	do { } while (0)
 #endif
 
 #define SEQ_NOTE_MAX 128

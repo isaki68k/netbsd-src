@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_rwlock.c,v 1.70 2023/02/24 11:11:10 riastradh Exp $	*/
+/*	$NetBSD: kern_rwlock.c,v 1.76 2023/10/15 10:28:48 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2019, 2020
+ * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2019, 2020, 2023
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -45,23 +45,25 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_rwlock.c,v 1.70 2023/02/24 11:11:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_rwlock.c,v 1.76 2023/10/15 10:28:48 riastradh Exp $");
 
 #include "opt_lockdebug.h"
 
 #define	__RWLOCK_PRIVATE
 
 #include <sys/param.h>
+
+#include <sys/atomic.h>
+#include <sys/cpu.h>
+#include <sys/lock.h>
+#include <sys/lockdebug.h>
 #include <sys/proc.h>
+#include <sys/pserialize.h>
 #include <sys/rwlock.h>
 #include <sys/sched.h>
 #include <sys/sleepq.h>
+#include <sys/syncobj.h>
 #include <sys/systm.h>
-#include <sys/lockdebug.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
-#include <sys/lock.h>
-#include <sys/pserialize.h>
 
 #include <dev/lockstat.h>
 
@@ -120,8 +122,14 @@ lockops_t rwlock_lockops = {
 	.lo_dump = rw_dump,
 };
 
+/*
+ * Give rwlock holders an extra-high priority boost on-blocking due to
+ * direct handoff.  XXX To be revisited.
+ */
 syncobj_t rw_syncobj = {
+	.sobj_name	= "rwlock",
 	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_boostpri  = PRI_KTHREAD,
 	.sobj_unsleep	= turnstile_unsleep,
 	.sobj_changepri	= turnstile_changepri,
 	.sobj_lendpri	= sleepq_lendpri,
@@ -585,7 +593,7 @@ rw_vector_tryenter(krwlock_t *rw, const krw_t op)
 void
 rw_downgrade(krwlock_t *rw)
 {
-	uintptr_t owner, curthread, newown, next;
+	uintptr_t owner, newown, next, curthread __diagused;
 	turnstile_t *ts;
 	int rcnt, wcnt;
 	lwp_t *l;
@@ -596,9 +604,6 @@ rw_downgrade(krwlock_t *rw)
 	RW_ASSERT(rw, (rw->rw_owner & RW_WRITE_LOCKED) != 0);
 	RW_ASSERT(rw, RW_OWNER(rw) == curthread);
 	RW_UNLOCKED(rw, RW_WRITER);
-#if !defined(DIAGNOSTIC)
-	__USE(curthread);
-#endif
 
 	membar_release();
 	for (owner = rw->rw_owner;; owner = next) {
@@ -799,27 +804,4 @@ rw_owner(wchan_t obj)
 		return NULL;
 
 	return (void *)(owner & RW_THREAD);
-}
-
-/*
- * rw_owner_running:
- *
- *	Return true if a RW lock is unheld, or write held and the owner is
- *	running on a CPU.  For the pagedaemon.
- */
-bool
-rw_owner_running(const krwlock_t *rw)
-{
-#ifdef MULTIPROCESSOR
-	uintptr_t owner;
-	bool rv;
-
-	kpreempt_disable();
-	owner = rw->rw_owner;
-	rv = (owner & RW_THREAD) == 0 || rw_oncpu(owner);
-	kpreempt_enable();
-	return rv;
-#else
-	return rw_owner(rw) == curlwp;
-#endif
 }

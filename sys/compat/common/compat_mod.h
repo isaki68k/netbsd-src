@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_mod.h,v 1.7 2022/12/19 23:19:51 pgoyette Exp $	*/
+/*	$NetBSD: compat_mod.h,v 1.10 2023/12/09 15:21:01 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2013, 2019 The NetBSD Foundation, Inc.
@@ -35,6 +35,10 @@
 #ifdef COMPAT_100
 int compat_100_init(void);
 int compat_100_fini(void);
+int kern_event_100_init(void);
+int kern_event_100_fini(void);
+void usb_100_init(void);
+void usb_100_fini(void);
 #endif
 
 #ifdef COMPAT_90
@@ -42,6 +46,8 @@ int compat_90_init(void);
 int compat_90_fini(void);
 int vfs_syscalls_90_init(void);
 int vfs_syscalls_90_fini(void);
+int net_inet6_nd_90_init(void);
+int net_inet6_nd_90_fini(void);
 #endif
 
 #ifdef COMPAT_80

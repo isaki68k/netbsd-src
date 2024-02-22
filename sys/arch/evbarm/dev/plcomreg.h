@@ -1,4 +1,4 @@
-/*	$NetBSD: plcomreg.h,v 1.7 2023/01/24 06:56:40 mlelstv Exp $	*/
+/*	$NetBSD: plcomreg.h,v 1.9 2024/02/05 22:08:04 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001 ARM Ltd
@@ -29,6 +29,8 @@
  * SUCH DAMAGE.
 */
 
+#ifndef	_SYS_ARCH_EVBARM_DEV_PLCOMREG_H_
+#define	_SYS_ARCH_EVBARM_DEV_PLCOMREG_H_
 
 #define	PLCOM_FREQ	1843200	/* 16-bit baud rate divisor */
 #define	PLCOM_TOLERANCE	30	/* baud rate tolerance, in 0.1% units */
@@ -45,7 +47,7 @@
 #define	PL01X_CR_LBE	0x0080	/* Loopback enable */
 #define	PL010_CR_RTIE	0x0040	/* Receive timeout interrupt enable */
 #define	PL010_CR_TIE	0x0020	/* Transmit interrupt enable */
-#define	PL010_CR_RIE	0x0010	/* Receive interrrupt enable */
+#define	PL010_CR_RIE	0x0010	/* Receive interrupt enable */
 #define	PL010_CR_MSIE	0x0008	/* Modem status interrupt enable */
 #define	PL01X_CR_SIRLP	0x0004	/* IrDA SIR Low power mode */
 #define	PL01X_CR_SIREN	0x0002	/* SIR Enable */
@@ -173,3 +175,5 @@
 
 #define	PL010COM_UART_SIZE	0x100
 #define	PL011COM_UART_SIZE	0x1000
+
+#endif	/* _SYS_ARCH_EVBARM_DEV_PLCOMREG_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: uaudioreg.h,v 1.17 2023/04/02 14:43:35 mlelstv Exp $	*/
+/*	$NetBSD: uaudioreg.h,v 1.19 2023/04/16 19:26:20 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -66,6 +66,9 @@ typedef struct {
 	 * allowed to extend the endpoint descriptor.
 	 * Who knows what goes on in the minds of the people in the USB
 	 * standardization?  :-(
+	 *
+	 * UAC2 no longer uses these extra fields. Check bLength to
+	 * find out if these exist.
 	 */
 	uByte		bRefresh;
 	uByte		bSynchAddress;
@@ -157,7 +160,7 @@ union usb_audio_streaming_type1_descriptor {
 	struct usb_audio_streaming_type1_v2_descriptor v2;
 };
 
-struct usb_audio_cluster {
+struct usb_audio_v1_cluster {
 	uByte		bNrChannels;
 	uWord		wChannelConfig;
 #define	UA_CHANNEL_LEFT		0x0001
@@ -175,6 +178,45 @@ struct usb_audio_cluster {
 	uByte		iChannelNames;
 } UPACKED;
 
+struct usb_audio_v2_cluster {
+	uByte		bNrChannels;
+	uDWord		bmChannelConfig;
+/*#define	UA_CHANNEL_LEFT		0x00000001 */
+/*#define	UA_CHANNEL_RIGHT	0x00000002 */
+/*#define	UA_CHANNEL_CENTER	0x00000004 */
+/*#define	UA_CHANNEL_LFE		0x00000008 */
+#define	UA_CHANNEL_BL		0x00000010
+#define	UA_CHANNEL_BR		0x00000020
+#define	UA_CHANNEL_FLC		0x00000040
+#define	UA_CHANNEL_FRC		0x00000080
+#define	UA_CHANNEL_BC		0x00000100
+#define	UA_CHANNEL_SL		0x00000200
+#define	UA_CHANNEL_SR		0x00000400
+#define	UA_CHANNEL_TC		0x00000800
+#define	UA_CHANNEL_TFL		0x00001000
+#define	UA_CHANNEL_TFC		0x00002000
+#define	UA_CHANNEL_TFR		0x00004000
+#define	UA_CHANNEL_TBL		0x00008000
+#define	UA_CHANNEL_TBC		0x00010000
+#define	UA_CHANNEL_TBR		0x00020000
+#define	UA_CHANNEL_TFLC		0x00040000
+#define	UA_CHANNEL_TFRC		0x00080000
+#define	UA_CHANNEL_LLFE		0x00100000
+#define	UA_CHANNEL_RLFE		0x00200000
+#define	UA_CHANNEL_TSL		0x00400000
+#define	UA_CHANNEL_TSR		0x00800000
+#define	UA_CHANNEL_BOTTOM	0x01000000
+#define	UA_CHANNEL_BOTTOMLC	0x02000000
+#define	UA_CHANNEL_BOTTOMRC	0x04000000
+#define	UA_CHANNEL_RD		0x80000000
+	uByte		iChannelNames;
+} UPACKED;
+
+union usb_audio_cluster {
+	struct usb_audio_v1_cluster v1;
+	struct usb_audio_v2_cluster v2;
+};
+
 /* Shared by all units and terminals */
 struct usb_audio_unit {
 	uByte		bLength;
@@ -184,7 +226,7 @@ struct usb_audio_unit {
 };
 
 /* UDESCSUB_AC_INPUT */
-struct usb_audio_input_terminal {
+struct usb_audio_input_v1_terminal {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
@@ -196,9 +238,28 @@ struct usb_audio_input_terminal {
 	uByte		iChannelNames;
 	uByte		iTerminal;
 } UPACKED;
+struct usb_audio_input_v2_terminal {
+	uByte		bLength;
+	uByte		bDescriptorType;
+	uByte		bDescriptorSubtype;
+	uByte		bTerminalId;
+	uWord		wTerminalType;
+	uByte		bAssocTerminal;
+	uByte		bCSourceId;
+	uByte		bNrChannels;
+	uDWord		bmChannelConfig;
+	uByte		iChannelNames;
+	uWord		bmControls;
+	uByte		iTerminal;
+} UPACKED;
+
+union usb_audio_input_terminal {
+	struct usb_audio_input_v1_terminal v1;
+	struct usb_audio_input_v2_terminal v2;
+};
 
 /* UDESCSUB_AC_OUTPUT */
-struct usb_audio_output_terminal {
+struct usb_audio_output_v1_terminal {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
@@ -208,6 +269,23 @@ struct usb_audio_output_terminal {
 	uByte		bSourceId;
 	uByte		iTerminal;
 } UPACKED;
+struct usb_audio_output_v2_terminal {
+	uByte		bLength;
+	uByte		bDescriptorType;
+	uByte		bDescriptorSubtype;
+	uByte		bTerminalId;
+	uWord		wTerminalType;
+	uByte		bAssocTerminal;
+	uByte		bSourceId;
+	uByte		bCSourceId;
+	uWord		bmControls;
+	uByte		iTerminal;
+} UPACKED;
+
+union usb_audio_output_terminal {
+	struct usb_audio_output_v1_terminal v1;
+	struct usb_audio_output_v2_terminal v2;
+};
 
 /* UDESCSUB_AC_MIXER */
 struct usb_audio_mixer_unit {
@@ -217,15 +295,38 @@ struct usb_audio_mixer_unit {
 	uByte		bUnitId;
 	uByte		bNrInPins;
 	uByte		baSourceId[255]; /* [bNrInPins] */
-	/* struct usb_audio_mixer_unit_1 */
+	/* union usb_audio_mixer_unit_1 */
 } UPACKED;
-struct usb_audio_mixer_unit_1 {
+struct usb_audio_mixer_v1_unit_1 {
 	uByte		bNrChannels;
 	uWord		wChannelConfig;
 	uByte		iChannelNames;
 	uByte		bmControls[255]; /* [bNrChannels] */
 	/*uByte		iMixer;*/
 } UPACKED;
+struct usb_audio_mixer_v2_unit_1 {
+	uByte		bNrChannels;
+	uDWord		bmChannelConfig;
+	uByte		iChannelNames;
+	uByte		bmMixerControls[255]; /* [bNrChannels] */
+	/*uByte		bmControls;*/
+	/*uByte		iMixer;*/
+} UPACKED;
+#define UA_MIX_CLUSTER_MASK	0x03
+#define UA_MIX_CLUSTER_RO	0x01
+#define UA_MIX_CLUSTER_RW	0x03
+/* UAC2 */
+#define UA_MIX_UNDERFLOW_MASK	0x0c
+#define UA_MIX_UNDERFLOW_RO	0x04
+#define UA_MIX_UNDERFLOW_RW	0x0c
+#define UA_MIX_OVERFLOW_MASK	0x30
+#define UA_MIX_OVERFLOW_RO	0x10
+#define UA_MIX_OVERFLOW_RW	0x30
+
+union usb_audio_mixer_unit_1 {
+	struct usb_audio_mixer_v1_unit_1 v1;
+	struct usb_audio_mixer_v2_unit_1 v2;
+};
 
 /* UDESCSUB_AC_SELECTOR */
 struct usb_audio_selector_unit {
@@ -239,7 +340,7 @@ struct usb_audio_selector_unit {
 } UPACKED;
 
 /* UDESCSUB_AC_FEATURE */
-struct usb_audio_feature_unit {
+struct usb_audio_feature_v1_unit {
 	uByte		bLength;
 	uByte		bDescriptorType;
 	uByte		bDescriptorSubtype;
@@ -249,6 +350,20 @@ struct usb_audio_feature_unit {
 	uByte		bmaControls[255]; /* size for more than enough */
 	/* uByte	iFeature; */
 } UPACKED;
+struct usb_audio_feature_v2_unit {
+	uByte		bLength;
+	uByte		bDescriptorType;
+	uByte		bDescriptorSubtype;
+	uByte		bUnitId;
+	uByte		bSourceId;
+	uDWord		bmaControls[255]; /* size for more than enough */
+	/* uByte	iFeature; */
+} UPACKED;
+
+union usb_audio_feature_unit {
+	struct usb_audio_feature_v1_unit v1;
+	struct usb_audio_feature_v2_unit v2;
+};
 
 /* UDESCSUB_AC_PROCESSING */
 struct usb_audio_processing_unit {
@@ -409,11 +524,13 @@ struct usb_audio_clkmult_unit {
 #define SET_MEM 0x05
 #define GET_MEM 0x85
 #define GET_STAT 0xff
-#define V2_CUR        0x01
-#define V2_RANGES     0x02
+
+#define V2_CUR		0x01
+#define V2_RANGES	0x02
 
 #define V2_CUR_CLKFREQ	0x01
 #define V2_CUR_CLKSEL	0x01
+#define V2_CUR_SELECTOR 0x01
 
 
 #define MUTE_CONTROL	0x01
@@ -429,8 +546,12 @@ struct usb_audio_clkmult_unit {
 #define GAIN_CONTROL	0x0b
 #define GAINPAD_CONTROL	0x0c
 #define PHASEINV_CONTROL 0x0d
+/* V2 */
+#define UNDERFLOW_CONTROL 0x0e
+#define OVERFLOW_CONTROL 0x0f
 
 #define FU_MASK(u) (1 << ((u)-1))
+#define V2_FU_MASK(u) (3 << ((u)-1)*2)
 
 #define MASTER_CHAN	0
 

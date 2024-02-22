@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_machdep.c,v 1.93 2022/09/06 01:44:24 msaitoh Exp $	*/
+/*	$NetBSD: pci_machdep.c,v 1.98 2023/11/21 23:22:23 gutteridge Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.93 2022/09/06 01:44:24 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.98 2023/11/21 23:22:23 gutteridge Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -103,6 +103,8 @@ __KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.93 2022/09/06 01:44:24 msaitoh Exp
 
 #include <dev/wsfb/genfbvar.h>
 #include <arch/x86/include/genfb_machdep.h>
+#include <arch/xen/include/hypervisor.h>
+#include <arch/xen/include/xen.h>
 #include <dev/ic/vgareg.h>
 
 #include "acpica.h"
@@ -116,6 +118,7 @@ __KERNEL_RCSID(0, "$NetBSD: pci_machdep.c,v 1.93 2022/09/06 01:44:24 msaitoh Exp
 #include "pci.h"
 #include "wsdisplay.h"
 #include "com.h"
+#include "opt_xen.h"
 
 #ifdef DDB
 #include <machine/db_machdep.h>
@@ -225,7 +228,7 @@ const struct {
 
 /* arch/xen does not support MSI/MSI-X yet. */
 #ifdef __HAVE_PCI_MSI_MSIX
-#define PCI_QUIRK_DISABLE_MSI	1 /* Neigher MSI nor MSI-X work */
+#define PCI_QUIRK_DISABLE_MSI	1 /* Neither MSI nor MSI-X work */
 #define PCI_QUIRK_DISABLE_MSIX	2 /* MSI-X does not work */
 #define PCI_QUIRK_ENABLE_MSI_VM	3 /* Older chipset in VM where MSI and MSI-X works */
 
@@ -309,11 +312,6 @@ static struct pci_conf_lock cl0 = {
 };
 
 static struct pci_conf_lock * const cl = &cl0;
-
-#if NGENFB > 0 && NACPICA > 0 && defined(VGA_POST)
-extern int acpi_md_vbios_reset;
-extern int acpi_md_vesa_modenum;
-#endif
 
 static struct genfb_colormap_callback gfb_cb;
 static struct genfb_pmf_callback pmf_cb;
@@ -485,6 +483,8 @@ pci_attach_hook(device_t parent, device_t self, struct pcibus_attach_args *pba)
 	pci_chipset_tag_t pc = pba->pba_pc;
 	pcitag_t tag;
 	pcireg_t id, class;
+	int i;
+	bool havehb = false;
 #endif
 
 	if (pba->pba_bus == 0)
@@ -502,19 +502,25 @@ pci_attach_hook(device_t parent, device_t self, struct pcibus_attach_args *pba)
 #ifdef __HAVE_PCI_MSI_MSIX
 	/*
 	 * In order to decide whether the system supports MSI we look
-	 * at the host bridge, which should be device 0 function 0 on
-	 * bus 0.  It is better to not enable MSI on systems that
+	 * at the host bridge, which should be device 0 on bus 0.
+	 * It is better to not enable MSI on systems that
 	 * support it than the other way around, so be conservative
 	 * here.  So we don't enable MSI if we don't find a host
 	 * bridge there.  We also deliberately don't enable MSI on
-	 * chipsets from low-end manifacturers like VIA and SiS.
+	 * chipsets from low-end manufacturers like VIA and SiS.
 	 */
-	tag = pci_make_tag(pc, 0, 0, 0);
-	id = pci_conf_read(pc, tag, PCI_ID_REG);
-	class = pci_conf_read(pc, tag, PCI_CLASS_REG);
+	for (i = 0; i <= 7; i++) {
+		tag = pci_make_tag(pc, 0, 0, i);
+		id = pci_conf_read(pc, tag, PCI_ID_REG);
+		class = pci_conf_read(pc, tag, PCI_CLASS_REG);
 
-	if (PCI_CLASS(class) != PCI_CLASS_BRIDGE ||
-	    PCI_SUBCLASS(class) != PCI_SUBCLASS_BRIDGE_HOST)
+		if (PCI_CLASS(class) == PCI_CLASS_BRIDGE &&
+		    PCI_SUBCLASS(class) == PCI_SUBCLASS_BRIDGE_HOST) {
+			havehb = true;
+			break;
+		}
+	}
+	if (havehb == false)
 		return;
 
 	/* VMware and KVM use old chipset, but they can use MSI/MSI-X */
@@ -1052,13 +1058,13 @@ static bool
 x86_genfb_setmode(struct genfb_softc *sc, int newmode)
 {
 #if NGENFB > 0
-# if NACPICA > 0 && defined(VGA_POST)
+# if NACPICA > 0 && defined(VGA_POST) && !defined(XENPV)
 	static int curmode = WSDISPLAYIO_MODE_EMUL;
 # endif
 
 	switch (newmode) {
 	case WSDISPLAYIO_MODE_EMUL:
-# if NACPICA > 0 && defined(VGA_POST)
+# if NACPICA > 0 && defined(VGA_POST) && !defined(XENPV)
 		if (curmode != newmode) {
 			if (vga_posth != NULL && acpi_md_vesa_modenum != 0) {
 				vga_post_set_vbe(vga_posth,
@@ -1069,7 +1075,7 @@ x86_genfb_setmode(struct genfb_softc *sc, int newmode)
 		break;
 	}
 
-# if NACPICA > 0 && defined(VGA_POST)
+# if NACPICA > 0 && defined(VGA_POST) && !defined(XENPV)
 	curmode = newmode;
 # endif
 #endif
@@ -1088,7 +1094,7 @@ x86_genfb_resume(device_t dev, const pmf_qual_t *qual)
 #if NGENFB > 0
 	struct pci_genfb_softc *psc = device_private(dev);
 
-#if NACPICA > 0 && defined(VGA_POST)
+#if NACPICA > 0 && defined(VGA_POST) && !defined(XENPV)
 	if (vga_posth != NULL && acpi_md_vbios_reset == 2) {
 		vga_post_call(vga_posth);
 		if (acpi_md_vesa_modenum != 0)
@@ -1105,11 +1111,19 @@ static void
 populate_fbinfo(device_t dev, prop_dictionary_t dict)
 {
 #if NWSDISPLAY > 0 && NGENFB > 0
-	extern struct vcons_screen x86_genfb_console_screen;
 	struct rasops_info *ri = &x86_genfb_console_screen.scr_ri;
 #endif
-	const void *fbptr = lookup_bootinfo(BTINFO_FRAMEBUFFER);
+	const void *fbptr = NULL;
 	struct btinfo_framebuffer fbinfo;
+
+
+#if NWSDISPLAY > 0 && NGENFB > 0 && defined(XEN) && defined(DOM0OPS)
+	if ((vm_guest == VM_GUEST_XENPVH || vm_guest == VM_GUEST_XENPV) &&
+	    xendomain_is_dom0())
+		fbptr = xen_genfb_getbtinfo();
+#endif
+	if (fbptr == NULL)
+		fbptr = lookup_bootinfo(BTINFO_FRAMEBUFFER);
 
 	if (fbptr == NULL)
 		return;
@@ -1259,7 +1273,6 @@ device_pci_register(device_t dev, void *aux)
 
 			prop_dictionary_set_bool(dict, "clear-screen", false);
 #if NWSDISPLAY > 0 && NGENFB > 0
-			extern struct vcons_screen x86_genfb_console_screen;
 			prop_dictionary_set_uint16(dict, "cursor-row",
 			    x86_genfb_console_screen.scr_ri.ri_crow);
 #endif

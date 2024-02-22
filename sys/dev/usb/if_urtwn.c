@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.105 2022/07/31 12:59:26 mlelstv Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.108 2024/01/06 00:26:26 maya Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.105 2022/07/31 12:59:26 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.108 2024/01/06 00:26:26 maya Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -95,7 +95,13 @@ __KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.105 2022/07/31 12:59:26 mlelstv Exp $
 #define	DBG_RF		__BIT(5)
 #define	DBG_REG		__BIT(6)
 #define	DBG_ALL		0xffffffffU
-u_int urtwn_debug = 0;
+
+#ifndef URTWN_DEBUG_DEFAULT
+#define URTWN_DEBUG_DEFAULT 0
+#endif
+
+u_int urtwn_debug = URTWN_DEBUG_DEFAULT;
+
 #define DPRINTFN(n, fmt, a, b, c, d) do {			\
 	if (urtwn_debug & (n)) {				\
 		KERNHIST_LOG(usbhist, fmt, a, b, c, d);		\
@@ -209,6 +215,7 @@ static const struct urtwn_dev {
 	/* URTWN_RTL8188E */
 	URTWN_RTL8188E_DEV(DLINK, DWA125D1),
 	URTWN_RTL8188E_DEV(ELECOM, WDC150SU2M),
+	URTWN_RTL8188E_DEV(MERCUSYS, MW150USV2),
 	URTWN_RTL8188E_DEV(REALTEK, RTL8188ETV),
 	URTWN_RTL8188E_DEV(REALTEK, RTL8188EU),
 	URTWN_RTL8188E_DEV(ABOCOM, RTL8188EU),
@@ -319,11 +326,12 @@ static void	urtwn_cam_init(struct urtwn_softc *);
 static void	urtwn_pa_bias_init(struct urtwn_softc *);
 static void	urtwn_rxfilter_init(struct urtwn_softc *);
 static void	urtwn_edca_init(struct urtwn_softc *);
-static void	urtwn_write_txpower(struct urtwn_softc *, int, uint16_t[]);
+static void	urtwn_write_txpower(struct urtwn_softc *, int,
+		    uint16_t[URTWN_RIDX_COUNT]);
 static void	urtwn_get_txpower(struct urtwn_softc *, size_t, u_int, u_int,
-		    uint16_t[]);
+		    uint16_t[URTWN_RIDX_COUNT]);
 static void	urtwn_r88e_get_txpower(struct urtwn_softc *, size_t, u_int,
-		    u_int, uint16_t[]);
+		    u_int, uint16_t[URTWN_RIDX_COUNT]);
 static void	urtwn_set_txpower(struct urtwn_softc *, u_int, u_int);
 static void	urtwn_set_chan(struct urtwn_softc *, struct ieee80211_channel *,
 		    u_int);

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.287 2023/02/24 11:02:27 riastradh Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.290 2023/04/09 12:21:59 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018,
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.287 2023/02/24 11:02:27 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.290 2023/04/09 12:21:59 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -1573,8 +1573,8 @@ pool_update_curpage(struct pool *pp)
 	if (pp->pr_curpage == NULL) {
 		pp->pr_curpage = LIST_FIRST(&pp->pr_emptypages);
 	}
-	KASSERT((pp->pr_curpage == NULL && pp->pr_nitems == 0) ||
-	    (pp->pr_curpage != NULL && pp->pr_nitems > 0));
+	KASSERTMSG((pp->pr_curpage == NULL) == (pp->pr_nitems == 0),
+	    "pp=%p curpage=%p nitems=%u", pp, pp->pr_curpage, pp->pr_nitems);
 }
 
 void
@@ -1653,7 +1653,8 @@ pool_reclaim(struct pool *pp)
 	bool klock;
 	int rv;
 
-	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
 
 	if (pp->pr_drain_hook != NULL) {
 		/*
@@ -2407,7 +2408,8 @@ pool_cache_invalidate(pool_cache_t pc)
 	pcg_t *pcg;
 	int n, s;
 
-	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
 
 	if (ncpu < 2 || !mp_online) {
 		/*
@@ -2703,10 +2705,17 @@ pool_cache_get_paddr(pool_cache_t pc, int flags, paddr_t *pap)
 	int s;
 
 	KASSERT(!(flags & PR_NOWAIT) != !(flags & PR_WAITOK));
-	KASSERTMSG((!cpu_intr_p() && !cpu_softintr_p()) ||
-	    (pc->pc_pool.pr_ipl != IPL_NONE || cold || panicstr != NULL),
-	    "%s: [%s] is IPL_NONE, but called from interrupt context",
-	    __func__, pc->pc_pool.pr_wchan);
+	if (pc->pc_pool.pr_ipl == IPL_NONE &&
+	    __predict_true(!cold) &&
+	    __predict_true(panicstr == NULL)) {
+		KASSERTMSG(!cpu_intr_p(),
+		    "%s: [%s] is IPL_NONE, but called from interrupt context",
+		    __func__, pc->pc_pool.pr_wchan);
+		KASSERTMSG(!cpu_softintr_p(),
+		    "%s: [%s] is IPL_NONE,"
+		    " but called from soft interrupt context",
+		    __func__, pc->pc_pool.pr_wchan);
+	}
 
 	if (flags & PR_WAITOK) {
 		ASSERT_SLEEPABLE();

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.237 2023/03/13 18:13:18 riastradh Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.242 2023/07/10 02:31:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.237 2023/03/13 18:13:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.242 2023/07/10 02:31:55 christos Exp $");
 
 #include "veriexec.h"
 
@@ -122,6 +122,10 @@ static int vn_ioctl(file_t *fp, u_long com, void *data);
 static int vn_mmap(struct file *, off_t *, size_t, int, int *, int *,
     struct uvm_object **, int *);
 static int vn_seek(struct file *, off_t, int, off_t *, int);
+static int vn_advlock(struct file *, void *, int, struct flock *, int);
+static int vn_fpathconf(struct file *, int, register_t *);
+static int vn_posix_fadvise(struct file *, off_t, off_t, int);
+static int vn_truncate(file_t *, off_t);
 
 const struct fileops vnops = {
 	.fo_name = "vn",
@@ -136,6 +140,10 @@ const struct fileops vnops = {
 	.fo_restart = fnullop_restart,
 	.fo_mmap = vn_mmap,
 	.fo_seek = vn_seek,
+	.fo_advlock = vn_advlock,
+	.fo_fpathconf = vn_fpathconf,
+	.fo_posix_fadvise = vn_posix_fadvise,
+	.fo_truncate = vn_truncate,
 };
 
 /*
@@ -595,9 +603,11 @@ unionread:
 	}
 	auio.uio_resid = count;
 	vn_lock(vp, LK_SHARED | LK_RETRY);
+	mutex_enter(&fp->f_lock);
 	auio.uio_offset = fp->f_offset;
+	mutex_exit(&fp->f_lock);
 	error = VOP_READDIR(vp, &auio, fp->f_cred, &eofflag, cookies,
-		    ncookies);
+	    ncookies);
 	mutex_enter(&fp->f_lock);
 	fp->f_offset = auio.uio_offset;
 	mutex_exit(&fp->f_lock);
@@ -656,7 +666,13 @@ vn_read(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	else
 		vn_lock(vp, LK_SHARED | LK_RETRY);
+	if (__predict_false(vp->v_type == VDIR) &&
+	    offset == &fp->f_offset && (flags & FOF_UPDATE_OFFSET) == 0)
+		mutex_enter(&fp->f_lock);
 	uio->uio_offset = *offset;
+	if (__predict_false(vp->v_type == VDIR) &&
+	    offset == &fp->f_offset && (flags & FOF_UPDATE_OFFSET) == 0)
+		mutex_enter(&fp->f_lock);
 	count = uio->uio_resid;
 	error = VOP_READ(vp, uio, ioflag, cred);
 	if (flags & FOF_UPDATE_OFFSET)
@@ -825,8 +841,13 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 		if (com == FIONREAD) {
 			vn_lock(vp, LK_SHARED | LK_RETRY);
 			error = VOP_GETATTR(vp, &vattr, kauth_cred_get());
-			if (error == 0)
+			if (error == 0) {
+				if (vp->v_type == VDIR)
+					mutex_enter(&fp->f_lock);
 				*(int *)data = vattr.va_size - fp->f_offset;
+				if (vp->v_type == VDIR)
+					mutex_exit(&fp->f_lock);
+			}
 			VOP_UNLOCK(vp);
 			if (error)
 				return error;
@@ -1149,7 +1170,11 @@ vn_seek(struct file *fp, off_t delta, int whence, off_t *newoffp,
 		vn_lock(vp, LK_SHARED | LK_RETRY);
 
 	/* Compute the old and new offsets.  */
+	if (vp->v_type == VDIR && (flags & FOF_UPDATE_OFFSET) == 0)
+		mutex_enter(&fp->f_lock);
 	oldoff = fp->f_offset;
+	if (vp->v_type == VDIR && (flags & FOF_UPDATE_OFFSET) == 0)
+		mutex_exit(&fp->f_lock);
 	switch (whence) {
 	case SEEK_CUR:
 		if (delta > 0) {
@@ -1199,6 +1224,141 @@ vn_seek(struct file *fp, off_t delta, int whence, off_t *newoffp,
 out:	VOP_UNLOCK(vp);
 	return error;
 }
+
+static int
+vn_advlock(struct file *fp, void *id, int op, struct flock *fl,
+    int flags)
+{
+	struct vnode *const vp = fp->f_vnode;
+
+	if (fl->l_whence == SEEK_CUR) {
+		vn_lock(vp, LK_SHARED | LK_RETRY);
+		fl->l_start += fp->f_offset;
+		VOP_UNLOCK(vp);
+	}
+
+	return VOP_ADVLOCK(vp, id, op, fl, flags);
+}
+
+static int
+vn_fpathconf(struct file *fp, int name, register_t *retval)
+{
+	struct vnode *const vp = fp->f_vnode;
+	int error;
+
+	vn_lock(vp, LK_SHARED | LK_RETRY);
+	error = VOP_PATHCONF(vp, name, retval);
+	VOP_UNLOCK(vp);
+
+	return error;
+}
+
+static int
+vn_posix_fadvise(struct file *fp, off_t offset, off_t len, int advice)
+{
+	const off_t OFF_MAX = __type_max(off_t);
+	struct vnode *vp = fp->f_vnode;
+	off_t endoffset;
+	int error;
+
+	if (offset < 0) {
+		return EINVAL;
+	}
+	if (len == 0) {
+		endoffset = OFF_MAX;
+	} else if (len > 0 && (OFF_MAX - offset) >= len) {
+		endoffset = offset + len;
+	} else {
+		return EINVAL;
+	}
+
+	CTASSERT(POSIX_FADV_NORMAL == UVM_ADV_NORMAL);
+	CTASSERT(POSIX_FADV_RANDOM == UVM_ADV_RANDOM);
+	CTASSERT(POSIX_FADV_SEQUENTIAL == UVM_ADV_SEQUENTIAL);
+
+	switch (advice) {
+	case POSIX_FADV_WILLNEED:
+	case POSIX_FADV_DONTNEED:
+		if (vp->v_type != VREG && vp->v_type != VBLK)
+			return 0;
+		break;
+	}
+
+	switch (advice) {
+	case POSIX_FADV_NORMAL:
+	case POSIX_FADV_RANDOM:
+	case POSIX_FADV_SEQUENTIAL:
+		/*
+		 * We ignore offset and size.  Must lock the file to
+		 * do this, as f_advice is sub-word sized.
+		 */
+		mutex_enter(&fp->f_lock);
+		fp->f_advice = (u_char)advice;
+		mutex_exit(&fp->f_lock);
+		error = 0;
+		break;
+
+	case POSIX_FADV_WILLNEED:
+		error = uvm_readahead(&vp->v_uobj, offset, endoffset - offset);
+		break;
+
+	case POSIX_FADV_DONTNEED:
+		/*
+		 * Align the region to page boundaries as VOP_PUTPAGES expects
+		 * by shrinking it.  We shrink instead of expand because we
+		 * do not want to deactivate cache outside of the requested
+		 * region.  It means that if the specified region is smaller
+		 * than PAGE_SIZE, we do nothing.
+		 */
+		if (offset <= trunc_page(OFF_MAX) &&
+		    round_page(offset) < trunc_page(endoffset)) {
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
+			error = VOP_PUTPAGES(vp,
+			    round_page(offset), trunc_page(endoffset),
+			    PGO_DEACTIVATE | PGO_CLEANIT);
+		} else {
+			error = 0;
+		}
+		break;
+
+	case POSIX_FADV_NOREUSE:
+		/* Not implemented yet. */
+		error = 0;
+		break;
+	default:
+		error = EINVAL;
+		break;
+	}
+
+	return error;
+}
+
+static int
+vn_truncate(file_t *fp, off_t length)
+{
+	struct vattr vattr;
+	struct vnode *vp;
+	int error = 0;
+
+	if (length < 0)
+		return EINVAL;
+
+	if ((fp->f_flag & FWRITE) == 0)
+		return EINVAL;
+	vp = fp->f_vnode;
+	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	if (vp->v_type == VDIR)
+		error = EISDIR;
+	else if ((error = vn_writechk(vp)) == 0) {
+		vattr_null(&vattr);
+		vattr.va_size = length;
+		error = VOP_SETATTR(vp, &vattr, fp->f_cred);
+	}
+	VOP_UNLOCK(vp);
+
+	return error;
+}
+
 
 /*
  * Check that the vnode is still valid, and if so

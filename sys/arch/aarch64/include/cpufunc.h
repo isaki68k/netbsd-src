@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.h,v 1.25 2022/09/10 12:14:17 rillig Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.27 2024/02/07 04:20:26 msaitoh Exp $	*/
 
 /*
- * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2017 Ryo Shimizu
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,9 @@
 #include <sys/device_if.h>
 
 #include <sys/cpu.h>
+
+#include <uvm/uvm_extern.h>
+#include <uvm/pmap/pmap_devmap.h>
 
 extern u_int aarch64_cache_vindexsize;	/* cachesize/way (VIVT/VIPT) */
 extern u_int aarch64_cache_prefer_mask;
@@ -131,14 +134,12 @@ cpu_clusterid(void)
 static inline bool
 cpu_earlydevice_va_p(void)
 {
-	extern bool pmap_devmap_bootstrap_done;	/* in pmap.c */
-
 	/* This function may be called before enabling MMU, or mapping KVA */
 	if ((reg_sctlr_el1_read() & SCTLR_M) == 0)
 		return false;
 
 	/* device mapping will be available after pmap_devmap_bootstrap() */
-	if (!pmap_devmap_bootstrap_done)
+	if (!pmap_devmap_bootstrapped_p())
 		return false;
 
 	return true;

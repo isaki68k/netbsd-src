@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_core.c,v 1.37 2022/09/10 07:30:41 mrg Exp $	*/
+/*	$NetBSD: kern_core.c,v 1.39 2023/10/04 22:17:09 ad Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.37 2022/09/10 07:30:41 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.39 2023/10/04 22:17:09 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_execfmt.h"
@@ -57,6 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_core.c,v 1.37 2022/09/10 07:30:41 mrg Exp $");
 #include <sys/module.h>
 #include <sys/compat_stub.h>
 #include <sys/exec_elf.h>
+#include <sys/resourcevar.h>
 
 MODULE(MODULE_CLASS_MISC, coredump, NULL);
 
@@ -152,8 +153,7 @@ coredump(struct lwp *l, const char *pattern)
 	 * It may well not be curproc, so grab a reference to its current
 	 * credentials.
 	 */
-	kauth_cred_hold(p->p_cred);
-	cred = p->p_cred;
+	cred = kauth_cred_hold(p->p_cred);
 
 	/*
 	 * Make sure the process has not set-id, to prevent data leaks,

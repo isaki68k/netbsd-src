@@ -1,4 +1,4 @@
-/*	$NetBSD: hilms.c,v 1.5 2021/09/19 04:55:58 tsutsui Exp $	*/
+/*	$NetBSD: hilms.c,v 1.7 2023/05/11 09:35:57 martin Exp $	*/
 /*	$OpenBSD: hilms.c,v 1.5 2007/04/10 22:37:17 miod Exp $	*/
 /*
  * Copyright (c) 2003, Miodrag Vallat.
@@ -167,10 +167,11 @@ hilmsattach(device_t parent, device_t self, void *aux)
 int
 hilmsdetach(device_t self, int flags)
 {
-	struct hilms_softc *sc = device_private(self);
+	int error;
 
-	if (sc->sc_wsmousedev != NULL)
-		return config_detach(sc->sc_wsmousedev, flags);
+	error = config_detach_children(self, flags);
+	if (error)
+		return error;
 
 	return 0;
 }

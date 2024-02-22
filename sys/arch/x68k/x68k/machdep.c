@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.210 2023/03/28 20:01:57 andvar Exp $	*/
+/*	$NetBSD: machdep.c,v 1.213 2024/01/19 20:55:42 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.210 2023/03/28 20:01:57 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.213 2024/01/19 20:55:42 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -62,7 +62,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.210 2023/03/28 20:01:57 andvar Exp $")
 #include <sys/reboot.h>
 #include <sys/conf.h>
 #include <sys/file.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/msgbuf.h>
 #include <sys/ioctl.h>
@@ -1240,13 +1239,13 @@ setmemrange(void)
 #endif
 }
 
-int idepth;
+volatile unsigned int intr_depth;
 
 bool
 cpu_intr_p(void)
 {
 
-	return idepth != 0;
+	return intr_depth != 0;
 }
 
 int

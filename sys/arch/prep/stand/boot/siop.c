@@ -1,4 +1,4 @@
-/*	$NetBSD: siop.c,v 1.6 2022/06/03 12:10:50 andvar Exp $	*/
+/*	$NetBSD: siop.c,v 1.8 2024/02/08 19:44:08 andvar Exp $	*/
 /*
  * Copyright (c) 2010 KIYOHARA Takashi
  * All rights reserved.
@@ -385,7 +385,7 @@ reset:
 			if (target != adp->xs->target ||
 			    lun != adp->xs->lun ||
 			    tag != 0) {
-				printf("unknwon resellun:"
+				printf("unknown resellun:"
 				    " target %d lun %d tag %d\n",
 				    target, lun, tag);
 				goto reset;
@@ -444,7 +444,7 @@ reset:
 		}
 		return 1;
 	}
-	/* We just should't get there */
+	/* We just shouldn't get there */
 	panic("siop_intr: I shouldn't be there !");
 
 	return 1;

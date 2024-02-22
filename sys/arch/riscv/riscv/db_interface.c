@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.2 2022/10/26 23:38:08 riastradh Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.5 2023/12/22 08:41:59 skrll Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.2 2022/10/26 23:38:08 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.5 2023/12/22 08:41:59 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
@@ -88,8 +88,6 @@ paddr_t kvtophys(vaddr_t);
 int
 kdb_trap(int type, db_regs_t *regs)
 {
-	int s;
-
 	switch (type) {
 	case CAUSE_BREAKPOINT:	/* breakpoint */
 		printf("kernel: breakpoint\n");
@@ -106,11 +104,12 @@ kdb_trap(int type, db_regs_t *regs)
 		break;
 	}
 
-	s = splhigh();
+	const int s = splhigh();
+	struct cpu_info * const ci = curcpu();
 
 #if defined(MULTIPROCESSOR)
 	bool first_in_ddb = false;
-	const u_int cpu_me = cpu_number();
+	const u_int cpu_me = cpu_index(ci);
 	const u_int old_ddb_cpu = atomic_cas_uint(&ddb_cpu, NOCPU, cpu_me);
 	if (old_ddb_cpu == NOCPU) {
 		first_in_ddb = true;
@@ -118,20 +117,22 @@ kdb_trap(int type, db_regs_t *regs)
 	} else {
 		if (old_ddb_cpu != cpu_me) {
 			KASSERT(cpu_is_paused(cpu_me));
-			cpu_pause(regs);
+			cpu_pause();
 			splx(s);
 			return 1;
 		}
 	}
-	KASSERT(! cpu_is_paused(cpu_me));
+	KASSERT(!cpu_is_paused(cpu_me));
 #endif
 
 	ddb_regs = *regs;
+	ci->ci_ddb_regs = &ddb_regs;
 	db_active++;
-	cnpollc(1);
+	cnpollc(true);
 	db_trap(type, 0 /*code*/);
-	cnpollc(0);
+	cnpollc(false);
 	db_active--;
+	ci->ci_ddb_regs = NULL;
 	*regs = ddb_regs;
 
 #if defined(MULTIPROCESSOR)
@@ -140,7 +141,7 @@ kdb_trap(int type, db_regs_t *regs)
 	} else {
 		cpu_resume(ddb_cpu);
 		if (first_in_ddb)
-			cpu_pause(regs);
+			cpu_pause();
 	}
 #endif
 
@@ -198,7 +199,7 @@ const struct db_command db_machine_command_table[] = {
 bool
 ddb_running_on_this_cpu_p(void)
 {
-	return ddb_cpu == cpu_number();
+	return ddb_cpu == cpu_index(curcpu());
 }
 
 bool
@@ -210,7 +211,7 @@ ddb_running_on_any_cpu_p(void)
 void
 db_resume_others(void)
 {
-	u_int cpu_me = cpu_number();
+	u_int cpu_me = cpu_index(curcpu());
 
 	if (atomic_cas_uint(&ddb_cpu, cpu_me, NOCPU) == cpu_me)
 		cpu_resume_others();
@@ -239,7 +240,7 @@ db_mach_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 			db_printf("CPU %ld not paused\n", (long)addr);
 			return;
 		}
-		(void)atomic_cas_uint(&ddb_cpu, cpu_number(), cpu_index(ci));
+		(void)atomic_cas_uint(&ddb_cpu, cpu_index(curcpu()), cpu_index(ci));
 		db_continue_cmd(0, false, 0, "");
 	}
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: genfb_machdep.c,v 1.19 2022/09/13 09:45:36 riastradh Exp $ */
+/* $NetBSD: genfb_machdep.c,v 1.23 2023/10/19 14:59:46 bouyer Exp $ */
 
 /*-
  * Copyright (c) 2009 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.19 2022/09/13 09:45:36 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.23 2023/10/19 14:59:46 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -52,18 +52,17 @@ __KERNEL_RCSID(0, "$NetBSD: genfb_machdep.c,v 1.19 2022/09/13 09:45:36 riastradh
 
 #include <dev/wsfb/genfbvar.h>
 #include <arch/x86/include/genfb_machdep.h>
+#include <arch/xen/include/hypervisor.h>
+#include <arch/xen/include/xen.h>
 
 #include "wsdisplay.h"
 #include "genfb.h"
 #include "acpica.h"
+#include "opt_xen.h"
 
 #if NWSDISPLAY > 0 && NGENFB > 0
 struct vcons_screen x86_genfb_console_screen;
 bool x86_genfb_use_shadowfb = true;
-
-#if NACPICA > 0
-extern int acpi_md_vesa_modenum;
-#endif
 
 static device_t x86_genfb_console_dev = NULL;
 
@@ -101,7 +100,7 @@ x86_genfb_init(void)
 {
 	static int inited, attached;
 	struct rasops_info *ri = &x86_genfb_console_screen.scr_ri;
-	const struct btinfo_framebuffer *fbinfo;
+	const struct btinfo_framebuffer *fbinfo = NULL;
 	bus_space_tag_t t = x86_bus_space_mem;
 	bus_space_handle_t h;
 	void *bits;
@@ -113,7 +112,14 @@ x86_genfb_init(void)
 
 	memset(&x86_genfb_console_screen, 0, sizeof(x86_genfb_console_screen));
 
-	fbinfo = lookup_bootinfo(BTINFO_FRAMEBUFFER);
+#if defined(XEN) && defined(DOM0OPS)
+	if ((vm_guest == VM_GUEST_XENPVH || vm_guest == VM_GUEST_XENPV) &&
+	    xendomain_is_dom0())
+		fbinfo = xen_genfb_getbtinfo();
+#endif
+	if (fbinfo == NULL)
+		fbinfo = lookup_bootinfo(BTINFO_FRAMEBUFFER);
+
 	if (fbinfo == NULL || fbinfo->physaddr == 0)
 		return 0;
 
@@ -131,7 +137,7 @@ x86_genfb_init(void)
 		return 0;
 	}
 
-#if NACPICA > 0
+#if NACPICA > 0 && !defined(XENPV)
 	acpi_md_vesa_modenum = fbinfo->vbemode;
 #endif
 

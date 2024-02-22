@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.34 2022/12/04 09:25:04 mlelstv Exp $ */
+/* $NetBSD: bwfm.c,v 1.36 2023/12/31 21:32:43 gutteridge Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -69,7 +69,7 @@ int	 bwfm_send_mgmt(struct ieee80211com *, struct ieee80211_node *,
 void	 bwfm_recv_mgmt(struct ieee80211com *, struct mbuf *,
 	     struct ieee80211_node *, int, int, uint32_t);
 int	 bwfm_key_set(struct ieee80211com *, const struct ieee80211_key *,
-	     const uint8_t *);
+	     const uint8_t[IEEE80211_ADDR_LEN]);
 int	 bwfm_key_delete(struct ieee80211com *, const struct ieee80211_key *);
 int	 bwfm_newstate(struct ieee80211com *, enum ieee80211_state, int);
 void	 bwfm_newstate_cb(struct bwfm_softc *, struct bwfm_cmd_newstate *);
@@ -632,11 +632,10 @@ bwfm_init(struct ifnet *ifp)
 		return EIO;
 	}
 
-        /*
-         * Use CAM (constantly awake) when we are running as AP
-         * otherwise use fast power saving.
-         */
-
+	/*
+	 * Use CAM (constantly awake) when we are running as AP
+	 * otherwise use fast power saving.
+	 */
 	if (ic->ic_flags & IEEE80211_F_PMGTON) {
 		sc->sc_pm = BWFM_PM_FAST_PS;
 #ifndef IEEE80211_STA_ONLY

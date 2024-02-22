@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.110 2021/10/09 20:00:42 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.114 2024/01/18 04:07:38 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,11 +39,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.110 2021/10/09 20:00:42 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.114 2024/01/18 04:07:38 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
 #include "opt_modular.h"
+#include "opt_newsconf.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -51,7 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.110 2021/10/09 20:00:42 tsutsui Exp $"
 #include <sys/conf.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
 #include <sys/msgbuf.h>
@@ -899,8 +899,7 @@ intrhand_lev3(void)
 	int stat;
 
 	stat = *int_status;
-	intrcnt[3]++;
-	curcpu()->ci_data.cpu_nintr++;
+	m68k_count_intr(3);
 #if 1
 	printf("level 3 interrupt: INT_STATUS = 0x%02x\n", stat);
 #endif
@@ -918,8 +917,7 @@ intrhand_lev4(void)
 #define INTST_SCSI	0x80
 
 	stat = *int_status;
-	intrcnt[4]++;
-	curcpu()->ci_data.cpu_nintr++;
+	m68k_count_intr(4);
 
 #if NSI > 0
 	if (stat & INTST_SCSI) {
@@ -1001,7 +999,7 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 	 */
 	memend = lowram + ctob(physmem);
 
-	if (lowram <= pa && pa < memend) 
+	if (lowram <= pa && pa < memend)
 		return 0;
 
 	return EFAULT;

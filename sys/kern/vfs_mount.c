@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.102 2023/02/24 11:02:27 riastradh Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.104 2024/01/17 10:17:29 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.102 2023/02/24 11:02:27 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.104 2024/01/17 10:17:29 hannken Exp $");
+
+#include "veriexec.h"
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -85,6 +87,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.102 2023/02/24 11:02:27 riastradh Ex
 #include <sys/fstrans.h>
 #include <sys/namei.h>
 #include <sys/extattr.h>
+#include <sys/verified_exec.h>
 #include <sys/syscallargs.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
@@ -933,7 +936,7 @@ err_mounted:
 int
 dounmount(struct mount *mp, int flags, struct lwp *l)
 {
-	vnode_t *coveredvp;
+	vnode_t *coveredvp, *vp;
 	int error, async, used_syncer, used_extattr;
 	const bool was_suspended = fstrans_is_owner(mp);
 
@@ -1000,8 +1003,10 @@ dounmount(struct mount *mp, int flags, struct lwp *l)
 		vfs_resume(mp);
 
 	mountlist_remove(mp);
-	if (TAILQ_FIRST(&mp->mnt_vnodelist) != NULL)
+	if ((vp = VIMPL_TO_VNODE(TAILQ_FIRST(&mp->mnt_vnodelist))) != NULL) {
+		vprint("dangling", vp);
 		panic("unmount: dangling vnode");
+	}
 	vfs_hooks_unmount(mp);
 
 	vfs_set_lowermount(mp, NULL);

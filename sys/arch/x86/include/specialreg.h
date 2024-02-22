@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.204 2023/03/25 21:47:10 andvar Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.209 2023/10/27 06:31:48 mrg Exp $	*/
 
 /*
  * Copyright (c) 2014-2020 The NetBSD Foundation, Inc.
@@ -466,6 +466,7 @@
 #define CPUID_SEF_MAWAU		__BITS(21, 17) /* MAWAU for BND{LD,ST}X */
 #define CPUID_SEF_RDPID		__BIT(22) /* RDPID and IA32_TSC_AUX */
 #define CPUID_SEF_KL		__BIT(23) /* Key Locker */
+#define CPUID_SEF_BUS_LOCK_DETECT __BIT(24) /* OS bus-lock detection */
 #define CPUID_SEF_CLDEMOTE	__BIT(25) /* Cache line demote */
 #define CPUID_SEF_MOVDIRI	__BIT(27) /* MOVDIRI instruction */
 #define CPUID_SEF_MOVDIR64B	__BIT(28) /* MOVDIR64B instruction */
@@ -480,7 +481,7 @@
 	"b\14AVX512_BITALG\0" "b\15TME_EN\0" "b\16AVX512_VPOPCNTDQ\0"	      \
 	"b\20LA57\0"							      \
 	"f\21\5MAWAU\0"			"b\26RDPID\0"	"b\27KL\0"	      \
-			"b\31CLDEMOTE\0"		"b\33MOVDIRI\0"	      \
+	"b\30BUS_LOCK_DETECT" "b\31CLDEMOTE\0"		"b\33MOVDIRI\0"	      \
 	"b\34MOVDIR64B\0" "b\35ENQCMD\0" "b\36SGXLC\0"	"b\37PKS\0"
 
 /* %ecx = 0, %edx */
@@ -889,6 +890,7 @@
 #define CPUID_CAPEX_CPPC	   __BIT(27) /* Collaborative Processor Perf. Control */
 #define CPUID_CAPEX_PSFD	   __BIT(28) /* Predictive Store Forward Dis */
 #define CPUID_CAPEX_BTC_NO	   __BIT(29) /* Branch Type Confusion NO */
+#define CPUID_CAPEX_IBPB_RET	   __BIT(30) /* Clear RET address predictor */
 
 #define CPUID_CAPEX_FLAGS	"\20"					   \
 	"\1CLZERO"	"\2IRPERF"	"\3XSAVEERPTR"	"\4INVLPGB"	   \
@@ -899,7 +901,7 @@
 							"\24IBRS_SAMEMODE" \
 	"\25EFER_LSMSLE_UN"				"\30PPIN"	   \
 	"\31SSBD"	"\32VIRT_SSBD"	"\33SSB_NO"	"\34CPPC"	   \
-	"\35PSFD"	"\36BTC_NO"
+	"\35PSFD"	"\36BTC_NO"	"\37IBPB_RET"
 
 /* %ecx */
 #define CPUID_CAPEX_PerfTscSize	__BITS(17,16)	/* Perf. tstamp counter size */
@@ -939,6 +941,7 @@
 #define CPUID_AMD_SVM_IBSVIRT	      __BIT(26) /* IBS Virtualization */
 #define CPUID_AMD_SVM_XLVTOFFFLTCHG   __BIT(27) /* Ext LVToffset FLT changed */
 #define CPUID_AMD_SVM_VMCBADRCHKCHG   __BIT(28) /* VMCB addr check changed */
+#define CPUID_AMD_SVM_BUSLOCKTHRESH   __BIT(29) /* Bus Lock Threshold */
 
 
 #define CPUID_AMD_SVM_FLAGS	 "\20"					\
@@ -951,7 +954,7 @@
 	"\21" "VGIF"	"\22" "GMET"	"\23x2AVIC"	"\24SSSCHECK"	\
 	"\25" "SPEC_CTRL" "\26" "ROGPT"		"\30HOST_MCE_OVERRIDE"	\
 	"\31" "TLBICTL"	"\32VNMI" "\33IBSVIRT" "\34ExtLvtOffsetFaultChg" \
-	"\35VmcbAddrChkChg"
+	"\35VmcbAddrChkChg" "\36BusLockThreshold"
 
 /*
  * AMD Instruction-Based Sampling Capabilities.
@@ -1360,6 +1363,10 @@
 #define 	NB_CFG_DISDATMSK	0x0000001000000000ULL
 #define 	NB_CFG_INITAPICCPUIDLO	(1ULL << 54)
 
+/* AMD Errata 1474. */
+#define MSR_CC6_CFG	0xc0010296
+#define 	CC6_CFG_DISABLE_BITS	(__BIT(22) | __BIT(14) | __BIT(6))
+
 #define MSR_LS_CFG	0xc0011020
 #define 	LS_CFG_ERRATA_1033	__BIT(4)
 #define 	LS_CFG_ERRATA_793	__BIT(15)
@@ -1393,6 +1400,7 @@
 #define MSR_DE_CFG	0xc0011029
 #define 	DE_CFG_ERRATA_721	0x00000001
 #define 	DE_CFG_LFENCE_SERIALIZE	__BIT(1)
+#define 	DE_CFG_ERRATA_ZENBLEED	__BIT(9)
 #define 	DE_CFG_ERRATA_1021	__BIT(13)
 
 #define MSR_BU_CFG2	0xc001102a

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wmvar.h,v 1.48 2021/12/20 12:50:35 skrll Exp $	*/
+/*	$NetBSD: if_wmvar.h,v 1.51 2023/10/11 15:05:26 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -100,6 +100,7 @@
 #define	WM_F_SFP		0x10000000 /* SFP */
 #define	WM_F_MAS		0x20000000 /* Media Auto Sense */
 #define	WM_F_CRC_STRIP		0x40000000 /* CRC strip */
+#define	WM_F_DELAY_LINKUP	0x80000000 /* delay LINK_STATE_UP */
 
 #define WM_FLAGS "\20" \
 	"\1" "HAS_MII"	"\2" "LOCK_EECD" "\3" "_B02"	"\4" "_B03"	\
@@ -109,7 +110,7 @@
 	"\21" "NEWQUEUE" "\22" "ASF_FIRM" "\23" "ARC_SUBSYS" "\24" "AMT" \
 	"\25" "MANAGE"	"\26" "WOL"	"\27" "EEE"	"\30" "ATTACHED" \
 	"\31" "MDIC_WA"	"\32" "PCS_DIS_AUTONEGO" "\33" "PLLWA" "\34" "CLSEMWA" \
-	"\35" "SFP"	"\36" "MAS"	"\37" "CRC_STRIP"
+	"\35" "SFP"	"\36" "MAS"	"\37" "CRC_STRIP" "\40" "DELAY_LINKUP"
 
 /*
  * Variations of Intel gigabit Ethernet controller:
@@ -162,6 +163,7 @@ typedef enum {
 	WM_T_PCH_LPT,			/* PCH "Lynx Point" LAN (I217, I218) */
 	WM_T_PCH_SPT,			/* PCH "Sunrise Point" LAN (I219) */
 	WM_T_PCH_CNP,			/* (I219) */
+	WM_T_PCH_TGP			/* (I219) */
 } wm_chip_type;
 
 /*
@@ -212,5 +214,8 @@ typedef enum {
 #define	WM_ICH8_LAN_INIT_TIMEOUT 1500
 #define	WM_MDIO_OWNERSHIP_TIMEOUT 10
 #define	WM_MAX_PLL_TRIES	5
+
+/* For 80003, ICHs and PCHs */
+#define	WM_IS_ICHPCH(x)	((x)->sc_type >= WM_T_80003)
 
 #endif /* _DEV_PCI_IF_WMVAR_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: sa11x0_hpc_machdep.c,v 1.21 2021/10/11 14:36:05 rin Exp $	*/
+/*	$NetBSD: sa11x0_hpc_machdep.c,v 1.23 2023/08/03 08:16:31 mrg Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sa11x0_hpc_machdep.c,v 1.21 2021/10/11 14:36:05 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sa11x0_hpc_machdep.c,v 1.23 2023/08/03 08:16:31 mrg Exp $");
 
 #include "opt_ddb.h"
 #include "opt_dram_pages.h"
@@ -158,13 +158,12 @@ extern void *__sleep_ctx;
  */
 static const struct pmap_devmap sa11x0_devmap[] = {
 	/* Physical/virtual address for UART #3. */
-	{
+	DEVMAP_ENTRY(
 		SACOM3_VBASE,
 		SACOM3_BASE,
-		0x24,
-		VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE
-	},
-	{ 0, 0, 0, 0, 0 }
+		0x24
+	),
+	DEVMAP_ENTRY_END
 };
 
 /*
@@ -207,7 +206,14 @@ init_sa11x0(int argc, char **argv, struct bootinfo *bi)
 	symbolsize = 0;
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	if (!memcmp(&end, "\177ELF", 4)) {
+/*
+ * XXXGCC12.
+ * This accesses beyond what "int end" technically supplies.
+ */
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Warray-bounds"
 		sh = (Elf_Shdr *)((char *)&end + ((Elf_Ehdr *)&end)->e_shoff);
+#pragma GCC pop_options
 		loop = ((Elf_Ehdr *)&end)->e_shnum;
 		for (; loop; loop--, sh++)
 			if (sh->sh_offset > 0 &&

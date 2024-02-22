@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.364 2022/12/26 01:05:35 nat Exp $	*/
+/*	$NetBSD: machdep.c,v 1.367 2024/02/10 08:24:51 andvar Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.364 2022/12/26 01:05:35 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.367 2024/02/10 08:24:51 andvar Exp $");
 
 #include "opt_adb.h"
 #include "opt_compat_netbsd.h"
@@ -122,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.364 2022/12/26 01:05:35 nat Exp $");
 #include <sys/cpu.h>
 
 #include <m68k/cacheops.h>
+#include <m68k/mmu_40.h>
 
 #include <machine/db_machdep.h>
 #include <ddb/db_sym.h>
@@ -395,7 +396,7 @@ cpu_startup(void)
 
 	vers = mac68k_machine.booter_version;
 	if (vers < CURRENTBOOTERVER) {
-		/* fix older booters with indicies, not versions */
+		/* fix older booters with indices, not versions */
 		if (vers < 100)
 			vers += 99;
 
@@ -846,7 +847,7 @@ cpu_exec_aout_makecmds(struct lwp *l, struct exec_package *epp)
 #ifdef COMPAT_NOMID
 	/* Check to see if MID == 0. */
 	if (((struct exec *)epp->ep_hdr)->a_midmag == ZMAGIC)
-		return exec_aout_prep_oldzmagic(l->l_proc, epp);
+		return exec_aout_prep_oldzmagic(l, epp);
 #endif
 
 	return error;
@@ -2257,15 +2258,15 @@ get_physical(u_int addr, u_long * phys)
 
 	if (mmutype == MMU_68040) {
 		ph = ptest040((void *)addr, FC_SUPERD);
-		if ((ph & MMU40_RES) == 0) {
+		if ((ph & MMUSR40_R) == 0) {
 			ph = ptest040((void *)addr, FC_USERD);
-			if ((ph & MMU40_RES) == 0)
+			if ((ph & MMUSR40_R) == 0)
 				return 0;
 		}
-		if ((ph & MMU40_TTR) != 0)
+		if ((ph & MMUSR40_T) != 0)
 			ph = addr;
 
-		mask = (macos_tc & 0x4000) ? 0x00001fff : 0x00000fff;
+		mask = (macos_tc & TCR40_P) ? 0x00001fff : 0x00000fff;
 		ph &= (~mask);
 	} else {
 		switch (get_pte(addr, pte, &psr)) {

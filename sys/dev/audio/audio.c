@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.136 2022/08/25 11:16:33 riastradh Exp $	*/
+/*	$NetBSD: audio.c,v 1.145 2023/10/01 09:34:28 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -181,7 +181,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.136 2022/08/25 11:16:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.145 2023/10/01 09:34:28 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -561,6 +561,7 @@ static void audio_mixer_restore(struct audio_softc *);
 static void audio_softintr_rd(void *);
 static void audio_softintr_wr(void *);
 
+static int audio_properties(struct audio_softc *);
 static void audio_printf(struct audio_softc *, const char *, ...)
 	__printflike(2, 3);
 static int audio_exlock_mutex_enter(struct audio_softc *);
@@ -570,7 +571,8 @@ static void audio_exlock_exit(struct audio_softc *);
 static struct audio_softc *audio_sc_acquire_fromfile(audio_file_t *,
 	struct psref *);
 static void audio_sc_release(struct audio_softc *, struct psref *);
-static int audio_track_waitio(struct audio_softc *, audio_track_t *);
+static int audio_track_waitio(struct audio_softc *, audio_track_t *,
+	const char *mess);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -695,6 +697,8 @@ static int au_set_monitor_gain(struct audio_softc *, int);
 static int au_get_monitor_gain(struct audio_softc *);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
+
+void audio_mixsample_to_linear(audio_filter_arg_t *);
 
 static __inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
@@ -1063,6 +1067,10 @@ audioattach(device_t parent, device_t self, void *aux)
 			rhwfmt = phwfmt;
 	}
 
+	/* Make device id available */
+	if (audio_properties(sc))
+		aprint_error_dev(self, "audio_properties failed\n");
+
 	/* Init hardware. */
 	/* hw_probe() also validates [pr]hwfmt.  */
 	error = audio_hw_set_format(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
@@ -1177,6 +1185,27 @@ bad:
 	sc->sc_exlock = 0;
 	aprint_error_dev(sc->sc_dev, "disabled\n");
 	return;
+}
+
+/*
+ * Identify audio backend device for drvctl.
+ */
+static int
+audio_properties(struct audio_softc *sc)
+{
+	prop_dictionary_t dict = device_properties(sc->sc_dev);
+	audio_device_t adev;
+	int error;
+
+	error = sc->hw_if->getdev(sc->hw_hdl, &adev);
+	if (error)
+		return error;
+
+	prop_dictionary_set_string(dict, "name", adev.name);
+	prop_dictionary_set_string(dict, "version", adev.version);
+	prop_dictionary_set_string(dict, "config", adev.config);
+
+	return 0;
 }
 
 /*
@@ -1664,7 +1693,8 @@ audio_sc_release(struct audio_softc *sc, struct psref *refp)
  * Must be called with sc_lock held.
  */
 static int
-audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
+audio_track_waitio(struct audio_softc *sc, audio_track_t *track,
+    const char *mess)
 {
 	int error;
 
@@ -1686,8 +1716,15 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 	}
 	if (error) {
 		TRACET(2, track, "cv_timedwait_sig failed %d", error);
-		if (error == EWOULDBLOCK)
-			audio_printf(sc, "device timeout\n");
+		if (error == EWOULDBLOCK) {
+			audio_ring_t *usrbuf = &track->usrbuf;
+			audio_ring_t *outbuf = &track->outbuf;
+			audio_printf(sc,
+			    "%s: device timeout, seq=%d, usrbuf=%d/H%d, outbuf=%d/%d\n",
+			    mess, (int)track->seq,
+			    usrbuf->used, track->usrbuf_usedhigh,
+			    outbuf->used, outbuf->capacity);
+		}
 	} else {
 		TRACET(3, track, "wakeup");
 	}
@@ -2809,7 +2846,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			}
 
 			TRACET(3, track, "sleep");
-			error = audio_track_waitio(sc, track);
+			error = audio_track_waitio(sc, track, "audio_read");
 			if (error) {
 				mutex_exit(sc->sc_lock);
 				return error;
@@ -2936,7 +2973,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 			TRACET(3, track, "sleep usrbuf=%d/H%d",
 			    usrbuf->used, track->usrbuf_usedhigh);
-			error = audio_track_waitio(sc, track);
+			error = audio_track_waitio(sc, track, "audio_write");
 			if (error) {
 				mutex_exit(sc->sc_lock);
 				goto abort;
@@ -4727,25 +4764,35 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		if ((error = audio_track_init_freq(track, &last_dst)) != 0)
 			goto error;
 	}
-#if 0
-	/* debug */
-	if (track->freq.filter) {
-		audio_print_format2("freq src", &track->freq.srcbuf.fmt);
-		audio_print_format2("freq dst", &track->freq.dst->fmt);
+
+#if defined(AUDIO_DEBUG)
+	if (audiodebug >= 3) {
+		if (track->freq.filter) {
+			audio_print_format2("freq src",
+			    &track->freq.srcbuf.fmt);
+			audio_print_format2("freq dst",
+			    &track->freq.dst->fmt);
+		}
+		if (track->chmix.filter) {
+			audio_print_format2("chmix src",
+			    &track->chmix.srcbuf.fmt);
+			audio_print_format2("chmix dst",
+			    &track->chmix.dst->fmt);
+		}
+		if (track->chvol.filter) {
+			audio_print_format2("chvol src",
+			    &track->chvol.srcbuf.fmt);
+			audio_print_format2("chvol dst",
+			    &track->chvol.dst->fmt);
+		}
+		if (track->codec.filter) {
+			audio_print_format2("codec src",
+			    &track->codec.srcbuf.fmt);
+			audio_print_format2("codec dst",
+			    &track->codec.dst->fmt);
+		}
 	}
-	if (track->chmix.filter) {
-		audio_print_format2("chmix src", &track->chmix.srcbuf.fmt);
-		audio_print_format2("chmix dst", &track->chmix.dst->fmt);
-	}
-	if (track->chvol.filter) {
-		audio_print_format2("chvol src", &track->chvol.srcbuf.fmt);
-		audio_print_format2("chvol dst", &track->chvol.dst->fmt);
-	}
-	if (track->codec.filter) {
-		audio_print_format2("codec src", &track->codec.srcbuf.fmt);
-		audio_print_format2("codec dst", &track->codec.dst->fmt);
-	}
-#endif
+#endif /* AUDIO_DEBUG */
 
 	/* Stage input buffer */
 	track->input = last_dst;
@@ -5351,8 +5398,15 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		len = mixer->frames_per_block * mixer->mixfmt.channels *
 		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
-	} else {
-		/* No mixing buffer for recording */
+	} else if (reg->codec == NULL) {
+		/*
+		 * Recording requires an input conversion buffer
+		 * unless the hardware provides a codec itself
+		 */
+		mixer->mixfmt = mixer->track_fmt;
+		len = mixer->frames_per_block * mixer->mixfmt.channels *
+		    mixer->mixfmt.stride / NBBY;
+		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 	}
 
 	if (reg->codec) {
@@ -5621,31 +5675,32 @@ audio_pmixer_process(struct audio_softc *sc)
 	 * The rest is the hardware part.
 	 */
 
-	if (mixer->codec) {
-		h = auring_tailptr_aint(&mixer->codecbuf);
-	} else {
-		h = auring_tailptr_aint(&mixer->hwbuf);
-	}
-
 	m = mixer->mixsample;
-	if (mixer->swap_endian) {
-		for (i = 0; i < sample_count; i++) {
-			*h++ = bswap16(*m++);
-		}
-	} else {
-		for (i = 0; i < sample_count; i++) {
-			*h++ = *m++;
-		}
-	}
 
-	/* Hardware driver's codec */
 	if (mixer->codec) {
+		TRACE(4, "codec count=%d", frame_count);
+
+		h = auring_tailptr_aint(&mixer->codecbuf);
+		for (i=0; i<sample_count; ++i)
+			*h++ = *m++;
+
+		/* Hardware driver's codec */
 		auring_push(&mixer->codecbuf, frame_count);
 		mixer->codecarg.src = auring_headptr(&mixer->codecbuf);
 		mixer->codecarg.dst = auring_tailptr(&mixer->hwbuf);
 		mixer->codecarg.count = frame_count;
 		mixer->codec(&mixer->codecarg);
 		auring_take(&mixer->codecbuf, mixer->codecarg.count);
+	} else {
+		TRACE(4, "direct count=%d", frame_count);
+
+		/* Direct conversion to linear output */
+		mixer->codecarg.src = m;
+		mixer->codecarg.dst = auring_tailptr(&mixer->hwbuf);
+		mixer->codecarg.count = frame_count;
+		mixer->codecarg.srcfmt = &mixer->mixfmt;
+		mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+		audio_mixsample_to_linear(&mixer->codecarg);
 	}
 
 	auring_push(&mixer->hwbuf, frame_count);
@@ -5998,11 +6053,12 @@ audio_rmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
 	audio_ring_t *mixersrc;
+	audio_ring_t tmpsrc;
+	audio_filter_t codec;
+	audio_filter_arg_t codecarg;
 	audio_file_t *f;
-	aint_t *p;
 	int count;
 	int bytes;
-	int i;
 
 	mixer = sc->sc_rmixer;
 
@@ -6020,24 +6076,62 @@ audio_rmixer_process(struct audio_softc *sc)
 
 	/* Hardware driver's codec */
 	if (mixer->codec) {
+		TRACE(4, "codec count=%d", count);
 		mixer->codecarg.src = auring_headptr(&mixer->hwbuf);
 		mixer->codecarg.dst = auring_tailptr(&mixer->codecbuf);
 		mixer->codecarg.count = count;
 		mixer->codec(&mixer->codecarg);
-		auring_take(&mixer->hwbuf, mixer->codecarg.count);
-		auring_push(&mixer->codecbuf, mixer->codecarg.count);
 		mixersrc = &mixer->codecbuf;
 	} else {
-		mixersrc = &mixer->hwbuf;
+		TRACE(4, "direct count=%d", count);
+		/* temporary ring using mixsample buffer */
+		tmpsrc.fmt = mixer->mixfmt;
+		tmpsrc.capacity = mixer->frames_per_block;
+		tmpsrc.mem = mixer->mixsample;
+		tmpsrc.head = 0;
+		tmpsrc.used = 0;
+
+		/* ad-hoc codec */
+		codecarg.srcfmt = &mixer->hwbuf.fmt;
+		codecarg.dstfmt = &mixer->mixfmt;
+		codec = NULL;
+		if (audio_format2_is_linear(codecarg.srcfmt) &&
+		    codecarg.srcfmt->stride == codecarg.srcfmt->precision) {
+			switch (codecarg.srcfmt->stride) {
+			case 8:
+				codec = audio_linear8_to_internal;
+				break;
+			case 16:
+				codec = audio_linear16_to_internal;
+				break;
+#if defined(AUDIO_SUPPORT_LINEAR24)
+			case 24:
+				codec = audio_linear24_to_internal;
+				break;
+#endif
+			case 32:
+				codec = audio_linear32_to_internal;
+				break;
+			}
+		}
+		if (codec == NULL) {
+			TRACE(4, "unsupported hw format");
+			/* drain hwbuf */
+			auring_take(&mixer->hwbuf, count);
+			return;
+		}
+
+		codecarg.src = auring_headptr(&mixer->hwbuf);
+		codecarg.dst = auring_tailptr(&tmpsrc);
+		codecarg.count = count;
+		codec(&codecarg);
+		mixersrc = &tmpsrc;
 	}
 
-	if (mixer->swap_endian) {
-		/* inplace conversion */
-		p = auring_headptr_aint(mixersrc);
-		for (i = 0; i < count * mixer->track_fmt.channels; i++, p++) {
-			*p = bswap16(*p);
-		}
-	}
+	auring_take(&mixer->hwbuf, count);
+	auring_push(mixersrc, count);
+
+	TRACE(4, "distribute");
 
 	/* Distribute to all tracks. */
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
@@ -6346,7 +6440,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 			break;
 
 		TRACET(3, track, "sleep");
-		error = audio_track_waitio(sc, track);
+		error = audio_track_waitio(sc, track, "audio_drain");
 		if (error)
 			return error;
 
@@ -9119,6 +9213,170 @@ audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	return sc->hw_if->query_devinfo(sc->hw_hdl, di);
+}
+
+void
+audio_mixsample_to_linear(audio_filter_arg_t *arg)
+{
+	const audio_format2_t *fmt;
+	const aint2_t *m;
+	uint8_t *p;
+	u_int sample_count;
+	aint2_t v, xor;
+	u_int i, bps;
+	bool little;
+
+	DIAGNOSTIC_filter_arg(arg);
+	KASSERT(audio_format2_is_linear(arg->dstfmt));
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
+
+	fmt = arg->dstfmt;
+	m = arg->src;
+	p = arg->dst;
+	sample_count = arg->count * fmt->channels;
+	little = arg->dstfmt->encoding == AUDIO_ENCODING_SLINEAR_LE;
+
+	bps = fmt->stride / NBBY;
+	xor = audio_format2_is_signed(fmt) ? 0 : (aint2_t)1 << 31;
+
+#if AUDIO_INTERNAL_BITS == 16
+	if (little) {
+		switch (bps) {
+		case 4:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = 0;
+				*p++ = 0;
+				*p++ = v;
+				*p++ = v >> 8;
+			}
+			break;
+		case 3:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = 0;
+				*p++ = v;
+				*p++ = v >> 8;
+			}
+			break;
+		case 2:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v;
+				*p++ = v >> 8;
+			}
+			break;
+		case 1:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+			}
+			break;
+		}
+	} else {
+		switch (bps) {
+		case 4:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+				*p++ = v;
+				*p++ = 0;
+				*p++ = 0;
+			}
+			break;
+		case 3:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+				*p++ = v;
+				*p++ = 0;
+			}
+			break;
+		case 2:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+				*p++ = v;
+			}
+			break;
+		case 1:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+			}
+			break;
+		}
+	}
+#elif AUDIO_INTERNAL_BITS == 32
+	if (little) {
+		switch (bps) {
+		case 4:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v;
+				*p++ = v >> 8;
+				*p++ = v >> 16;
+				*p++ = v >> 24;
+			}
+			break;
+		case 3:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 8;
+				*p++ = v >> 16;
+				*p++ = v >> 24;
+			}
+			break;
+		case 2:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 16;
+				*p++ = v >> 24;
+			}
+			break;
+		case 1:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 24;
+			}
+			break;
+		}
+	} else {
+		switch (bps) {
+		case 4:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 24;
+				*p++ = v >> 16;
+				*p++ = v >> 8;
+				*p++ = v;
+			}
+			break;
+		case 3:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 24;
+				*p++ = v >> 16;
+				*p++ = v >> 8;
+			}
+			break;
+		case 2:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 24;
+				*p++ = v >> 16;
+			}
+			break;
+		case 1:
+			for (i=0; i<sample_count; ++i) {
+				v = *m++ ^ xor;
+				*p++ = v >> 24;
+			}
+			break;
+		}
+	}
+#endif /* AUDIO_INTERNAL_BITS */
+
 }
 
 #endif /* NAUDIO > 0 */

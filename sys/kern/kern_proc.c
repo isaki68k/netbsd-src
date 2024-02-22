@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_proc.c,v 1.269 2022/10/26 23:20:36 riastradh Exp $	*/
+/*	$NetBSD: kern_proc.c,v 1.274 2023/10/05 19:41:07 ad Exp $	*/
 
 /*-
- * Copyright (c) 1999, 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 1999, 2006, 2007, 2008, 2020, 2023
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -62,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.269 2022/10/26 23:20:36 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.274 2023/10/05 19:41:07 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kstack.h"
@@ -118,7 +119,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.269 2022/10/26 23:20:36 riastradh Ex
 struct proclist		allproc		__cacheline_aligned;
 struct proclist		zombproc	__cacheline_aligned;
 
- kmutex_t		proc_lock	__cacheline_aligned;
+kmutex_t		proc_lock	__cacheline_aligned;
 static pserialize_t	proc_psz;
 
 /*
@@ -1815,8 +1816,7 @@ proc_crmod_enter(void)
 
 	/* Ensure the LWP cached credentials are up to date. */
 	if ((oc = l->l_cred) != p->p_cred) {
-		kauth_cred_hold(p->p_cred);
-		l->l_cred = p->p_cred;
+		l->l_cred = kauth_cred_hold(p->p_cred);
 		kauth_cred_free(oc);
 	}
 }
@@ -1839,14 +1839,17 @@ proc_crmod_leave(kauth_cred_t scred, kauth_cred_t fcred, bool sugid)
 	if (scred != NULL) {
 		p->p_cred = scred;
 		LIST_FOREACH(l2, &p->p_lwps, l_sibling) {
-			if (l2 != l)
-				l2->l_prflag |= LPR_CRMOD;
+			if (l2 != l) {
+				lwp_lock(l2);
+				l2->l_flag |= LW_CACHECRED;
+				lwp_need_userret(l2);
+				lwp_unlock(l2);
+			}
 		}
 
 		/* Ensure the LWP cached credentials are up to date. */
 		if ((oc = l->l_cred) != scred) {
-			kauth_cred_hold(scred);
-			l->l_cred = scred;
+			l->l_cred = kauth_cred_hold(scred);
 		}
 	} else
 		oc = NULL;	/* XXXgcc */
@@ -2044,7 +2047,8 @@ proc_active_lwp(struct proc *p)
 
 	struct lwp *l, *lp = NULL;
 	LIST_FOREACH(l, &p->p_lwps, l_sibling) {
-		KASSERT(l->l_stat >= 0 && l->l_stat < __arraycount(ostat));
+		KASSERT(l->l_stat >= 0);
+		KASSERT(l->l_stat < __arraycount(ostat));
 		if (lp == NULL ||
 		    ostat[l->l_stat] > ostat[lp->l_stat] ||
 		    (ostat[l->l_stat] == ostat[lp->l_stat] &&
@@ -2754,7 +2758,7 @@ void
 fill_kproc2(struct proc *p, struct kinfo_proc2 *ki, bool zombie, bool allowaddr)
 {
 	struct tty *tp;
-	struct lwp *l, *l2;
+	struct lwp *l;
 	struct timeval ut, st, rt;
 	sigset_t ss1, ss2;
 	struct rusage ru;
@@ -2908,13 +2912,9 @@ fill_kproc2(struct proc *p, struct kinfo_proc2 *ki, bool zombie, bool allowaddr)
 		ki->p_ustime_usec = st.tv_usec;
 
 		memcpy(&ru, &p->p_stats->p_ru, sizeof(ru));
-		ki->p_uru_nvcsw = 0;
-		ki->p_uru_nivcsw = 0;
-		LIST_FOREACH(l2, &p->p_lwps, l_sibling) {
-			ki->p_uru_nvcsw += (l2->l_ncsw - l2->l_nivcsw);
-			ki->p_uru_nivcsw += l2->l_nivcsw;
-			ruadd(&ru, &l2->l_ru);
-		}
+		rulwps(p, &ru);
+		ki->p_uru_nvcsw = ru.ru_nvcsw;
+		ki->p_uru_nivcsw = ru.ru_nivcsw;
 		ki->p_uru_maxrss = ru.ru_maxrss;
 		ki->p_uru_ixrss = ru.ru_ixrss;
 		ki->p_uru_idrss = ru.ru_idrss;

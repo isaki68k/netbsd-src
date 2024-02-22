@@ -1,4 +1,4 @@
-/* $NetBSD: if_txp.c,v 1.73 2020/03/10 01:23:42 thorpej Exp $ */
+/* $NetBSD: if_txp.c,v 1.75 2024/02/10 09:30:06 andvar Exp $ */
 
 /*
  * Copyright (c) 2001
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.73 2020/03/10 01:23:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.75 2024/02/10 09:30:06 andvar Exp $");
 
 #include "opt_inet.h"
 
@@ -40,7 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.73 2020/03/10 01:23:42 thorpej Exp $");
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/mbuf.h>
-#include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
 #include <sys/device.h>
@@ -1474,7 +1473,7 @@ txp_start(struct ifnet *ifp)
 
 		/*
 		 * Load the DMA map.  If this fails, the packet either
-		 * didn't fit in the alloted number of segments, or we
+		 * didn't fit in the allotted number of segments, or we
 		 * were short on resources.  In this case, we'll copy
 		 * and try again.
 		 */

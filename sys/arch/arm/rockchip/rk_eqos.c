@@ -1,7 +1,7 @@
-/*	$NetBSD: rk_eqos.c,v 1.1 2022/08/23 05:40:46 ryo Exp $	*/
+/*	$NetBSD: rk_eqos.c,v 1.3 2024/02/07 04:20:27 msaitoh Exp $	*/
 
 /*-
- * Copyright (c) 2022 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2022 Ryo Shimizu
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,10 +25,9 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_eqos.c,v 1.1 2022/08/23 05:40:46 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_eqos.c,v 1.3 2024/02/07 04:20:27 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -392,12 +391,7 @@ rk_eqos_attach(device_t parent, device_t self, void *aux)
 	if (eqos_attach(sc) != 0)
 		return;
 
-#ifdef NET_MPSAFE
-#define FDT_INTR_FLAGS	FDT_INTR_MPSAFE
-#else
-#define FDT_INTR_FLAGS	0
-#endif
-	if (fdtbus_intr_establish_xname(phandle, 0, IPL_NET, FDT_INTR_FLAGS,
+	if (fdtbus_intr_establish_xname(phandle, 0, IPL_NET, FDT_INTR_MPSAFE,
 	    eqos_intr, sc, device_xname(self)) == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt on %s\n",
 		    intrstr);

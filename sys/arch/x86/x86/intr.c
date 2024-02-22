@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.164 2023/01/25 15:54:53 riastradh Exp $	*/
+/*	$NetBSD: intr.c,v 1.166 2023/11/29 11:40:37 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -133,7 +133,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.164 2023/01/25 15:54:53 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.166 2023/11/29 11:40:37 mlelstv Exp $");
 
 #include "opt_intrdebug.h"
 #include "opt_multiprocessor.h"
@@ -884,6 +884,8 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 		/* FALLTHROUGH */
 	case IST_PULSE:
 		if (type != IST_NONE) {
+			int otype = source->is_type;
+
 			intr_source_free(ci, slot, pic, idt_vec);
 			intr_free_io_intrsource_direct(chained);
 			mutex_exit(&cpu_lock);
@@ -891,7 +893,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 			printf("%s: pic %s pin %d: can't share "
 			       "type %d with %d\n",
 				__func__, pic->pic_name, pin,
-				source->is_type, type);
+				otype, type);
 			return NULL;
 		}
 		break;
@@ -1164,9 +1166,13 @@ intr_disestablish_xcall(void *arg1, void *arg2)
 	idtvec = source->is_idtvec;
 
 	(*pic->pic_hwmask)(pic, ih->ih_pin);
-	membar_sync();
+
+	/*
+	 * ci_pending is stable on the current CPU while interrupts are
+	 * blocked, and we only need to synchronize with interrupt
+	 * vectors on the same CPU, so no need for atomics or membars.
+	 */
 	ci->ci_ipending &= ~(1ULL << ih->ih_slot);
-	membar_sync();
 
 	/*
 	 * Remove the handler from the chain.

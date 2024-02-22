@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.518 2022/07/01 01:05:31 riastradh Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.521 2023/10/08 12:38:58 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.518 2022/07/01 01:05:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.521 2023/10/08 12:38:58 ad Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -1119,11 +1119,9 @@ credexec(struct lwp *l, struct execve_data *data)
 	/* Update the master credentials. */
 	if (l->l_cred != p->p_cred) {
 		kauth_cred_t ocred;
-
-		kauth_cred_hold(l->l_cred);
 		mutex_enter(p->p_lock);
 		ocred = p->p_cred;
-		p->p_cred = l->l_cred;
+		p->p_cred = kauth_cred_hold(l->l_cred);
 		mutex_exit(p->p_lock);
 		kauth_cred_free(ocred);
 	}
@@ -1316,7 +1314,6 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 		lp = p->p_vforklwp;
 		p->p_vforklwp = NULL;
 		l->l_lwpctl = NULL; /* was on loan from blocked parent */
-		cv_broadcast(&lp->l_waitcv);
 
 		/* Clear flags after cv_broadcast() (scheduler needs them). */
 		p->p_lflag &= ~PL_PPWAIT;
@@ -1324,6 +1321,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 
 		/* If parent is still on same CPU, teleport curlwp elsewhere. */
 		samecpu = (lp->l_cpu == curlwp->l_cpu);
+		cv_broadcast(&lp->l_waitcv);
 		mutex_exit(&proc_lock);
 
 		/* Give the parent its CPU back - find a new home. */
@@ -1408,7 +1406,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	if (p->p_sflag & PS_STOPEXEC) {
 		ksiginfoq_t kq;
 
-		KERNEL_UNLOCK_ALL(l, &l->l_biglocks);
+		KASSERT(l->l_blcnt == 0);
 		p->p_pptr->p_nstopchild++;
 		p->p_waited = 0;
 		mutex_enter(p->p_lock);
@@ -2754,11 +2752,9 @@ do_posix_spawn(struct lwp *l1, pid_t *pid_res, bool *child_ok, const char *path,
 	/* Update the master credentials. */
 	if (l2->l_cred != p2->p_cred) {
 		kauth_cred_t ocred;
-
-		kauth_cred_hold(l2->l_cred);
 		mutex_enter(p2->p_lock);
 		ocred = p2->p_cred;
-		p2->p_cred = l2->l_cred;
+		p2->p_cred = kauth_cred_hold(l2->l_cred);
 		mutex_exit(p2->p_lock);
 		kauth_cred_free(ocred);
 	}

@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_exit.c,v 1.293 2021/12/05 08:13:12 msaitoh Exp $	*/
+/*	$NetBSD: kern_exit.c,v 1.298 2023/10/08 12:38:58 ad Exp $	*/
 
 /*-
- * Copyright (c) 1998, 1999, 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 1999, 2006, 2007, 2008, 2020, 2023
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -67,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.293 2021/12/05 08:13:12 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.298 2023/10/08 12:38:58 ad Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -234,7 +235,7 @@ exit1(struct lwp *l, int exitcode, int signo)
 	 * If we have been asked to stop on exit, do so now.
 	 */
 	if (__predict_false(p->p_sflag & PS_STOPEXIT)) {
-		KERNEL_UNLOCK_ALL(l, &l->l_biglocks);
+		KASSERT(l->l_blcnt == 0);
 		sigclearall(p, &contsigmask, &kq);
 
 		if (!mutex_tryenter(&proc_lock)) {
@@ -547,9 +548,6 @@ exit1(struct lwp *l, int exitcode, int signo)
 	calcru(p, &p->p_stats->p_ru.ru_utime, &p->p_stats->p_ru.ru_stime,
 	    NULL, NULL);
 
-	if (wakeinit)
-		cv_broadcast(&initproc->p_waitcv);
-
 	callout_destroy(&l->l_timeout_ch);
 
 	/*
@@ -557,7 +555,6 @@ exit1(struct lwp *l, int exitcode, int signo)
 	 */
 	pcu_discard_all(l);
 
-	mutex_enter(p->p_lock);
 	/*
 	 * Notify other processes tracking us with a knote that
 	 * we're exiting.
@@ -567,6 +564,7 @@ exit1(struct lwp *l, int exitcode, int signo)
 	 * knote_proc_exit() expects that p->p_lock is already
 	 * held (and will assert so).
 	 */
+	mutex_enter(p->p_lock);
 	if (!SLIST_EMPTY(&p->p_klist)) {
 		knote_proc_exit(p);
 	}
@@ -591,9 +589,11 @@ exit1(struct lwp *l, int exitcode, int signo)
 	 * Signal the parent to collect us, and drop the proclist lock.
 	 * Drop debugger/procfs lock; no new references can be gained.
 	 */
-	cv_broadcast(&p->p_pptr->p_waitcv);
 	rw_exit(&p->p_reflock);
+	cv_broadcast(&p->p_pptr->p_waitcv);
 	mutex_exit(&proc_lock);
+	if (wakeinit)
+		cv_broadcast(&initproc->p_waitcv);
 
 	/*
 	 * NOTE: WE ARE NO LONGER ALLOWED TO SLEEP!
@@ -631,6 +631,7 @@ retry:
 			continue;
 		lwp_lock(l2);
 		l2->l_flag |= LW_WEXIT;
+		lwp_need_userret(l2);
 		if ((l2->l_stat == LSSLEEP && (l2->l_flag & LW_SINTR)) ||
 		    l2->l_stat == LSSUSPENDED || l2->l_stat == LSSTOP) {
 			l2->l_flag &= ~LW_DBGSUSPEND;
@@ -638,7 +639,6 @@ retry:
 			setrunnable(l2);
 			continue;
 		}
-		lwp_need_userret(l2);
 		lwp_unlock(l2);
 	}
 
@@ -835,50 +835,57 @@ match_process(const struct proc *pp, struct proc **q, idtype_t idtype, id_t id,
 	struct proc *p = *q;
 	int rv = 1;
 
-	mutex_enter(p->p_lock);
 	switch (idtype) {
 	case P_ALL:
+		mutex_enter(p->p_lock);
 		break;
 	case P_PID:
 		if (p->p_pid != (pid_t)id) {
-			mutex_exit(p->p_lock);
 			p = *q = proc_find_raw((pid_t)id);
 			if (p == NULL || p->p_stat == SIDL || p->p_pptr != pp) {
 				*q = NULL;
 				return -1;
 			}
-			mutex_enter(p->p_lock);
 		}
+		mutex_enter(p->p_lock);
 		rv++;
 		break;
 	case P_PGID:
 		if (p->p_pgid != (pid_t)id)
-			goto out;
+			return 0;
+		mutex_enter(p->p_lock);
 		break;
 	case P_SID:
 		if (p->p_session->s_sid != (pid_t)id)
-			goto out;
+			return 0;
+		mutex_enter(p->p_lock);
 		break;
 	case P_UID:
-		if (kauth_cred_geteuid(p->p_cred) != (uid_t)id)
-			goto out;
+		mutex_enter(p->p_lock);
+		if (kauth_cred_geteuid(p->p_cred) != (uid_t)id) {
+			mutex_exit(p->p_lock);
+			return 0;
+		}
 		break;
 	case P_GID:
-		if (kauth_cred_getegid(p->p_cred) != (gid_t)id)
-			goto out;
+		mutex_enter(p->p_lock);
+		if (kauth_cred_getegid(p->p_cred) != (gid_t)id) {
+			mutex_exit(p->p_lock);
+			return 0;
+		}
 		break;
 	case P_CID:
 	case P_PSETID:
 	case P_CPUID:
 		/* XXX: Implement me */
 	default:
-	out:
-		mutex_exit(p->p_lock);
 		return 0;
 	}
 
-	if ((options & WEXITED) == 0 && p->p_stat == SZOMB)
-		goto out;
+	if ((options & WEXITED) == 0 && p->p_stat == SZOMB) {
+		mutex_exit(p->p_lock);
+		return 0;
+	}
 
 	if (siginfo != NULL) {
 		siginfo->si_errno = 0;
@@ -1023,9 +1030,7 @@ find_stopped_child(struct proc *parent, idtype_t idtype, id_t id, int options,
 	}
 
 	if ((pid_t)id == WAIT_MYPGRP && (idtype == P_PID || idtype == P_PGID)) {
-		mutex_enter(parent->p_lock);
 		id = (id_t)parent->p_pgid;
-		mutex_exit(parent->p_lock);
 		idtype = P_PGID;
 	}
 
@@ -1194,8 +1199,6 @@ proc_free(struct proc *p, struct wrusage *wru)
 	 * This cannot be done any earlier else it might get done twice.
 	 */
 	l = LIST_FIRST(&p->p_lwps);
-	p->p_stats->p_ru.ru_nvcsw += (l->l_ncsw - l->l_nivcsw);
-	p->p_stats->p_ru.ru_nivcsw += l->l_nivcsw;
 	ruadd(&p->p_stats->p_ru, &l->l_ru);
 	ruadd(&p->p_stats->p_ru, &p->p_stats->p_cru);
 	ruadd(&parent->p_stats->p_cru, &p->p_stats->p_ru);

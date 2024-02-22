@@ -1,4 +1,4 @@
-/* $NetBSD: linux_systrace_args.c,v 1.20 2021/12/02 04:39:44 ryo Exp $ */
+/* $NetBSD: linux_systrace_args.c,v 1.25 2023/08/19 17:50:24 christos Exp $ */
 
 /*
  * System call argument to DTrace register array conversion.
@@ -1334,6 +1334,15 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 0;
 		break;
 	}
+	/* linux_sys_readahead */
+	case 187: {
+		const struct linux_sys_readahead_args *p = params;
+		iarg[0] = SCARG(p, fd); /* int */
+		iarg[1] = SCARG(p, offset); /* off_t */
+		uarg[2] = SCARG(p, count); /* size_t */
+		*n_args = 3;
+		break;
+	}
 	/* linux_sys_setxattr */
 	case 188: {
 		const struct linux_sys_setxattr_args *p = params;
@@ -1493,6 +1502,13 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 3;
 		break;
 	}
+	/* linux_sys_epoll_create */
+	case 213: {
+		const struct linux_sys_epoll_create_args *p = params;
+		iarg[0] = SCARG(p, size); /* int */
+		*n_args = 1;
+		break;
+	}
 	/* linux_sys_getdents64 */
 	case 217: {
 		const struct linux_sys_getdents64_args *p = params;
@@ -1601,6 +1617,26 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 1;
 		break;
 	}
+	/* linux_sys_epoll_wait */
+	case 232: {
+		const struct linux_sys_epoll_wait_args *p = params;
+		iarg[0] = SCARG(p, epfd); /* int */
+		uarg[1] = (intptr_t) SCARG(p, events); /* struct linux_epoll_event * */
+		iarg[2] = SCARG(p, maxevents); /* int */
+		iarg[3] = SCARG(p, timeout); /* int */
+		*n_args = 4;
+		break;
+	}
+	/* linux_sys_epoll_ctl */
+	case 233: {
+		const struct linux_sys_epoll_ctl_args *p = params;
+		iarg[0] = SCARG(p, epfd); /* int */
+		iarg[1] = SCARG(p, op); /* int */
+		iarg[2] = SCARG(p, fd); /* int */
+		uarg[3] = (intptr_t) SCARG(p, event); /* struct linux_epoll_event * */
+		*n_args = 4;
+		break;
+	}
 	/* linux_sys_tgkill */
 	case 234: {
 		const struct linux_sys_tgkill_args *p = params;
@@ -1615,6 +1651,39 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		const struct compat_50_sys_utimes_args *p = params;
 		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
 		uarg[1] = (intptr_t) SCARG(p, tptr); /* const struct timeval50 * */
+		*n_args = 2;
+		break;
+	}
+	/* linux_sys_waitid */
+	case 247: {
+		const struct linux_sys_waitid_args *p = params;
+		iarg[0] = SCARG(p, idtype); /* int */
+		iarg[1] = SCARG(p, id); /* id_t */
+		uarg[2] = (intptr_t) SCARG(p, infop); /* linux_siginfo_t * */
+		iarg[3] = SCARG(p, options); /* int */
+		uarg[4] = (intptr_t) SCARG(p, rusage); /* struct rusage50 * */
+		*n_args = 5;
+		break;
+	}
+	/* linux_sys_inotify_init */
+	case 253: {
+		*n_args = 0;
+		break;
+	}
+	/* linux_sys_inotify_add_watch */
+	case 254: {
+		const struct linux_sys_inotify_add_watch_args *p = params;
+		iarg[0] = SCARG(p, fd); /* int */
+		uarg[1] = (intptr_t) SCARG(p, pathname); /* const char * */
+		uarg[2] = SCARG(p, mask); /* uint32_t */
+		*n_args = 3;
+		break;
+	}
+	/* linux_sys_inotify_rm_watch */
+	case 255: {
+		const struct linux_sys_inotify_rm_watch_args *p = params;
+		iarg[0] = SCARG(p, fd); /* int */
+		iarg[1] = SCARG(p, wd); /* int */
 		*n_args = 2;
 		break;
 	}
@@ -1784,6 +1853,17 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 4;
 		break;
 	}
+	/* linux_sys_epoll_pwait */
+	case 281: {
+		const struct linux_sys_epoll_pwait_args *p = params;
+		iarg[0] = SCARG(p, epfd); /* int */
+		uarg[1] = (intptr_t) SCARG(p, events); /* struct linux_epoll_event * */
+		iarg[2] = SCARG(p, maxevents); /* int */
+		iarg[3] = SCARG(p, timeout); /* int */
+		uarg[4] = (intptr_t) SCARG(p, sigmask); /* const linux_sigset_t * */
+		*n_args = 5;
+		break;
+	}
 	/* linux_sys_timerfd_create */
 	case 283: {
 		const struct linux_sys_timerfd_create_args *p = params;
@@ -1845,6 +1925,13 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 2;
 		break;
 	}
+	/* linux_sys_epoll_create1 */
+	case 291: {
+		const struct linux_sys_epoll_create1_args *p = params;
+		iarg[0] = SCARG(p, flags); /* int */
+		*n_args = 1;
+		break;
+	}
 	/* linux_sys_dup3 */
 	case 292: {
 		const struct linux_sys_dup3_args *p = params;
@@ -1860,6 +1947,13 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		uarg[0] = (intptr_t) SCARG(p, pfds); /* int * */
 		iarg[1] = SCARG(p, flags); /* int */
 		*n_args = 2;
+		break;
+	}
+	/* linux_sys_inotify_init1 */
+	case 294: {
+		const struct linux_sys_inotify_init1_args *p = params;
+		iarg[0] = SCARG(p, flags); /* int */
+		*n_args = 1;
 		break;
 	}
 	/* linux_sys_preadv */
@@ -1915,8 +2009,56 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 4;
 		break;
 	}
+	/* sys_getrandom */
+	case 318: {
+		const struct sys_getrandom_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, buf); /* void * */
+		uarg[1] = SCARG(p, buflen); /* size_t */
+		uarg[2] = SCARG(p, flags); /* unsigned int */
+		*n_args = 3;
+		break;
+	}
+	/* linux_sys_memfd_create */
+	case 319: {
+		const struct linux_sys_memfd_create_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, name); /* const char * */
+		uarg[1] = SCARG(p, flags); /* unsigned int */
+		*n_args = 2;
+		break;
+	}
+	/* linux_sys_statx */
+	case 332: {
+		const struct linux_sys_statx_args *p = params;
+		iarg[0] = SCARG(p, fd); /* int */
+		uarg[1] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[2] = SCARG(p, flag); /* int */
+		uarg[3] = SCARG(p, mask); /* unsigned int */
+		uarg[4] = (intptr_t) SCARG(p, sp); /* struct linux_statx * */
+		*n_args = 5;
+		break;
+	}
+	/* linux_sys_close_range */
+	case 436: {
+		const struct linux_sys_close_range_args *p = params;
+		uarg[0] = SCARG(p, first); /* unsigned int */
+		uarg[1] = SCARG(p, last); /* unsigned int */
+		uarg[2] = SCARG(p, flags); /* unsigned int */
+		*n_args = 3;
+		break;
+	}
+	/* linux_sys_epoll_pwait2 */
+	case 441: {
+		const struct linux_sys_epoll_pwait2_args *p = params;
+		iarg[0] = SCARG(p, epfd); /* int */
+		uarg[1] = (intptr_t) SCARG(p, events); /* struct linux_epoll_event * */
+		iarg[2] = SCARG(p, maxevents); /* int */
+		uarg[3] = (intptr_t) SCARG(p, timeout); /* const struct linux_timespec * */
+		uarg[4] = (intptr_t) SCARG(p, sigmask); /* const linux_sigset_t * */
+		*n_args = 5;
+		break;
+	}
 	/* linux_sys_nosys */
-	case 314: {
+	case 451: {
 		*n_args = 0;
 		break;
 	}
@@ -4068,6 +4210,22 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* linux_sys_gettid */
 	case 186:
 		break;
+	/* linux_sys_readahead */
+	case 187:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "off_t";
+			break;
+		case 2:
+			p = "size_t";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_setxattr */
 	case 188:
 		switch(ndx) {
@@ -4358,6 +4516,16 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys_epoll_create */
+	case 213:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_getdents64 */
 	case 217:
 		switch(ndx) {
@@ -4539,6 +4707,44 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys_epoll_wait */
+	case 232:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct linux_epoll_event *";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_epoll_ctl */
+	case 233:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "int";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "struct linux_epoll_event *";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_tgkill */
 	case 234:
 		switch(ndx) {
@@ -4563,6 +4769,60 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 1:
 			p = "const struct timeval50 *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_waitid */
+	case 247:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "id_t";
+			break;
+		case 2:
+			p = "linux_siginfo_t *";
+			break;
+		case 3:
+			p = "int";
+			break;
+		case 4:
+			p = "struct rusage50 *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_inotify_init */
+	case 253:
+		break;
+	/* linux_sys_inotify_add_watch */
+	case 254:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "const char *";
+			break;
+		case 2:
+			p = "uint32_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_inotify_rm_watch */
+	case 255:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "int";
 			break;
 		default:
 			break;
@@ -4879,6 +5139,28 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys_epoll_pwait */
+	case 281:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct linux_epoll_event *";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "int";
+			break;
+		case 4:
+			p = "const linux_sigset_t *";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_timerfd_create */
 	case 283:
 		switch(ndx) {
@@ -4985,6 +5267,16 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys_epoll_create1 */
+	case 291:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_dup3 */
 	case 292:
 		switch(ndx) {
@@ -5008,6 +5300,16 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "int *";
 			break;
 		case 1:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_inotify_init1 */
+	case 294:
+		switch(ndx) {
+		case 0:
 			p = "int";
 			break;
 		default:
@@ -5118,8 +5420,97 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* sys_getrandom */
+	case 318:
+		switch(ndx) {
+		case 0:
+			p = "void *";
+			break;
+		case 1:
+			p = "size_t";
+			break;
+		case 2:
+			p = "unsigned int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_memfd_create */
+	case 319:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "unsigned int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_statx */
+	case 332:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "const char *";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "unsigned int";
+			break;
+		case 4:
+			p = "struct linux_statx *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_close_range */
+	case 436:
+		switch(ndx) {
+		case 0:
+			p = "unsigned int";
+			break;
+		case 1:
+			p = "unsigned int";
+			break;
+		case 2:
+			p = "unsigned int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_epoll_pwait2 */
+	case 441:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct linux_epoll_event *";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "const struct linux_timespec *";
+			break;
+		case 4:
+			p = "const linux_sigset_t *";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_nosys */
-	case 314:
+	case 451:
 		break;
 	default:
 		break;
@@ -5909,6 +6300,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_sys_gettid */
 	case 186:
+	/* linux_sys_readahead */
+	case 187:
+		if (ndx == 0 || ndx == 1)
+			p = "ssize_t";
+		break;
 	/* linux_sys_setxattr */
 	case 188:
 		if (ndx == 0 || ndx == 1)
@@ -5994,6 +6390,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys_epoll_create */
+	case 213:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_getdents64 */
 	case 217:
 		if (ndx == 0 || ndx == 1)
@@ -6059,6 +6460,16 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys_epoll_wait */
+	case 232:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_epoll_ctl */
+	case 233:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_tgkill */
 	case 234:
 		if (ndx == 0 || ndx == 1)
@@ -6066,6 +6477,23 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* compat_50_sys_utimes */
 	case 235:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_waitid */
+	case 247:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_inotify_init */
+	case 253:
+	/* linux_sys_inotify_add_watch */
+	case 254:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_inotify_rm_watch */
+	case 255:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
@@ -6154,6 +6582,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys_epoll_pwait */
+	case 281:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_timerfd_create */
 	case 283:
 		if (ndx == 0 || ndx == 1)
@@ -6189,6 +6622,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys_epoll_create1 */
+	case 291:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_dup3 */
 	case 292:
 		if (ndx == 0 || ndx == 1)
@@ -6196,6 +6634,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_sys_pipe2 */
 	case 293:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_inotify_init1 */
+	case 294:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
@@ -6224,8 +6667,33 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* sys_getrandom */
+	case 318:
+		if (ndx == 0 || ndx == 1)
+			p = "ssize_t";
+		break;
+	/* linux_sys_memfd_create */
+	case 319:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_statx */
+	case 332:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_close_range */
+	case 436:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_epoll_pwait2 */
+	case 441:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_nosys */
-	case 314:
+	case 451:
 	default:
 		break;
 	};

@@ -1,7 +1,7 @@
-/*	$NetBSD: init_main.c,v 1.541 2022/10/26 23:20:47 riastradh Exp $	*/
+/*	$NetBSD: init_main.c,v 1.547 2024/01/17 10:18:41 hannken Exp $	*/
 
 /*-
- * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2009, 2019, 2023 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.541 2022/10/26 23:20:47 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.547 2024/01/17 10:18:41 hannken Exp $");
 
 #include "opt_cnmagic.h"
 #include "opt_ddb.h"
@@ -199,6 +199,7 @@ extern void *_binary_splash_image_end;
 #include <sys/cprng.h>
 #include <sys/psref.h>
 #include <sys/radixtree.h>
+#include <sys/heartbeat.h>
 
 #include <sys/syscall.h>
 #include <sys/syscallargs.h>
@@ -326,9 +327,6 @@ main(void)
 
 	percpu_init();
 
-	/* Initialize lock caches. */
-	mutex_obj_init();
-
 	/* Initialize radix trees (used by numerous subsystems). */
 	radix_tree_init();
 
@@ -408,6 +406,9 @@ main(void)
 
 	/* Must be called after lwpinit (lwpinit_specificdata) */
 	psref_init();
+
+	/* Initialize exec structures */
+	exec_init(1);		/* signal_init calls exechook_establish() */
 
 	/* Initialize signal-related data structures. */
 	signal_init();
@@ -507,9 +508,6 @@ main(void)
 	/* Initialize the file descriptor system. */
 	fd_sys_init();
 
-	/* Initialize cwd structures */
-	cwd_sys_init();
-
 	/* Initialize kqueue. */
 	kqueue_init();
 
@@ -557,6 +555,12 @@ main(void)
 	/* Once all CPUs are detected, initialize the per-CPU cprng_fast.  */
 	cprng_fast_init();
 
+	/*
+	 * Now that softints can be established, start monitoring
+	 * system heartbeat on all CPUs.
+	 */
+	heartbeat_start();
+
 	ssp_init();
 
 	ubc_init();		/* must be after autoconfig */
@@ -577,9 +581,6 @@ main(void)
 	yield();
 
 	vmem_rehash_start();	/* must be before exec_init */
-
-	/* Initialize exec structures */
-	exec_init(1);		/* seminit calls exithook_establish() */
 
 #if NVERIEXEC > 0
 	/*

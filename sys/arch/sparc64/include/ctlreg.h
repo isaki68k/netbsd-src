@@ -1,4 +1,4 @@
-/*	$NetBSD: ctlreg.h,v 1.67 2019/11/13 10:06:38 nakayama Exp $ */
+/*	$NetBSD: ctlreg.h,v 1.70 2024/02/02 22:33:42 andvar Exp $ */
 
 /*
  * Copyright (c) 1996-2002 Eduardo Horvath
@@ -286,14 +286,14 @@
 
 /* SFSR bits for both D_SFSR and I_SFSR */
 #define	SFSR_ASI(x)		((x)>>16)
-#define	SFSR_FT_VA_OOR_2	0x02000 /* IMMU: jumpl or return to unsupportd VA */
+#define	SFSR_FT_VA_OOR_2	0x02000 /* IMMU: jumpl or return to unsupported VA */
 #define	SFSR_FT_VA_OOR_1	0x01000 /* fault at unsupported VA */
 #define	SFSR_FT_NFO		0x00800	/* DMMU: Access to page marked NFO */
 #define	SFSR_ILL_ASI		0x00400	/* DMMU: Illegal (unsupported) ASI */
 #define	SFSR_FT_IO_ATOMIC	0x00200	/* DMMU: Atomic access to noncacheable page */
 #define	SFSR_FT_ILL_NF		0x00100	/* DMMU: NF load or flush to page marked E (has side effects) */
 #define	SFSR_FT_PRIV		0x00080	/* Privilege violation */
-#define	SFSR_FT_E		0x00040	/* DMUU: value of E bit associated address */
+#define	SFSR_FT_E		0x00040	/* DMMU: value of E bit associated address */
 #define	SFSR_CTXT(x)		(((x)>>4)&0x3)
 #define	SFSR_CTXT_IS_PRIM(x)	(SFSR_CTXT(x)==0x00)
 #define	SFSR_CTXT_IS_SECOND(x)	(SFSR_CTXT(x)==0x01)
@@ -396,7 +396,7 @@
  * Interrupt registers.  This really gets hairy.
  */
 
-/* IRSR -- Interrupt Receive Status Ragister */
+/* IRSR -- Interrupt Receive Status Register */
 #define	ASI_IRSR	0x49
 #define	IRSR		0x00
 #define	IRSR_BUSY	0x020

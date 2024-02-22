@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.56 2022/02/16 23:49:26 riastradh Exp $	*/
+/*	$NetBSD: zs.c,v 1.59 2023/09/24 10:59:24 andvar Exp $	*/
 
 /*
  * Copyright (c) 1996, 1998 Bill Studenmund
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.56 2022/02/16 23:49:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.59 2023/09/24 10:59:24 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -259,7 +259,7 @@ zsc_attach(device_t parent, device_t self, void *aux)
 #ifdef ZS_TXDMA
 		zsc->zsc_txdmareg[channel] = mapiodev(regs[2], regs[3], false);
 		zsc->zsc_txdmacmd[channel] =
-			dbdma_alloc(sizeof(dbdma_command_t) * 3);
+			dbdma_alloc(sizeof(dbdma_command_t) * 3, NULL);
 		memset(zsc->zsc_txdmacmd[channel], 0,
 			sizeof(dbdma_command_t) * 3);
 		dbdma_reset(zsc->zsc_txdmareg[channel]);
@@ -639,7 +639,7 @@ zs_set_speed(struct zs_chanstate *cs, int bps)
 		}
 	}
 #ifdef ZSMACDEBUG
-	zsprintf("Checking for rate %d. Found source #%d.\n",bps, src);
+	printf("Checking for rate %d. Found source #%d.\n", bps, src);
 #endif
 	if (src == -1)
 		return (EINVAL); /* no can do */
@@ -688,10 +688,10 @@ zs_set_speed(struct zs_chanstate *cs, int bps)
 	splx(s);
 	
 #ifdef ZSMACDEBUG
-	zsprintf("Rate is %7d, tc is %7d, source no. %2d, flags %4x\n", \
+	printf("Rate is %7d, tc is %7d, source no. %2d, flags %4x\n",
 	    bps, tc, src, sf);
-	zsprintf("Registers are: 4 %x, 11 %x, 14 %x\n\n",
-		cs->cs_preg[4], cs->cs_preg[11], cs->cs_preg[14]);
+	printf("Registers are: 4 %x, 11 %x, 14 %x\n\n",
+	    cs->cs_preg[4], cs->cs_preg[11], cs->cs_preg[14]);
 #endif
 
 	cs->cs_preg[5] |= ZSWR5_RTS;	/* Make sure the drivers are on! */

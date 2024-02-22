@@ -1,4 +1,4 @@
-/*	$NetBSD: g42xxeb_machdep.c,v 1.39 2022/07/03 19:58:42 andvar Exp $ */
+/*	$NetBSD: g42xxeb_machdep.c,v 1.42 2024/02/20 23:36:02 andvar Exp $ */
 
 /*
  * Copyright (c) 2002, 2003, 2004, 2005  Genetec Corporation.
@@ -335,52 +335,39 @@ read_ttb(void)
  * using the 2nd page tables.
  */
 
-#define	_A(a)	((a) & ~L1_S_OFFSET)
-#define	_S(s)	(((s) + L1_S_SIZE - 1) & ~(L1_S_SIZE-1))
-
 static const struct pmap_devmap g42xxeb_devmap[] = {
-    {
+    DEVMAP_ENTRY(
 	    G42XXEB_PLDREG_VBASE,
-	    _A(G42XXEB_PLDREG_BASE),
-	    _S(G42XXEB_PLDREG_SIZE),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {
+	    G42XXEB_PLDREG_BASE,
+	    G42XXEB_PLDREG_SIZE
+    ),
+    DEVMAP_ENTRY(
 	    G42XXEB_GPIO_VBASE,
-	    _A(PXA2X0_GPIO_BASE),
-	    _S(PXA250_GPIO_SIZE),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {
+	    PXA2X0_GPIO_BASE,
+	    PXA250_GPIO_SIZE
+    ),
+    DEVMAP_ENTRY(
 	    G42XXEB_CLKMAN_VBASE,
-	    _A(PXA2X0_CLKMAN_BASE),
-	    _S(PXA2X0_CLKMAN_SIZE),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {
+	    PXA2X0_CLKMAN_BASE,
+	    PXA2X0_CLKMAN_SIZE
+    ),
+    DEVMAP_ENTRY(
 	    G42XXEB_INTCTL_VBASE,
-	    _A(PXA2X0_INTCTL_BASE),
-	    _S(PXA2X0_INTCTL_SIZE),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {
+	    PXA2X0_INTCTL_BASE,
+	    PXA2X0_INTCTL_SIZE
+    ),
+    DEVMAP_ENTRY(
 	    G42XXEB_FFUART_VBASE,
-	    _A(PXA2X0_FFUART_BASE),
-	    _S(4 * COM_NPORTS),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {
+	    PXA2X0_FFUART_BASE,
+	    4 * COM_NPORTS
+    ),
+    DEVMAP_ENTRY(
 	    G42XXEB_BTUART_VBASE,
-	    _A(PXA2X0_BTUART_BASE),
-	    _S(4 * COM_NPORTS),
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_NOCACHE,
-    },
-    {0, 0, 0, 0,}
+	    PXA2X0_BTUART_BASE,
+	    4 * COM_NPORTS
+    ),
+    DEVMAP_ENTRY_END
 };
-
-#undef	_A
-#undef	_S
-
 
 /*
  * vaddr_t initarm(...)
@@ -398,16 +385,12 @@ static const struct pmap_devmap g42xxeb_devmap[] = {
 vaddr_t
 initarm(void *arg)
 {
-	extern vaddr_t xscale_cache_clean_addr;
 	int loop;
 	int loop1;
 	u_int l1pagetable;
 	paddr_t memstart;
 	psize_t memsize;
 	int led_data = 1;
-#ifdef DIAGNOSTIC
-	extern vsize_t xscale_minidata_clean_size; /* used in KASSERT */
-#endif
 
 #define LEDSTEP_P() ioreg8_write(G42XXEB_PLDREG_BASE+G42XXEB_LED, led_data++)
 #define LEDSTEP() pldreg8_write(G42XXEB_LED, led_data++);
@@ -533,7 +516,7 @@ initarm(void *arg)
 
 #ifdef VERBOSE_INIT_ARM
 	/* Tell the user about the memory */
-	printf("physmemory: %d pages at 0x%08lx -> 0x%08lx\n", physmem,
+	printf("physmemory: 0x%"PRIxPSIZE" pages at 0x%08lx -> 0x%08lx\n", physmem,
 	    physical_start, physical_end - 1);
 #endif
 

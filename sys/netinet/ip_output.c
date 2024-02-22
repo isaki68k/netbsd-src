@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_output.c,v 1.324 2022/11/21 09:51:13 knakahara Exp $	*/
+/*	$NetBSD: ip_output.c,v 1.326 2023/04/19 22:00:18 mlelstv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.324 2022/11/21 09:51:13 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.326 2023/04/19 22:00:18 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -348,11 +348,6 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 		}
 		mtu = ifp->if_mtu;
 		ia = in_get_ia_from_ifp_psref(ifp, &psref_ia);
-		if (ia == NULL) {
-			IP_STATINC(IP_STAT_IFNOADDR);
-			error = EADDRNOTAVAIL;
-			goto bad;
-		}
 		if (IN_MULTICAST(ip->ip_dst.s_addr) ||
 		    ip->ip_dst.s_addr == INADDR_BROADCAST) {
 			isbroadcast = 0;
@@ -531,15 +526,6 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	if (in_nullhost(ip->ip_src)) {
 		struct ifaddr *xifa;
 
-		/* If rt_ifa is AF_LINK, ia can be NULL. */
-		if (ia == NULL) {
-			KASSERTMSG(rt->rt_ifa->ifa_addr->sa_family == AF_LINK,
-			    "sa_family=%d", rt->rt_ifa->ifa_addr->sa_family);
-			IP_STATINC(IP_STAT_NOROUTE);
-			error = EHOSTUNREACH;
-			goto bad;
-		}
-
 		xifa = &ia->ia_ifa;
 		if (xifa->ifa_getifa != NULL) {
 			ia4_release(ia, &psref_ia);
@@ -591,15 +577,6 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 
 sendit:
 	if ((flags & (IP_FORWARDING|IP_NOIPNEWID)) == 0) {
-		/* If rt_ifa is AF_LINK, ia can be NULL. */
-		if (ia == NULL) {
-			KASSERTMSG(rt->rt_ifa->ifa_addr->sa_family == AF_LINK,
-			    "sa_family=%d", rt->rt_ifa->ifa_addr->sa_family);
-			IP_STATINC(IP_STAT_NOROUTE);
-			error = EHOSTUNREACH;
-			goto bad;
-		}
-
 		if (m->m_pkthdr.len < IP_MINFRAGSIZE) {
 			ip->ip_id = 0;
 		} else if ((m->m_pkthdr.csum_flags & M_CSUM_TSOv4) == 0) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.32 2021/04/02 12:11:41 rin Exp $	*/
+/*	$NetBSD: intr.c,v 1.35 2024/01/19 20:55:42 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
@@ -34,11 +34,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.32 2021/04/02 12:11:41 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.35 2024/01/19 20:55:42 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/vmmeter.h>
 #include <sys/cpu.h>
 #include <sys/intr.h>
@@ -82,7 +81,7 @@ int	intr_debug = 0;
  * to interrupt on different levels as listed in locore.s
  */
 uint16_t ipl2psl_table[NIPL];
-int idepth;
+volatile unsigned int intr_depth;
 volatile int ssir;
 
 extern	u_int intrcnt[];	/* from locore.s */
@@ -218,7 +217,7 @@ intr_dispatch(int evec)		/* format | vector offset */
 {
 	int ipl, vec;
 
-	idepth++;
+	intr_depth++;
 	vec = (evec & 0xfff) >> 2;
 #ifdef DIAGNOSTIC
 	if ((vec < ISRLOC) || (vec >= (ISRLOC + NISR)))
@@ -230,7 +229,7 @@ intr_dispatch(int evec)		/* format | vector offset */
 	curcpu()->ci_data.cpu_nintr++;
 
 	(void)(*intr_func[ipl])(intr_arg[ipl]);
-	idepth--;
+	intr_depth--;
 }
 #if __GNUC_PREREQ__(8, 0)
 #pragma GCC pop_options
@@ -243,10 +242,10 @@ static int
 intr_noint(void *arg)
 {
 #ifdef DEBUG
-	idepth++;
+	intr_depth++;
 	if (intr_debug)
 		printf("intr_noint: ipl %d\n", (int)arg);
-	idepth--;
+	intr_depth--;
 #endif
 	return 0;
 }
@@ -255,5 +254,5 @@ bool
 cpu_intr_p(void)
 {
 
-	return idepth != 0;
+	return intr_depth != 0;
 }

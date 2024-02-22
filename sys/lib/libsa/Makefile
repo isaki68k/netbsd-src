@@ -1,7 +1,9 @@
-#	$NetBSD: Makefile,v 1.95 2021/05/27 06:54:44 mrg Exp $
+#	$NetBSD: Makefile,v 1.97 2023/10/07 12:15:54 rin Exp $
 
 LIB=	sa
 LIBISPRIVATE?= yes
+NOSSP=yes
+NOFORTIFY=yes
 
 SA_USE_CREAD?= no		# Read compressed kernels
 SA_INCLUDE_NET?= yes		# Netboot via TFTP, NFS
@@ -18,8 +20,6 @@ CPPFLAGS=	-I${SADIR} ${SACPPFLAGS} ${SAMISCCPPFLAGS} \
 
 # For testing
 #WARNS=6
-#NOSSP=yes
-#NOFORTIFY=yes
 #COPTS+=-ffreestanding -Wpointer-sign
 #CPPFLAGS+= -I${.CURDIR}/../../ -I${.CURDIR}
 
@@ -96,7 +96,3 @@ SRCS+=	ufs.c
 lib${LIB}.o:: ${OBJS:O} __buildstdlib
 
 CPPFLAGS+=	-Wno-pointer-sign
-
-.if defined(HAVE_GCC) && ${MACHINE_ARCH} == "vax"
-COPTS.bootp.c+=	-O0
-.endif

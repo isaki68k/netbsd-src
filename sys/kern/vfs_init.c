@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_init.c,v 1.59 2022/11/18 00:10:03 riastradh Exp $	*/
+/*	$NetBSD: vfs_init.c,v 1.64 2023/09/23 18:21:11 ad Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -67,23 +67,27 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.59 2022/11/18 00:10:03 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.64 2023/09/23 18:21:11 ad Exp $");
 
 #include <sys/param.h>
-#include <sys/mount.h>
-#include <sys/time.h>
-#include <sys/vnode.h>
-#include <sys/stat.h>
-#include <sys/namei.h>
-#include <sys/ucred.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
-#include <sys/errno.h>
-#include <sys/kmem.h>
-#include <sys/systm.h>
-#include <sys/module.h>
 #include <sys/dirhash.h>
-#include <sys/sysctl.h>
+#include <sys/errno.h>
 #include <sys/kauth.h>
+#include <sys/kmem.h>
+#include <sys/module.h>
+#include <sys/mount.h>
+#include <sys/namei.h>
+#include <sys/sdt.h>
+#include <sys/stat.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
+#include <sys/time.h>
+#include <sys/ucred.h>
+#include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 
 #include <miscfs/deadfs/deadfs.h>
 #include <miscfs/fifofs/fifo.h>
@@ -98,7 +102,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.59 2022/11/18 00:10:03 riastradh Exp 
 #define DODEBUG(A)
 #endif
 
-pool_cache_t pnbuf_cache;
+SDT_PROVIDER_DEFINE(vfs);
 
 /*
  * These vnodeopv_descs are listed here because they are not
@@ -400,13 +404,6 @@ vfsinit(void)
 	 * Attach sysctl nodes
 	 */
 	sysctl_vfs_setup();
-
-	/*
-	 * Initialize the namei pathname buffer pool and cache.
-	 */
-	pnbuf_cache = pool_cache_init(MAXPATHLEN, 0, 0, 0, "pnbufpl",
-	    NULL, IPL_NONE, NULL, NULL, NULL);
-	KASSERT(pnbuf_cache != NULL);
 
 	/*
 	 * Initialize the vnode table

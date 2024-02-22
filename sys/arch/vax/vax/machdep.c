@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.c,v 1.196 2020/06/11 19:20:46 ad Exp $	 */
+/* $NetBSD: machdep.c,v 1.198 2024/01/11 04:33:45 mrg Exp $	 */
 
 /*
  * Copyright (c) 1982, 1986, 1990 The Regents of the University of California.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.196 2020/06/11 19:20:46 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.198 2024/01/11 04:33:45 mrg Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -130,6 +130,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.196 2020/06/11 19:20:46 ad Exp $");
 #include <ddb/db_extern.h>
 #endif
 
+#include "leds.h"
 #include "smg.h"
 #include "ksyms.h"
 
@@ -772,6 +773,6 @@ mm_md_readwrite(dev_t dev, struct uio *uio)
 void
 machdep_init(void)
 {
-	proc0.p_rlimit[RLIMIT_AS].rlim_cur = DFLDSIZ;
+	proc0.p_rlimit[RLIMIT_AS].rlim_cur = MAXDSIZ;
 	proc0.p_rlimit[RLIMIT_AS].rlim_max = MAXDSIZ;
 }

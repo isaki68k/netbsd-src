@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_pserialize.c,v 1.19 2022/11/15 10:29:56 macallan Exp $	*/
+/*	$NetBSD: subr_pserialize.c,v 1.24 2023/10/04 20:28:06 ad Exp $	*/
 
 /*-
- * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
+ * Copyright (c) 2010, 2011, 2023 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,14 +31,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pserialize.c,v 1.19 2022/11/15 10:29:56 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pserialize.c,v 1.24 2023/10/04 20:28:06 ad Exp $");
 
 #include <sys/param.h>
+
 #include <sys/atomic.h>
 #include <sys/cpu.h>
-#include <sys/kernel.h>
 #include <sys/evcnt.h>
+#include <sys/kernel.h>
 #include <sys/kmem.h>
+#include <sys/lwp.h>
 #include <sys/mutex.h>
 #include <sys/pserialize.h>
 #include <sys/xcall.h>
@@ -136,7 +138,7 @@ void
 pserialize_read_exit(int s)
 {
 
-	KASSERT((cold || kpreempt_disabled()));
+	KASSERT(__predict_false(cold) || kpreempt_disabled());
 
 	__insn_barrier();
 	if (__predict_false(curcpu()->ci_psz_read_depth-- == 0))
@@ -173,10 +175,18 @@ bool
 pserialize_not_in_read_section(void)
 {
 	bool notin;
+	long pctr;
 
-	kpreempt_disable();
-	notin = (curcpu()->ci_psz_read_depth == 0);
-	kpreempt_enable();
+	pctr = lwp_pctr();
+	notin = __predict_true(curcpu()->ci_psz_read_depth == 0);
+
+	/*
+	 * If we had a context switch, we're definitely not in a
+	 * pserialize read section because pserialize read sections
+	 * block preemption.
+	 */
+	if (__predict_false(pctr != lwp_pctr()))
+		notin = true;
 
 	return notin;
 }

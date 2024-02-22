@@ -1,4 +1,4 @@
-/*	$NetBSD: atari_init.c,v 1.107 2023/01/06 10:28:27 tsutsui Exp $	*/
+/*	$NetBSD: atari_init.c,v 1.113 2024/02/10 18:43:51 andvar Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atari_init.c,v 1.107 2023/01/06 10:28:27 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atari_init.c,v 1.113 2024/02/10 18:43:51 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mbtype.h"
@@ -121,7 +121,7 @@ static u_int milan_probe_bank(paddr_t paddr);
 static cpu_kcore_hdr_t cpu_kcore_hdr;
 
 extern u_int	lowram;
-int		machineid, mmutype, cputype, astpending;
+int		machineid, mmutype, cputype;
 
 extern char		*esym;
 extern struct pcb	*curpcb;
@@ -204,7 +204,6 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 {
 	extern char	end[];
 	extern void	etext(void);
-	extern u_long	protorp[2];
 	paddr_t		pstart;		/* Next available physical address */
 	vaddr_t		vstart;		/* Next available virtual address */
 	vsize_t		avail;
@@ -212,7 +211,7 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 	psize_t		ptsize;
 	u_int		ptextra;
 	vaddr_t		kva;
-	u_int		tc, i;
+	u_int		i;
 	pt_entry_t	*pg, *epg;
 	pt_entry_t	pg_proto;
 	vaddr_t		end_loaded;
@@ -289,7 +288,7 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 	 * If we have enough RAMs reserve ST memory including for the Xserver.
 	 * Otherwise just allocate minimum one for SCSI and FDC.
 	 *
-	 * The round_page() call is ment to correct errors made by
+	 * The round_page() call is meant to correct errors made by
 	 * binpatching!
 	 */
 	if (st_pool_size > ST_POOL_SIZE_MIN * PAGE_SIZE &&
@@ -600,10 +599,8 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 
 	/*
 	 * Prepare to enable the MMU.
-	 * Setup and load SRP nolimit, share global, 4 byte PTE's
+	 * Setup and load SRP (see pmap.h)
 	 */
-	protorp[0] = 0x80000202;
-	protorp[1] = Sysseg_pa;			/* + segtable address */
 
 	cpu_init_kcorehdr(kbase, Sysseg_pa);
 
@@ -644,15 +641,18 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 	} else
 #endif
 	{
+#if defined(M68030)
+		protorp[1] = Sysseg_pa;		/* + segtable address */
 		__asm volatile ("pmove %0@,%%srp" : : "a" (&protorp[0]));
 		/*
 		 * setup and load TC register.
 		 * enable_cpr, enable_srp, pagesize=8k,
 		 * A = 8 bits, B = 11 bits
 		 */
-		tc = 0x82d08b00;
+		u_int tc = MMU51_TCR_BITS;
 		__asm volatile ("pflusha" : : );
 		__asm volatile ("pmove %0@,%%tc" : : "a" (&tc));
+#endif /* M68030 */
 	}
 
 	/*
@@ -671,10 +671,10 @@ start_c(int id, u_int ttphystart, u_int ttphysize, u_int stphysize,
 	init_stmem();
 
 	/*
-	 * Initialize the iomem extent for bus_space(9) to manage address
+	 * Initialize the iomem arena for bus_space(9) to manage address
 	 * spaces and allocate the physical RAM from the extent map.
 	 */
-	atari_bus_space_extent_init(0x0, 0xffffffff);
+	atari_bus_space_arena_init(0x0, 0xffffffff);
 	for (i = 0; i < NMEM_SEGS && boot_segs[i].end != 0; i++) {
 		if (atari_bus_space_alloc_physmem(boot_segs[i].start,
 		    boot_segs[i].end)) {

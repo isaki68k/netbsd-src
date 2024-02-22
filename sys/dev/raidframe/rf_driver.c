@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_driver.c,v 1.140 2022/08/10 01:16:38 mrg Exp $	*/
+/*	$NetBSD: rf_driver.c,v 1.143 2023/10/09 22:00:38 oster Exp $	*/
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -66,7 +66,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_driver.c,v 1.140 2022/08/10 01:16:38 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_driver.c,v 1.143 2023/10/09 22:00:38 oster Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_diagnostic.h"
@@ -104,7 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD: rf_driver.c,v 1.140 2022/08/10 01:16:38 mrg Exp $");
 #include "rf_engine.h"
 #include "rf_mcpair.h"
 #include "rf_nwayxor.h"
-#include "rf_copyback.h"
 #include "rf_driver.h"
 #include "rf_options.h"
 #include "rf_shutdown.h"
@@ -322,7 +321,6 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 #endif
 		DO_INIT_CONFIGURE(rf_ConfigureNWayXor);
 		DO_INIT_CONFIGURE(rf_ConfigureDAGFuncs);
-		DO_INIT_CONFIGURE(rf_ConfigureCopyback);
 		isconfigged = 1;
 	}
 	rf_unlock_mutex2(configureMutex);
@@ -348,6 +346,7 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 
 	raidPtr->numCol = cfgPtr->numCol;
 	raidPtr->numSpare = cfgPtr->numSpare;
+	raidPtr->maxQueue = cfgPtr->numSpare;
 
 	raidPtr->status = rf_rs_optimal;
 	raidPtr->reconControl = NULL;
@@ -399,9 +398,8 @@ rf_Configure(RF_Raid_t *raidPtr, RF_Config_t *cfgPtr, RF_AutoConfig_t *ac)
 	}
 #endif
 	raidPtr->numNewFailures = 0;
-	raidPtr->copyback_in_progress = 0;
 	raidPtr->parity_rewrite_in_progress = 0;
-	raidPtr->adding_hot_spare = 0;
+	raidPtr->changing_components = 0;
 	raidPtr->recon_in_progress = 0;
 
 	raidPtr->maxOutstanding = cfgPtr->maxOutstandingDiskReqs;
@@ -951,7 +949,7 @@ rf_alloc_mutex_cond(RF_Raid_t *raidPtr)
 
 	rf_init_cond2(raidPtr->waitForReconCond, "rfrcnw");
 
-	rf_init_cond2(raidPtr->adding_hot_spare_cv, "raidhs");
+	rf_init_cond2(raidPtr->changing_components_cv, "rfcc");
 }
 
 static void
@@ -959,7 +957,7 @@ rf_destroy_mutex_cond(RF_Raid_t *raidPtr)
 {
 
 	rf_destroy_cond2(raidPtr->waitForReconCond);
-	rf_destroy_cond2(raidPtr->adding_hot_spare_cv);
+	rf_destroy_cond2(raidPtr->changing_components_cv);
 
 	rf_destroy_mutex2(raidPtr->access_suspend_mutex);
 	rf_destroy_cond2(raidPtr->access_suspend_cv);

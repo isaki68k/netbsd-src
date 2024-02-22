@@ -1,4 +1,4 @@
-/*	$NetBSD: locks.c,v 1.83 2022/10/26 23:22:22 riastradh Exp $	*/
+/*	$NetBSD: locks.c,v 1.88 2023/11/02 10:31:55 martin Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: locks.c,v 1.83 2022/10/26 23:22:22 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locks.c,v 1.88 2023/11/02 10:31:55 martin Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -215,17 +215,10 @@ mutex_ownable(const kmutex_t *mtx)
 int
 mutex_owned(const kmutex_t *mtx)
 {
-
-	return mutex_owner(mtx) == curlwp;
-}
-
-lwp_t *
-mutex_owner(const kmutex_t *mtx)
-{
 	struct lwp *l;
 
 	rumpuser_mutex_owner(RUMPMTX(mtx), &l);
-	return l;
+	return l == curlwp;
 }
 
 #define RUMPRW(rw) (*(struct rumpuser_rw **)(rw))
@@ -402,7 +395,7 @@ docvwait(kcondvar_t *cv, kmutex_t *mtx, struct timespec *ts)
 
 	UNLOCKED(mtx, false);
 
-	l->l_private = cv;
+	l->l_sched.info = cv;
 	rv = 0;
 	if (ts) {
 		if (rumpuser_cv_timedwait(RUMPCV(cv), RUMPMTX(mtx),
@@ -432,12 +425,12 @@ docvwait(kcondvar_t *cv, kmutex_t *mtx, struct timespec *ts)
 		KASSERT(p->p_sflag & PS_RUMP_LWPEXIT);
 		mutex_exit(p->p_lock);
 
-		/* ok, we can exit and remove "reference" to l->private */
+		/* ok, we can exit and remove "reference" to l->l_sched.info */
 
 		mutex_enter(mtx);
 		rv = EINTR;
 	}
-	l->l_private = NULL;
+	l->l_sched.info = NULL;
 
 	return rv;
 }

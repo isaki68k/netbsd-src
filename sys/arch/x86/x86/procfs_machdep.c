@@ -1,4 +1,4 @@
-/*	$NetBSD: procfs_machdep.c,v 1.46 2022/12/30 13:48:40 msaitoh Exp $ */
+/*	$NetBSD: procfs_machdep.c,v 1.48 2023/08/07 09:27:14 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_machdep.c,v 1.46 2022/12/30 13:48:40 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_machdep.c,v 1.48 2023/08/07 09:27:14 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -113,14 +113,15 @@ static const char * const x86_features[][32] = {
 	"perfctr_llc", "mwaitx", NULL, NULL},
 
 	{ /* (7) Linux mapping */
-	NULL, NULL, "cpb", "ebp", NULL, "pln", "pts", "dtherm",
-	"hw_pstate", "proc_feedback", NULL, NULL,
-	NULL, NULL, NULL, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	NULL, "ibrs", "ibpb", "stibp", NULL, NULL, NULL, NULL},
+	"ring3mwait", "cpuid_fault", "cpb", "epb",
+	"cat_l3", "cat_l2", "cdp_l3", "invpcid_single",
+	"hw_pstate", "proc_feedback", NULL, "pti",
+	NULL, NULL, "intel_ppin", "cdp_l2",
+	NULL, "ssbd", "mba", NULL, "perfmon_v2", NULL, NULL, NULL,
+	NULL, "ibrs", "ibpb", "stibp", NULL, NULL, "ibrs_enhanced", NULL},
 
 	{ /* (8) Linux mapping */
-	"tpr_shadow", "vnmi", "flexpriority", "ept", "vpid", NULL, NULL, NULL,
+	"tpr_shadow", "flexpriority", "ept", "vpid", NULL, NULL, NULL, NULL,
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, "vmmcall",
 	NULL, "ept_ad", NULL, NULL, NULL, NULL, "tdx_guest", NULL,
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
@@ -151,7 +152,7 @@ static const char * const x86_features[][32] = {
 	"avx_vnni", "avx512_bf16", NULL, NULL,
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	NULL, NULL, "lam", NULL, NULL, NULL, NULL, NULL},
 
 	{ /* (13) AMD 0x80000008 ebx */
 	"clzero", "irperf", "xsaveerptr", NULL, "rdpru", NULL, NULL, NULL,
@@ -172,7 +173,7 @@ static const char * const x86_features[][32] = {
 	NULL, NULL, "pausefilter", NULL, "pfthreshold", "avic", NULL,
 	"v_vmsave_vmload",
 	"vgif", NULL, "x2avic", NULL, "v_spec_ctrl", NULL, NULL, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	NULL, "vnmi", NULL, NULL, NULL, NULL, NULL, NULL},
 
 	{ /* (16) 0x00000007:0 ecx */
 	NULL, "avx512vbmi", "umip", "pku",
@@ -195,7 +196,7 @@ static const char * const x86_features[][32] = {
 	"tsxldtrk", NULL, "pconfig", "arch_lbr",
 	"ibt", NULL, "amx_bf16", "avx512_fp16",
 	"amx_tile", "amx_int8", NULL, NULL,
-	"flush_l1d", "arch_capabilities", NULL, "ssbd"},
+	"flush_l1d", "arch_capabilities", NULL, NULL},
 
 	{ /* (19) AMD 0x8000001f eax */
 	"sme", "sev", NULL, "sev_es", NULL, NULL, NULL, NULL,
