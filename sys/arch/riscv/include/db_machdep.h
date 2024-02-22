@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.h,v 1.6 2022/09/27 08:18:21 skrll Exp $ */
+/* $NetBSD: db_machdep.h,v 1.9 2023/09/02 09:27:09 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,6 +33,7 @@
 #define	_RISCV_DB_MACHDEP_H_
 
 #include <riscv/locore.h>		/* T_BREAK */
+#include <riscv/frame.h>
 
 #define	DB_ELF_SYMBOLS
 
@@ -42,7 +43,8 @@ typedef	long		db_expr_t;	/* expression - signed */
 
 typedef struct trapframe db_regs_t;
 
-extern const uint32_t __cpu_Debugger_insn[1];
+extern const uint32_t cpu_Debugger_insn[];
+extern const uint32_t cpu_Debugger_ret[];
 extern db_regs_t ddb_regs;
 #define	DDB_REGS	(&ddb_regs)
 
@@ -55,8 +57,8 @@ extern db_regs_t ddb_regs;
 
 /* Similar to PC_ADVANCE(), except only advance on cpu_Debugger()'s bpt */
 #define	PC_BREAK_ADVANCE(tf) do {				\
-	if ((tf)->tf_pc == (register_t) __cpu_Debugger_insn)	\
-		(tf)->tf_pc += BKPT_SIZE;			\
+	if ((tf)->tf_pc == (register_t)cpu_Debugger_insn)	\
+		(tf)->tf_pc = (register_t)cpu_Debugger_ret;	\
 } while(0)
 
 #define	BKPT_ADDR(addr)		(addr)			/* breakpoint address */
@@ -105,7 +107,7 @@ typedef	register_t	kgdb_reg_t;
 #define	KGDB_BUFLEN	1024
 
 /*
- * RISCV cpus have no hardware single-step.
+ * RISC-V harts have no hardware single-step.
  */
 #define	SOFTWARE_SSTEP
 
@@ -124,12 +126,10 @@ bool ddb_running_on_this_cpu_p(void);
 bool ddb_running_on_any_cpu_p(void);
 void db_resume_others(void);
 
-#if 0
 /*
  * We have machine-dependent commands.
  */
 #define	DB_MACHINE_COMMANDS
-#endif
 
 void dump_trapframe(const struct trapframe *, void (*)(const char *, ...) __printflike(1, 2));
 

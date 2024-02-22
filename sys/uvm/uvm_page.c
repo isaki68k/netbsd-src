@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.251 2022/10/26 23:38:09 riastradh Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.255 2024/02/10 09:24:18 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.251 2022/10/26 23:38:09 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.255 2024/02/10 09:24:18 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -671,23 +671,6 @@ uvm_page_physget(paddr_t *paddrp)
 }
 #endif /* PMAP_STEAL_MEMORY */
 
-/*
- * PHYS_TO_VM_PAGE: find vm_page for a PA.   used by MI code to get vm_pages
- * back from an I/O mapping (ugh!).   used in some MD code as well.
- */
-struct vm_page *
-uvm_phys_to_vm_page(paddr_t pa)
-{
-	paddr_t pf = atop(pa);
-	paddr_t	off;
-	uvm_physseg_t	upm;
-
-	upm = uvm_physseg_find(pf, &off);
-	if (upm != UVM_PHYSSEG_TYPE_INVALID)
-		return uvm_physseg_get_pg(upm, off);
-	return(NULL);
-}
-
 paddr_t
 uvm_vm_page_to_phys(const struct vm_page *pg)
 {
@@ -778,7 +761,7 @@ uvm_page_redim(int newncolors, int newnbuckets)
 	ocolors = uvmexp.ncolors;
 	obuckets = uvm.bucketcount;
 
-	/* Freelist cache musn't be enabled. */
+	/* Freelist cache mustn't be enabled. */
 	uvm_pgflcache_pause();
 
 	/* Make sure we should still do this. */
@@ -980,13 +963,6 @@ uvm_cpu_attach(struct cpu_info *ci)
 	}
 
 	uvmpdpol_init_cpu(ucpu);
-
-	/*
-	 * Attach RNG source for this CPU's VM events
-	 */
-        rnd_attach_source(&ucpu->rs, ci->ci_data.cpu_name, RND_TYPE_VM,
-	    RND_FLAG_COLLECT_TIME|RND_FLAG_COLLECT_VALUE|
-	    RND_FLAG_ESTIMATE_VALUE);
 }
 
 /*
@@ -1215,7 +1191,8 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 	case UVM_PGA_STRAT_ONLY:
 	case UVM_PGA_STRAT_FALLBACK:
 		/* Attempt to allocate from the specified free list. */
-		KASSERT(free_list >= 0 && free_list < VM_NFREELIST);
+		KASSERT(free_list >= 0);
+		KASSERT(free_list < VM_NFREELIST);
 		pg = uvm_pagealloc_pgfl(ucpu, free_list, &color, flags);
 		if (pg != NULL) {
 			goto gotit;
@@ -2100,7 +2077,8 @@ uvm_direct_process(struct vm_page **pgs, u_int npages, voff_t off, vsize_t len,
 	voff_t pgoff = (off & PAGE_MASK);
 	struct vm_page *pg;
 
-	KASSERT(npages > 0 && len > 0);
+	KASSERT(npages > 0);
+	KASSERT(len > 0);
 
 	for (int i = 0; i < npages; i++) {
 		pg = pgs[i];
@@ -2111,7 +2089,8 @@ uvm_direct_process(struct vm_page **pgs, u_int npages, voff_t off, vsize_t len,
 		 * Caller is responsible for ensuring all the pages are
 		 * available.
 		 */
-		KASSERT(pg != NULL && pg != PGO_DONTCARE);
+		KASSERT(pg != NULL);
+		KASSERT(pg != PGO_DONTCARE);
 
 		pa = VM_PAGE_TO_PHYS(pg);
 		todo = MIN(len, PAGE_SIZE - pgoff);

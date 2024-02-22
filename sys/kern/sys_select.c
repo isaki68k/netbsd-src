@@ -1,7 +1,8 @@
-/*	$NetBSD: sys_select.c,v 1.60 2022/06/29 22:27:01 riastradh Exp $	*/
+/*	$NetBSD: sys_select.c,v 1.66 2023/10/15 10:29:34 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009, 2010, 2019, 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2010, 2019, 2020, 2023
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -84,27 +85,29 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.60 2022/06/29 22:27:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.66 2023/10/15 10:29:34 riastradh Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/filedesc.h>
+
+#include <sys/atomic.h>
+#include <sys/bitops.h>
+#include <sys/cpu.h>
 #include <sys/file.h>
-#include <sys/proc.h>
-#include <sys/socketvar.h>
-#include <sys/signalvar.h>
-#include <sys/uio.h>
+#include <sys/filedesc.h>
 #include <sys/kernel.h>
 #include <sys/lwp.h>
-#include <sys/poll.h>
 #include <sys/mount.h>
-#include <sys/syscallargs.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
-#include <sys/socketvar.h>
+#include <sys/poll.h>
+#include <sys/proc.h>
+#include <sys/signalvar.h>
 #include <sys/sleepq.h>
+#include <sys/socketvar.h>
+#include <sys/socketvar.h>
+#include <sys/syncobj.h>
+#include <sys/syscallargs.h>
 #include <sys/sysctl.h>
-#include <sys/bitops.h>
+#include <sys/systm.h>
+#include <sys/uio.h>
 
 /* Flags for lwp::l_selflag. */
 #define	SEL_RESET	0	/* awoken, interrupted, or not yet polling */
@@ -143,7 +146,9 @@ static const int sel_flag[] = {
  * enqueue LWPs at all, unless subject to a collision.
  */
 syncobj_t select_sobj = {
+	.sobj_name	= "select",
 	.sobj_flag	= SOBJ_SLEEPQ_LIFO,
+	.sobj_boostpri  = PRI_KERNEL,
 	.sobj_unsleep	= sleepq_unsleep,
 	.sobj_changepri	= sleepq_changepri,
 	.sobj_lendpri	= sleepq_lendpri,
@@ -319,10 +324,10 @@ state_check:
 		}
 		/* Nothing happen, therefore - sleep. */
 		l->l_selflag = SEL_BLOCKING;
-		l->l_kpriority = true;
-		sleepq_enter(&sc->sc_sleepq, l, lock);
+		KASSERT(l->l_blcnt == 0);
+		(void)sleepq_enter(&sc->sc_sleepq, l, lock);
 		sleepq_enqueue(&sc->sc_sleepq, sc, opname, &select_sobj, true);
-		error = sleepq_block(timo, true, &select_sobj);
+		error = sleepq_block(timo, true, &select_sobj, 0);
 		if (error != 0) {
 			break;
 		}
@@ -804,7 +809,7 @@ selnotify(struct selinfo *sip, int events, long knhint)
 			 */
 			if (oflag == SEL_BLOCKING && l->l_mutex == lock) {
 				KASSERT(l->l_wchan == sc);
-				sleepq_unsleep(l, false);
+				sleepq_remove(l->l_sleepq, l, true);
 			}
 		}
 		mutex_spin_exit(lock);

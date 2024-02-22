@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_vfsops.c,v 1.379 2022/12/21 18:58:25 chs Exp $	*/
+/*	$NetBSD: ffs_vfsops.c,v 1.382 2023/09/08 23:21:55 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.379 2022/12/21 18:58:25 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.382 2023/09/08 23:21:55 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -195,7 +195,7 @@ ffs_checkrange(struct mount *mp, ino_t ino)
 	struct fs *fs = VFSTOUFS(mp)->um_fs;
 
 	if (ino < UFS_ROOTINO || ino >= fs->fs_ncg * fs->fs_ipg) {
-		DPRINTF("out of range %u\n", ino);
+		DPRINTF("out of range %" PRIu64 "\n", ino);
 		return ESTALE;
 	}
 
@@ -213,7 +213,8 @@ ffs_checkrange(struct mount *mp, ino_t ino)
 	int error = bread(ump->um_devvp, FFS_FSBTODB(fs, cgtod(fs, cg)),
 	    (int)fs->fs_cgsize, B_MODIFY, &bp);
 	if (error) {
-		DPRINTF("error %d reading cg %d ino %u\n", error, cg, ino);
+		DPRINTF("error %d reading cg %d ino %" PRIu64 "\n",
+		    error, cg, ino);
 		return error;
 	}
 
@@ -222,7 +223,8 @@ ffs_checkrange(struct mount *mp, ino_t ino)
 	struct cg *cgp = (struct cg *)bp->b_data;
 	if (!cg_chkmagic(cgp, needswap)) {
 		brelse(bp, 0);
-		DPRINTF("bad cylinder group magic cg %d ino %u\n", cg, ino);
+		DPRINTF("bad cylinder group magic cg %d ino %" PRIu64 "\n",
+		    cg, ino);
 		return ESTALE;
 	}
 
@@ -230,7 +232,7 @@ ffs_checkrange(struct mount *mp, ino_t ino)
 	brelse(bp, 0);
 
 	if (cg * fs->fs_ipg + initediblk < ino) {
-		DPRINTF("cg=%d fs->fs_ipg=%d initediblk=%d ino=%u\n",
+		DPRINTF("cg=%d fs->fs_ipg=%d initediblk=%d ino=%" PRIu64 "\n",
 		    cg, fs->fs_ipg, initediblk, ino);
 		return ESTALE;
 	}
@@ -2019,14 +2021,25 @@ ffs_sync(struct mount *mp, int waitfor, kauth_cred_t cred)
 	/*
 	 * Force stale file system control information to be flushed.
 	 */
-	if (waitfor != MNT_LAZY && (ump->um_devvp->v_numoutput > 0 ||
-	    !LIST_EMPTY(&ump->um_devvp->v_dirtyblkhd))) {
-		vn_lock(ump->um_devvp, LK_EXCLUSIVE | LK_RETRY);
-		if ((error = VOP_FSYNC(ump->um_devvp, cred,
-		    (waitfor == MNT_WAIT ? FSYNC_WAIT : 0) | FSYNC_NOLOG,
-		    0, 0)) != 0)
-			allerror = error;
-		VOP_UNLOCK(ump->um_devvp);
+	if (waitfor != MNT_LAZY)  {
+		bool need_devvp_fsync;
+
+		mutex_enter(ump->um_devvp->v_interlock);
+		need_devvp_fsync = (ump->um_devvp->v_numoutput > 0 ||
+		    !LIST_EMPTY(&ump->um_devvp->v_dirtyblkhd));
+		mutex_exit(ump->um_devvp->v_interlock);
+		if (need_devvp_fsync) {
+			int flags = FSYNC_NOLOG;
+
+			if (waitfor == MNT_WAIT)
+				flags |= FSYNC_WAIT;
+
+			vn_lock(ump->um_devvp, LK_EXCLUSIVE | LK_RETRY);
+			if ((error = VOP_FSYNC(ump->um_devvp, cred, flags, 0,
+				    0)) != 0)
+				allerror = error;
+			VOP_UNLOCK(ump->um_devvp);
+		}
 	}
 #if defined(QUOTA) || defined(QUOTA2)
 	qsync(mp);
@@ -2521,9 +2534,7 @@ ffs_vfs_fsync(vnode_t *vp, int flags)
 		 * contains no dirty buffers that could be in the log.
 		 */
 		if (!LIST_EMPTY(&vp->v_dirtyblkhd)) {
-			VOP_UNLOCK(vp);
 			error = wapbl_flush(mp->mnt_wapbl, 0);
-			vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 			if (error)
 				return error;
 		}
@@ -2542,10 +2553,8 @@ ffs_vfs_fsync(vnode_t *vp, int flags)
 	error = vflushbuf(vp, flags);
 	if (error == 0 && (flags & FSYNC_CACHE) != 0) {
 		i = 1;
-		VOP_UNLOCK(vp);
 		(void)VOP_IOCTL(vp, DIOCCACHESYNC, &i, FWRITE,
 		    kauth_cred_get());
-		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	}
 
 	return error;

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sip.c,v 1.189 2022/09/24 18:12:42 thorpej Exp $	*/
+/*	$NetBSD: if_sip.c,v 1.191 2024/02/10 09:30:06 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.189 2022/09/24 18:12:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.191 2024/02/10 09:30:06 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -258,7 +258,7 @@ struct sip_softc {
 	struct evcnt sc_ev_txpause;	/* PAUSE transmitted */
 	struct evcnt sc_ev_rxipsum;	/* IP checksums checked in-bound */
 	struct evcnt sc_ev_rxtcpsum;	/* TCP checksums checked in-bound */
-	struct evcnt sc_ev_rxudpsum;	/* UDP checksums checked in-boudn */
+	struct evcnt sc_ev_rxudpsum;	/* UDP checksums checked in-bound */
 	struct evcnt sc_ev_txipsum;	/* IP checksums comp. out-bound */
 	struct evcnt sc_ev_txtcpsum;	/* TCP checksums comp. out-bound */
 	struct evcnt sc_ev_txudpsum;	/* UDP checksums comp. out-bound */
@@ -1574,7 +1574,7 @@ sipcom_start(struct ifnet *ifp)
 
 		/*
 		 * Load the DMA map.  If this fails, the packet either
-		 * didn't fit in the alloted number of segments, or we
+		 * didn't fit in the allotted number of segments, or we
 		 * were short on resources.
 		 */
 		error = bus_dmamap_load_mbuf(sc->sc_dmat, dmamap, m0,

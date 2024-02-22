@@ -1,4 +1,4 @@
-/*	$NetBSD: psl.h,v 1.62 2021/11/02 11:26:04 ryo Exp $ */
+/*	$NetBSD: psl.h,v 1.64 2023/09/02 05:51:57 jdc Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -73,9 +73,6 @@
 #define PSR_BITS "\20\16EC\15EF\10S\7PS\6ET"
 
 /* Interesting spl()s */
-#define PIL_SCSI	3
-#define PIL_FDSOFT	4
-#define PIL_AUSOFT	4
 #define PIL_BIO		5
 #define PIL_VIDEO	5
 #define PIL_TTY		6
@@ -282,6 +279,14 @@
 #define SPARC64_BLOCK_SIZE	64
 #define SPARC64_BLOCK_ALIGN	0x3f
 
+
+#if (defined(_KERNEL) || defined(_KMEMUSER)) && !defined(_LOCORE)
+typedef uint8_t ipl_t;
+typedef struct {
+	ipl_t _ipl;
+} ipl_cookie_t;
+#endif /* _KERNEL|_KMEMUSER&!_LOCORE */
+
 #if defined(_KERNEL) && !defined(_LOCORE)
 
 #if defined(_KERNEL_OPT)
@@ -474,11 +479,6 @@ static __inline __always_inline int name(void) \
 }
 #endif
 
-typedef uint8_t ipl_t;
-typedef struct {
-	ipl_t _ipl;
-} ipl_cookie_t;
-
 static __inline ipl_cookie_t
 makeiplcookie(ipl_t ipl)
 {
@@ -510,12 +510,6 @@ SPLHOLD(splsoftint, 1)
 #define	splsoftnet	splsoftint
 
 SPLHOLD(splsoftserial, 4)
-
-/* audio software interrupts are at software level 4 */
-SPLHOLD(splausoft, PIL_AUSOFT)
-
-/* floppy software interrupts are at software level 4 too */
-SPLHOLD(splfdsoft, PIL_FDSOFT)
 
 /*
  * Memory allocation (must be as high as highest network, tty, or disk device)

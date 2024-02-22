@@ -1,4 +1,4 @@
-/*	$NetBSD: db_command.c,v 1.181 2022/04/28 07:08:38 msaitoh Exp $	*/
+/*	$NetBSD: db_command.c,v 1.190 2023/11/02 10:31:55 martin Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2009, 2019
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.181 2022/04/28 07:08:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.190 2023/11/02 10:31:55 martin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_aio.h"
@@ -94,6 +94,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.181 2022/04/28 07:08:38 msaitoh Exp
 #include <sys/kernhist.h>
 #include <sys/socketvar.h>
 #include <sys/queue.h>
+#include <sys/syncobj.h>
 
 #include <dev/cons.h>
 
@@ -200,10 +201,11 @@ static void	db_fncall(db_expr_t, bool, db_expr_t, const char *);
 static void     db_help_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_lock_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_show_all_locks(db_expr_t, bool, db_expr_t, const char *);
+static void	db_show_all_tstiles(db_expr_t, bool, db_expr_t, const char *);
 static void	db_show_lockstats(db_expr_t, bool, db_expr_t, const char *);
 static void	db_show_all_freelists(db_expr_t, bool, db_expr_t, const char *);
 static void	db_mount_print_cmd(db_expr_t, bool, db_expr_t, const char *);
-static void	db_show_all_mount(db_expr_t, bool, db_expr_t, const char *);
+static void	db_show_all_mounts(db_expr_t, bool, db_expr_t, const char *);
 static void	db_mbuf_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_kqueue_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_map_print_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -247,6 +249,8 @@ static const struct db_command db_show_cmds[] = {
 	/* added from all sub cmds */
 	{ DDB_ADD_CMD("callout",  db_show_callout,
 	    0 ,"List all used callout functions.",NULL,NULL) },
+	{ DDB_ADD_CMD("condvar", db_show_condvar,
+	    0 ,"Show the contents of a condition variable.",NULL,NULL) },
 	{ DDB_ADD_CMD("devices", db_show_all_devices,	0,NULL,NULL,NULL) },
 	{ DDB_ADD_CMD("event",	db_event_print_cmd,	0,
 	    "Print all the non-zero evcnt(9) event counters.", "[/fitm]",NULL) },
@@ -279,10 +283,10 @@ static const struct db_command db_show_cmds[] = {
 	    "-c prints all mbuf chains") },
 	{ DDB_ADD_CMD("module", db_show_module_cmd,	0,
 	    "Print kernel modules", NULL, NULL) },
-	{ DDB_ADD_CMD("mount",	db_show_all_mount,	0,
-	    "Print all mount structures.", "[/f]", NULL) },
 	{ DDB_ADD_CMD("mount",	db_mount_print_cmd,	0,
 	    "Print the mount structure at address.", "[/f] address",NULL) },
+	{ DDB_ADD_CMD("mounts",	db_show_all_mounts,	0,
+	    "Print all mount structures.", "[/f]", NULL) },
 #ifdef MQUEUE
 	{ DDB_ADD_CMD("mqueue", db_show_mqueue_cmd,	0,
 	    "Print the message queues", NULL, NULL) },
@@ -315,7 +319,13 @@ static const struct db_command db_show_cmds[] = {
 	{ DDB_ADD_CMD("sched_qs",	db_show_sched_qs,	0,
 	    "Print the state of the scheduler's run queues.",
 	    NULL,NULL) },
+	{ DDB_ADD_CMD("selinfo", db_show_selinfo,
+	    0 ,"Show the contents of a selinfo.",NULL,NULL) },
+	{ DDB_ADD_CMD("sleepq", db_show_sleepq,
+	    0 ,"Show the contents of a sleep queue.",NULL,NULL) },
 	{ DDB_ADD_CMD("socket",	db_socket_print_cmd,	0,NULL,NULL,NULL) },
+	{ DDB_ADD_CMD("tstiles", db_show_all_tstiles,
+	    0, "Show who's holding up tstiles", "[/t]", NULL) },
 	{ DDB_ADD_CMD("uvmexp",	db_uvmexp_print_cmd, 0,
 	    "Print a selection of UVM counters and statistics.",
 	    NULL,NULL) },
@@ -1244,7 +1254,7 @@ db_mount_print_cmd(db_expr_t addr, bool have_addr,
 }
 
 static void
-db_show_all_mount(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
+db_show_all_mounts(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
 {
 #ifdef _KERNEL	/* XXX CRASH(8) */
 	bool full = false;
@@ -1360,6 +1370,82 @@ db_show_all_locks(db_expr_t addr, bool have_addr,
 #else
 	db_kernelonly();
 #endif
+}
+
+static void
+db_show_all_tstiles(db_expr_t addr, bool have_addr,
+    db_expr_t count, const char *modif)
+{
+	struct proc *p;
+	bool trace = false;
+
+	if (modif[0] == 't')
+		trace = true;
+
+	db_printf("%5s %5s %16s %16s %8s %16s\n",
+	    "PID", "LID", "COMMAND", "WAITING-FOR", "TYPE", "WAIT-CHANNEL");
+	for (p = db_proc_first(); p != NULL; p = db_proc_next(p)) {
+		pid_t pid = -1;
+		char comm[MAXCOMLEN + 1] = "";
+		struct lwp *l = NULL;
+
+		db_read_bytes((db_addr_t)&p->p_pid, sizeof(pid), (char *)&pid);
+		db_read_bytes((db_addr_t)p->p_comm, sizeof(comm), comm);
+		db_read_bytes((db_addr_t)&p->p_lwps.lh_first, sizeof(l),
+		    (char *)&l);
+		while (l != NULL) {
+			wchan_t wchan = NULL;
+			char wchanname[128] = "";
+			lwpid_t lid = -1;
+			const struct syncobj *sobj = NULL;
+			struct lwp *owner = NULL;
+			char sobjname[sizeof(sobj->sobj_name)] = "";
+
+			db_read_bytes((db_addr_t)&l->l_wchan, sizeof(wchan),
+			    (char *)&wchan);
+			if (wchan == NULL)
+				goto next;
+			db_symstr(wchanname, sizeof(wchanname),
+			    (db_expr_t)(uintptr_t)wchan, DB_STGY_ANY);
+
+			db_read_bytes((db_addr_t)&l->l_lid, sizeof(lid),
+			    (char *)&lid);
+			db_read_bytes((db_addr_t)&l->l_syncobj, sizeof(sobj),
+			    (char *)&sobj);
+			if (sobj == NULL) {
+				db_printf("%5ld %5ld %16s %16s %8s %16s\n",
+				    (long)pid,
+				    (long)lid,
+				    comm,
+				    "(unknown)",
+				    "",
+				    wchanname);
+				goto next;
+			}
+			db_read_bytes((db_addr_t)&sobj->sobj_name,
+			    sizeof(sobjname), sobjname);
+
+			owner = db_syncobj_owner(sobj, wchan);
+
+			db_printf("%5ld %5ld %16s %16lx %8s %16s\n",
+			    (long)pid,
+			    (long)lid,
+			    comm,
+			    (long)owner,
+			    sobjname,
+			    wchanname);
+
+			if (trace && owner != NULL) {
+				db_stack_trace_print(
+				    (db_expr_t)(uintptr_t)owner,
+				    /*have_addr*/true, /*count*/-1,
+				    /*modif(lwp)*/"a", db_printf);
+			}
+
+next:			db_read_bytes((db_addr_t)&l->l_sibling.le_next,
+			    sizeof(l), (char *)&l);
+		}
+	}
 }
 
 static void

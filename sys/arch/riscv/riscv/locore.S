@@ -1,4 +1,4 @@
-/* $NetBSD: locore.S,v 1.40 2022/11/19 09:55:11 skrll Exp $ */
+/* $NetBSD: locore.S,v 1.45 2024/02/09 22:08:33 andvar Exp $ */
 
 /*-
  * Copyright (c) 2014, 2022 The NetBSD Foundation, Inc.
@@ -30,13 +30,20 @@
  */
 
 #include "opt_console.h"
+#include "opt_multiprocessor.h"
 #include "opt_riscv_debug.h"
 
 #include <machine/asm.h>
 #include "assym.h"
 
-	.globl	_C_LABEL(exception_userexit)
-	.globl	_C_LABEL(cpu_Debugger_insn)
+#define BOOT_AP_STACKSIZE	1024	/* size of temporary stack for APs */
+#define NBBY_SHIFT		3	/* log2(8 bits per byte) */
+
+#define PRINTS(string)		\
+	call	locore_prints	; \
+	.asciz string		; \
+	.align 3		; \
+
 
 #if defined(VERBOSE_INIT_RISCV)
 
@@ -78,18 +85,6 @@ ENTRY_NP(start)
 	li	s0, SR_FS
 	csrc	sstatus, s0		// disable FP
 
-	/*
-	 * atomically swap a non-zero value into hart_boot.  If we see zero
-	 * we won in race to become BP.
-	 */
-	li	s1, 1
-	la	s0, hart_boot
-
-	amoswap.w s0, s1, (s0)
-	bnez	s0, mpentry
-	/*
-	 * The BP only executes from here on.
-	 */
 	mv	s10, a0			// copy hartid
 	mv	s11, a1			// copy dtb PA
 
@@ -127,7 +122,7 @@ ENTRY_NP(start)
 	 * Our load address is not fixed, but our VA is.  We need to construct
 	 * an initial PDETAB.
 	 *
-	 * The space for the inital page table is included in the kernel
+	 * The space for the initial page table is included in the kernel
 	 * .bss size calculation so we know the space exists.
 	 */
 
@@ -146,7 +141,6 @@ ENTRY_NP(start)
 
 	// s2	L1 PDE (SV32:4MiB megapages, SV{39,48}: 2MiB megapages)
 	// s3	L2 PDE (_LP64 SV39 only)
-	// s4	L3 PDE (_LP64 SV48 only)
 	// s5	lwp0uspace
 	// s6	bootstk
 	// s7   end of memory to clear
@@ -156,10 +150,6 @@ ENTRY_NP(start)
 #ifdef _LP64
 	VPRINTS("l2:      ")
 	VPRINTXNL(s3)
-#ifdef notyet
-	VPRINTS("l3:      ")
-	VPRINTXNL(s4)
-#endif
 #endif
 
 	VPRINTS("uspace:  ")
@@ -195,30 +185,20 @@ ENTRY_NP(start)
 	// Need to setup tables so that for
 	// sv32 : s2
 	// sv39 : s3 -> s2
-	// sv48 : s4 -> s3 -> s2
 
 #ifdef _LP64
+	VPRINTS("l2pde:   ")
 	srli	t0, s2, (PGSHIFT - PTE_PPN_SHIFT)
 	or	t0, t0, s7		// Assumes s2[11:0] == 0
 #if ((VM_MIN_KERNEL_ADDRESS >> XSEGSHIFT) & (NPDEPG - 1)) * SZREG
 	li	t1, ((VM_MIN_KERNEL_ADDRESS >> XSEGSHIFT) & (NPDEPG - 1)) * SZREG
-#ifdef notyet
-	add	t1, t1, s4
-#else
 	add	t1, t1, s3
-#endif
 	REG_S	t0, 0(t1)
 
-	VPRINTS("l2pde:   ")
 	VPRINTX(t1)
 #else
-#ifdef notyet
-	REG_S	t0, 0(s4)
-#else
 	REG_S	t0, 0(s3)
-#endif
 
-	VPRINTS("l2pde:   ")
 	VPRINTX(s3)
 #endif
 
@@ -237,7 +217,7 @@ ENTRY_NP(start)
 
 	li	s5, (VM_KERNEL_SIZE >> SEGSHIFT)		// # of megapages
 	li	s6, (NBSEG >> (PGSHIFT - PTE_PPN_SHIFT))	// load for ease
-	li	s7, PTE_KERN | PTE_R | PTE_W | PTE_X
+	li	s7, PTE_KERN | PTE_HARDWIRED | PTE_R | PTE_W | PTE_X
 
 	//
 	// Fill in the PDEs for kernel.
@@ -262,7 +242,7 @@ ENTRY_NP(start)
 	li	t1,  ((VM_KERNEL_DTB_BASE >> SEGSHIFT) & (NPDEPG - 1)) * SZREG
 	add	s9, s2, t1
 
-	li	s7, PTE_KERN | PTE_R | PTE_W
+	li	s7, PTE_KERN | PTE_HARDWIRED | PTE_R | PTE_W
 
 	//
 	// Fill in the PDE for the DTB. Only do one - if any more are required
@@ -285,7 +265,7 @@ ENTRY_NP(start)
 	add	s9, s2, t1
 
 	// Fill in the PDE for CONSADDR.
-	ld	t0, .Lconsaddr
+	PTR_L	t0, .Lconsaddr
 	mv	s0, t0
 	srli	s0, s0, SEGSHIFT	// round down to NBSEG, and shift in
 	slli	s0, s0, (SEGSHIFT - PGSHIFT + PTE_PPN_SHIFT)	// ... to PPN
@@ -336,7 +316,6 @@ vstart:
 
 	PTR_LA	tp, _C_LABEL(lwp0)	// put curlwp in tp
 
-
 	/* Set supervisor trap vector base register */
 	PTR_LA	a0, _C_LABEL(cpu_exception_handler)
 	csrw	stvec, a0
@@ -349,12 +328,16 @@ vstart:
 	PTR_LA	t1, _C_LABEL(kernel_pmap_store)
 	add	t2, s4, s8 		// PA -> VA
 	srli	t3, s4, PGSHIFT
-	PTR_S	t2, PM_MD_PDETAB(t1)	// VA of kernel PDETAB
+	PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
 	PTR_S	t3, PM_MD_PPN(t1)	// PPN of kernel PDETAB
 
 	/*
 	 * Store kern_vtopdiff (the difference between the physical
 	 * and virtual address of the "start" symbol).
+	 *
+	 * XXX For some reason doing this store to the physical
+	 * XXX address of kern_vtopdiff before the MMU is enabled
+	 * XXX doesn't work on the AllWinner D1.
 	 */
 	PTR_LA	t0, _C_LABEL(kern_vtopdiff)
 	PTR_S	s8, 0(t0)	/* kern_vtopdiff = start(virt) - start(phys) */
@@ -386,12 +369,172 @@ vstart:
 END(start)
 
 
-ENTRY(mpentry)
+#if defined(MULTIPROCESSOR)
+
+// a0 is hartid
+// a1 is the cookie from sbi_hart_start
+ENTRY(cpu_mpstart)
+	mv	s10, a0			// copy hartid
+	mv	s11, a1			// copy sbi_hart_start cookie
+
+	/*
+	 * s11 = cpuindex
+	 */
+
+	/* set stack pointer for boot */
+	li	t1, BOOT_AP_STACKSIZE		// XXXNH do a shift
+	mul	t1, s11, t1
+	PTR_LA	t0, _C_LABEL(bootstk)
+	/* sp = bootstk + (BOOT_AP_STACKSIZE * cpuindex) */
+	add	sp, t0, t1
+
+
+	/*
+	 * Calculate the difference between the VA and PA for start and
+	 * keep in s8.
+	 */
+	PTR_LA	t0, start
+	PTR_L	s8, .Lstart
+
+	sub	s8, s8, t0
+
+#ifdef _LP64
+	PTR_LA	s4, _C_LABEL(l2_pte)
+#else
+	PTR_LA	s4, _C_LABEL(l1_pte)
+#endif
+
+	// s4 is satp address....
+	// s8 is kern_vtopdiff
+	//
+
+	/* Set supervisor trap vector base register */
+	PTR_LA	t0, vmpstart
+	add	t0, t0, s8
+	csrw	stvec, t0
+
+	/* Set supervisor address translation and protection register */
+	srli	t1, s4, PGSHIFT
+#ifdef _LP64
+	li	t0, SATP_MODE_SV39
+#else
+	li	t0, SATP_MODE_SV32
+#endif
+	or	t0, t0, t1
+	sfence.vma
+	csrw	satp, t0
+
+	.align 2
+	.global vmpstart
+vmpstart:
+	// MMU is on!
+	csrw	sscratch, zero		// zero in sscratch to mark kernel
+
+	/* Set the global pointer */
+	.option push
+	.option norelax
+	lla	gp, __global_pointer$
+	.option pop
+
+	/* Set SP to VA */
+	add	sp, sp, s8
+
+	/* Set supervisor trap vector base register with ipi_handler */
+	PTR_LA	a0, _C_LABEL(ipi_handler)
+	csrw	stvec, a0
+	csrsi	sie, SIE_SSIE
+	csrsi	sstatus, SR_SIE		// enable interrupts
+
+	li	tp, 0
+	mv	a0, s11
+	call	_C_LABEL(cpu_init_secondary_processor)
+
+	/* t3 = __BIT(cpuindex % (sizeof(u_long) * NBBY)) */
+	li	t3, 1
+	andi	t0, s11, (1U << (LONG_SCALESHIFT + NBBY_SHIFT)) - 1
+	sll	t3, t3, t0
+
+	/* t4 = &riscv_cpu_mbox[cpuindex / (sizeof(u_long) * NBBY)] */
+	PTR_LA	t0, _C_LABEL(riscv_cpu_mbox)
+	srli	t1, s11, LONG_SCALESHIFT + NBBY_SHIFT
+	slli	t1, t1, LONG_SCALESHIFT
+	add	t4, t0, t1
+
+	/* wait for the mailbox start bit to become true */
+1:
+	fence	rw, r		/* matches cpu_boot_secondary_processors */
+	LONG_L	t0, 0(t4)
+	and	t0, t0, t3
+	bne	t0, zero, 9f
+	wfi
+	j	1b
+9:
+
+	/* Set supervisor trap vector base register */
+	PTR_LA	a0, _C_LABEL(cpu_exception_handler)
+	csrw	stvec, a0
+
+	li	t0, CI_SIZE
+	mul	t0, s11, t0
+	PTR_LA	t1, _C_LABEL(cpu_info_store)
+	add	a0, t0, t1		/* a0 = &cpu_info_store[cpuindex] */
+
+	/*
+	 * set curlwp (tp and curcpu()->ci_curlwp) now we know the
+	 * idle lwp from curcpu()->ci_idlelwp
+	 */
+	PTR_L	tp, CI_IDLELWP(a0)	/* tp = curcpu()->ci_idlelwp */
+	PTR_S	tp, CI_CURLWP(a0)	/* curlwp is idlelwp */
+
+	/* get my stack from lwp */
+	PTR_L	t2, L_PCB(tp)		/* t2 = lwp_getpcb(idlelwp) */
+	li	t3, UPAGES * PAGE_SIZE
+	add	t2, t2, t3
+	addi	sp, t2, -TF_LEN		/* sp = pcb + USPACE - TF_LEN */
+
+	li	s0, 0			/* trace back starts here (fp = 0) */
+	PTR_L	a0, L_CPU(tp)		/* curlwp->l_cpu */
+	mv	a1, s11			/* cpuindex */
+	call	_C_LABEL(cpu_hatch)
+
+	li	s0, 0			// zero frame pointer
+	tail	idle_loop
+	/* No return from idle_loop */
+END(cpu_mpstart)
+
+
+toomanyharts:
+	PRINTS("too many harts, or hart id doesn't exist in cpu_hart[]\n")
+1:	wfi
+	j	1b
+
+/*
+ * A very basic exception handler to just return when an IPI comes in during
+ * AP bringup.
+ *
+ * The handler address needs to have bottom two bits as zero.
+ */
+	.align 2
+
+ipi_handler:
+	csrrw	tp, sscratch, tp	// swap scratch and thread pointer
+	bnez	tp, 1f			//   tp != 0, something went wrong.
+
+	csrr	tp, scause		// get cause
+	bgez	tp, 2f			// MSB is set if interrupt
+
+	csrw	sip, zero		// clear all interrupts
+
+	csrrw	tp, sscratch, zero	// get back our thread pointer
+	sret
+
 1:
 	wfi
 	j	1b
-END(mpentry)
-
+2:
+	wfi
+	j	2b
+#endif
 
 	.align 3
 .Lstart:
@@ -447,7 +590,16 @@ ENTRY_NP(clear_bss)
 END(clear_bss)
 
 
-#if defined(VERBOSE_INIT_RISCV)
+	.globl  _C_LABEL(cpu_Debugger_insn)
+	.globl  _C_LABEL(cpu_Debugger_ret)
+
+ENTRY_NP(cpu_Debugger)
+cpu_Debugger_insn:
+	ebreak
+cpu_Debugger_ret:
+	ret
+END(cpu_Debugger)
+
 ENTRY_NP(locore_prints)
 	addi	sp, sp, -(SZREG * 2)
 	REG_S	s0, (0 * SZREG)(sp)
@@ -471,6 +623,7 @@ ENTRY_NP(locore_prints)
 END(locore_prints)
 
 
+#if defined(VERBOSE_INIT_RISCV)
 ENTRY_NP(locore_printx)
 	addi	sp, sp, -(SZREG * 4)
 	REG_S	s0, (0 * SZREG)(sp)
@@ -544,6 +697,11 @@ END(locore_printxnl)
 hart_boot:
 	.word	0
 
+	/*
+	 * Allocate some memory after the kernel image for stacks and
+	 * bootstrap L1PT
+	 */
+
 	.section "_init_memory", "aw", %nobits
 	.align PGSHIFT
 	.global _C_LABEL(lwp0uspace)
@@ -551,32 +709,22 @@ _C_LABEL(lwp0uspace):
 	.space	UPAGES * PAGE_SIZE
 bootstk:
 
-	/*
-	 * Allocate some memory after the kernel image for stacks and
-	 * bootstrap L1PT
-	 */
-	.align PGSHIFT
+#ifdef MULTIPROCESSOR
+	.space	BOOT_AP_STACKSIZE * (MAXCPUS - 1)
+#endif
 
 	.section "_init_memory", "aw", %nobits
 	.align PGSHIFT
 mmutables_start:
-	.global _C_LABEL(l1_pte)
-l1_pte:
-	.space PAGE_SIZE
+bootstrap_pde:
+	.global _C_LABEL(bootstrap_pde)
 #ifdef _LP64
 	.global _C_LABEL(l2_pte)
 l2_pte:
 	.space PAGE_SIZE
-#ifdef notyet
-l3_pte:
+#endif
+	.global _C_LABEL(l1_pte)
+l1_pte:
 	.space PAGE_SIZE
-#endif
-#endif
 mmutables_end:
 
-
-ENTRY_NP(cpu_Debugger)
-cpu_Debugger_insn:
-	sbreak
-	ret
-END(cpu_Debugger)

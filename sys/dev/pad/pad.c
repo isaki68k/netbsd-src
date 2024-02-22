@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.79 2023/01/24 08:17:11 mlelstv Exp $ */
+/* $NetBSD: pad.c,v 1.85 2023/05/27 14:51:47 nat Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.79 2023/01/24 08:17:11 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.85 2023/05/27 14:51:47 nat Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -781,18 +781,57 @@ static void
 pad_swvol_codec(audio_filter_arg_t *arg)
 {
 	struct pad_softc *sc = arg->context;
-	const aint_t *src;
-	aint_t *dst;
+	const uint8_t *src;
+	uint8_t *dst;
 	u_int sample_count;
 	u_int i;
+	u_int bits;
 
 	src = arg->src;
 	dst = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
+	bits = arg->srcfmt->precision;
+
 	for (i = 0; i < sample_count; i++) {
-		aint2_t v = (aint2_t)(*src++);
+		int64_t v;
+
+		switch (howmany(bits, NBBY)) {
+		case 2: /* AUDIO_INTERNAL_BITS == 16 */
+			v = *(const int16_t *)src;
+			src += sizeof(int16_t);
+			break;
+		case 4: /* AUDIO_INTERNAL_BITS == 32 */
+			v = *(const int32_t *)src;
+			src += sizeof(int32_t);
+			break;
+		default:
+			v = 0;
+			break;
+		}
+
 		v = v * sc->sc_swvol / 255;
-		*dst++ = (aint_t)v;
+
+		if (PADPREC > bits)
+			v = v << (PADPREC - bits);
+		else if (PADPREC < bits)
+			v = v >> (bits - PADPREC);
+
+		/* AUDIO_ENCODING_SLINEAR_LE */
+#if PADPREC > 0
+		*dst++ = v;
+#endif
+#if PADPREC > 8
+		v >>= 8;
+		*dst++ = v;
+#endif
+#if PADPREC > 16
+		v >>= 8;
+		*dst++ = v;
+#endif
+#if PADPREC > 24
+		v >>= 8;
+		*dst++ = v;
+#endif
 	}
 }
 

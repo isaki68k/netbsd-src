@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_event.c,v 1.146 2022/07/24 19:23:44 riastradh Exp $	*/
+/*	$NetBSD: kern_event.c,v 1.150 2023/09/21 09:31:50 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2021 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.146 2022/07/24 19:23:44 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.150 2023/09/21 09:31:50 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -95,6 +95,7 @@ static int	kqueue_kqfilter(file_t *, struct knote *);
 static int	kqueue_stat(file_t *, struct stat *);
 static int	kqueue_close(file_t *);
 static void	kqueue_restart(file_t *);
+static int	kqueue_fpathconf(file_t *, int, register_t *);
 static int	kqueue_register(struct kqueue *, struct kevent *);
 static void	kqueue_doclose(struct kqueue *, struct klist *, int);
 
@@ -186,6 +187,7 @@ static const struct fileops kqueueops = {
 	.fo_close = kqueue_close,
 	.fo_kqfilter = kqueue_kqfilter,
 	.fo_restart = kqueue_restart,
+	.fo_fpathconf = kqueue_fpathconf,
 };
 
 static void
@@ -266,7 +268,7 @@ extern const struct filterops fs_filtops;	/* vfs_syscalls.c */
 extern const struct filterops sig_filtops;	/* kern_sig.c */
 
 /*
- * Table for for all system-defined filters.
+ * Table for all system-defined filters.
  * These should be listed in the numeric order of the EVFILT_* defines.
  * If filtops is NULL, the filter isn't implemented in NetBSD.
  * End of list is when name is NULL.
@@ -1400,7 +1402,8 @@ filt_timerexpire(void *knx)
 	kn->kn_data++;
 	knote_activate_locked(kn);
 	if (kn->kn_sdata != FILT_TIMER_NOSCHED) {
-		KASSERT(kn->kn_sdata > 0 && kn->kn_sdata <= INT_MAX);
+		KASSERT(kn->kn_sdata > 0);
+		KASSERT(kn->kn_sdata <= INT_MAX);
 		callout_schedule((callout_t *)kn->kn_hook,
 		    (int)kn->kn_sdata);
 	}
@@ -1782,7 +1785,7 @@ static const struct kevent_ops kevent_native_ops = {
 };
 
 int
-sys___kevent50(struct lwp *l, const struct sys___kevent50_args *uap,
+sys___kevent100(struct lwp *l, const struct sys___kevent100_args *uap,
     register_t *retval)
 {
 	/* {
@@ -2248,6 +2251,13 @@ kqueue_restart(file_t *fp)
 	mutex_spin_exit(&kq->kq_lock);
 }
 
+static int
+kqueue_fpathconf(struct file *fp, int name, register_t *retval)
+{
+
+	return EINVAL;
+}
+
 /*
  * Scan through the list of events on fp (for a maximum of maxevents),
  * returning the results in to ulistp. Timeout is determined by tsp; if
@@ -2448,8 +2458,8 @@ relock:
 			kn->kn_status &= ~KN_BUSY;
 			kq->kq_count--;
 			KASSERT(kn_in_flux(kn) == false);
-			KASSERT((kn->kn_status & KN_WILLDETACH) != 0 &&
-				kn->kn_kevent.udata == curlwp);
+			KASSERT((kn->kn_status & KN_WILLDETACH) != 0);
+			KASSERT(kn->kn_kevent.udata == curlwp);
 			mutex_spin_exit(&kq->kq_lock);
 			knote_detach(kn, fdp, true);
 			mutex_enter(&fdp->fd_lock);

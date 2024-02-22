@@ -1,4 +1,4 @@
-/*	$NetBSD: tty.c,v 1.308 2023/02/17 23:13:01 riastradh Exp $	*/
+/*	$NetBSD: tty.c,v 1.312 2023/12/07 09:00:32 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.308 2023/02/17 23:13:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.312 2023/12/07 09:00:32 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -102,10 +102,6 @@ __KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.308 2023/02/17 23:13:01 riastradh Exp $");
 #include <sys/atomic.h>
 #include <sys/condvar.h>
 #include <sys/pserialize.h>
-
-#ifdef COMPAT_60
-#include <compat/sys/ttycom.h>
-#endif /* COMPAT_60 */
 
 static int	ttnread(struct tty *);
 static void	ttyblock(struct tty *);
@@ -2193,13 +2189,11 @@ ttread(struct tty *tp, struct uio *uio, int flag)
  * Call with tty lock held.
  */
 static int
-ttycheckoutq_wlock(struct tty *tp, int wait)
+ttycheckoutq_wlock(struct tty *tp)
 {
 	int	hiwat;
 
 	KASSERT(mutex_owned(&tty_lock));
-
-	KASSERT(wait == 0);
 
 	hiwat = tp->t_hiwat;
 	if (tp->t_outq.c_cc > hiwat + 200)
@@ -2212,12 +2206,12 @@ ttycheckoutq_wlock(struct tty *tp, int wait)
 }
 
 int
-ttycheckoutq(struct tty *tp, int wait)
+ttycheckoutq(struct tty *tp)
 {
 	int	r;
 
 	mutex_spin_enter(&tty_lock);
-	r = ttycheckoutq_wlock(tp, wait);
+	r = ttycheckoutq_wlock(tp);
 	mutex_spin_exit(&tty_lock);
 
 	return (r);
@@ -2231,13 +2225,13 @@ ttwrite(struct tty *tp, struct uio *uio, int flag)
 {
 	u_char		*cp;
 	struct proc	*p;
-	int		cc, ce, i, hiwat, error;
+	int		cc, cc0, ce, i, hiwat, error;
 	u_char		obuf[OBUFSIZ];
 
 	cp = NULL;
 	hiwat = tp->t_hiwat;
 	error = 0;
-	cc = 0;
+	cc0 = cc = 0;
  loop:
 	mutex_spin_enter(&tty_lock);
 	if (!CONNECTED(tp)) {
@@ -2302,9 +2296,10 @@ ttwrite(struct tty *tp, struct uio *uio, int flag)
 		 * leftover from last time.
 		 */
 		if (cc == 0) {
-			cc = uimin(uio->uio_resid, OBUFSIZ);
+			uioskip(cc0, uio);
+			cc0 = cc = uimin(uio->uio_resid, OBUFSIZ);
 			cp = obuf;
-			error = uiomove(cp, cc, uio);
+			error = uiopeek(cp, cc, uio);
 			if (error) {
 				cc = 0;
 				goto out;
@@ -2375,12 +2370,9 @@ ttwrite(struct tty *tp, struct uio *uio, int flag)
 	}
 
  out:
-	/*
-	 * If cc is nonzero, we leave the uio structure inconsistent, as the
-	 * offset and iov pointers have moved forward, but it doesn't matter
-	 * (the call will either return short or restart with a new uio).
-	 */
-	uio->uio_resid += cc;
+	KASSERTMSG(error || cc == 0, "error=%d cc=%d", error, cc);
+	KASSERTMSG(cc0 >= cc, "cc0=%d cc=%d", cc0, cc);
+	uioskip(cc0 - cc, uio);
 	return (error);
 
  overfull:
@@ -2800,7 +2792,7 @@ ttyputinfo(struct tty *tp, char *buf)
 
 	KASSERT(mutex_owned(&tty_lock));
 
-	if (ttycheckoutq_wlock(tp, 0) == 0)
+	if (ttycheckoutq_wlock(tp) == 0)
 		return;
 	ttyprintf_nolock(tp, "%s\n", buf);
 	tp->t_rocount = 0;	/* so pending input will be retyped if BS */

@@ -1,7 +1,7 @@
-/*	$NetBSD: aarch32_syscall.c,v 1.7 2023/02/25 00:40:22 riastradh Exp $	*/
+/*	$NetBSD: aarch32_syscall.c,v 1.9 2024/02/07 04:20:26 msaitoh Exp $	*/
 
 /*
- * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2018 Ryo Shimizu
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aarch32_syscall.c,v 1.7 2023/02/25 00:40:22 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aarch32_syscall.c,v 1.9 2024/02/07 04:20:26 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/ktrace.h>
@@ -66,8 +66,6 @@ EMULNAME(syscall)(struct trapframe *tf)
 	register32_t *args32 = args32buf.a32;
 	int error, i;
 	bool do_trace, thumbmode;
-
-	LWP_CACHE_CREDS(l, p);
 
 	curcpu()->ci_data.cpu_nsyscall++; /* XXX unsafe curcpu() */
 

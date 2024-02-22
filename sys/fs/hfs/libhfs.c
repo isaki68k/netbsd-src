@@ -1,4 +1,4 @@
-/*	$NetBSD: libhfs.c,v 1.17 2023/03/01 16:21:26 riastradh Exp $	*/
+/*	$NetBSD: libhfs.c,v 1.19 2023/08/11 05:51:34 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2005, 2007 The NetBSD Foundation, Inc.
@@ -47,7 +47,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: libhfs.c,v 1.17 2023/03/01 16:21:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: libhfs.c,v 1.19 2023/08/11 05:51:34 mrg Exp $");
 
 #include "libhfs.h"
 
@@ -545,7 +545,7 @@ hfslib_find_catalog_record_with_key(
 	hfs_catalog_keyed_record_t* out_rec,
 	hfs_callback_args* cbargs)
 {
-	hfs_node_descriptor_t			nd;
+	hfs_node_descriptor_t			nd = { .num_recs = 0 };
 	hfs_extent_descriptor_t*		extents;
 	hfs_catalog_keyed_record_t		lastrec;
 	hfs_catalog_key_t*	curkey;
@@ -585,7 +585,6 @@ hfslib_find_catalog_record_with_key(
 	if (numextents == 0)
 		HFS_LIBERR("could not locate fork extents");
 
-	nd.num_recs = 0;
 	curnode = in_vol->chr.root_node;
 
 #ifdef DLO_DEBUG
@@ -687,7 +686,7 @@ hfslib_find_extent_record_with_key(hfs_volume* in_vol,
 	hfs_extent_record_t* out_rec,
 	hfs_callback_args* cbargs)
 {
-	hfs_node_descriptor_t		nd;
+	hfs_node_descriptor_t		nd = { .num_recs = 0 };
 	hfs_extent_descriptor_t*	extents;
 	hfs_extent_record_t		lastrec;
 	hfs_extent_key_t	curkey;
@@ -759,7 +758,7 @@ hfslib_find_extent_record_with_key(hfs_volume* in_vol,
 		else if (nd.kind == HFS_LEAFNODE)
 			break;
 		else
-		    HFS_LIBERR("unknwon node type for extents overflow node #%i",curnode);
+		    HFS_LIBERR("unknown node type for extents overflow node #%i",curnode);
 	} while (nd.kind != HFS_LEAFNODE);
 
 	result = 0;
@@ -922,7 +921,7 @@ hfslib_get_directory_contents(
 	uint32_t* out_numchildren,
 	hfs_callback_args* cbargs)
 {
-	hfs_node_descriptor_t			nd;
+	hfs_node_descriptor_t			nd = { .num_recs = 0 };
 	hfs_extent_descriptor_t*		extents;
 	hfs_catalog_keyed_record_t		currec;
 	hfs_catalog_key_t	curkey;

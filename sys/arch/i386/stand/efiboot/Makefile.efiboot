@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.efiboot,v 1.20 2022/12/25 22:14:05 christos Exp $
+# $NetBSD: Makefile.efiboot,v 1.22 2023/07/24 01:56:59 rin Exp $
 
 S=		${.CURDIR}/../../../../..
 
@@ -14,9 +14,11 @@ AFLAGS.start.S= ${${ACTIVE_CC} == "clang":?-no-integrated-as:}
 
 SOURCES= start.S boot.c conf.c devopen.c dev_net.c self_reloc.c panic.c
 SOURCES+= efiboot.c efichar.c eficons.c efidelay.c efidev.c
+SOURCES+= eficpufunc.c
 SOURCES+= efidisk.c efidisk_ll.c efigetsecs.c efimemory.c
 SOURCES+= efinet.c efipxe.c
 LIBI386SRCS= biosdisk.c bootinfo.c bootinfo_biosgeom.c bootmenu.c
+LIBI386SRCS+= comio_direct.c
 LIBI386SRCS+= diskbuf.c exec.c menuutils.c parseutils.c pread.c
 LIBI386SRCS+= exec_multiboot1.c exec_multiboot2.c
 # use our own nfs implementation
@@ -144,7 +146,7 @@ ${PROG}.so: ${OBJS} ${LIBLIST} ${LDSCRIPT} ${.CURDIR}/../Makefile.efiboot
 	rm -f ${.TARGET}
 	mv ${.TARGET}.tmp ${.TARGET}
 
-CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
+CWARNFLAGS.gcc+=	${CC_WNO_ADDRESS_OF_PACKED_MEMBER}
 
 KLINK_MACHINE?=	${MACHINE}
 .include <bsd.klinks.mk>

@@ -1,4 +1,4 @@
-/*	$NetBSD: systm.h,v 1.301 2021/06/16 11:55:10 rin Exp $	*/
+/*	$NetBSD: systm.h,v 1.305 2023/09/09 16:01:09 christos Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1988, 1991, 1993
@@ -235,6 +235,8 @@ enum hashtype {
 	} while (/*CONSTCOND*/0)
 
 void	hash_value(void *, size_t, const void *, size_t);
+void	hash_value_ensure_initialized(void);
+
 bool	get_expose_address(struct proc *);
 void	*hashinit(u_int, enum hashtype, bool, u_long *);
 void	hashdone(void *, enum hashtype, u_long);
@@ -620,6 +622,8 @@ void	trace_exit(register_t, const struct sysent *, const void *,
 
 int	uiomove(void *, size_t, struct uio *);
 int	uiomove_frombuf(void *, size_t, struct uio *);
+int	uiopeek(void *, size_t, struct uio *);
+void	uioskip(size_t, struct uio *);
 
 #ifdef _KERNEL
 int	setjmp(label_t *) __returns_twice;

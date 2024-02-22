@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_mbuf.c,v 1.250 2023/04/01 06:30:19 skrll Exp $	*/
+/*	$NetBSD: uipc_mbuf.c,v 1.252 2023/11/27 02:50:27 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1999, 2001, 2018 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.250 2023/04/01 06:30:19 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.252 2023/11/27 02:50:27 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mbuftrace.h"
@@ -583,6 +583,50 @@ m_gethdr(int how, int type)
 	m->m_pkthdr.pattr_class = NULL;
 	m->m_pkthdr.pattr_af = AF_UNSPEC;
 	m->m_pkthdr.pattr_hdr = NULL;
+
+	return m;
+}
+
+struct mbuf *
+m_get_n(int how, int type, size_t alignbytes, size_t nbytes)
+{
+	struct mbuf *m;
+
+	if (alignbytes > MCLBYTES || nbytes > MCLBYTES - alignbytes)
+		return NULL;
+	if ((m = m_get(how, type)) == NULL)
+		return NULL;
+	if (nbytes + alignbytes > MLEN) {
+		m_clget(m, how);
+		if ((m->m_flags & M_EXT) == 0) {
+			m_free(m);
+			return NULL;
+		}
+	}
+	m->m_len = alignbytes + nbytes;
+	m_adj(m, alignbytes);
+
+	return m;
+}
+
+struct mbuf *
+m_gethdr_n(int how, int type, size_t alignbytes, size_t nbytes)
+{
+	struct mbuf *m;
+
+	if (nbytes > MCLBYTES || nbytes > MCLBYTES - alignbytes)
+		return NULL;
+	if ((m = m_gethdr(how, type)) == NULL)
+		return NULL;
+	if (alignbytes + nbytes > MHLEN) {
+		m_clget(m, how);
+		if ((m->m_flags & M_EXT) == 0) {
+			m_free(m);
+			return NULL;
+		}
+	}
+	m->m_len = m->m_pkthdr.len = alignbytes + nbytes;
+	m_adj(m, alignbytes);
 
 	return m;
 }
@@ -1299,10 +1343,7 @@ m_split_internal(struct mbuf *m0, int len0, int wait, bool copyhdr)
 		len_save = m0->m_pkthdr.len;
 		m0->m_pkthdr.len = len0;
 
-		if (m->m_flags & M_EXT)
-			goto extpacket;
-
-		if (remain > MHLEN) {
+		if ((m->m_flags & M_EXT) == 0 && remain > MHLEN) {
 			/* m can't be the lead packet */
 			m_align(n, 0);
 			n->m_len = 0;
@@ -1313,8 +1354,6 @@ m_split_internal(struct mbuf *m0, int len0, int wait, bool copyhdr)
 				return NULL;
 			}
 			return n;
-		} else {
-			m_align(n, remain);
 		}
 	} else if (remain == 0) {
 		n = m->m_next;
@@ -1325,14 +1364,13 @@ m_split_internal(struct mbuf *m0, int len0, int wait, bool copyhdr)
 		if (n == NULL)
 			return NULL;
 		MCLAIM(n, m->m_owner);
-		m_align(n, remain);
 	}
 
-extpacket:
 	if (m->m_flags & M_EXT) {
 		n->m_data = m->m_data + len;
 		MCLADDREFERENCE(m, n);
 	} else {
+		m_align(n, remain);
 		memcpy(mtod(n, void *), mtod(m, char *) + len, remain);
 	}
 

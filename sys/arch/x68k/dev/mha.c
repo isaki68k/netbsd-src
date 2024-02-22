@@ -1,4 +1,4 @@
-/*	$NetBSD: mha.c,v 1.58 2022/05/26 14:33:29 tsutsui Exp $	*/
+/*	$NetBSD: mha.c,v 1.61 2024/01/07 07:58:33 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1996-1999 The NetBSD Foundation, Inc.
@@ -59,13 +59,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mha.c,v 1.58 2022/05/26 14:33:29 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mha.c,v 1.61 2024/01/07 07:58:33 isaki Exp $");
 
 #include "opt_ddb.h"
 
 /* Synchronous data transfers? */
 #define SPC_USE_SYNCHRONOUS	0
-#define SPC_SYNC_REQ_ACK_OFS 	8
+#define SPC_SYNC_REQ_ACK_OFS	8
 
 /* Default DMA mode? */
 #define MHA_DMA_LIMIT_XFER	1
@@ -247,7 +247,7 @@ int	mha_datain_pio(struct mha_softc *, u_char *, int);
 int	mha_dataout(struct mha_softc *, u_char *, int);
 int	mha_datain(struct mha_softc *, u_char *, int);
 void	mha_abort(struct mha_softc *, struct acb *);
-void 	mha_init(struct mha_softc *);
+void	mha_init(struct mha_softc *);
 void	mha_scsi_request(struct scsipi_channel *, scsipi_adapter_req_t, void *);
 void	mha_poll(struct mha_softc *, struct acb *);
 void	mha_sched(struct mha_softc *);
@@ -683,7 +683,7 @@ mha_scsi_request(struct scsipi_channel *chan, scsipi_adapter_req_t req,
 
 		SPC_TRACE(("[mha_scsi_cmd] "));
 		SPC_CMDS(("[0x%x, %d]->%d ", (int)xs->cmd->opcode, xs->cmdlen,
-		    periph->periph_target));
+		    xs->xs_periph->periph_target));
 
 		flags = xs->xs_control;
 
@@ -1215,7 +1215,7 @@ printf("%s: unimplemented message: %d\n", device_xname(sc->sc_dev), sc->sc_imess
 		struct spc_tinfo *ti;
 		u_char lunit;
 
-		if (MSG_ISIDENTIFY(sc->sc_imess[0])) { 	/* Identify? */
+		if (MSG_ISIDENTIFY(sc->sc_imess[0])) {	/* Identify? */
 			SPC_MISC(("searching "));
 			/*
 			 * Search wait queue for disconnected cmd
@@ -1566,7 +1566,7 @@ mha_dataio_dma(int dw, int cw, struct mha_softc *sc, u_char *p, int n)
 	if (n > MAXBSIZE)
 		panic("transfer size exceeds MAXBSIZE");
 	if (sc->sc_dmasize > 0)
-		panic("DMA request while another DMA transfer is in pregress");
+		panic("DMA request while another DMA transfer is in progress");
 
 	if (cw == CMD_SEND_FROM_DMA) {
 		memcpy(sc->sc_dmabuf, p, n);

@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1306 2022/12/28 18:19:44 jakllsch Exp $
+#	$NetBSD: files,v 1.1311 2024/02/09 22:08:34 andvar Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -86,7 +86,8 @@ defparam opt_sysvparam.h	SEMMAP SEMMNI SEMMNS SEMMNU SEMMSL SEMOPM
 defparam opt_sysvparam.h	SEMUME SEMUSZ SEMVMX SEMAEM
 defparam opt_sysvparam.h	SHMMAX SHMMIN SHMMNI SHMSEG SHMMAXPGS
 
-defflag	opt_ntp.h		PPS_SYNC PPS_DEBUG NTP
+defflag	opt_ntp.h		PPS_DEBUG NTP
+defflag	opt_ntp.h		PPS_SYNC: NTP
 
 defflag	opt_ptm.h		NO_DEV_PTM COMPAT_BSDPTY
 
@@ -363,7 +364,7 @@ defflag opt_tftproot.h		TFTPROOT TFTPROOT_DEBUG
 
 defflag	opt_wlan.h		WLAN
 
-# Machine-independent device majors assignements
+# Machine-independent device majors assignments
 include "conf/majors"
 
 # generic attributes
@@ -799,6 +800,10 @@ file	dev/ic/dwc_gmac.c		awge
 device	eqos: arp, ether, ifnet, mii
 file	dev/ic/dwc_eqos.c		eqos
 
+# Synopsys DesignWare Watchdog
+device	dwcwdt: sysmon_wdog
+file	dev/ic/dwc_wdt.c		dwcwdt
+
 # 8390-family Ethernet controllers
 #
 define	dp8390nic
@@ -1057,7 +1062,7 @@ device	njata: ata, ata_piobm, wdc_common
 file	dev/ic/ninjaata32.c		njata
 
 # AHCI-compatible SATA controllers
-defflag	opt_ahcisata.h	AHCISATA_EXTRA_DELAY
+defflag	opt_ahcisata.h	AHCISATA_REMOVE_EXTRA_DELAY
 defparam opt_ahcisata.h	AHCISATA_EXTRA_DELAY_MS
 define ahcisata_core
 file dev/ic/ahcisata_core.c ahcisata_core
@@ -1653,6 +1658,11 @@ include "dev/ic/files.athn"
 # MI clk api
 #
 include "dev/clk/files.clk"
+
+#
+# Goldfish virtual devices
+#
+include "dev/goldfish/files.goldfish"
 
 #
 # Flattened Device Tree (FDT) support

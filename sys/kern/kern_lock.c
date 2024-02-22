@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_lock.c,v 1.183 2023/02/23 14:57:29 riastradh Exp $	*/
+/*	$NetBSD: kern_lock.c,v 1.188 2024/01/14 11:46:05 andvar Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2020, 2023
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -31,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lock.c,v 1.183 2023/02/23 14:57:29 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lock.c,v 1.188 2024/01/14 11:46:05 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_lockdebug.h"
@@ -68,7 +69,7 @@ void
 assert_sleepable(void)
 {
 	const char *reason;
-	uint64_t pctr;
+	long pctr;
 	bool idle;
 
 	if (__predict_false(panicstr != NULL)) {
@@ -83,29 +84,29 @@ assert_sleepable(void)
 	 */
 	do {
 		pctr = lwp_pctr();
-		__insn_barrier();
 		idle = CURCPU_IDLE_P();
-		__insn_barrier();
-	} while (pctr != lwp_pctr());
+	} while (__predict_false(pctr != lwp_pctr()));
 
 	reason = NULL;
-	if (idle && !cold) {
+	if (__predict_false(idle) && !cold) {
 		reason = "idle";
+		goto panic;
 	}
-	if (cpu_intr_p()) {
+	if (__predict_false(cpu_intr_p())) {
 		reason = "interrupt";
+		goto panic;
 	}
-	if (cpu_softintr_p()) {
+	if (__predict_false(cpu_softintr_p())) {
 		reason = "softint";
+		goto panic;
 	}
-	if (!pserialize_not_in_read_section()) {
+	if (__predict_false(!pserialize_not_in_read_section())) {
 		reason = "pserialize";
+		goto panic;
 	}
+	return;
 
-	if (reason) {
-		panic("%s: %s caller=%p", __func__, reason,
-		    (void *)RETURN_ADDRESS);
-	}
+panic:	panic("%s: %s caller=%p", __func__, reason, (void *)RETURN_ADDRESS);
 }
 
 /*
@@ -136,7 +137,9 @@ lockops_t _kernel_lock_ops = {
 
 #ifdef LOCKDEBUG
 
+#ifdef DDB
 #include <ddb/ddb.h>
+#endif
 
 static void
 kernel_lock_trace_ipi(void *cookie)
@@ -145,7 +148,9 @@ kernel_lock_trace_ipi(void *cookie)
 	printf("%s[%d %s]: hogging kernel lock\n", cpu_name(curcpu()),
 	    curlwp->l_lid,
 	    curlwp->l_name ? curlwp->l_name : curproc->p_comm);
+#ifdef DDB
 	db_stacktrace();
+#endif
 }
 
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.218 2023/03/03 14:32:48 riastradh Exp $	*/
+/*	$NetBSD: locore.S,v 1.224 2023/10/16 17:29:30 bouyer Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -156,6 +156,7 @@
 #include "opt_ddbparam.h"
 #include "opt_modular.h"
 #include "opt_realmem.h"
+#include "opt_selfreloc.h"
 
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
@@ -312,7 +313,7 @@
 	ELFNOTE(Xen, XEN_ELFNOTE_FEATURES,       .asciz, "writable_descriptor_tables|auto_translated_physmap|supervisor_mode_kernel|hvm_callback_vector")
 	ELFNOTE(Xen, XEN_ELFNOTE_PAE_MODE,       .asciz, "yes")
 	ELFNOTE(Xen, XEN_ELFNOTE_L1_MFN_VALID,   .long,  PTE_P, PTE_P)\
-	ELFNOTE(Xen, XEN_ELFNOTE_LOADER,         .asciz, "generic")     
+	ELFNOTE(Xen, XEN_ELFNOTE_LOADER,         .asciz, "generic")
 	ELFNOTE(Xen, XEN_ELFNOTE_SUSPEND_CANCEL, .long,  0)
 #if NKSYMS > 0 || defined(DDB) || defined(MODULAR)
 	ELFNOTE(Xen, XEN_ELFNOTE_BSD_SYMTAB,     .asciz, "yes")
@@ -427,11 +428,11 @@ gdtdesc32:
 	.word	gdt32end - gdt32
 	.long	RELOC(gdt32)
 	.long	0
-gdt32:  
+gdt32:
 	.long	0			# null descriptor
 	.long	0
 	.long	0x0000ffff		# %cs
-	.long	0x00cf9a00 
+	.long	0x00cf9a00
 	.long	0x0000ffff		# %ds, %es, %ss
 	.long	0x00cf9200
 gdt32end:
@@ -455,6 +456,16 @@ tmpstk:
 ENTRY(start)
 #ifndef XENPV
 	.code32
+
+#ifdef SELFRELOC
+	call	next
+next:	pop	%edi
+	sub     $(next - kernel_text), %edi
+
+	/* If not KERNBASE, reloc ourselves to KERNBASE */
+	cmpl	$(KERNTEXTOFF_LO - KERNBASE_LO), %edi
+	jne	selfreloc_start
+#endif /* SELFRELOC */
 
 	/* Warm boot */
 	movw	$0x1234,0x472
@@ -928,7 +939,7 @@ longmode_hi:
 	/* Copy start_info to a safe place. */
 	movq	%rbx,%rsi
 	movq	$_C_LABEL(start_info_union),%rdi
-	movq	$64,%rcx
+	movq	$(PAGE_SIZE / 8),%rcx
 	rep
 	movsq
 
@@ -963,6 +974,20 @@ longmode_hi:
 
 	movl	$VM_GUEST_XENPV, _C_LABEL(vm_guest)
 
+	/*
+	 * Initialize cpu_info_primary.ci_self := &cpu_info_primary,
+	 * and initialize some MSRs with
+	 * cpu_init_msrs(&cpu_info_primary, full=true).  This sets up
+	 * SYSCALL/SYSRET (XXX why?) and %fs/%gs, which is needed for
+	 * the %gs-relative addressing used by CPUVAR(...), curcpu(),
+	 * and curlwp.
+	 *
+	 * XXX Is it necessary to set cpu_info_primary.ci_self here?
+	 * Isn't it statically initialized in x86/cpu.c?
+	 *
+	 * XXX Why do we immediately clear the segment registers just
+	 * afterward?
+	 */
 	movq	$cpu_info_primary,%rdi
 	movq	%rdi,CPU_INFO_SELF(%rdi) /* ci->ci_self = ci */
 	movq	$1,%rsi
@@ -1017,10 +1042,10 @@ ENTRY(start_xen32)
 	jmp     $GSEL(GCODE_SEL, SEL_KPL), $RELOC(.Lreload_cs)
 
 .Lreload_cs:
-	movw    $GSEL(GDATA_SEL, SEL_KPL), %ax          
+	movw    $GSEL(GDATA_SEL, SEL_KPL), %ax
 	movw    %ax, %ds
 	movw    %ax, %es
-	movw    %ax, %ss   
+	movw    %ax, %ss
 
 	/* we need a valid stack */
 	movl	$RELOC(tmpstk),%esp
@@ -1757,3 +1782,140 @@ LABEL(mds_leave_end)
 LABEL(nomds_leave)
 	NOMDS_LEAVE
 LABEL(nomds_leave_end)
+
+#ifdef SELFRELOC
+/*
+ * selfreloc(loadaddr edi)
+ * This is adapted from sys/arch/i386/i386/locore.S
+ */
+	.code32
+ENTRY(selfreloc_start)
+	movl	%edi, %ebx		/* loadaddr saved in ebx */
+	movl	%edi, %esi				/* src */
+	movl	$_RELOC(kernel_text), %edi		/* dest */
+	movl	16(%esp),%ecx				/* esym */
+	subl	$_RELOC(kernel_text), %ecx		/* size */
+
+#if defined(NO_OVERLAP)
+        movl    %ecx, %eax
+#else
+        movl    %edi, %eax
+        subl    %esi, %eax
+        cmpl    %ecx, %eax      /* overlapping? */
+        movl    %ecx, %eax
+        jb      .Lbackwards
+#endif
+        /* nope, copy forwards. */
+        shrl    $2, %ecx        /* copy by words */
+        rep
+        movsl
+        and     $3, %eax        /* any bytes left? */
+        jnz     .Ltrailing
+        jmp     .Lcopy_done
+
+.Ltrailing:
+        cmp     $2, %eax
+        jb      11f
+        movw    (%esi), %ax
+        movw    %ax, (%edi)
+        je      .Lcopy_done
+        movb    2(%esi), %al
+        movb    %al, 2(%edi)
+        jmp     .Lcopy_done
+11:     movb    (%esi), %al
+        movb    %al, (%edi)
+        jmp     .Lcopy_done
+
+#if !defined(NO_OVERLAP)
+.Lbackwards:
+        addl    %ecx, %edi      /* copy backwards. */
+        addl    %ecx, %esi
+        and     $3, %eax        /* any fractional bytes? */
+        jnz     .Lback_align
+.Lback_aligned:
+        shrl    $2, %ecx
+        subl    $4, %esi
+        subl    $4, %edi
+        std
+        rep
+        movsl
+        cld
+        jmp     .Lcopy_done
+
+.Lback_align:
+        sub     %eax, %esi
+        sub     %eax, %edi
+        cmp     $2, %eax
+        jb      11f
+        je      12f
+        movb    2(%esi), %al
+        movb    %al, 2(%edi)
+12:     movw    (%esi), %ax
+        movw    %ax, (%edi)
+        jmp     .Lback_aligned
+11:     movb    (%esi), %al
+        movb    %al, (%edi)
+        jmp     .Lback_aligned
+#endif
+        /* End of copy kernel */
+.Lcopy_done:
+	cld			/* LynxOS depends on it */
+
+	/* load current selfreloc_start addesss in $edi */
+	movl	%ebx, %edi	/* loadaddr was saved in ebx */
+	addl	$(selfreloc_start - kernel_text), %edi
+
+	/* Prepare jump address */
+	lea	(selfreloc_start32a - selfreloc_start)(%edi), %eax
+	movl	%eax, (selfreloc_start32r - selfreloc_start)(%edi)
+
+	/* Setup GDT */
+	lea	(gdt - selfreloc_start)(%edi), %eax
+	mov	%eax, (gdtrr - selfreloc_start)(%edi)
+	lgdt	(gdtr - selfreloc_start)(%edi)
+
+	/* Jump to set %cs */
+	ljmp	*(selfreloc_start32r - selfreloc_start)(%edi)
+
+	.align	4
+selfreloc_start32a:
+	movl	$0x10, %eax	/* #define DATA_SEGMENT 0x10 */
+	movw	%ax, %ds
+	movw	%ax, %es
+	movw	%ax, %fs
+	movw	%ax, %gs
+	movw	%ax, %ss
+
+	/* Disable Paging in CR0 */
+	movl	%cr0, %eax
+	andl	$(~CR0_PG), %eax
+	movl	%eax, %cr0
+
+	/* Disable PAE in CR4 */
+	movl	%cr4, %eax
+	andl	$(~CR4_PAE), %eax
+	movl	%eax, %cr4
+
+	jmp	selfreloc_start32b
+
+	.align	4
+selfreloc_start32b:
+	xor	%eax, %eax
+	movl	$_RELOC(start), %esi
+	jmp	*%esi
+
+	.align	16
+selfreloc_start32r:
+	.long	0
+	.long	0x08	/* #define	CODE_SEGMENT	0x08 */
+	.align	16
+gdt:
+	.long	0, 0
+	.byte	0xff, 0xff, 0x00, 0x00, 0x00, 0x9f, 0xcf, 0x00
+	.byte	0xff, 0xff, 0x00, 0x00, 0x00, 0x93, 0xcf, 0x00
+gdtr:
+	.word	gdtr - gdt
+gdtrr:
+	.quad
+END(selfreloc_start)
+#endif /* SELFRELOC */

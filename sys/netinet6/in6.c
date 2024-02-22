@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.288 2022/10/24 14:15:19 msaitoh Exp $	*/
+/*	$NetBSD: in6.c,v 1.291 2023/12/09 15:21:02 pgoyette Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.288 2022/10/24 14:15:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.291 2023/12/09 15:21:02 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -105,13 +105,8 @@ __KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.288 2022/10/24 14:15:19 msaitoh Exp $");
 #include <netinet6/in6_ifattach.h>
 #include <netinet6/scope6_var.h>
 
-#ifdef COMPAT_50
-#include <compat/netinet6/in6_var.h>
-#endif
-#ifdef COMPAT_90
 #include <compat/netinet6/in6_var.h>
 #include <compat/netinet6/nd6.h>
-#endif
 
 MALLOC_DEFINE(M_IP6OPT, "ip6_options", "IPv6 options");
 
@@ -2293,6 +2288,10 @@ in6_if_link_down(struct ifnet *ifp)
 	}
 	pserialize_read_exit(s);
 	curlwp_bindx(bound);
+
+	/* Clear ND6_IFF_IFDISABLED to allow DAD again on link-up. */
+	if (ifp->if_afdata[AF_INET6] != NULL)
+		ND_IFINFO(ifp)->flags &= ~ND6_IFF_IFDISABLED;
 }
 
 void

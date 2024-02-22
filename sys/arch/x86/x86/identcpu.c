@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.123 2021/10/07 13:04:18 msaitoh Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.128 2023/10/17 14:17:42 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.123 2021/10/07 13:04:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.128 2023/10/17 14:17:42 riastradh Exp $");
 
 #include "opt_xen.h"
 

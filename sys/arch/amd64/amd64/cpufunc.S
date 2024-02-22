@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.65 2020/11/30 17:02:27 bouyer Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.67 2023/11/03 09:07:56 chs Exp $	*/
 
 /*
- * Copyright (c) 1998, 2007, 2008, 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2008, 2020, 2023 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -36,6 +36,7 @@
 #include <machine/specialreg.h>
 #include <machine/segments.h>
 
+#include "opt_dtrace.h"
 #include "opt_xen.h"
 #include "opt_svs.h"
 
@@ -177,6 +178,18 @@ ENTRY(smap_disable)
 	ret
 END(smap_disable)
 
+#ifdef KDTRACE_HOOKS
+ENTRY(dtrace_smap_enable)
+	SMAP_ENABLE
+	ret
+END(dtrace_smap_enable)
+
+ENTRY(dtrace_smap_disable)
+	SMAP_DISABLE
+	ret
+END(dtrace_smap_disable)
+#endif
+
 /*
  * %rdi = name
  * %rsi = sel
@@ -234,12 +247,13 @@ END(x86_hotpatch)
 #define CPU_COUNTER_FENCE(counter, fence)	\
 ENTRY(cpu_ ## counter ## _ ## fence)		;\
 	movq	CPUVAR(CURLWP), %rcx		;\
+	leaq	L_RU+RU_NIVCSW(%rcx), %rcx	;\
 1:						;\
-	movq	L_NCSW(%rcx), %rdi		;\
+	movq	(%rcx), %rdi			;\
 	SERIALIZE_ ## fence			;\
 	rdtsc					;\
 	ADD_ ## counter				;\
-	cmpq	%rdi, L_NCSW(%rcx)		;\
+	cmpq	%rdi, (%rcx)			;\
 	jne	2f				;\
 	KMSAN_INIT_RET(RSIZE_ ## counter)	;\
 	ret					;\
@@ -256,13 +270,14 @@ CPU_COUNTER_FENCE(counter32, mfence)
 ENTRY(cpu_ ## counter ## _cpuid)		;\
 	movq	%rbx, %r9			;\
 	movq	CPUVAR(CURLWP), %r8		;\
+	leaq	L_RU+RU_NIVCSW(%r8), %r8	;\
 1:						;\
-	movq	L_NCSW(%r8), %rdi		;\
+	movq	(%r8), %rdi			;\
 	xor	%eax, %eax			;\
 	cpuid					;\
 	rdtsc					;\
 	ADD_ ## counter				;\
-	cmpq	%rdi, L_NCSW(%r8)		;\
+	cmpq	%rdi, (%r8)			;\
 	jne	2f				;\
 	movq	%r9, %rbx			;\
 	KMSAN_INIT_RET(RSIZE_ ## counter)	;\

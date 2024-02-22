@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.efiboot,v 1.26 2022/03/25 21:23:00 jmcneill Exp $
+# $NetBSD: Makefile.efiboot,v 1.30 2024/01/20 11:04:53 kre Exp $
 
 S=		${.CURDIR}/../../..
 
@@ -106,8 +106,7 @@ CPPFLAGS+= -DDEFAULT_TIMEOUT=5
 # Follow the suit of Makefile.kern.inc; needed for the lfs64 union
 # accessors -- they don't actually dereference the resulting pointer,
 # just use it for type-checking.
-CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member
-CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
+CWARNFLAGS+=		${CC_WNO_ADDRESS_OF_PACKED_MEMBER}
 
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_LONGLONG_SUPPORT
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_WIDTH_SUPPORT
@@ -128,11 +127,13 @@ KERN_AS= library
 LIBKERN_ARCH?= ${MACHINE_ARCH}
 KERNMISCMAKEFLAGS+="LIBKERN_ARCH=${LIBKERN_ARCH}"
 .include "${S}/lib/libkern/Makefile.inc"
+CPPFLAGS+= -I${S}/../common/include/libc
 LIBKERN= ${KERNLIB}
 
 ### find out what to use for libz
 Z_AS= library
 .include "${S}/lib/libz/Makefile.inc"
+CPPFLAGS+=	-I${S}/lib/libz -I${S}/../common/dist/zlib
 LIBZ= ${ZLIB}
 
 ### find out what to use for libgnuefi

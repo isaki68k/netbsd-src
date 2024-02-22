@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.175 2022/05/30 09:56:03 andvar Exp $	*/
+/*	$NetBSD: locore.s,v 1.183 2024/01/17 12:33:50 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -383,11 +383,7 @@ Lnodjmemc:
 	movl	%sp@+,%a3
 #endif
 
-#if PGSHIFT == 13
-	movl	#0xc000,%d0
-#else
-	movl	#0x8000,%d0
-#endif
+	movl	#MMU40_TCR_BITS,%d0
 	.long	0x4e7b0003		| movc %d0,%tc   ;Enable MMU
 	movl	#CACHE40_ON,%d0
 	movc	%d0,%cacr		| turn on both caches
@@ -403,19 +399,15 @@ Lenablepre040MMU:
 	.long	0xf0100c00		| movl %a0@,%tt1
 
 LnokillTT:
+#if defined(M68020) || defined(M68030)
 	lea	_C_LABEL(protorp),%a0
-	movl	#0x80000202,%a0@	| nolimit + share global + 4 byte PTEs
-	movl	%a1,%a0@(4)		| + segtable address
+	movl	%a1,%a0@(4)		| segtable address
 	pmove	%a0@,%srp		| load the supervisor root pointer
-	movl	#0x80000002,%a0@	| reinit upper half for CRP loads
 	pflusha
 	lea	_ASM_LABEL(longscratch),%a2
-#if PGSHIFT == 13
-	movl	#0x82d08b00,%a2@	| value to load %TC with
-#else
-	movl	#0x82c0aa00,%a2@	| value to load %TC with
-#endif
+	movl	#MMU51_TCR_BITS,%a2@	| value to load %TC with
 	pmove	%a2@,%tc		| load it
+#endif /* M68020 || M68030 */
 
 Lloaddone:
 
@@ -713,9 +705,6 @@ Lbrkpt3:
 	movl	%sp@,%sp		| ... and %sp
 	rte				| all done
 
-/* Use common m68k sigreturn */
-#include <m68k/m68k/sigreturn.s>
-
 /*
  * Interrupt handlers.
  *
@@ -895,21 +884,8 @@ ASENTRY_NOPROFILE(rei)
 	rte				| real return
 
 /*
- * Use common m68k sigcode.
- */
-#include <m68k/m68k/sigcode.s>
-#ifdef COMPAT_SUNOS
-#include <m68k/m68k/sunos_sigcode.s>
-#endif
-
-/*
  * Primitives
  */ 
-
-/*
- * Use common m68k support routines.
- */
-#include <m68k/m68k/support.s>
 
 /*
  * Use common m68k process/lwp switch and context save subroutines.
@@ -949,29 +925,6 @@ ENTRY(ecacheon)
 	rts
 
 ENTRY(ecacheoff)
-	rts
-
-/*
- * Load a new user segment table pointer.
- */
-ENTRY(loadustp)
-	movl	%sp@(4),%d0		| new USTP
-	moveq	#PGSHIFT,%d1
-	lsll	%d1,%d0			| convert to addr
-#if defined(M68040)
-	cmpl	#MMU_68040,_C_LABEL(mmutype) | 68040?
-	jne	LmotommuC		| no, skip
-	.word	0xf518			| pflusha
-	.long	0x4e7b0806		| movec %d0, URP
-	rts
-LmotommuC:
-#endif
-	pflusha				| flush entire TLB
-	lea	_C_LABEL(protorp),%a0	| CRP prototype
-	movl	%d0,%a0@(4)		| stash USTP
-	pmove	%a0@,%crp		| load root pointer
-	movl	#CACHE_CLR,%d0
-	movc	%d0,%cacr		| invalidate cache(s)
 	rts
 
 /*
@@ -1153,7 +1106,7 @@ ENTRY_NOPROFILE(get_pte)
 	subql	#4,%sp		| make temporary space
 
 	lea	_ASM_LABEL(longscratch),%a0
-	movl	#0x00ff8710,%a0@ | Set up FC 1 r/w access
+	movl	#MAC68K_TT_GET_PTE,%a0@ | See pmap.h
 	.long	0xf0100800	| pmove %a0@,%tt0
 
 	movl	%sp@(8),%a0	| logical address to look up
@@ -1387,9 +1340,6 @@ GLOBAL(ectype)
 
 GLOBAL(fputype)
 	.long	FPU_68882	| default to 68882 FPU
-
-GLOBAL(protorp)
-	.long	0,0		| prototype root pointer
 
 GLOBAL(intiolimit)
 	.long	0		| KVA of end of internal IO space

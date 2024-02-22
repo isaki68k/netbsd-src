@@ -1,4 +1,4 @@
-/*	$NetBSD: consinit.c,v 1.36 2023/03/24 12:28:42 bouyer Exp $	*/
+/*	$NetBSD: consinit.c,v 1.39 2024/02/09 22:08:33 andvar Exp $	*/
 
 /*
  * Copyright (c) 1998
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.36 2023/03/24 12:28:42 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.39 2024/02/09 22:08:33 andvar Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_puc.h"
@@ -100,6 +100,7 @@ __KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.36 2023/03/24 12:28:42 bouyer Exp $")
 #endif
 
 #ifdef XENPVHVM
+#include <xen/hypervisor.h>
 #include <xen/xen.h>
 #endif
 
@@ -164,7 +165,7 @@ consinit(void)
 {
 	const struct btinfo_console *consinfo;
 #if (NGENFB > 0)
-	const struct btinfo_framebuffer *fbinfo;
+	const struct btinfo_framebuffer *fbinfo = NULL;
 #endif
 	static int initted;
 #if (NCOM > 0)
@@ -175,7 +176,7 @@ consinit(void)
 	if (vm_guest == VM_GUEST_XENPVH) {
 		if (xen_pvh_consinit() != 0)
 			return;
-		/* fallback to native console selection, usefull for dom0 PVH */
+		/* fallback to native console selection, useful for dom0 PVH */
 	}
 #endif
 	if (initted)
@@ -189,7 +190,12 @@ consinit(void)
 		consinfo = &default_consinfo;
 
 #if (NGENFB > 0)
-	fbinfo = lookup_bootinfo(BTINFO_FRAMEBUFFER);
+#if defined(XENPVHVM) && defined(DOM0OPS)
+	if (vm_guest == VM_GUEST_XENPVH && xendomain_is_dom0())
+		fbinfo = xen_genfb_getbtinfo();
+	else
+#endif /* XENPVHVM */
+		fbinfo = lookup_bootinfo(BTINFO_FRAMEBUFFER);
 #endif
 
 	if (!strcmp(consinfo->devname, "pc")) {

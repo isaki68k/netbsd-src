@@ -1,4 +1,4 @@
-/* $NetBSD: udf_strat_direct.c,v 1.15 2022/01/15 10:55:53 msaitoh Exp $ */
+/* $NetBSD: udf_strat_direct.c,v 1.17 2024/02/10 09:21:53 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_strat_direct.c,v 1.15 2022/01/15 10:55:53 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_strat_direct.c,v 1.17 2024/02/10 09:21:53 andvar Exp $");
 #endif /* not lint */
 
 
@@ -116,7 +116,7 @@ udf_wr_nodedscr_callback(struct buf *buf)
 	if (udf_node->outstanding_nodedscr == 0) {
 		/* unlock the node */
 		UDF_UNLOCK_NODE(udf_node, 0);
-		wakeup(&udf_node->outstanding_nodedscr);
+		cv_broadcast(&udf_node->node_lock);
 	}
 
 	putiobuf(buf);
@@ -223,7 +223,7 @@ out:
 	udf_node->outstanding_nodedscr--;
 	if (udf_node->outstanding_nodedscr == 0) {
 		UDF_UNLOCK_NODE(udf_node, 0);
-		wakeup(&udf_node->outstanding_nodedscr);
+		cv_broadcast(&udf_node->node_lock);
 	}
 
 	return error;
@@ -267,7 +267,7 @@ udf_queue_buf_direct(struct udf_strat_args *args)
 			queue = UDF_SHED_WRITING;
 	}
 
-	/* use disc sheduler */
+	/* use disc scheduler */
 	class = ump->discinfo.mmc_class;
 	KASSERT((class == MMC_CLASS_UNKN) || (class == MMC_CLASS_DISC) ||
 		(ump->discinfo.mmc_cur & MMC_CAP_HW_DEFECTFREE) ||
@@ -381,7 +381,7 @@ udf_queue_buf_direct(struct udf_strat_args *args)
 		nestbuf->b_lblkno   = sector;
 		assert(nestbuf->b_vp == buf->b_vp);
 
-		/* CD shedules on raw blkno */
+		/* CD schedules on raw blkno */
 		nestbuf->b_blkno      = rblk;
 		nestbuf->b_proc       = NULL;
 		nestbuf->b_rawblkno   = rblk;

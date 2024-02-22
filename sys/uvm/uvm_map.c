@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.405 2023/03/24 07:26:21 skrll Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.411 2024/02/09 22:08:38 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.405 2023/03/24 07:26:21 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.411 2024/02/09 22:08:38 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -142,12 +142,6 @@ UVMMAP_EVCNT_DEFINE(mlk_tree)
 UVMMAP_EVCNT_DEFINE(mlk_treeloop)
 
 const char vmmapbsy[] = "vmmapbsy";
-
-/*
- * cache for vmspace structures.
- */
-
-static struct pool_cache uvm_vmspace_cache;
 
 /*
  * cache for dynamically-allocated map entries.
@@ -931,8 +925,6 @@ uvm_map_init_caches(void)
 	pool_cache_bootstrap(&uvm_map_entry_cache, sizeof(struct vm_map_entry),
 	    coherency_unit, 0, PR_LARGECACHE, "vmmpepl", NULL, IPL_NONE, NULL,
 	    NULL, NULL);
-	pool_cache_bootstrap(&uvm_vmspace_cache, sizeof(struct vmspace),
-	    0, 0, 0, "vmsppl", NULL, IPL_NONE, NULL, NULL, NULL);
 }
 
 /*
@@ -1792,7 +1784,12 @@ uvm_findspace_invariants(struct vm_map *map, vaddr_t orig_hint, vaddr_t length,
 	    map, hint, orig_hint,
 	    length, uobj, (unsigned long long)uoffset, align,
 	    flags, entry, line);
+#ifndef __sh3__ /* XXXRO: kern/51254 */
 	KASSERTMSG(!topdown || hint <= orig_hint,
+#else
+	if (__predict_false(!(!topdown || hint <= orig_hint)))
+		printf(
+#endif
 	    "map=%p hint=%#"PRIxVADDR" orig_hint=%#"PRIxVADDR
 	    " length=%#"PRIxVSIZE" uobj=%p uoffset=%#llx align=%"PRIxVSIZE
 	    " flags=%#x entry=%p (uvm_map_findspace line %d)",
@@ -2888,7 +2885,7 @@ uvm_map_extract(struct vm_map *srcmap, vaddr_t start, vsize_t len,
 		}
 	} else {
 		copy_ok = 0;
-		/* replace defered until step 7 */
+		/* replace deferred until step 7 */
 	}
 
 	/*
@@ -3887,8 +3884,7 @@ uvm_map_pageable_all(struct vm_map *map, int flags, vsize_t limit)
  * => never a need to flush amap layer since the anonymous memory has
  *	no permanent home, but may deactivate pages there
  * => called from sys_msync() and sys_madvise()
- * => caller must not write-lock map (read OK).
- * => we may sleep while cleaning if SYNCIO [with map read-locked]
+ * => caller must not have map locked
  */
 
 int
@@ -3910,10 +3906,10 @@ uvm_map_clean(struct vm_map *map, vaddr_t start, vaddr_t end, int flags)
 	KASSERT((flags & (PGO_FREE|PGO_DEACTIVATE)) !=
 		(PGO_FREE|PGO_DEACTIVATE));
 
-	vm_map_lock_read(map);
+	vm_map_lock(map);
 	VM_MAP_RANGE_CHECK(map, start, end);
-	if (uvm_map_lookup_entry(map, start, &entry) == false) {
-		vm_map_unlock_read(map);
+	if (!uvm_map_lookup_entry(map, start, &entry)) {
+		vm_map_unlock(map);
 		return EFAULT;
 	}
 
@@ -3923,22 +3919,24 @@ uvm_map_clean(struct vm_map *map, vaddr_t start, vaddr_t end, int flags)
 
 	for (current = entry; current->start < end; current = current->next) {
 		if (UVM_ET_ISSUBMAP(current)) {
-			vm_map_unlock_read(map);
+			vm_map_unlock(map);
 			return EINVAL;
 		}
 		if ((flags & PGO_FREE) != 0 && VM_MAPENT_ISWIRED(entry)) {
-			vm_map_unlock_read(map);
+			vm_map_unlock(map);
 			return EBUSY;
 		}
 		if (end <= current->end) {
 			break;
 		}
 		if (current->end != current->next->start) {
-			vm_map_unlock_read(map);
+			vm_map_unlock(map);
 			return EFAULT;
 		}
 	}
 
+	vm_map_busy(map);
+	vm_map_unlock(map);
 	error = 0;
 	for (current = entry; start < end; current = current->next) {
 		amap = current->aref.ar_amap;	/* upper layer */
@@ -4044,8 +4042,8 @@ uvm_map_clean(struct vm_map *map, vaddr_t start, vaddr_t end, int flags)
 		}
 		start += size;
 	}
-	vm_map_unlock_read(map);
-	return (error);
+	vm_map_unbusy(map);
+	return error;
 }
 
 
@@ -4106,7 +4104,7 @@ uvmspace_alloc(vaddr_t vmin, vaddr_t vmax, bool topdown)
 	struct vmspace *vm;
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 
-	vm = pool_cache_get(&uvm_vmspace_cache, PR_WAITOK);
+	vm = kmem_alloc(sizeof(*vm), KM_SLEEP);
 	uvmspace_init(vm, NULL, vmin, vmax, topdown);
 	UVMHIST_LOG(maphist,"<- done (vm=%#jx)", (uintptr_t)vm, 0, 0, 0);
 	return (vm);
@@ -4362,7 +4360,7 @@ uvmspace_free(struct vmspace *vm)
 	rw_destroy(&map->lock);
 	cv_destroy(&map->cv);
 	pmap_destroy(map->pmap);
-	pool_cache_put(&uvm_vmspace_cache, vm);
+	kmem_free(vm, sizeof(*vm));
 }
 
 static struct vm_map_entry *

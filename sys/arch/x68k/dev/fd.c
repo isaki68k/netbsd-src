@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.127 2022/05/26 14:27:43 tsutsui Exp $	*/
+/*	$NetBSD: fd.c,v 1.129 2024/01/07 07:58:33 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.127 2022/05/26 14:27:43 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.129 2024/01/07 07:58:33 isaki Exp $");
 
 #include "opt_ddb.h"
 #include "opt_m68k_arch.h"
@@ -1768,7 +1768,7 @@ fdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		*(int *)addr = fd->sc_opts;
 		return 0;
 
-	case FDIOCSETOPTS:        	/* set drive options */
+	case FDIOCSETOPTS:		/* set drive options */
 		DPRINTF(("FDIOCSETOPTS\n"));
 		fd->sc_opts = *(int *)addr;
 		return 0;
@@ -1835,7 +1835,7 @@ fdformat(dev_t dev, struct ne7_fd_formb *finfo, struct lwp *l)
 	bp->b_bcount = sizeof(struct fd_idfield_data) * finfo->fd_formb_nsecs;
 	bp->b_data = (void *)finfo;
 
-#ifdef FD_DEBUG
+#ifdef FDDEBUG
 	printf("fdformat: blkno %" PRIx64 " count %x\n",
 	    bp->b_blkno, bp->b_bcount);
 #endif
@@ -1882,7 +1882,7 @@ fdgetdisklabel(struct fd_softc *sc, dev_t dev)
 	lp->d_secperunit  = sc->sc_type->size;
 
 	lp->d_type        = DKTYPE_FLOPPY;
-	lp->d_rpm         = 300; 	/* XXX */
+	lp->d_rpm         = 300;	/* XXX */
 	lp->d_interleave  = 1;		/* FIXME: is this OK?		*/
 	lp->d_bbsize      = 0;
 	lp->d_sbsize      = 0;

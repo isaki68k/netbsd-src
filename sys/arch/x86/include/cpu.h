@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.133 2022/09/07 00:40:18 knakahara Exp $	*/
+/*	$NetBSD: cpu.h,v 1.136 2023/08/01 19:36:57 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -64,6 +64,10 @@
 #include <sys/cpu_data.h>
 #include <sys/evcnt.h>
 #include <sys/device_if.h> /* for device_t */
+
+#ifdef SVS
+#include <sys/mutex.h>
+#endif
 
 #ifdef XEN
 #include <xen/include/public/xen.h>
@@ -321,6 +325,8 @@ struct cpu_info {
 	struct evcnt	ci_xen_raw_systime_backwards_evcnt;
 	struct evcnt	ci_xen_systime_backwards_hardclock_evcnt;
 	struct evcnt	ci_xen_missed_hardclock_evcnt;
+	struct evcnt	ci_xen_timecounter_backwards_evcnt;
+	struct evcnt	ci_xen_timecounter_jump_evcnt;
 #endif	/* XEN */
 
 #if defined(GPROF) && defined(MULTIPROCESSOR)

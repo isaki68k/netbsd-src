@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.767 2022/12/08 08:14:28 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.798 2024/02/21 12:23:52 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.767 2022/12/08 08:14:28 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.798 2024/02/21 12:23:52 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_wm.h"
@@ -460,9 +460,9 @@ struct wm_rxqueue {
 	/* RX event counters */
 	WM_Q_EVCNT_DEFINE(rxq, intr);	/* Interrupts */
 	WM_Q_EVCNT_DEFINE(rxq, defer);	/* Rx deferred processing */
-
 	WM_Q_EVCNT_DEFINE(rxq, ipsum);	/* IP checksums checked */
 	WM_Q_EVCNT_DEFINE(rxq, tusum);	/* TCP/UDP cksums checked */
+	WM_Q_EVCNT_DEFINE(rxq, qdrop);	/* Rx queue drop packet */
 #endif
 };
 
@@ -537,7 +537,7 @@ struct wm_softc {
 #define	WM_MEDIATYPE_COPPER		0x02
 #define	WM_MEDIATYPE_SERDES		0x03 /* Internal SERDES */
 	int sc_funcid;			/* unit number of the chip (0 to 3) */
-	int sc_flags;			/* flags; see below */
+	u_int sc_flags;			/* flags; see below */
 	u_short sc_if_flags;		/* last if_flags */
 	int sc_ec_capenable;		/* last ec_capenable */
 	int sc_flowflags;		/* 802.3x flow control flags */
@@ -585,10 +585,10 @@ struct wm_softc {
 	struct evcnt sc_ev_linkintr;	/* Link interrupts */
 
 	/* >= WM_T_82542_2_1 */
-	struct evcnt sc_ev_tx_xoff;	/* Tx PAUSE(!0) frames */
+	struct evcnt sc_ev_rx_xon;	/* Rx PAUSE(0) frames */
 	struct evcnt sc_ev_tx_xon;	/* Tx PAUSE(0) frames */
 	struct evcnt sc_ev_rx_xoff;	/* Rx PAUSE(!0) frames */
-	struct evcnt sc_ev_rx_xon;	/* Rx PAUSE(0) frames */
+	struct evcnt sc_ev_tx_xoff;	/* Tx PAUSE(!0) frames */
 	struct evcnt sc_ev_rx_macctl;	/* Rx Unsupported */
 
 	struct evcnt sc_ev_crcerrs;	/* CRC Error */
@@ -596,15 +596,29 @@ struct wm_softc {
 	struct evcnt sc_ev_symerrc;	/* Symbol Error */
 	struct evcnt sc_ev_rxerrc;	/* Receive Error */
 	struct evcnt sc_ev_mpc;		/* Missed Packets */
-	struct evcnt sc_ev_colc;	/* Collision */
-	struct evcnt sc_ev_sec;		/* Sequence Error */
-	struct evcnt sc_ev_cexterr;	/* Carrier Extension Error */
-	struct evcnt sc_ev_rlec;	/* Receive Length Error */
 	struct evcnt sc_ev_scc;		/* Single Collision */
 	struct evcnt sc_ev_ecol;	/* Excessive Collision */
 	struct evcnt sc_ev_mcc;		/* Multiple Collision */
 	struct evcnt sc_ev_latecol;	/* Late Collision */
+	struct evcnt sc_ev_colc;	/* Collision */
+	struct evcnt sc_ev_cbtmpc;	/* Circuit Breaker Tx Mng. Packet */
 	struct evcnt sc_ev_dc;		/* Defer */
+	struct evcnt sc_ev_tncrs;	/* Tx-No CRS */
+	struct evcnt sc_ev_sec;		/* Sequence Error */
+
+	/* Old */
+	struct evcnt sc_ev_cexterr;	/* Carrier Extension Error */
+	/* New */
+	struct evcnt sc_ev_htdpmc;	/* Host Tx Discarded Pkts by MAC */
+
+	struct evcnt sc_ev_rlec;	/* Receive Length Error */
+	struct evcnt sc_ev_cbrdpc;	/* Circuit Breaker Rx Dropped Packet */
+	struct evcnt sc_ev_prc64;	/* Packets Rx (64 bytes) */
+	struct evcnt sc_ev_prc127;	/* Packets Rx (65-127 bytes) */
+	struct evcnt sc_ev_prc255;	/* Packets Rx (128-255 bytes) */
+	struct evcnt sc_ev_prc511;	/* Packets Rx (256-511 bytes) */
+	struct evcnt sc_ev_prc1023;	/* Packets Rx (512-1023 bytes) */
+	struct evcnt sc_ev_prc1522;	/* Packets Rx (1024-1522 bytes) */
 	struct evcnt sc_ev_gprc;	/* Good Packets Rx */
 	struct evcnt sc_ev_bprc;	/* Broadcast Packets Rx */
 	struct evcnt sc_ev_mprc;	/* Multicast Packets Rx */
@@ -616,44 +630,62 @@ struct wm_softc {
 	struct evcnt sc_ev_rfc;		/* Rx Fragment */
 	struct evcnt sc_ev_roc;		/* Rx Oversize */
 	struct evcnt sc_ev_rjc;		/* Rx Jabber */
+	struct evcnt sc_ev_mgtprc;	/* Management Packets RX */
+	struct evcnt sc_ev_mgtpdc;	/* Management Packets Dropped */
+	struct evcnt sc_ev_mgtptc;	/* Management Packets TX */
 	struct evcnt sc_ev_tor;		/* Total Octets Rx */
 	struct evcnt sc_ev_tot;		/* Total Octets Tx */
 	struct evcnt sc_ev_tpr;		/* Total Packets Rx */
 	struct evcnt sc_ev_tpt;		/* Total Packets Tx */
-	struct evcnt sc_ev_mptc;	/* Multicast Packets Tx */
-	struct evcnt sc_ev_bptc;	/* Broadcast Packets Tx Count */
-	struct evcnt sc_ev_prc64;	/* Packets Rx (64 bytes) */
-	struct evcnt sc_ev_prc127;	/* Packets Rx (65-127 bytes) */
-	struct evcnt sc_ev_prc255;	/* Packets Rx (128-255 bytes) */
-	struct evcnt sc_ev_prc511;	/* Packets Rx (255-511 bytes) */
-	struct evcnt sc_ev_prc1023;	/* Packets Rx (512-1023 bytes) */
-	struct evcnt sc_ev_prc1522;	/* Packets Rx (1024-1522 bytes) */
 	struct evcnt sc_ev_ptc64;	/* Packets Tx (64 bytes) */
 	struct evcnt sc_ev_ptc127;	/* Packets Tx (65-127 bytes) */
 	struct evcnt sc_ev_ptc255;	/* Packets Tx (128-255 bytes) */
 	struct evcnt sc_ev_ptc511;	/* Packets Tx (256-511 bytes) */
 	struct evcnt sc_ev_ptc1023;	/* Packets Tx (512-1023 bytes) */
 	struct evcnt sc_ev_ptc1522;	/* Packets Tx (1024-1522 Bytes) */
+	struct evcnt sc_ev_mptc;	/* Multicast Packets Tx */
+	struct evcnt sc_ev_bptc;	/* Broadcast Packets Tx */
+	struct evcnt sc_ev_tsctc;	/* TCP Segmentation Context Tx */
+
+	/* Old */
+	struct evcnt sc_ev_tsctfc;	/* TCP Segmentation Context Tx Fail */
+	/* New */
+	struct evcnt sc_ev_cbrmpc;	/* Circuit Breaker Rx Mng. Packet */
+
 	struct evcnt sc_ev_iac;		/* Interrupt Assertion */
+
+	/* Old */
 	struct evcnt sc_ev_icrxptc;	/* Intr. Cause Rx Pkt Timer Expire */
 	struct evcnt sc_ev_icrxatc;	/* Intr. Cause Rx Abs Timer Expire */
 	struct evcnt sc_ev_ictxptc;	/* Intr. Cause Tx Pkt Timer Expire */
-	struct evcnt sc_ev_ictxact;	/* Intr. Cause Tx Abs Timer Expire */
+	struct evcnt sc_ev_ictxatc;	/* Intr. Cause Tx Abs Timer Expire */
 	struct evcnt sc_ev_ictxqec;	/* Intr. Cause Tx Queue Empty */
 	struct evcnt sc_ev_ictxqmtc;	/* Intr. Cause Tx Queue Min Thresh */
-	struct evcnt sc_ev_icrxdmtc;	/* Intr. Cause Rx Desc Min Thresh */
+	/*
+	 * sc_ev_rxdmtc is shared with both "Intr. cause" and
+	 * non "Intr. cause" register.
+	 */
+	struct evcnt sc_ev_rxdmtc;	/* (Intr. Cause) Rx Desc Min Thresh */
 	struct evcnt sc_ev_icrxoc;	/* Intr. Cause Receiver Overrun */
-	struct evcnt sc_ev_tncrs;	/* Tx-No CRS */
-	struct evcnt sc_ev_tsctc;	/* TCP Segmentation Context Tx */
-	struct evcnt sc_ev_tsctfc;	/* TCP Segmentation Context Tx Fail */
-	struct evcnt sc_ev_mgtprc;	/* Management Packets RX */
-	struct evcnt sc_ev_mgtpdc;	/* Management Packets Dropped */
-	struct evcnt sc_ev_mgtptc;	/* Management Packets TX */
+	/* New */
+	struct evcnt sc_ev_rpthc;	/* Rx Packets To Host */
+	struct evcnt sc_ev_debug1;	/* Debug Counter 1 */
+	struct evcnt sc_ev_debug2;	/* Debug Counter 2 */
+	struct evcnt sc_ev_debug3;	/* Debug Counter 3 */
+	struct evcnt sc_ev_hgptc;	/* Host Good Packets TX */
+	struct evcnt sc_ev_debug4;	/* Debug Counter 4 */
+	struct evcnt sc_ev_htcbdpc;	/* Host Tx Circuit Breaker Drp. Pkts */
+	struct evcnt sc_ev_hgorc;	/* Host Good Octets Rx */
+	struct evcnt sc_ev_hgotc;	/* Host Good Octets Tx */
+	struct evcnt sc_ev_lenerrs;	/* Length Error */
+	struct evcnt sc_ev_tlpic;	/* EEE Tx LPI */
+	struct evcnt sc_ev_rlpic;	/* EEE Rx LPI */
 	struct evcnt sc_ev_b2ogprc;	/* BMC2OS pkts received by host */
 	struct evcnt sc_ev_o2bspc;	/* OS2BMC pkts transmitted by host */
 	struct evcnt sc_ev_b2ospc;	/* BMC2OS pkts sent by BMC */
 	struct evcnt sc_ev_o2bgptc;	/* OS2BMC pkts received by BMC */
-
+	struct evcnt sc_ev_scvpc;	/* SerDes/SGMII Code Violation Pkt. */
+	struct evcnt sc_ev_hrmpc;	/* Header Redirection Missed Packet */
 #endif /* WM_EVENT_COUNTERS */
 
 	struct sysctllog *sc_sysctllog;
@@ -677,6 +709,7 @@ struct wm_softc {
 	int sc_tbi_linkup;		/* TBI link status */
 	int sc_tbi_serdes_anegticks;	/* autonegotiation ticks */
 	int sc_tbi_serdes_ticks;	/* tbi ticks */
+	struct timeval sc_linkup_delay_time; /* delay LINK_STATE_UP */
 
 	int sc_mchash_type;		/* multicast filter offset */
 
@@ -725,26 +758,34 @@ do {									\
 #define	WM_EVCNT_INCR(ev)						\
 	atomic_store_relaxed(&((ev)->ev_count),				\
 	    atomic_load_relaxed(&(ev)->ev_count) + 1)
+#define	WM_EVCNT_STORE(ev, val)						\
+	atomic_store_relaxed(&((ev)->ev_count), (val))
 #define	WM_EVCNT_ADD(ev, val)						\
 	atomic_store_relaxed(&((ev)->ev_count),				\
 	    atomic_load_relaxed(&(ev)->ev_count) + (val))
 #else
 #define	WM_EVCNT_INCR(ev)						\
 	((ev)->ev_count)++
+#define	WM_EVCNT_STORE(ev, val)						\
+	((ev)->ev_count = (val))
 #define	WM_EVCNT_ADD(ev, val)						\
 	(ev)->ev_count += (val)
 #endif
 
 #define WM_Q_EVCNT_INCR(qname, evname)			\
 	WM_EVCNT_INCR(&(qname)->qname##_ev_##evname)
+#define WM_Q_EVCNT_STORE(qname, evname, val)		\
+	WM_EVCNT_STORE(&(qname)->qname##_ev_##evname, (val))
 #define WM_Q_EVCNT_ADD(qname, evname, val)		\
 	WM_EVCNT_ADD(&(qname)->qname##_ev_##evname, (val))
 #else /* !WM_EVENT_COUNTERS */
-#define	WM_EVCNT_INCR(ev)	/* nothing */
-#define	WM_EVCNT_ADD(ev, val)	/* nothing */
+#define	WM_EVCNT_INCR(ev)	__nothing
+#define	WM_EVCNT_STORE(ev, val)	__nothing
+#define	WM_EVCNT_ADD(ev, val)	__nothing
 
-#define WM_Q_EVCNT_INCR(qname, evname)		/* nothing */
-#define WM_Q_EVCNT_ADD(qname, evname, val)	/* nothing */
+#define WM_Q_EVCNT_INCR(qname, evname)		__nothing
+#define WM_Q_EVCNT_STORE(qname, evname, val)	__nothing
+#define WM_Q_EVCNT_ADD(qname, evname, val)	__nothing
 #endif /* !WM_EVENT_COUNTERS */
 
 #define	CSR_READ(sc, reg)						\
@@ -852,6 +893,8 @@ static int	wm_setup_msix(struct wm_softc *);
 static int	wm_init(struct ifnet *);
 static int	wm_init_locked(struct ifnet *);
 static void	wm_init_sysctls(struct wm_softc *);
+static void	wm_update_stats(struct wm_softc *);
+static void	wm_clear_evcnt(struct wm_softc *);
 static void	wm_unset_stopping_flags(struct wm_softc *);
 static void	wm_set_stopping_flags(struct wm_softc *);
 static void	wm_stop(struct ifnet *, int);
@@ -1690,25 +1733,37 @@ static const struct wm_product {
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM13,
 	  "I219 LM (13) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM14,
 	  "I219 LM (14) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM15,
 	  "I219 LM (15) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM16,
 	  "I219 LM (16) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM17,
 	  "I219 LM (17) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM18,
 	  "I219 LM (18) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM19,
 	  "I219 LM (19) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM20,
+	  "I219 LM (20) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM21,
+	  "I219 LM (21) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM22,
+	  "I219 LM (22) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP(RPL) */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM23,
+	  "I219 LM (23) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP(RPL) */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
@@ -1744,25 +1799,37 @@ static const struct wm_product {
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V13,
 	  "I219 V (13) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V14,
 	  "I219 V (14) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V15,
 	  "I219 V (15) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V16,
 	  "I219 V (16) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V17,
 	  "I219 V (17) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V18,
 	  "I219 V (18) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V19,
 	  "I219 V (19) Ethernet Connection",
-	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V20,
+	  "I219 V (20) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V21,
+	  "I219 V (21) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* MTP */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V22,
+	  "I219 V (22) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP(RPL) */
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V23,
+	  "I219 V (23) Ethernet Connection",
+	  WM_T_PCH_TGP,		WMP_F_COPPER }, /* ADP(RPL) */
 	{ 0,			0,
 	  NULL,
 	  0,			0 },
@@ -2268,7 +2335,8 @@ alloc_retry:
 		    && (sc->sc_type != WM_T_PCH2)
 		    && (sc->sc_type != WM_T_PCH_LPT)
 		    && (sc->sc_type != WM_T_PCH_SPT)
-		    && (sc->sc_type != WM_T_PCH_CNP)) {
+		    && (sc->sc_type != WM_T_PCH_CNP)
+		    && (sc->sc_type != WM_T_PCH_TGP)) {
 			/* ICH* and PCH* have no PCIe capability registers */
 			if (pci_get_capability(pa->pa_pc, pa->pa_tag,
 				PCI_CAP_PCIEXPRESS, &sc->sc_pcixe_capoff,
@@ -2513,6 +2581,7 @@ alloc_retry:
 		break;
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		sc->nvm.read = wm_nvm_read_spt;
 		/* SPT has no GFPREG; flash registers mapped through BAR0 */
 		sc->sc_flags |= WM_F_EEPROM_FLASH;
@@ -2640,6 +2709,7 @@ alloc_retry:
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		apme_mask = WUC_APME;
 		eeprom_data = CSR_READ(sc, WMREG_WUC);
 		if ((eeprom_data & apme_mask) != 0)
@@ -2651,6 +2721,10 @@ alloc_retry:
 
 	/* Reset the chip to a known state. */
 	wm_reset(sc);
+
+	/* sc->sc_pba is set in wm_reset(). */
+	aprint_verbose_dev(sc->sc_dev, "RX packet buffer size: %uKB\n",
+	    sc->sc_pba);
 
 	/*
 	 * Check for I21[01] PLL workaround.
@@ -2774,6 +2848,7 @@ alloc_retry:
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		/* Already checked before wm_reset () */
 		apme_mask = eeprom_data = 0;
 		break;
@@ -2934,6 +3009,7 @@ alloc_retry:
 	    || sc->sc_type == WM_T_ICH10 || sc->sc_type == WM_T_PCH
 	    || sc->sc_type == WM_T_PCH2 || sc->sc_type == WM_T_PCH_LPT
 	    || sc->sc_type == WM_T_PCH_SPT || sc->sc_type == WM_T_PCH_CNP
+	    || sc->sc_type == WM_T_PCH_TGP
 	    || sc->sc_type == WM_T_82573
 	    || sc->sc_type == WM_T_82574 || sc->sc_type == WM_T_82583) {
 		/* Copper only */
@@ -3042,6 +3118,23 @@ alloc_retry:
 	    || (sc->sc_type == WM_T_I210) || (sc->sc_type == WM_T_I211))
 		sc->sc_flags |= WM_F_CRC_STRIP;
 
+	/*
+	 * Workaround for some chips to delay sending LINK_STATE_UP.
+	 * Some systems can't send packet soon after linkup. See also
+	 * wm_linkintr_gmii(), wm_tick() and wm_gmii_mediastatus().
+	 */
+	switch (sc->sc_type) {
+	case WM_T_I350:
+	case WM_T_I354:
+	case WM_T_I210:
+	case WM_T_I211:
+		if (sc->sc_mediatype == WM_MEDIATYPE_COPPER)
+			sc->sc_flags |= WM_F_DELAY_LINKUP;
+		break;
+	default:
+		break;
+	}
+
 	/* Set device properties (macflags) */
 	prop_dictionary_set_uint32(dict, "macflags", sc->sc_flags);
 
@@ -3118,6 +3211,7 @@ alloc_retry:
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		/* XXX limited to 9234 */
 		sc->sc_ethercom.ec_capabilities |= ETHERCAP_JUMBO_MTU;
 		break;
@@ -3199,33 +3293,10 @@ alloc_retry:
 	evcnt_attach_dynamic(&sc->sc_ev_linkintr, EVCNT_TYPE_INTR,
 	    NULL, xname, "linkintr");
 
-	if (sc->sc_type >= WM_T_82542_2_1) {
-		evcnt_attach_dynamic(&sc->sc_ev_tx_xoff, EVCNT_TYPE_MISC,
-		    NULL, xname, "tx_xoff");
-		evcnt_attach_dynamic(&sc->sc_ev_tx_xon, EVCNT_TYPE_MISC,
-		    NULL, xname, "tx_xon");
-		evcnt_attach_dynamic(&sc->sc_ev_rx_xoff, EVCNT_TYPE_MISC,
-		    NULL, xname, "rx_xoff");
-		evcnt_attach_dynamic(&sc->sc_ev_rx_xon, EVCNT_TYPE_MISC,
-		    NULL, xname, "rx_xon");
-		evcnt_attach_dynamic(&sc->sc_ev_rx_macctl, EVCNT_TYPE_MISC,
-		    NULL, xname, "rx_macctl");
-	}
-
 	evcnt_attach_dynamic(&sc->sc_ev_crcerrs, EVCNT_TYPE_MISC,
 	    NULL, xname, "CRC Error");
 	evcnt_attach_dynamic(&sc->sc_ev_symerrc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Symbol Error");
-
-	if (sc->sc_type >= WM_T_82543) {
-		evcnt_attach_dynamic(&sc->sc_ev_algnerrc, EVCNT_TYPE_MISC,
-		    NULL, xname, "Alignment Error");
-		evcnt_attach_dynamic(&sc->sc_ev_rxerrc, EVCNT_TYPE_MISC,
-		    NULL, xname, "Receive Error");
-		evcnt_attach_dynamic(&sc->sc_ev_cexterr, EVCNT_TYPE_MISC,
-		    NULL, xname, "Carrier Extension Error");
-	}
-
 	evcnt_attach_dynamic(&sc->sc_ev_mpc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Missed Packets");
 	evcnt_attach_dynamic(&sc->sc_ev_colc, EVCNT_TYPE_MISC,
@@ -3234,6 +3305,54 @@ alloc_retry:
 	    NULL, xname, "Sequence Error");
 	evcnt_attach_dynamic(&sc->sc_ev_rlec, EVCNT_TYPE_MISC,
 	    NULL, xname, "Receive Length Error");
+
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_attach_dynamic(&sc->sc_ev_algnerrc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Alignment Error");
+		evcnt_attach_dynamic(&sc->sc_ev_rxerrc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Receive Error");
+		/* XXX Does 82575 have HTDPMC? */
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			evcnt_attach_dynamic(&sc->sc_ev_cexterr,
+			    EVCNT_TYPE_MISC, NULL, xname,
+			    "Carrier Extension Error");
+		else
+			evcnt_attach_dynamic(&sc->sc_ev_htdpmc,
+			    EVCNT_TYPE_MISC, NULL, xname,
+			    "Host Transmit Discarded Packets by MAC");
+
+		evcnt_attach_dynamic(&sc->sc_ev_tncrs, EVCNT_TYPE_MISC,
+		    NULL, xname, "Tx with No CRS");
+		evcnt_attach_dynamic(&sc->sc_ev_tsctc, EVCNT_TYPE_MISC,
+		    NULL, xname, "TCP Segmentation Context Tx");
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			evcnt_attach_dynamic(&sc->sc_ev_tsctfc,
+			    EVCNT_TYPE_MISC, NULL, xname,
+			    "TCP Segmentation Context Tx Fail");
+		else {
+			/* XXX Is the circuit breaker only for 82576? */
+			evcnt_attach_dynamic(&sc->sc_ev_cbrdpc,
+			    EVCNT_TYPE_MISC, NULL, xname,
+			    "Circuit Breaker Rx Dropped Packet");
+			evcnt_attach_dynamic(&sc->sc_ev_cbrmpc,
+			    EVCNT_TYPE_MISC, NULL, xname,
+			    "Circuit Breaker Rx Manageability Packet");
+		}
+	}
+
+	if (sc->sc_type >= WM_T_82542_2_1) {
+		evcnt_attach_dynamic(&sc->sc_ev_tx_xoff, EVCNT_TYPE_MISC,
+		    NULL, xname, "XOFF Transmitted");
+		evcnt_attach_dynamic(&sc->sc_ev_tx_xon, EVCNT_TYPE_MISC,
+		    NULL, xname, "XON Transmitted");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_xoff, EVCNT_TYPE_MISC,
+		    NULL, xname, "XOFF Received");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_xon, EVCNT_TYPE_MISC,
+		    NULL, xname, "XON Received");
+		evcnt_attach_dynamic(&sc->sc_ev_rx_macctl, EVCNT_TYPE_MISC,
+		    NULL, xname, "FC Received Unsupported");
+	}
+
 	evcnt_attach_dynamic(&sc->sc_ev_scc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Single Collision");
 	evcnt_attach_dynamic(&sc->sc_ev_ecol, EVCNT_TYPE_MISC,
@@ -3242,8 +3361,25 @@ alloc_retry:
 	    NULL, xname, "Multiple Collision");
 	evcnt_attach_dynamic(&sc->sc_ev_latecol, EVCNT_TYPE_MISC,
 	    NULL, xname, "Late Collisions");
+
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc))
+		evcnt_attach_dynamic(&sc->sc_ev_cbtmpc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Circuit Breaker Tx Manageability Packet");
+
 	evcnt_attach_dynamic(&sc->sc_ev_dc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Defer");
+	evcnt_attach_dynamic(&sc->sc_ev_prc64, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (64 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc127, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (65-127 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc255, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (128-255 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc511, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (256-511 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc1023, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (512-1023 bytes)");
+	evcnt_attach_dynamic(&sc->sc_ev_prc1522, EVCNT_TYPE_MISC,
+	    NULL, xname, "Packets Rx (1024-1522 bytes)");
 	evcnt_attach_dynamic(&sc->sc_ev_gprc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Good Packets Rx");
 	evcnt_attach_dynamic(&sc->sc_ev_bprc, EVCNT_TYPE_MISC,
@@ -3259,13 +3395,21 @@ alloc_retry:
 	evcnt_attach_dynamic(&sc->sc_ev_rnbc, EVCNT_TYPE_MISC,
 	    NULL, xname, "Rx No Buffers");
 	evcnt_attach_dynamic(&sc->sc_ev_ruc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Rx Undersize");
+	    NULL, xname, "Rx Undersize (valid CRC)");
 	evcnt_attach_dynamic(&sc->sc_ev_rfc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Rx Fragment");
+	    NULL, xname, "Rx Fragment (bad CRC)");
 	evcnt_attach_dynamic(&sc->sc_ev_roc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Rx Oversize");
+	    NULL, xname, "Rx Oversize (valid CRC)");
 	evcnt_attach_dynamic(&sc->sc_ev_rjc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Rx Jabber");
+	    NULL, xname, "Rx Jabber (bad CRC)");
+	if (sc->sc_type >= WM_T_82540) {
+		evcnt_attach_dynamic(&sc->sc_ev_mgtprc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets RX");
+		evcnt_attach_dynamic(&sc->sc_ev_mgtpdc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets Dropped");
+		evcnt_attach_dynamic(&sc->sc_ev_mgtptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Management Packets TX");
+	}
 	evcnt_attach_dynamic(&sc->sc_ev_tor, EVCNT_TYPE_MISC,
 	    NULL, xname, "Total Octets Rx");
 	evcnt_attach_dynamic(&sc->sc_ev_tot, EVCNT_TYPE_MISC,
@@ -3274,22 +3418,6 @@ alloc_retry:
 	    NULL, xname, "Total Packets Rx");
 	evcnt_attach_dynamic(&sc->sc_ev_tpt, EVCNT_TYPE_MISC,
 	    NULL, xname, "Total Packets Tx");
-	evcnt_attach_dynamic(&sc->sc_ev_mptc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Multicast Packets Tx");
-	evcnt_attach_dynamic(&sc->sc_ev_bptc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Broadcast Packets Tx Count");
-	evcnt_attach_dynamic(&sc->sc_ev_prc64, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (64 bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_prc127, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (65-127 bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_prc255, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (128-255 bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_prc511, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (255-511 bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_prc1023, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (512-1023 bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_prc1522, EVCNT_TYPE_MISC,
-	    NULL, xname, "Packets Rx (1024-1522 bytes)");
 	evcnt_attach_dynamic(&sc->sc_ev_ptc64, EVCNT_TYPE_MISC,
 	    NULL, xname, "Packets Tx (64 bytes)");
 	evcnt_attach_dynamic(&sc->sc_ev_ptc127, EVCNT_TYPE_MISC,
@@ -3302,41 +3430,82 @@ alloc_retry:
 	    NULL, xname, "Packets Tx (512-1023 bytes)");
 	evcnt_attach_dynamic(&sc->sc_ev_ptc1522, EVCNT_TYPE_MISC,
 	    NULL, xname, "Packets Tx (1024-1522 Bytes)");
-	evcnt_attach_dynamic(&sc->sc_ev_iac, EVCNT_TYPE_MISC,
-	    NULL, xname, "Interrupt Assertion");
-	evcnt_attach_dynamic(&sc->sc_ev_icrxptc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Rx Pkt Timer Expire");
-	evcnt_attach_dynamic(&sc->sc_ev_icrxatc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Rx Abs Timer Expire");
-	evcnt_attach_dynamic(&sc->sc_ev_ictxptc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Tx Pkt Timer Expire");
-	evcnt_attach_dynamic(&sc->sc_ev_ictxact, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Tx Abs Timer Expire");
-	evcnt_attach_dynamic(&sc->sc_ev_ictxqec, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Tx Queue Empty");
-	evcnt_attach_dynamic(&sc->sc_ev_ictxqmtc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Tx Queue Min Thresh");
-	evcnt_attach_dynamic(&sc->sc_ev_icrxdmtc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Intr. Cause Rx Desc Min Thresh");
-	evcnt_attach_dynamic(&sc->sc_ev_icrxoc, EVCNT_TYPE_MISC,
-	    NULL, xname, "Interrupt Cause Receiver Overrun");
-	if (sc->sc_type >= WM_T_82543) {
-		evcnt_attach_dynamic(&sc->sc_ev_tncrs, EVCNT_TYPE_MISC,
-		    NULL, xname, "Tx with No CRS");
-		evcnt_attach_dynamic(&sc->sc_ev_tsctc, EVCNT_TYPE_MISC,
-		    NULL, xname, "TCP Segmentation Context Tx");
-		evcnt_attach_dynamic(&sc->sc_ev_tsctfc, EVCNT_TYPE_MISC,
-		    NULL, xname, "TCP Segmentation Context Tx Fail");
+	evcnt_attach_dynamic(&sc->sc_ev_mptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Multicast Packets Tx");
+	evcnt_attach_dynamic(&sc->sc_ev_bptc, EVCNT_TYPE_MISC,
+	    NULL, xname, "Broadcast Packets Tx");
+	if (sc->sc_type >= WM_T_82571) /* PCIe, 80003 and ICH/PCHs */
+		evcnt_attach_dynamic(&sc->sc_ev_iac, EVCNT_TYPE_MISC,
+		    NULL, xname, "Interrupt Assertion");
+	if (sc->sc_type < WM_T_82575) {
+		evcnt_attach_dynamic(&sc->sc_ev_icrxptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Rx Pkt Timer Expire");
+		evcnt_attach_dynamic(&sc->sc_ev_icrxatc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Rx Abs Timer Expire");
+		evcnt_attach_dynamic(&sc->sc_ev_ictxptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Tx Pkt Timer Expire");
+		evcnt_attach_dynamic(&sc->sc_ev_ictxatc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Tx Abs Timer Expire");
+		evcnt_attach_dynamic(&sc->sc_ev_ictxqec, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Tx Queue Empty");
+		evcnt_attach_dynamic(&sc->sc_ev_ictxqmtc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Tx Queue Min Thresh");
+		evcnt_attach_dynamic(&sc->sc_ev_rxdmtc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Intr. Cause Rx Desc Min Thresh");
+
+		/* XXX 82575 document says it has ICRXOC. Is that right? */
+		evcnt_attach_dynamic(&sc->sc_ev_icrxoc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Interrupt Cause Receiver Overrun");
+	} else if (!WM_IS_ICHPCH(sc)) {
+		/*
+		 * For 82575 and newer.
+		 *
+		 * On 80003, ICHs and PCHs, it seems all of the following
+		 * registers are zero.
+		 */
+		evcnt_attach_dynamic(&sc->sc_ev_rpthc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Rx Packets To Host");
+		evcnt_attach_dynamic(&sc->sc_ev_debug1, EVCNT_TYPE_MISC,
+		    NULL, xname, "Debug Counter 1");
+		evcnt_attach_dynamic(&sc->sc_ev_debug2, EVCNT_TYPE_MISC,
+		    NULL, xname, "Debug Counter 2");
+		evcnt_attach_dynamic(&sc->sc_ev_debug3, EVCNT_TYPE_MISC,
+		    NULL, xname, "Debug Counter 3");
+
+		/*
+		 * 82575 datasheet says 0x4118 is for TXQEC(Tx Queue Empty).
+		 * I think it's wrong. The real count I observed is the same
+		 * as GPTC(Good Packets Tx) and TPT(Total Packets Tx).
+		 * It's HGPTC(Host Good Packets Tx) which is described in
+		 * 82576's datasheet.
+		 */
+		evcnt_attach_dynamic(&sc->sc_ev_hgptc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Host Good Packets TX");
+
+		evcnt_attach_dynamic(&sc->sc_ev_debug4, EVCNT_TYPE_MISC,
+		    NULL, xname, "Debug Counter 4");
+		evcnt_attach_dynamic(&sc->sc_ev_rxdmtc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Rx Desc Min Thresh");
+		/* XXX Is the circuit breaker only for 82576? */
+		evcnt_attach_dynamic(&sc->sc_ev_htcbdpc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Host Tx Circuit Breaker Dropped Packets");
+
+		evcnt_attach_dynamic(&sc->sc_ev_hgorc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Host Good Octets Rx");
+		evcnt_attach_dynamic(&sc->sc_ev_hgotc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Host Good Octets Tx");
+		evcnt_attach_dynamic(&sc->sc_ev_lenerrs, EVCNT_TYPE_MISC,
+		    NULL, xname, "Length Errors (length/type <= 1500)");
+		evcnt_attach_dynamic(&sc->sc_ev_scvpc, EVCNT_TYPE_MISC,
+		    NULL, xname, "SerDes/SGMII Code Violation Packet");
+		evcnt_attach_dynamic(&sc->sc_ev_hrmpc, EVCNT_TYPE_MISC,
+		    NULL, xname, "Header Redirection Missed Packet");
 	}
-	if (sc->sc_type >= WM_T_82540) {
-		evcnt_attach_dynamic(&sc->sc_ev_mgtprc, EVCNT_TYPE_MISC,
-		    NULL, xname, "Management Packets RX");
-		evcnt_attach_dynamic(&sc->sc_ev_mgtpdc, EVCNT_TYPE_MISC,
-		    NULL, xname, "Management Packets Dropped");
-		evcnt_attach_dynamic(&sc->sc_ev_mgtptc, EVCNT_TYPE_MISC,
-		    NULL, xname, "Management Packets TX");
-	}
-	if ((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003)) {
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc)) {
+		evcnt_attach_dynamic(&sc->sc_ev_tlpic, EVCNT_TYPE_MISC,
+		    NULL, xname, "EEE Tx LPI");
+		evcnt_attach_dynamic(&sc->sc_ev_rlpic, EVCNT_TYPE_MISC,
+		    NULL, xname, "EEE Rx LPI");
 		evcnt_attach_dynamic(&sc->sc_ev_b2ogprc, EVCNT_TYPE_MISC,
 		    NULL, xname, "BMC2OS Packets received by host");
 		evcnt_attach_dynamic(&sc->sc_ev_o2bspc, EVCNT_TYPE_MISC,
@@ -3393,6 +3562,31 @@ wm_detach(device_t self, int flags __unused)
 #ifdef WM_EVENT_COUNTERS
 	evcnt_detach(&sc->sc_ev_linkintr);
 
+	evcnt_detach(&sc->sc_ev_crcerrs);
+	evcnt_detach(&sc->sc_ev_symerrc);
+	evcnt_detach(&sc->sc_ev_mpc);
+	evcnt_detach(&sc->sc_ev_colc);
+	evcnt_detach(&sc->sc_ev_sec);
+	evcnt_detach(&sc->sc_ev_rlec);
+
+	if (sc->sc_type >= WM_T_82543) {
+		evcnt_detach(&sc->sc_ev_algnerrc);
+		evcnt_detach(&sc->sc_ev_rxerrc);
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			evcnt_detach(&sc->sc_ev_cexterr);
+		else
+			evcnt_detach(&sc->sc_ev_htdpmc);
+
+		evcnt_detach(&sc->sc_ev_tncrs);
+		evcnt_detach(&sc->sc_ev_tsctc);
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			evcnt_detach(&sc->sc_ev_tsctfc);
+		else {
+			evcnt_detach(&sc->sc_ev_cbrdpc);
+			evcnt_detach(&sc->sc_ev_cbrmpc);
+		}
+	}
+
 	if (sc->sc_type >= WM_T_82542_2_1) {
 		evcnt_detach(&sc->sc_ev_tx_xoff);
 		evcnt_detach(&sc->sc_ev_tx_xon);
@@ -3401,23 +3595,21 @@ wm_detach(device_t self, int flags __unused)
 		evcnt_detach(&sc->sc_ev_rx_macctl);
 	}
 
-	evcnt_detach(&sc->sc_ev_crcerrs);
-	evcnt_detach(&sc->sc_ev_symerrc);
-
-	if (sc->sc_type >= WM_T_82543) {
-		evcnt_detach(&sc->sc_ev_algnerrc);
-		evcnt_detach(&sc->sc_ev_rxerrc);
-		evcnt_detach(&sc->sc_ev_cexterr);
-	}
-	evcnt_detach(&sc->sc_ev_mpc);
-	evcnt_detach(&sc->sc_ev_colc);
-	evcnt_detach(&sc->sc_ev_sec);
-	evcnt_detach(&sc->sc_ev_rlec);
 	evcnt_detach(&sc->sc_ev_scc);
 	evcnt_detach(&sc->sc_ev_ecol);
 	evcnt_detach(&sc->sc_ev_mcc);
 	evcnt_detach(&sc->sc_ev_latecol);
+
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc))
+		evcnt_detach(&sc->sc_ev_cbtmpc);
+
 	evcnt_detach(&sc->sc_ev_dc);
+	evcnt_detach(&sc->sc_ev_prc64);
+	evcnt_detach(&sc->sc_ev_prc127);
+	evcnt_detach(&sc->sc_ev_prc255);
+	evcnt_detach(&sc->sc_ev_prc511);
+	evcnt_detach(&sc->sc_ev_prc1023);
+	evcnt_detach(&sc->sc_ev_prc1522);
 	evcnt_detach(&sc->sc_ev_gprc);
 	evcnt_detach(&sc->sc_ev_bprc);
 	evcnt_detach(&sc->sc_ev_mprc);
@@ -3429,44 +3621,53 @@ wm_detach(device_t self, int flags __unused)
 	evcnt_detach(&sc->sc_ev_rfc);
 	evcnt_detach(&sc->sc_ev_roc);
 	evcnt_detach(&sc->sc_ev_rjc);
+	if (sc->sc_type >= WM_T_82540) {
+		evcnt_detach(&sc->sc_ev_mgtprc);
+		evcnt_detach(&sc->sc_ev_mgtpdc);
+		evcnt_detach(&sc->sc_ev_mgtptc);
+	}
 	evcnt_detach(&sc->sc_ev_tor);
 	evcnt_detach(&sc->sc_ev_tot);
 	evcnt_detach(&sc->sc_ev_tpr);
 	evcnt_detach(&sc->sc_ev_tpt);
-	evcnt_detach(&sc->sc_ev_mptc);
-	evcnt_detach(&sc->sc_ev_bptc);
-	evcnt_detach(&sc->sc_ev_prc64);
-	evcnt_detach(&sc->sc_ev_prc127);
-	evcnt_detach(&sc->sc_ev_prc255);
-	evcnt_detach(&sc->sc_ev_prc511);
-	evcnt_detach(&sc->sc_ev_prc1023);
-	evcnt_detach(&sc->sc_ev_prc1522);
 	evcnt_detach(&sc->sc_ev_ptc64);
 	evcnt_detach(&sc->sc_ev_ptc127);
 	evcnt_detach(&sc->sc_ev_ptc255);
 	evcnt_detach(&sc->sc_ev_ptc511);
 	evcnt_detach(&sc->sc_ev_ptc1023);
 	evcnt_detach(&sc->sc_ev_ptc1522);
-	evcnt_detach(&sc->sc_ev_iac);
-	evcnt_detach(&sc->sc_ev_icrxptc);
-	evcnt_detach(&sc->sc_ev_icrxatc);
-	evcnt_detach(&sc->sc_ev_ictxptc);
-	evcnt_detach(&sc->sc_ev_ictxact);
-	evcnt_detach(&sc->sc_ev_ictxqec);
-	evcnt_detach(&sc->sc_ev_ictxqmtc);
-	evcnt_detach(&sc->sc_ev_icrxdmtc);
-	evcnt_detach(&sc->sc_ev_icrxoc);
-	if (sc->sc_type >= WM_T_82543) {
-		evcnt_detach(&sc->sc_ev_tncrs);
-		evcnt_detach(&sc->sc_ev_tsctc);
-		evcnt_detach(&sc->sc_ev_tsctfc);
+	evcnt_detach(&sc->sc_ev_mptc);
+	evcnt_detach(&sc->sc_ev_bptc);
+	if (sc->sc_type >= WM_T_82571)
+		evcnt_detach(&sc->sc_ev_iac);
+	if (sc->sc_type < WM_T_82575) {
+		evcnt_detach(&sc->sc_ev_icrxptc);
+		evcnt_detach(&sc->sc_ev_icrxatc);
+		evcnt_detach(&sc->sc_ev_ictxptc);
+		evcnt_detach(&sc->sc_ev_ictxatc);
+		evcnt_detach(&sc->sc_ev_ictxqec);
+		evcnt_detach(&sc->sc_ev_ictxqmtc);
+		evcnt_detach(&sc->sc_ev_rxdmtc);
+		evcnt_detach(&sc->sc_ev_icrxoc);
+	} else if (!WM_IS_ICHPCH(sc)) {
+		evcnt_detach(&sc->sc_ev_rpthc);
+		evcnt_detach(&sc->sc_ev_debug1);
+		evcnt_detach(&sc->sc_ev_debug2);
+		evcnt_detach(&sc->sc_ev_debug3);
+		evcnt_detach(&sc->sc_ev_hgptc);
+		evcnt_detach(&sc->sc_ev_debug4);
+		evcnt_detach(&sc->sc_ev_rxdmtc);
+		evcnt_detach(&sc->sc_ev_htcbdpc);
+
+		evcnt_detach(&sc->sc_ev_hgorc);
+		evcnt_detach(&sc->sc_ev_hgotc);
+		evcnt_detach(&sc->sc_ev_lenerrs);
+		evcnt_detach(&sc->sc_ev_scvpc);
+		evcnt_detach(&sc->sc_ev_hrmpc);
 	}
-	if (sc->sc_type >= WM_T_82540) {
-		evcnt_detach(&sc->sc_ev_mgtprc);
-		evcnt_detach(&sc->sc_ev_mgtpdc);
-		evcnt_detach(&sc->sc_ev_mgtptc);
-	}
-	if ((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003)) {
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc)) {
+		evcnt_detach(&sc->sc_ev_tlpic);
+		evcnt_detach(&sc->sc_ev_rlpic);
 		evcnt_detach(&sc->sc_ev_b2ogprc);
 		evcnt_detach(&sc->sc_ev_o2bspc);
 		evcnt_detach(&sc->sc_ev_b2ospc);
@@ -3744,8 +3945,6 @@ wm_tick(void *arg)
 {
 	struct wm_softc *sc = arg;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
-	uint64_t crcerrs, algnerrc, symerrc, mpc, colc,  sec, rlec, rxerrc,
-	    cexterr;
 
 	mutex_enter(sc->sc_core_lock);
 
@@ -3754,124 +3953,31 @@ wm_tick(void *arg)
 		return;
 	}
 
-	crcerrs = CSR_READ(sc, WMREG_CRCERRS);
-	symerrc = CSR_READ(sc, WMREG_SYMERRC);
-	mpc = CSR_READ(sc, WMREG_MPC);
-	colc = CSR_READ(sc, WMREG_COLC);
-	sec = CSR_READ(sc, WMREG_SEC);
-	rlec = CSR_READ(sc, WMREG_RLEC);
+	wm_update_stats(sc);
 
-	WM_EVCNT_ADD(&sc->sc_ev_crcerrs, crcerrs);
-	WM_EVCNT_ADD(&sc->sc_ev_symerrc, symerrc);
-	WM_EVCNT_ADD(&sc->sc_ev_mpc, mpc);
-	WM_EVCNT_ADD(&sc->sc_ev_colc, colc);
-	WM_EVCNT_ADD(&sc->sc_ev_sec, sec);
-	WM_EVCNT_ADD(&sc->sc_ev_rlec, rlec);
+	if (sc->sc_flags & WM_F_HAS_MII) {
+		bool dotick = true;
 
-	if (sc->sc_type >= WM_T_82542_2_1) {
-		WM_EVCNT_ADD(&sc->sc_ev_rx_xon, CSR_READ(sc, WMREG_XONRXC));
-		WM_EVCNT_ADD(&sc->sc_ev_tx_xon, CSR_READ(sc, WMREG_XONTXC));
-		WM_EVCNT_ADD(&sc->sc_ev_rx_xoff, CSR_READ(sc, WMREG_XOFFRXC));
-		WM_EVCNT_ADD(&sc->sc_ev_tx_xoff, CSR_READ(sc, WMREG_XOFFTXC));
-		WM_EVCNT_ADD(&sc->sc_ev_rx_macctl, CSR_READ(sc, WMREG_FCRUC));
-	}
-	WM_EVCNT_ADD(&sc->sc_ev_scc, CSR_READ(sc, WMREG_SCC));
-	WM_EVCNT_ADD(&sc->sc_ev_ecol, CSR_READ(sc, WMREG_ECOL));
-	WM_EVCNT_ADD(&sc->sc_ev_mcc, CSR_READ(sc, WMREG_MCC));
-	WM_EVCNT_ADD(&sc->sc_ev_latecol, CSR_READ(sc, WMREG_LATECOL));
-	WM_EVCNT_ADD(&sc->sc_ev_dc, CSR_READ(sc, WMREG_DC));
-	WM_EVCNT_ADD(&sc->sc_ev_gprc, CSR_READ(sc, WMREG_GPRC));
-	WM_EVCNT_ADD(&sc->sc_ev_bprc, CSR_READ(sc, WMREG_BPRC));
-	WM_EVCNT_ADD(&sc->sc_ev_mprc, CSR_READ(sc, WMREG_MPRC));
-	WM_EVCNT_ADD(&sc->sc_ev_gptc, CSR_READ(sc, WMREG_GPTC));
+		/*
+		 * Workaround for some chips to delay sending LINK_STATE_UP.
+		 * See also wm_linkintr_gmii() and wm_gmii_mediastatus().
+		 */
+		if ((sc->sc_flags & WM_F_DELAY_LINKUP) != 0) {
+			struct timeval now;
 
-	WM_EVCNT_ADD(&sc->sc_ev_gorc,
-	    CSR_READ(sc, WMREG_GORCL) + CSR_READ(sc, WMREG_GORCH));
-	WM_EVCNT_ADD(&sc->sc_ev_gotc,
-	    CSR_READ(sc, WMREG_GOTCL) + CSR_READ(sc, WMREG_GOTCH));
+			getmicrotime(&now);
+			if (timercmp(&now, &sc->sc_linkup_delay_time, <))
+				dotick = false;
+			else if (sc->sc_linkup_delay_time.tv_sec != 0) {
+				/* Simplify by checking tv_sec only. */
 
-	WM_EVCNT_ADD(&sc->sc_ev_rnbc, CSR_READ(sc, WMREG_RNBC));
-	WM_EVCNT_ADD(&sc->sc_ev_ruc, CSR_READ(sc, WMREG_RUC));
-	WM_EVCNT_ADD(&sc->sc_ev_rfc, CSR_READ(sc, WMREG_RFC));
-	WM_EVCNT_ADD(&sc->sc_ev_roc, CSR_READ(sc, WMREG_ROC));
-	WM_EVCNT_ADD(&sc->sc_ev_rjc, CSR_READ(sc, WMREG_RJC));
-
-	WM_EVCNT_ADD(&sc->sc_ev_tor,
-	    CSR_READ(sc, WMREG_TORL) + CSR_READ(sc, WMREG_TORH));
-	WM_EVCNT_ADD(&sc->sc_ev_tot,
-	    CSR_READ(sc, WMREG_TOTL) + CSR_READ(sc, WMREG_TOTH));
-
-	WM_EVCNT_ADD(&sc->sc_ev_tpr, CSR_READ(sc, WMREG_TPR));
-	WM_EVCNT_ADD(&sc->sc_ev_tpt, CSR_READ(sc, WMREG_TPT));
-	WM_EVCNT_ADD(&sc->sc_ev_mptc, CSR_READ(sc, WMREG_MPTC));
-	WM_EVCNT_ADD(&sc->sc_ev_bptc, CSR_READ(sc, WMREG_BPTC));
-	WM_EVCNT_ADD(&sc->sc_ev_prc64, CSR_READ(sc, WMREG_PRC64));
-	WM_EVCNT_ADD(&sc->sc_ev_prc127, CSR_READ(sc, WMREG_PRC127));
-	WM_EVCNT_ADD(&sc->sc_ev_prc255, CSR_READ(sc, WMREG_PRC255));
-	WM_EVCNT_ADD(&sc->sc_ev_prc511, CSR_READ(sc, WMREG_PRC511));
-	WM_EVCNT_ADD(&sc->sc_ev_prc1023, CSR_READ(sc, WMREG_PRC1023));
-	WM_EVCNT_ADD(&sc->sc_ev_prc1522, CSR_READ(sc, WMREG_PRC1522));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc64, CSR_READ(sc, WMREG_PTC64));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc127, CSR_READ(sc, WMREG_PTC127));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc255, CSR_READ(sc, WMREG_PTC255));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc511, CSR_READ(sc, WMREG_PTC511));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc1023, CSR_READ(sc, WMREG_PTC1023));
-	WM_EVCNT_ADD(&sc->sc_ev_ptc1522, CSR_READ(sc, WMREG_PTC1522));
-	WM_EVCNT_ADD(&sc->sc_ev_iac, CSR_READ(sc, WMREG_IAC));
-	WM_EVCNT_ADD(&sc->sc_ev_icrxptc, CSR_READ(sc, WMREG_ICRXPTC));
-	WM_EVCNT_ADD(&sc->sc_ev_icrxatc, CSR_READ(sc, WMREG_ICRXATC));
-	WM_EVCNT_ADD(&sc->sc_ev_ictxptc, CSR_READ(sc, WMREG_ICTXPTC));
-	WM_EVCNT_ADD(&sc->sc_ev_ictxact, CSR_READ(sc, WMREG_ICTXATC));
-	WM_EVCNT_ADD(&sc->sc_ev_ictxqec, CSR_READ(sc, WMREG_ICTXQEC));
-	WM_EVCNT_ADD(&sc->sc_ev_ictxqmtc, CSR_READ(sc, WMREG_ICTXQMTC));
-	WM_EVCNT_ADD(&sc->sc_ev_icrxdmtc, CSR_READ(sc, WMREG_ICRXDMTC));
-	WM_EVCNT_ADD(&sc->sc_ev_icrxoc, CSR_READ(sc, WMREG_ICRXOC));
-
-	if (sc->sc_type >= WM_T_82543) {
-		algnerrc = CSR_READ(sc, WMREG_ALGNERRC);
-		rxerrc = CSR_READ(sc, WMREG_RXERRC);
-		cexterr = CSR_READ(sc, WMREG_CEXTERR);
-		WM_EVCNT_ADD(&sc->sc_ev_algnerrc, algnerrc);
-		WM_EVCNT_ADD(&sc->sc_ev_rxerrc, rxerrc);
-		WM_EVCNT_ADD(&sc->sc_ev_cexterr, cexterr);
-
-		WM_EVCNT_ADD(&sc->sc_ev_tncrs, CSR_READ(sc, WMREG_TNCRS));
-		WM_EVCNT_ADD(&sc->sc_ev_tsctc, CSR_READ(sc, WMREG_TSCTC));
-		WM_EVCNT_ADD(&sc->sc_ev_tsctfc, CSR_READ(sc, WMREG_TSCTFC));
-	} else
-		algnerrc = rxerrc = cexterr = 0;
-
-	if (sc->sc_type >= WM_T_82540) {
-		WM_EVCNT_ADD(&sc->sc_ev_mgtprc, CSR_READ(sc, WMREG_MGTPRC));
-		WM_EVCNT_ADD(&sc->sc_ev_mgtpdc, CSR_READ(sc, WMREG_MGTPDC));
-		WM_EVCNT_ADD(&sc->sc_ev_mgtptc, CSR_READ(sc, WMREG_MGTPTC));
-	}
-	if (((sc->sc_type >= WM_T_I350) && (sc->sc_type < WM_T_80003))
-	    && ((CSR_READ(sc, WMREG_MANC) & MANC_EN_BMC2OS) != 0)) {
-		WM_EVCNT_ADD(&sc->sc_ev_b2ogprc, CSR_READ(sc, WMREG_B2OGPRC));
-		WM_EVCNT_ADD(&sc->sc_ev_o2bspc, CSR_READ(sc, WMREG_O2BSPC));
-		WM_EVCNT_ADD(&sc->sc_ev_b2ospc, CSR_READ(sc, WMREG_B2OSPC));
-		WM_EVCNT_ADD(&sc->sc_ev_o2bgptc, CSR_READ(sc, WMREG_O2BGPTC));
-	}
-	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
-	if_statadd_ref(nsr, if_collisions, colc);
-	if_statadd_ref(nsr, if_ierrors,
-	    crcerrs + algnerrc + symerrc + rxerrc + sec + cexterr + rlec);
-	/*
-	 * WMREG_RNBC is incremented when there are no available buffers in
-	 * host memory. It does not mean the number of dropped packets, because
-	 * an Ethernet controller can receive packets in such case if there is
-	 * space in the phy's FIFO.
-	 *
-	 * If you want to know the nubmer of WMREG_RMBC, you should use such as
-	 * own EVCNT instead of if_iqdrops.
-	 */
-	if_statadd_ref(nsr, if_iqdrops, mpc);
-	IF_STAT_PUTREF(ifp);
-
-	if (sc->sc_flags & WM_F_HAS_MII)
-		mii_tick(&sc->sc_mii);
-	else if ((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211)
+				sc->sc_linkup_delay_time.tv_sec = 0;
+				sc->sc_linkup_delay_time.tv_usec = 0;
+			}
+		}
+		if (dotick)
+			mii_tick(&sc->sc_mii);
+	} else if ((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211)
 	    && (sc->sc_mediatype == WM_MEDIATYPE_SERDES))
 		wm_serdes_tick(sc);
 	else
@@ -4003,6 +4109,18 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		break;
 	default:
 		KASSERT(IFNET_LOCKED(ifp));
+	}
+
+	if (cmd == SIOCZIFDATA) {
+		/*
+		 * Special handling for SIOCZIFDATA.
+		 * Copying and clearing the if_data structure is done with
+		 * ether_ioctl() below.
+		 */
+		mutex_enter(sc->sc_core_lock);
+		wm_update_stats(sc);
+		wm_clear_evcnt(sc);
+		mutex_exit(sc->sc_core_lock);
 	}
 
 	switch (cmd) {
@@ -4208,6 +4326,7 @@ wm_set_ral(struct wm_softc *sc, const uint8_t *enaddr, int idx)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		if (idx == 0) {
 			CSR_WRITE(sc, WMREG_CORDOVA_RAL(idx), ral_lo);
 			CSR_WRITE_FLUSH(sc);
@@ -4265,7 +4384,8 @@ wm_mchash(struct wm_softc *sc, const uint8_t *enaddr)
 	if ((sc->sc_type == WM_T_ICH8) || (sc->sc_type == WM_T_ICH9)
 	    || (sc->sc_type == WM_T_ICH10) || (sc->sc_type == WM_T_PCH)
 	    || (sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT)
-	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)){
+	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)
+	    || (sc->sc_type == WM_T_PCH_TGP)) {
 		hash = (enaddr[4] >> ich8_lo_shift[sc->sc_mchash_type]) |
 		    (((uint16_t)enaddr[5]) << ich8_hi_shift[sc->sc_mchash_type]);
 		return (hash & 0x3ff);
@@ -4300,6 +4420,7 @@ wm_rar_count(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		size = WM_RAL_TABSIZE_PCH_LPT;
 		break;
 	case WM_T_82575:
@@ -4366,8 +4487,8 @@ wm_set_filter(struct wm_softc *sc)
 	size = wm_rar_count(sc);
 	wm_set_ral(sc, CLLADDR(ifp->if_sadl), 0);
 
-	if ((sc->sc_type == WM_T_PCH_LPT) || (sc->sc_type == WM_T_PCH_SPT)
-	    || (sc->sc_type == WM_T_PCH_CNP)) {
+	if ((sc->sc_type == WM_T_PCH_LPT) || (sc->sc_type == WM_T_PCH_SPT) ||
+	    (sc->sc_type == WM_T_PCH_CNP) || (sc->sc_type == WM_T_PCH_TGP)) {
 		i = __SHIFTOUT(CSR_READ(sc, WMREG_FWSM), FWSM_WLOCK_MAC);
 		switch (i) {
 		case 0:
@@ -4392,7 +4513,8 @@ wm_set_filter(struct wm_softc *sc)
 	if ((sc->sc_type == WM_T_ICH8) || (sc->sc_type == WM_T_ICH9)
 	    || (sc->sc_type == WM_T_ICH10) || (sc->sc_type == WM_T_PCH)
 	    || (sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT)
-	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP))
+	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)
+	    || (sc->sc_type == WM_T_PCH_TGP))
 		size = WM_ICH8_MC_TABSIZE;
 	else
 		size = WM_MC_TABSIZE;
@@ -4427,7 +4549,8 @@ wm_set_filter(struct wm_softc *sc)
 		    || (sc->sc_type == WM_T_PCH2)
 		    || (sc->sc_type == WM_T_PCH_LPT)
 		    || (sc->sc_type == WM_T_PCH_SPT)
-		    || (sc->sc_type == WM_T_PCH_CNP))
+		    || (sc->sc_type == WM_T_PCH_CNP)
+		    || (sc->sc_type == WM_T_PCH_TGP))
 			reg &= 0x1f;
 		else
 			reg &= 0x7f;
@@ -4580,6 +4703,7 @@ wm_lan_init_done(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		for (i = 0; i < WM_ICH8_LAN_INIT_TIMEOUT; i++) {
 			reg = CSR_READ(sc, WMREG_STATUS);
 			if ((reg & STATUS_LAN_INIT_DONE) != 0)
@@ -4666,6 +4790,7 @@ wm_get_cfg_done(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		delay(10*1000);
 		if (sc->sc_type >= WM_T_ICH10)
 			wm_lan_init_done(sc);
@@ -4813,6 +4938,7 @@ wm_init_lcd_from_nvm(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		sw_cfg_mask = FEXTNVM_SW_CONFIG_ICH8M;
 		break;
 	default:
@@ -4970,7 +5096,7 @@ wm_initialize_hardware_bits(struct wm_softc *sc)
 
 	/* For 82571 variant, 80003 and ICHs */
 	if (((sc->sc_type >= WM_T_82571) && (sc->sc_type <= WM_T_82583))
-	    || (sc->sc_type >= WM_T_80003)) {
+	    || WM_IS_ICHPCH(sc)) {
 
 		/* Transmit Descriptor Control 0 */
 		reg = CSR_READ(sc, WMREG_TXDCTL(0));
@@ -5098,6 +5224,7 @@ wm_initialize_hardware_bits(struct wm_softc *sc)
 		case WM_T_PCH_LPT:
 		case WM_T_PCH_SPT:
 		case WM_T_PCH_CNP:
+		case WM_T_PCH_TGP:
 			/* TARC0 */
 			if (sc->sc_type == WM_T_ICH8) {
 				/* Set TARC0 bits 29 and 28 */
@@ -5434,6 +5561,7 @@ wm_reset(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		sc->sc_pba = sc->sc_ethercom.ec_if.if_mtu > 1500 ?
 		    PBA_12K : PBA_26K;
 		break;
@@ -5560,6 +5688,7 @@ wm_reset(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		reg = CSR_READ(sc, WMREG_CTRL) | CTRL_RST;
 		if (wm_phy_resetisblocked(sc) == false) {
 			/*
@@ -5706,6 +5835,7 @@ wm_reset(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		break;
 	default:
 		panic("%s: unknown type\n", __func__);
@@ -5754,7 +5884,8 @@ wm_reset(struct wm_softc *sc)
 	if ((sc->sc_type == WM_T_ICH8) || (sc->sc_type == WM_T_ICH9)
 	    || (sc->sc_type == WM_T_ICH10) || (sc->sc_type == WM_T_PCH)
 	    || (sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT)
-	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)){
+	    || (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)
+	    || (sc->sc_type == WM_T_PCH_TGP)) {
 		reg = CSR_READ(sc, WMREG_KABGTXD);
 		reg |= KABGTXD_BGSQLBIAS;
 		CSR_WRITE(sc, WMREG_KABGTXD, reg);
@@ -6502,6 +6633,373 @@ err:
 	    __func__, rv);
 }
 
+static void
+wm_update_stats(struct wm_softc *sc)
+{
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	uint64_t crcerrs, algnerrc, symerrc, mpc, colc,  sec, rlec, rxerrc,
+	    cexterr;
+	uint64_t total_qdrop = 0;
+
+	crcerrs = CSR_READ(sc, WMREG_CRCERRS);
+	symerrc = CSR_READ(sc, WMREG_SYMERRC);
+	mpc = CSR_READ(sc, WMREG_MPC);
+	colc = CSR_READ(sc, WMREG_COLC);
+	sec = CSR_READ(sc, WMREG_SEC);
+	rlec = CSR_READ(sc, WMREG_RLEC);
+
+	WM_EVCNT_ADD(&sc->sc_ev_crcerrs, crcerrs);
+	WM_EVCNT_ADD(&sc->sc_ev_symerrc, symerrc);
+	WM_EVCNT_ADD(&sc->sc_ev_mpc, mpc);
+	WM_EVCNT_ADD(&sc->sc_ev_colc, colc);
+	WM_EVCNT_ADD(&sc->sc_ev_sec, sec);
+	WM_EVCNT_ADD(&sc->sc_ev_rlec, rlec);
+
+	if (sc->sc_type >= WM_T_82543) {
+		algnerrc = CSR_READ(sc, WMREG_ALGNERRC);
+		rxerrc = CSR_READ(sc, WMREG_RXERRC);
+		WM_EVCNT_ADD(&sc->sc_ev_algnerrc, algnerrc);
+		WM_EVCNT_ADD(&sc->sc_ev_rxerrc, rxerrc);
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc)) {
+			cexterr = CSR_READ(sc, WMREG_CEXTERR);
+			WM_EVCNT_ADD(&sc->sc_ev_cexterr, cexterr);
+		} else {
+			cexterr = 0;
+			/* Excessive collision + Link down */
+			WM_EVCNT_ADD(&sc->sc_ev_htdpmc,
+			    CSR_READ(sc, WMREG_HTDPMC));
+		}
+
+		WM_EVCNT_ADD(&sc->sc_ev_tncrs, CSR_READ(sc, WMREG_TNCRS));
+		WM_EVCNT_ADD(&sc->sc_ev_tsctc, CSR_READ(sc, WMREG_TSCTC));
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			WM_EVCNT_ADD(&sc->sc_ev_tsctfc,
+			    CSR_READ(sc, WMREG_TSCTFC));
+		else {
+			WM_EVCNT_ADD(&sc->sc_ev_cbrdpc,
+			    CSR_READ(sc, WMREG_CBRDPC));
+			WM_EVCNT_ADD(&sc->sc_ev_cbrmpc,
+			    CSR_READ(sc, WMREG_CBRMPC));
+		}
+	} else
+		algnerrc = rxerrc = cexterr = 0;
+
+	if (sc->sc_type >= WM_T_82542_2_1) {
+		WM_EVCNT_ADD(&sc->sc_ev_rx_xon, CSR_READ(sc, WMREG_XONRXC));
+		WM_EVCNT_ADD(&sc->sc_ev_tx_xon, CSR_READ(sc, WMREG_XONTXC));
+		WM_EVCNT_ADD(&sc->sc_ev_rx_xoff, CSR_READ(sc, WMREG_XOFFRXC));
+		WM_EVCNT_ADD(&sc->sc_ev_tx_xoff, CSR_READ(sc, WMREG_XOFFTXC));
+		WM_EVCNT_ADD(&sc->sc_ev_rx_macctl, CSR_READ(sc, WMREG_FCRUC));
+	}
+
+	WM_EVCNT_ADD(&sc->sc_ev_scc, CSR_READ(sc, WMREG_SCC));
+	WM_EVCNT_ADD(&sc->sc_ev_ecol, CSR_READ(sc, WMREG_ECOL));
+	WM_EVCNT_ADD(&sc->sc_ev_mcc, CSR_READ(sc, WMREG_MCC));
+	WM_EVCNT_ADD(&sc->sc_ev_latecol, CSR_READ(sc, WMREG_LATECOL));
+
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc)) {
+		WM_EVCNT_ADD(&sc->sc_ev_cbtmpc, CSR_READ(sc, WMREG_CBTMPC));
+	}
+
+	WM_EVCNT_ADD(&sc->sc_ev_dc, CSR_READ(sc, WMREG_DC));
+	WM_EVCNT_ADD(&sc->sc_ev_prc64, CSR_READ(sc, WMREG_PRC64));
+	WM_EVCNT_ADD(&sc->sc_ev_prc127, CSR_READ(sc, WMREG_PRC127));
+	WM_EVCNT_ADD(&sc->sc_ev_prc255, CSR_READ(sc, WMREG_PRC255));
+	WM_EVCNT_ADD(&sc->sc_ev_prc511, CSR_READ(sc, WMREG_PRC511));
+	WM_EVCNT_ADD(&sc->sc_ev_prc1023, CSR_READ(sc, WMREG_PRC1023));
+	WM_EVCNT_ADD(&sc->sc_ev_prc1522, CSR_READ(sc, WMREG_PRC1522));
+	WM_EVCNT_ADD(&sc->sc_ev_gprc, CSR_READ(sc, WMREG_GPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_bprc, CSR_READ(sc, WMREG_BPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_mprc, CSR_READ(sc, WMREG_MPRC));
+	WM_EVCNT_ADD(&sc->sc_ev_gptc, CSR_READ(sc, WMREG_GPTC));
+
+	WM_EVCNT_ADD(&sc->sc_ev_gorc,
+	    CSR_READ(sc, WMREG_GORCL) +
+	    ((uint64_t)CSR_READ(sc, WMREG_GORCH) << 32));
+	WM_EVCNT_ADD(&sc->sc_ev_gotc,
+	    CSR_READ(sc, WMREG_GOTCL) +
+	    ((uint64_t)CSR_READ(sc, WMREG_GOTCH) << 32));
+
+	WM_EVCNT_ADD(&sc->sc_ev_rnbc, CSR_READ(sc, WMREG_RNBC));
+	WM_EVCNT_ADD(&sc->sc_ev_ruc, CSR_READ(sc, WMREG_RUC));
+	WM_EVCNT_ADD(&sc->sc_ev_rfc, CSR_READ(sc, WMREG_RFC));
+	WM_EVCNT_ADD(&sc->sc_ev_roc, CSR_READ(sc, WMREG_ROC));
+	WM_EVCNT_ADD(&sc->sc_ev_rjc, CSR_READ(sc, WMREG_RJC));
+
+	if (sc->sc_type >= WM_T_82540) {
+		WM_EVCNT_ADD(&sc->sc_ev_mgtprc, CSR_READ(sc, WMREG_MGTPRC));
+		WM_EVCNT_ADD(&sc->sc_ev_mgtpdc, CSR_READ(sc, WMREG_MGTPDC));
+		WM_EVCNT_ADD(&sc->sc_ev_mgtptc, CSR_READ(sc, WMREG_MGTPTC));
+	}
+
+	/*
+	 * The TOR(L) register includes:
+	 *  - Error
+	 *  - Flow control
+	 *  - Broadcast rejected (This note is described in 82574 and newer
+	 *    datasheets. What does "broadcast rejected" mean?)
+	 */
+	WM_EVCNT_ADD(&sc->sc_ev_tor,
+	    CSR_READ(sc, WMREG_TORL) +
+	    ((uint64_t)CSR_READ(sc, WMREG_TORH) << 32));
+	WM_EVCNT_ADD(&sc->sc_ev_tot,
+	    CSR_READ(sc, WMREG_TOTL) +
+	    ((uint64_t)CSR_READ(sc, WMREG_TOTH) << 32));
+
+	WM_EVCNT_ADD(&sc->sc_ev_tpr, CSR_READ(sc, WMREG_TPR));
+	WM_EVCNT_ADD(&sc->sc_ev_tpt, CSR_READ(sc, WMREG_TPT));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc64, CSR_READ(sc, WMREG_PTC64));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc127, CSR_READ(sc, WMREG_PTC127));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc255, CSR_READ(sc, WMREG_PTC255));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc511, CSR_READ(sc, WMREG_PTC511));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc1023, CSR_READ(sc, WMREG_PTC1023));
+	WM_EVCNT_ADD(&sc->sc_ev_ptc1522, CSR_READ(sc, WMREG_PTC1522));
+	WM_EVCNT_ADD(&sc->sc_ev_mptc, CSR_READ(sc, WMREG_MPTC));
+	WM_EVCNT_ADD(&sc->sc_ev_bptc, CSR_READ(sc, WMREG_BPTC));
+	if (sc->sc_type >= WM_T_82571)
+		WM_EVCNT_ADD(&sc->sc_ev_iac, CSR_READ(sc, WMREG_IAC));
+	if (sc->sc_type < WM_T_82575) {
+		WM_EVCNT_ADD(&sc->sc_ev_icrxptc, CSR_READ(sc, WMREG_ICRXPTC));
+		WM_EVCNT_ADD(&sc->sc_ev_icrxatc, CSR_READ(sc, WMREG_ICRXATC));
+		WM_EVCNT_ADD(&sc->sc_ev_ictxptc, CSR_READ(sc, WMREG_ICTXPTC));
+		WM_EVCNT_ADD(&sc->sc_ev_ictxatc, CSR_READ(sc, WMREG_ICTXATC));
+		WM_EVCNT_ADD(&sc->sc_ev_ictxqec, CSR_READ(sc, WMREG_ICTXQEC));
+		WM_EVCNT_ADD(&sc->sc_ev_ictxqmtc,
+		    CSR_READ(sc, WMREG_ICTXQMTC));
+		WM_EVCNT_ADD(&sc->sc_ev_rxdmtc,
+		    CSR_READ(sc, WMREG_ICRXDMTC));
+		WM_EVCNT_ADD(&sc->sc_ev_icrxoc, CSR_READ(sc, WMREG_ICRXOC));
+	} else if (!WM_IS_ICHPCH(sc)) {
+		WM_EVCNT_ADD(&sc->sc_ev_rpthc, CSR_READ(sc, WMREG_RPTHC));
+		WM_EVCNT_ADD(&sc->sc_ev_debug1, CSR_READ(sc, WMREG_DEBUG1));
+		WM_EVCNT_ADD(&sc->sc_ev_debug2, CSR_READ(sc, WMREG_DEBUG2));
+		WM_EVCNT_ADD(&sc->sc_ev_debug3, CSR_READ(sc, WMREG_DEBUG3));
+		WM_EVCNT_ADD(&sc->sc_ev_hgptc,  CSR_READ(sc, WMREG_HGPTC));
+		WM_EVCNT_ADD(&sc->sc_ev_debug4, CSR_READ(sc, WMREG_DEBUG4));
+		WM_EVCNT_ADD(&sc->sc_ev_rxdmtc, CSR_READ(sc, WMREG_RXDMTC));
+		WM_EVCNT_ADD(&sc->sc_ev_htcbdpc, CSR_READ(sc, WMREG_HTCBDPC));
+
+		WM_EVCNT_ADD(&sc->sc_ev_hgorc,
+		    CSR_READ(sc, WMREG_HGORCL) +
+		    ((uint64_t)CSR_READ(sc, WMREG_HGORCH) << 32));
+		WM_EVCNT_ADD(&sc->sc_ev_hgotc,
+		    CSR_READ(sc, WMREG_HGOTCL) +
+		    ((uint64_t)CSR_READ(sc, WMREG_HGOTCH) << 32));
+		WM_EVCNT_ADD(&sc->sc_ev_lenerrs, CSR_READ(sc, WMREG_LENERRS));
+		WM_EVCNT_ADD(&sc->sc_ev_scvpc, CSR_READ(sc, WMREG_SCVPC));
+		WM_EVCNT_ADD(&sc->sc_ev_hrmpc, CSR_READ(sc, WMREG_HRMPC));
+#ifdef WM_EVENT_COUNTERS
+		for (int i = 0; i < sc->sc_nqueues; i++) {
+			struct wm_rxqueue *rxq = &sc->sc_queue[i].wmq_rxq;
+			uint32_t rqdpc;
+
+			rqdpc = CSR_READ(sc, WMREG_RQDPC(i));
+			/*
+			 * On I210 and newer device, the RQDPC register is not
+			 * cleard on read.
+			 */
+			if ((rqdpc != 0) && (sc->sc_type >= WM_T_I210))
+				CSR_WRITE(sc, WMREG_RQDPC(i), 0);
+			WM_Q_EVCNT_ADD(rxq, qdrop, rqdpc);
+			total_qdrop += rqdpc;
+		}
+#endif
+	}
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc)) {
+		WM_EVCNT_ADD(&sc->sc_ev_tlpic, CSR_READ(sc, WMREG_TLPIC));
+		WM_EVCNT_ADD(&sc->sc_ev_rlpic, CSR_READ(sc, WMREG_RLPIC));
+		if ((CSR_READ(sc, WMREG_MANC) & MANC_EN_BMC2OS) != 0) {
+			WM_EVCNT_ADD(&sc->sc_ev_b2ogprc,
+			    CSR_READ(sc, WMREG_B2OGPRC));
+			WM_EVCNT_ADD(&sc->sc_ev_o2bspc,
+			    CSR_READ(sc, WMREG_O2BSPC));
+			WM_EVCNT_ADD(&sc->sc_ev_b2ospc,
+			    CSR_READ(sc, WMREG_B2OSPC));
+			WM_EVCNT_ADD(&sc->sc_ev_o2bgptc,
+			    CSR_READ(sc, WMREG_O2BGPTC));
+		}
+	}
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_collisions, colc);
+	if_statadd_ref(nsr, if_ierrors,
+	    crcerrs + algnerrc + symerrc + rxerrc + sec + cexterr + rlec);
+	/*
+	 * WMREG_RNBC is incremented when there are no available buffers in
+	 * host memory. It does not mean the number of dropped packets, because
+	 * an Ethernet controller can receive packets in such case if there is
+	 * space in the phy's FIFO.
+	 *
+	 * If you want to know the nubmer of WMREG_RMBC, you should use such as
+	 * own EVCNT instead of if_iqdrops.
+	 */
+	if_statadd_ref(nsr, if_iqdrops, mpc + total_qdrop);
+	IF_STAT_PUTREF(ifp);
+}
+
+void
+wm_clear_evcnt(struct wm_softc *sc)
+{
+#ifdef WM_EVENT_COUNTERS
+	int i;
+
+	/* RX queues */
+	for (i = 0; i < sc->sc_nqueues; i++) {
+		struct wm_rxqueue *rxq = &sc->sc_queue[i].wmq_rxq;
+
+		WM_Q_EVCNT_STORE(rxq, intr, 0);
+		WM_Q_EVCNT_STORE(rxq, defer, 0);
+		WM_Q_EVCNT_STORE(rxq, ipsum, 0);
+		WM_Q_EVCNT_STORE(rxq, tusum, 0);
+		if ((sc->sc_type >= WM_T_82575) && !WM_IS_ICHPCH(sc))
+			WM_Q_EVCNT_STORE(rxq, qdrop, 0);
+	}
+
+	/* TX queues */
+	for (i = 0; i < sc->sc_nqueues; i++) {
+		struct wm_txqueue *txq = &sc->sc_queue[i].wmq_txq;
+		int j;
+
+		WM_Q_EVCNT_STORE(txq, txsstall, 0);
+		WM_Q_EVCNT_STORE(txq, txdstall, 0);
+		WM_Q_EVCNT_STORE(txq, fifo_stall, 0);
+		WM_Q_EVCNT_STORE(txq, txdw, 0);
+		WM_Q_EVCNT_STORE(txq, txqe, 0);
+		WM_Q_EVCNT_STORE(txq, ipsum, 0);
+		WM_Q_EVCNT_STORE(txq, tusum, 0);
+		WM_Q_EVCNT_STORE(txq, tusum6, 0);
+		WM_Q_EVCNT_STORE(txq, tso, 0);
+		WM_Q_EVCNT_STORE(txq, tso6, 0);
+		WM_Q_EVCNT_STORE(txq, tsopain, 0);
+
+		for (j = 0; j < WM_NTXSEGS; j++)
+			WM_EVCNT_STORE(&txq->txq_ev_txseg[j], 0);
+
+		WM_Q_EVCNT_STORE(txq, pcqdrop, 0);
+		WM_Q_EVCNT_STORE(txq, descdrop, 0);
+		WM_Q_EVCNT_STORE(txq, toomanyseg, 0);
+		WM_Q_EVCNT_STORE(txq, defrag, 0);
+		if (sc->sc_type <= WM_T_82544)
+			WM_Q_EVCNT_STORE(txq, underrun, 0);
+		WM_Q_EVCNT_STORE(txq, skipcontext, 0);
+	}
+
+	/* Miscs */
+	WM_EVCNT_STORE(&sc->sc_ev_linkintr, 0);
+
+	WM_EVCNT_STORE(&sc->sc_ev_crcerrs, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_symerrc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_mpc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_colc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_sec, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_rlec, 0);
+
+	if (sc->sc_type >= WM_T_82543) {
+		WM_EVCNT_STORE(&sc->sc_ev_algnerrc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rxerrc, 0);
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			WM_EVCNT_STORE(&sc->sc_ev_cexterr, 0);
+		else
+			WM_EVCNT_STORE(&sc->sc_ev_htdpmc, 0);
+
+		WM_EVCNT_STORE(&sc->sc_ev_tncrs, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_tsctc, 0);
+		if ((sc->sc_type < WM_T_82575) || WM_IS_ICHPCH(sc))
+			WM_EVCNT_STORE(&sc->sc_ev_tsctfc, 0);
+		else {
+			WM_EVCNT_STORE(&sc->sc_ev_cbrdpc, 0);
+			WM_EVCNT_STORE(&sc->sc_ev_cbrmpc, 0);
+		}
+	}
+
+	if (sc->sc_type >= WM_T_82542_2_1) {
+		WM_EVCNT_STORE(&sc->sc_ev_tx_xoff, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_tx_xon, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rx_xoff, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rx_xon, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rx_macctl, 0);
+	}
+
+	WM_EVCNT_STORE(&sc->sc_ev_scc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ecol, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_mcc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_latecol, 0);
+
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc))
+		WM_EVCNT_STORE(&sc->sc_ev_cbtmpc, 0);
+
+	WM_EVCNT_STORE(&sc->sc_ev_dc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc64, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc127, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc255, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc511, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc1023, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_prc1522, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_gprc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_bprc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_mprc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_gptc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_gorc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_gotc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_rnbc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ruc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_rfc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_roc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_rjc, 0);
+	if (sc->sc_type >= WM_T_82540) {
+		WM_EVCNT_STORE(&sc->sc_ev_mgtprc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_mgtpdc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_mgtptc, 0);
+	}
+	WM_EVCNT_STORE(&sc->sc_ev_tor, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_tot, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_tpr, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_tpt, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc64, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc127, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc255, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc511, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc1023, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_ptc1522, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_mptc, 0);
+	WM_EVCNT_STORE(&sc->sc_ev_bptc, 0);
+	if (sc->sc_type >= WM_T_82571)
+		WM_EVCNT_STORE(&sc->sc_ev_iac, 0);
+	if (sc->sc_type < WM_T_82575) {
+		WM_EVCNT_STORE(&sc->sc_ev_icrxptc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_icrxatc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_ictxptc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_ictxatc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_ictxqec, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_ictxqmtc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rxdmtc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_icrxoc, 0);
+	} else if (!WM_IS_ICHPCH(sc)) {
+		WM_EVCNT_STORE(&sc->sc_ev_rpthc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_debug1, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_debug2, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_debug3, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_hgptc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_debug4, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rxdmtc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_htcbdpc, 0);
+
+		WM_EVCNT_STORE(&sc->sc_ev_hgorc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_hgotc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_lenerrs, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_scvpc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_hrmpc, 0);
+	}
+	if ((sc->sc_type >= WM_T_I350) && !WM_IS_ICHPCH(sc)) {
+		WM_EVCNT_STORE(&sc->sc_ev_tlpic, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_rlpic, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_b2ogprc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_o2bspc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_b2ospc, 0);
+		WM_EVCNT_STORE(&sc->sc_ev_o2bgptc, 0);
+	}
+#endif
+}
+
 /*
  * wm_init:		[ifnet interface function]
  *
@@ -6603,6 +7101,13 @@ wm_init_locked(struct ifnet *ifp)
 		CSR_WRITE(sc, WMREG_GCR, reg);
 	}
 
+	/* Ungate DMA clock to avoid packet loss */
+	if (sc->sc_type >= WM_T_PCH_TGP) {
+		reg = CSR_READ(sc, WMREG_FFLT_DBG);
+		reg |= (1 << 12);
+		CSR_WRITE(sc, WMREG_FFLT_DBG, reg);
+	}
+
 	if ((sc->sc_type >= WM_T_ICH8)
 	    || (sc->sc_pcidevid == PCI_PRODUCT_INTEL_82546GB_QUAD_COPPER)
 	    || (sc->sc_pcidevid == PCI_PRODUCT_INTEL_82546GB_QUAD_COPPER_KSP3)) {
@@ -6675,7 +7180,8 @@ wm_init_locked(struct ifnet *ifp)
 	if ((sc->sc_type != WM_T_ICH8) && (sc->sc_type != WM_T_ICH9)
 	    && (sc->sc_type != WM_T_ICH10) && (sc->sc_type != WM_T_PCH)
 	    && (sc->sc_type != WM_T_PCH2) && (sc->sc_type != WM_T_PCH_LPT)
-	    && (sc->sc_type != WM_T_PCH_SPT) && (sc->sc_type != WM_T_PCH_CNP)){
+	    && (sc->sc_type != WM_T_PCH_SPT) && (sc->sc_type != WM_T_PCH_CNP)
+	    && (sc->sc_type != WM_T_PCH_TGP)) {
 		CSR_WRITE(sc, WMREG_FCAL, FCAL_CONST);
 		CSR_WRITE(sc, WMREG_FCAH, FCAH_CONST);
 		CSR_WRITE(sc, WMREG_FCT, ETHERTYPE_FLOWCONTROL);
@@ -6711,6 +7217,7 @@ wm_init_locked(struct ifnet *ifp)
 		case WM_T_PCH_LPT:
 		case WM_T_PCH_SPT:
 		case WM_T_PCH_CNP:
+		case WM_T_PCH_TGP:
 			/*
 			 * Set the mac to wait the maximum time between each
 			 * iteration and increase the max iterations when
@@ -7053,6 +7560,7 @@ wm_init_locked(struct ifnet *ifp)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		reg = CSR_READ(sc, WMREG_PBECCSTS);
 		reg |= PBECCSTS_UNCORR_ECC_ENABLE;
 		CSR_WRITE(sc, WMREG_PBECCSTS, reg);
@@ -7669,7 +8177,9 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 		WM_Q_MISC_EVCNT_ATTACH(txq, descdrop, txq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(txq, toomanyseg, txq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(txq, defrag, txq, i, xname);
-		WM_Q_MISC_EVCNT_ATTACH(txq, underrun, txq, i, xname);
+		/* Only for 82544 (and earlier?) */
+		if (sc->sc_type <= WM_T_82544)
+			WM_Q_MISC_EVCNT_ATTACH(txq, underrun, txq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(txq, skipcontext, txq, i, xname);
 #endif /* WM_EVENT_COUNTERS */
 
@@ -7704,9 +8214,10 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 
 		WM_Q_INTR_EVCNT_ATTACH(rxq, intr, rxq, i, xname);
 		WM_Q_INTR_EVCNT_ATTACH(rxq, defer, rxq, i, xname);
-
 		WM_Q_MISC_EVCNT_ATTACH(rxq, ipsum, rxq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(rxq, tusum, rxq, i, xname);
+		if ((sc->sc_type >= WM_T_82575) && !WM_IS_ICHPCH(sc))
+			WM_Q_MISC_EVCNT_ATTACH(rxq, qdrop, rxq, i, xname);
 #endif /* WM_EVENT_COUNTERS */
 
 		rx_done++;
@@ -7757,6 +8268,8 @@ wm_free_txrx_queues(struct wm_softc *sc)
 		WM_Q_EVCNT_DETACH(rxq, defer, rxq, i);
 		WM_Q_EVCNT_DETACH(rxq, ipsum, rxq, i);
 		WM_Q_EVCNT_DETACH(rxq, tusum, rxq, i);
+		if ((sc->sc_type >= WM_T_82575) && !WM_IS_ICHPCH(sc))
+			WM_Q_EVCNT_DETACH(rxq, qdrop, rxq, i);
 #endif /* WM_EVENT_COUNTERS */
 
 		wm_free_rx_buffer(sc, rxq);
@@ -7790,7 +8303,8 @@ wm_free_txrx_queues(struct wm_softc *sc)
 		WM_Q_EVCNT_DETACH(txq, descdrop, txq, i);
 		WM_Q_EVCNT_DETACH(txq, toomanyseg, txq, i);
 		WM_Q_EVCNT_DETACH(txq, defrag, txq, i);
-		WM_Q_EVCNT_DETACH(txq, underrun, txq, i);
+		if (sc->sc_type <= WM_T_82544)
+			WM_Q_EVCNT_DETACH(txq, underrun, txq, i);
 		WM_Q_EVCNT_DETACH(txq, skipcontext, txq, i);
 #endif /* WM_EVENT_COUNTERS */
 
@@ -7945,6 +8459,8 @@ wm_init_rx_regs(struct wm_softc *sc, struct wm_queue *wmq,
 		    rxq->rxq_descsize * rxq->rxq_ndesc);
 
 		if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
+			uint32_t srrctl;
+
 			if (MCLBYTES & ((1 << SRRCTL_BSIZEPKT_SHIFT) - 1))
 				panic("%s: MCLBYTES %d unsupported for 82575 "
 				    "or higher\n", __func__, MCLBYTES);
@@ -7953,9 +8469,17 @@ wm_init_rx_regs(struct wm_softc *sc, struct wm_queue *wmq,
 			 * Currently, support SRRCTL_DESCTYPE_ADV_ONEBUF
 			 * only.
 			 */
-			CSR_WRITE(sc, WMREG_SRRCTL(qid),
-			    SRRCTL_DESCTYPE_ADV_ONEBUF
-			    | (MCLBYTES >> SRRCTL_BSIZEPKT_SHIFT));
+			srrctl = SRRCTL_DESCTYPE_ADV_ONEBUF
+			    | (MCLBYTES >> SRRCTL_BSIZEPKT_SHIFT);
+			/*
+			 * Drop frames if the RX descriptor ring has no room.
+			 * This is enabled only on multiqueue system to avoid
+			 * bad influence to other queues.
+			 */
+			if (sc->sc_nqueues > 1)
+				srrctl |= SRRCTL_DROP_EN;
+			CSR_WRITE(sc, WMREG_SRRCTL(qid), srrctl);
+
 			CSR_WRITE(sc, WMREG_RXDCTL(qid), RXDCTL_QUEUE_ENABLE
 			    | RXDCTL_PTHRESH(16) | RXDCTL_HTHRESH(8)
 			    | RXDCTL_WTHRESH(1));
@@ -9412,14 +9936,8 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 		    device_xname(sc->sc_dev), i, txs->txs_firstdesc,
 		    txs->txs_lastdesc));
 
-		/*
-		 * XXX We should probably be using the statistics
-		 * XXX registers, but I don't know if they exist
-		 * XXX on chips before the i82544.
-		 */
-
 #ifdef WM_EVENT_COUNTERS
-		if (status & WTX_ST_TU)
+		if ((status & WTX_ST_TU) && (sc->sc_type <= WM_T_82544))
 			WM_Q_EVCNT_INCR(txq, underrun);
 #endif /* WM_EVENT_COUNTERS */
 
@@ -9891,6 +10409,7 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 	device_t dev = sc->sc_dev;
 	uint32_t status, reg;
 	bool link;
+	bool dopoll = true;
 	int rv;
 
 	KASSERT(mutex_owned(sc->sc_core_lock));
@@ -9937,7 +10456,46 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 
 	DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: LSC -> mii_pollstat\n",
 		device_xname(dev)));
-	mii_pollstat(&sc->sc_mii);
+	if ((sc->sc_flags & WM_F_DELAY_LINKUP) != 0) {
+		if (link) {
+			/*
+			 * To workaround the problem, it's required to wait
+			 * several hundred miliseconds. The time depend
+			 * on the environment. Wait 1 second for the safety.
+			 */
+			dopoll = false;
+			getmicrotime(&sc->sc_linkup_delay_time);
+			sc->sc_linkup_delay_time.tv_sec += 1;
+		} else if (sc->sc_linkup_delay_time.tv_sec != 0) {
+			/*
+			 * Simplify by checking tv_sec only. It's enough.
+			 *
+			 * Currently, it's not required to clear the time.
+			 * It's just to know the timer is stopped
+			 * (for debugging).
+			 */
+
+			sc->sc_linkup_delay_time.tv_sec = 0;
+			sc->sc_linkup_delay_time.tv_usec = 0;
+		}
+	}
+
+	/*
+	 * Call mii_pollstat().
+	 *
+	 * Some (not all) systems use I35[04] or I21[01] don't send packet soon
+	 * after linkup. The MAC send a packet to the PHY and any error is not
+	 * observed. This behavior causes a problem that gratuitous ARP and/or
+	 * IPv6 DAD packet are silently dropped. To avoid this problem, don't
+	 * call mii_pollstat() here which will send LINK_STATE_UP notification
+	 * to the upper layer. Instead, mii_pollstat() will be called in
+	 * wm_gmii_mediastatus() or mii_tick() will be called in wm_tick().
+	 */
+	if (dopoll)
+		mii_pollstat(&sc->sc_mii);
+
+	/* Do some workarounds soon after link status is changed. */
+
 	if (sc->sc_type == WM_T_82543) {
 		int miistatus, active;
 
@@ -9984,7 +10542,7 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 	 * aggressive resulting in many collisions. To avoid this, increase
 	 * the IPG and reduce Rx latency in the PHY.
 	 */
-	if ((sc->sc_type >= WM_T_PCH2) && (sc->sc_type <= WM_T_PCH_CNP)
+	if ((sc->sc_type >= WM_T_PCH2) && (sc->sc_type <= WM_T_PCH_TGP)
 	    && link) {
 		uint32_t tipg_reg;
 		uint32_t speed = __SHIFTOUT(status, STATUS_SPEED);
@@ -10636,9 +11194,9 @@ wm_linkintr_msix(void *arg)
 	/*
 	 * XXX 82574 MSI-X mode workaround
 	 *
-	 * 82574 MSI-X mode causes receive overrun(RXO) interrupt as ICR_OTHER
-	 * MSI-X vector, furthermore it does not cause neigher ICR_RXQ(0) nor
-	 * ICR_RXQ(1) vector. So, we generate ICR_RXQ(0) and ICR_RXQ(1)
+	 * 82574 MSI-X mode causes a receive overrun(RXO) interrupt as an
+	 * ICR_OTHER MSI-X vector; furthermore it causes neither ICR_RXQ(0)
+	 * nor ICR_RXQ(1) vectors. So, we generate ICR_RXQ(0) and ICR_RXQ(1)
 	 * interrupts by writing WMREG_ICS to process receive packets.
 	 */
 	if (sc->sc_type == WM_T_82574 && ((reg & ICR_RXO) != 0)) {
@@ -10808,6 +11366,7 @@ wm_gmii_reset(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		/* Generic reset */
 		CSR_WRITE(sc, WMREG_CTRL, sc->sc_ctrl | CTRL_PHY_RESET);
 		CSR_WRITE_FLUSH(sc);
@@ -10867,6 +11426,7 @@ wm_gmii_reset(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		wm_phy_post_reset(sc);
 		break;
 	default:
@@ -11108,7 +11668,7 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 		new_readreg = wm_gmii_bm_readreg;
 		new_writereg = wm_gmii_bm_writereg;
 	}
-	if ((sc->sc_type >= WM_T_PCH) && (sc->sc_type <= WM_T_PCH_CNP)) {
+	if ((sc->sc_type >= WM_T_PCH) && (sc->sc_type <= WM_T_PCH_TGP)) {
 		/* All PCH* use _hv_ */
 		new_readreg = wm_gmii_hv_readreg;
 		new_writereg = wm_gmii_hv_writereg;
@@ -11230,7 +11790,7 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 	/* get PHY control from SMBus to PCIe */
 	if ((sc->sc_type == WM_T_PCH) || (sc->sc_type == WM_T_PCH2)
 	    || (sc->sc_type == WM_T_PCH_LPT) || (sc->sc_type == WM_T_PCH_SPT)
-	    || (sc->sc_type == WM_T_PCH_CNP))
+	    || (sc->sc_type == WM_T_PCH_CNP) || (sc->sc_type == WM_T_PCH_TGP))
 		wm_init_phy_workarounds_pchlan(sc);
 
 	wm_gmii_reset(sc);
@@ -11294,9 +11854,9 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 	 * If the MAC is PCH2 or PCH_LPT and failed to detect MII PHY, call
 	 * wm_set_mdio_slow_mode_hv() for a workaround and retry.
 	 */
-	if (((sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT)
-		|| (sc->sc_type == WM_T_PCH_SPT)
-		|| (sc->sc_type == WM_T_PCH_CNP))
+	if (((sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT) ||
+		(sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP)
+		|| (sc->sc_type == WM_T_PCH_TGP))
 	    && (LIST_FIRST(&mii->mii_phys) == NULL)) {
 		wm_set_mdio_slow_mode_hv(sc);
 		mii_attach(sc->sc_dev, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
@@ -11429,10 +11989,42 @@ static void
 wm_gmii_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
 	struct wm_softc *sc = ifp->if_softc;
+	struct ethercom *ec = &sc->sc_ethercom;
+	struct mii_data *mii;
+	bool dopoll = true;
 
+	/*
+	 * In normal drivers, ether_mediastatus() is called here.
+	 * To avoid calling mii_pollstat(), ether_mediastatus() is open coded.
+	 */
 	KASSERT(mutex_owned(sc->sc_core_lock));
+	KASSERT(ec->ec_mii != NULL);
+	KASSERT(mii_locked(ec->ec_mii));
 
-	ether_mediastatus(ifp, ifmr);
+	mii = ec->ec_mii;
+	if ((sc->sc_flags & WM_F_DELAY_LINKUP) != 0) {
+		struct timeval now;
+
+		getmicrotime(&now);
+		if (timercmp(&now, &sc->sc_linkup_delay_time, <))
+			dopoll = false;
+		else if (sc->sc_linkup_delay_time.tv_sec != 0) {
+			/* Simplify by checking tv_sec only. It's enough. */
+
+			sc->sc_linkup_delay_time.tv_sec = 0;
+			sc->sc_linkup_delay_time.tv_usec = 0;
+		}
+	}
+
+	/*
+	 * Don't call mii_pollstat() while doing workaround.
+	 * See also wm_linkintr_gmii() and wm_tick().
+	 */
+	if (dopoll)
+		mii_pollstat(mii);
+	ifmr->ifm_active = mii->mii_media_active;
+	ifmr->ifm_status = mii->mii_media_status;
+
 	ifmr->ifm_active = (ifmr->ifm_active & ~IFM_ETH_FMASK)
 	    | sc->sc_flowflags;
 }
@@ -11687,23 +12279,25 @@ wm_gmii_i82544_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 	struct wm_softc *sc = device_private(dev);
 	int rv;
 
-	if (reg > BME1000_MAX_MULTI_PAGE_REG) {
-		switch (sc->sc_phytype) {
-		case WMPHY_IGP:
-		case WMPHY_IGP_2:
-		case WMPHY_IGP_3:
+	switch (sc->sc_phytype) {
+	case WMPHY_IGP:
+	case WMPHY_IGP_2:
+	case WMPHY_IGP_3:
+		if (reg > BME1000_MAX_MULTI_PAGE_REG) {
 			rv = wm_gmii_mdic_writereg(dev, phy,
 			    IGPHY_PAGE_SELECT, reg);
 			if (rv != 0)
 				return rv;
-			break;
-		default:
+		}
+		break;
+	default:
 #ifdef WM_DEBUG
-			device_printf(dev, "%s: PHYTYPE = 0x%x, addr = %02x\n",
+		if ((reg >> MII_ADDRBITS) != 0)
+			device_printf(dev,
+			    "%s: PHYTYPE = 0x%x, addr = 0x%02x\n",
 			    __func__, sc->sc_phytype, reg);
 #endif
-			break;
-		}
+		break;
 	}
 
 	return wm_gmii_mdic_readreg(dev, phy, reg & MII_ADDRMASK, val);
@@ -11738,23 +12332,25 @@ wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 	struct wm_softc *sc = device_private(dev);
 	int rv;
 
-	if (reg > BME1000_MAX_MULTI_PAGE_REG) {
-		switch (sc->sc_phytype) {
-		case WMPHY_IGP:
-		case WMPHY_IGP_2:
-		case WMPHY_IGP_3:
+	switch (sc->sc_phytype) {
+	case WMPHY_IGP:
+	case WMPHY_IGP_2:
+	case WMPHY_IGP_3:
+		if (reg > BME1000_MAX_MULTI_PAGE_REG) {
 			rv = wm_gmii_mdic_writereg(dev, phy,
 			    IGPHY_PAGE_SELECT, reg);
 			if (rv != 0)
 				return rv;
-			break;
-		default:
+		}
+		break;
+	default:
 #ifdef WM_DEBUG
-			device_printf(dev, "%s: PHYTYPE == 0x%x, addr = %02x",
+		if ((reg >> MII_ADDRBITS) != 0)
+			device_printf(dev,
+			    "%s: PHYTYPE == 0x%x, addr = 0x%02x",
 			    __func__, sc->sc_phytype, reg);
 #endif
-			break;
-		}
+		break;
 	}
 
 	return wm_gmii_mdic_writereg(dev, phy, reg & MII_ADDRMASK, val);
@@ -13919,6 +14515,7 @@ wm_nvm_valid_bank_detect_ich8lan(struct wm_softc *sc, unsigned int *bank)
 	switch (sc->sc_type) {
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		bank1_offset = sc->sc_ich8_flash_bank_size * 2;
 		act_offset = ICH_NVM_SIG_WORD * 2;
 
@@ -14570,8 +15167,8 @@ wm_nvm_validate_checksum(struct wm_softc *sc)
 		return 0;
 
 #ifdef WM_DEBUG
-	if ((sc->sc_type == WM_T_PCH_LPT) || (sc->sc_type == WM_T_PCH_SPT)
-	    || (sc->sc_type == WM_T_PCH_CNP)) {
+	if ((sc->sc_type == WM_T_PCH_LPT) || (sc->sc_type == WM_T_PCH_SPT) ||
+	    (sc->sc_type == WM_T_PCH_CNP) || (sc->sc_type == WM_T_PCH_TGP)) {
 		csum_wordaddr = NVM_OFF_COMPAT;
 		valid_checksum = NVM_COMPAT_VALID_CHECKSUM;
 	} else {
@@ -14707,6 +15304,7 @@ wm_nvm_version(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		check_version = true;
 		have_build = true;
 		have_uid = false;
@@ -14766,16 +15364,17 @@ printver:
 		/* Option ROM Version */
 		if ((off != 0x0000) && (off != 0xffff)) {
 			int rv;
+			uint16_t oid0, oid1;
 
 			off += NVM_COMBO_VER_OFF;
-			rv = wm_nvm_read(sc, off + 1, 1, &uid1);
-			rv |= wm_nvm_read(sc, off, 1, &uid0);
-			if ((rv == 0) && (uid0 != 0) && (uid0 != 0xffff)
-			    && (uid1 != 0) && (uid1 != 0xffff)) {
+			rv = wm_nvm_read(sc, off + 1, 1, &oid1);
+			rv |= wm_nvm_read(sc, off, 1, &oid0);
+			if ((rv == 0) && (oid0 != 0) && (oid0 != 0xffff)
+			    && (oid1 != 0) && (oid1 != 0xffff)) {
 				/* 16bits */
-				major = uid0 >> 8;
-				build = (uid0 << 8) | (uid1 >> 8);
-				patch = uid1 & 0x00ff;
+				major = oid0 >> 8;
+				build = (oid0 << 8) | (oid1 >> 8);
+				patch = oid1 & 0x00ff;
 				aprint_verbose(", option ROM Version %d.%d.%d",
 				    major, build, patch);
 			}
@@ -15352,6 +15951,7 @@ wm_check_mng_mode(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		rv = wm_check_mng_mode_ich8lan(sc);
 		break;
 	case WM_T_82574:
@@ -15472,6 +16072,7 @@ wm_phy_resetisblocked(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		do {
 			reg = CSR_READ(sc, WMREG_FWSM);
 			if ((reg & FWSM_RSPCIPHY) == 0) {
@@ -15590,6 +16191,7 @@ wm_init_phy_workarounds_pchlan(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		if (wm_phy_is_accessible_pchlan(sc))
 			break;
 
@@ -15761,6 +16363,7 @@ wm_get_wakeup(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		sc->sc_flags |= WM_F_HAS_AMT;
 		sc->sc_flags |= WM_F_ASF_FIRMWARE_PRES;
 		break;
@@ -16040,7 +16643,7 @@ wm_suspend_workarounds_ich8lan(struct wm_softc *sc)
 	phy_ctrl = CSR_READ(sc, WMREG_PHY_CTRL);
 	phy_ctrl |= PHY_CTRL_GBE_DIS;
 
-	KASSERT((sc->sc_type >= WM_T_ICH8) && (sc->sc_type <= WM_T_PCH_CNP));
+	KASSERT((sc->sc_type >= WM_T_ICH8) && (sc->sc_type <= WM_T_PCH_TGP));
 
 	if (sc->sc_phytype == WMPHY_I217) {
 		uint16_t devid = sc->sc_pcidevid;
@@ -16229,7 +16832,8 @@ wm_enable_wakeup(struct wm_softc *sc)
 	if ((sc->sc_type == WM_T_ICH8) || (sc->sc_type == WM_T_ICH9) ||
 	    (sc->sc_type == WM_T_ICH10) || (sc->sc_type == WM_T_PCH) ||
 	    (sc->sc_type == WM_T_PCH2) || (sc->sc_type == WM_T_PCH_LPT) ||
-	    (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP))
+	    (sc->sc_type == WM_T_PCH_SPT) || (sc->sc_type == WM_T_PCH_CNP) ||
+	    (sc->sc_type == WM_T_PCH_TGP))
 		wm_suspend_workarounds_ich8lan(sc);
 
 #if 0	/* For the multicast packet */
@@ -16375,6 +16979,7 @@ wm_lplu_d0_disable(struct wm_softc *sc)
 	case WM_T_PCH_LPT:
 	case WM_T_PCH_SPT:
 	case WM_T_PCH_CNP:
+	case WM_T_PCH_TGP:
 		wm_gmii_hv_readreg(sc->sc_dev, 1, HV_OEM_BITS, &phyval);
 		phyval &= ~(HV_OEM_BITS_A1KDIS | HV_OEM_BITS_LPLU);
 		if (wm_phy_resetisblocked(sc) == false)
@@ -17633,7 +18238,7 @@ wm_legacy_irq_quirk_spt(struct wm_softc *sc)
 	DPRINTF(sc, WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 	KASSERT((sc->sc_type == WM_T_PCH_SPT)
-	    || (sc->sc_type == WM_T_PCH_CNP));
+	    || (sc->sc_type == WM_T_PCH_CNP) || (sc->sc_type == WM_T_PCH_TGP));
 
 	reg = CSR_READ(sc, WMREG_FEXTNVM7);
 	reg |= FEXTNVM7_SIDE_CLK_UNGATE;

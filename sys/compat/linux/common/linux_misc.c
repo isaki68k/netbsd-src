@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $	*/
+/*	$NetBSD: linux_misc.c,v 1.263 2024/02/10 18:43:52 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -57,13 +57,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.263 2024/02/10 18:43:52 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
 #include <sys/dirent.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -169,9 +170,9 @@ const struct linux_mnttypes linux_fstypes[] = {
 const int linux_fstypes_cnt = sizeof(linux_fstypes) / sizeof(linux_fstypes[0]);
 
 # ifdef DEBUG_LINUX
-#define DPRINTF(a)	uprintf a
+#define	DPRINTF(a)	uprintf a
 # else
-#define DPRINTF(a)
+#define	DPRINTF(a)
 # endif
 
 /* Local linux_misc.c functions: */
@@ -179,7 +180,7 @@ static void linux_to_bsd_mmap_args(struct sys_mmap_args *,
     const struct linux_sys_mmap_args *);
 static int linux_mmap(struct lwp *, const struct linux_sys_mmap_args *,
     register_t *, off_t);
-
+static int linux_to_native_wait_options(int);
 
 /*
  * The information on a terminated (or stopped) process needs
@@ -228,19 +229,9 @@ linux_sys_wait4(struct lwp *l, const struct linux_sys_wait4_args *uap, register_
 	if (linux_options & ~(LINUX_WAIT4_KNOWNFLAGS))
 		return (EINVAL);
 
-	options = 0;
-	if (linux_options & LINUX_WAIT4_WNOHANG)
-		options |= WNOHANG;
-	if (linux_options & LINUX_WAIT4_WUNTRACED)
-		options |= WUNTRACED;
-	if (linux_options & LINUX_WAIT4_WCONTINUED)
-		options |= WCONTINUED;
-	if (linux_options & LINUX_WAIT4_WALL)
-		options |= WALLSIG;
-	if (linux_options & LINUX_WAIT4_WCLONE)
-		options |= WALTSIG;
+	options = linux_to_native_wait_options(linux_options);
 # ifdef DIAGNOSTIC
-	if (linux_options & LINUX_WAIT4_WNOTHREAD)
+	if (linux_options & LINUX_WNOTHREAD)
 		printf("WARNING: %s: linux process %d.%d called "
 		       "waitpid with __WNOTHREAD set!\n",
 		       __FILE__, l->l_proc->p_pid, l->l_lid);
@@ -270,6 +261,100 @@ linux_sys_wait4(struct lwp *l, const struct linux_sys_wait4_args *uap, register_
 	}
 
 	return error;
+}
+
+/*
+ * waitid(2).  Converting arguments to the NetBSD equivalent and
+ * calling it.
+ */
+int
+linux_sys_waitid(struct lwp *l, const struct linux_sys_waitid_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) idtype;
+		syscallarg(id_t) id;
+		syscallarg(linux_siginfo_t *) infop;
+		syscallarg(int) options;
+		syscallarg(struct rusage50 *) rusage;
+	} */
+	int error, linux_options, options, linux_idtype, status;
+	pid_t pid;
+	idtype_t idtype;
+	id_t id;
+	siginfo_t info;
+	linux_siginfo_t linux_info;
+	struct wrusage wru;
+	struct rusage50 ru50;
+
+	linux_idtype = SCARG(uap, idtype);
+	switch (linux_idtype) {
+	case LINUX_P_ALL:
+		idtype = P_ALL;
+		break;
+	case LINUX_P_PID:
+		idtype = P_PID;
+		break;
+	case LINUX_P_PGID:
+		idtype = P_PGID;
+		break;
+	case LINUX_P_PIDFD:
+		return EOPNOTSUPP;
+	default:
+		return EINVAL;
+	}
+
+	linux_options = SCARG(uap, options);
+	if (linux_options & ~(LINUX_WAITID_KNOWNFLAGS))
+		return EINVAL;
+
+	options = linux_to_native_wait_options(linux_options);
+	id = SCARG(uap, id);
+
+	error = do_sys_waitid(idtype, id, &pid, &status, options, &wru, &info);
+	if (pid == 0 && options & WNOHANG) {
+		info.si_signo = 0;
+		info.si_pid = 0;
+	}
+
+	if (error == 0 && SCARG(uap, infop) != NULL) {
+		/* POSIX says that this NULL check is a bug, but Linux does this. */
+		native_to_linux_siginfo(&linux_info, &info._info);
+		error = copyout(&linux_info, SCARG(uap, infop), sizeof(linux_info));
+	}
+
+	if (error == 0 && SCARG(uap, rusage) != NULL) {
+		rusage_to_rusage50(&wru.wru_children, &ru50);
+		error = copyout(&ru50, SCARG(uap, rusage), sizeof(ru50));
+	}
+
+	return error;
+}
+
+/*
+ * Convert the options argument for wait4(2) and waitid(2) from what
+ * Linux wants to what NetBSD wants.
+ */
+static int
+linux_to_native_wait_options(int linux_options)
+{
+	int options = 0;
+
+	if (linux_options & LINUX_WNOHANG)
+		options |= WNOHANG;
+	if (linux_options & LINUX_WUNTRACED)
+		options |= WUNTRACED;
+	if (linux_options & LINUX_WEXITED)
+		options |= WEXITED;
+	if (linux_options & LINUX_WCONTINUED)
+		options |= WCONTINUED;
+	if (linux_options & LINUX_WNOWAIT)
+		options |= WNOWAIT;
+	if (linux_options & LINUX_WALL)
+		options |= WALLSIG;
+	if (linux_options & LINUX_WCLONE)
+		options |= WALTSIG;
+
+	return options;
 }
 
 /*
@@ -1680,4 +1765,379 @@ linux_sys_eventfd2(struct lwp *l, const struct linux_sys_eventfd2_args *uap,
 
 	return linux_do_eventfd2(l, SCARG(uap, initval), SCARG(uap, flags),
 				 retval);
+}
+
+#ifndef __aarch64__
+/*
+ * epoll_create(2).  Check size and call sys_epoll_create1.
+ */
+int
+linux_sys_epoll_create(struct lwp *l,
+    const struct linux_sys_epoll_create_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) size;
+	} */
+	struct sys_epoll_create1_args ca;
+
+	/*
+	 * SCARG(uap, size) is unused.  Linux just tests it and then
+	 * forgets it as well.
+	 */
+	if (SCARG(uap, size) <= 0)
+		return EINVAL;
+
+	SCARG(&ca, flags) = 0;
+	return sys_epoll_create1(l, &ca, retval);
+}
+#endif /* !__aarch64__ */
+
+/*
+ * epoll_create1(2).  Translate the flags and call sys_epoll_create1.
+ */
+int
+linux_sys_epoll_create1(struct lwp *l,
+    const struct linux_sys_epoll_create1_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) flags;
+	} */
+	struct sys_epoll_create1_args ca;
+
+        if ((SCARG(uap, flags) & ~(LINUX_O_CLOEXEC)) != 0)
+		return EINVAL;
+
+	SCARG(&ca, flags) = 0;
+	if ((SCARG(uap, flags) & LINUX_O_CLOEXEC) != 0)
+		SCARG(&ca, flags) |= EPOLL_CLOEXEC;
+
+	return sys_epoll_create1(l, &ca, retval);
+}
+
+/*
+ * epoll_ctl(2).  Copyin event and translate it if necessary and then
+ * call epoll_ctl_common().
+ */
+int
+linux_sys_epoll_ctl(struct lwp *l, const struct linux_sys_epoll_ctl_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(int) epfd;
+		syscallarg(int) op;
+		syscallarg(int) fd;
+		syscallarg(struct linux_epoll_event *) event;
+	} */
+	struct linux_epoll_event lee;
+	struct epoll_event ee;
+	struct epoll_event *eep;
+	int error;
+
+	if (SCARG(uap, op) != EPOLL_CTL_DEL) {
+		error = copyin(SCARG(uap, event), &lee, sizeof(lee));
+		if (error != 0)
+			return error;
+
+		/*
+		 * On some architectures, struct linux_epoll_event and
+		 * struct epoll_event are packed differently... but otherwise
+		 * the contents are the same.
+		 */
+		ee.events = lee.events;
+		ee.data = lee.data;
+
+		eep = &ee;
+	} else
+		eep = NULL;
+
+	return epoll_ctl_common(l, retval, SCARG(uap, epfd), SCARG(uap, op),
+	    SCARG(uap, fd), eep);
+}
+
+#ifndef __aarch64__
+/*
+ * epoll_wait(2).  Call sys_epoll_pwait().
+ */
+int
+linux_sys_epoll_wait(struct lwp *l,
+    const struct linux_sys_epoll_wait_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) epfd;
+		syscallarg(struct linux_epoll_event *) events;
+		syscallarg(int) maxevents;
+		syscallarg(int) timeout;
+	} */
+	struct linux_sys_epoll_pwait_args ea;
+
+	SCARG(&ea, epfd) = SCARG(uap, epfd);
+	SCARG(&ea, events) = SCARG(uap, events);
+	SCARG(&ea, maxevents) = SCARG(uap, maxevents);
+	SCARG(&ea, timeout) = SCARG(uap, timeout);
+	SCARG(&ea, sigmask) = NULL;
+
+	return linux_sys_epoll_pwait(l, &ea, retval);
+}
+#endif /* !__aarch64__ */
+
+/*
+ * Main body of epoll_pwait2(2).  Translate timeout and sigmask and
+ * call epoll_wait_common.
+ */
+static int
+linux_epoll_pwait2_common(struct lwp *l, register_t *retval, int epfd,
+    struct linux_epoll_event *events, int maxevents,
+    struct linux_timespec *timeout, const linux_sigset_t *sigmask)
+{
+	struct timespec ts, *tsp;
+	linux_sigset_t lss;
+	sigset_t ss, *ssp;
+	struct epoll_event *eep;
+	struct linux_epoll_event *leep;
+	int i, error;
+
+	if (maxevents <= 0 || maxevents > EPOLL_MAX_EVENTS)
+		return EINVAL;
+
+	if (timeout != NULL) {
+		linux_to_native_timespec(&ts, timeout);
+		tsp = &ts;
+	} else
+		tsp = NULL;
+
+	if (sigmask != NULL) {
+		error = copyin(sigmask, &lss, sizeof(lss));
+		if (error != 0)
+			return error;
+
+		linux_to_native_sigset(&ss, &lss);
+		ssp = &ss;
+	} else
+		ssp = NULL;
+
+	eep = kmem_alloc(maxevents * sizeof(*eep), KM_SLEEP);
+
+	error = epoll_wait_common(l, retval, epfd, eep, maxevents, tsp,
+	    ssp);
+	if (error == 0 && *retval > 0) {
+		leep = kmem_alloc((*retval) * sizeof(*leep), KM_SLEEP);
+
+		/* Translate the events (because of packing). */
+		for (i = 0; i < *retval; i++) {
+			leep[i].events = eep[i].events;
+			leep[i].data = eep[i].data;
+		}
+
+		error = copyout(leep, events, (*retval) * sizeof(*leep));
+		kmem_free(leep, (*retval) * sizeof(*leep));
+	}
+
+	kmem_free(eep, maxevents * sizeof(*eep));
+	return error;
+}
+
+/*
+ * epoll_pwait(2).  Translate timeout and call sys_epoll_pwait2.
+ */
+int
+linux_sys_epoll_pwait(struct lwp *l,
+    const struct linux_sys_epoll_pwait_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) epfd;
+		syscallarg(struct linux_epoll_event *) events;
+		syscallarg(int) maxevents;
+		syscallarg(int) timeout;
+		syscallarg(linux_sigset_t *) sigmask;
+	} */
+        struct linux_timespec lts, *ltsp;
+	const int timeout = SCARG(uap, timeout);
+
+	if (timeout >= 0) {
+		/* Convert from milliseconds to timespec. */
+		lts.tv_sec = timeout / 1000;
+		lts.tv_nsec = (timeout % 1000) * 1000000;
+
+	        ltsp = &lts;
+	} else
+		ltsp = NULL;
+
+	return linux_epoll_pwait2_common(l, retval, SCARG(uap, epfd),
+	    SCARG(uap, events), SCARG(uap, maxevents), ltsp,
+	    SCARG(uap, sigmask));
+}
+
+
+/*
+ * epoll_pwait2(2).  Copyin timeout and call linux_epoll_pwait2_common().
+ */
+int
+linux_sys_epoll_pwait2(struct lwp *l,
+    const struct linux_sys_epoll_pwait2_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) epfd;
+		syscallarg(struct linux_epoll_event *) events;
+		syscallarg(int) maxevents;
+	        syscallarg(struct linux_timespec *) timeout;
+		syscallarg(linux_sigset_t *) sigmask;
+	} */
+	struct linux_timespec lts, *ltsp;
+	int error;
+
+	if (SCARG(uap, timeout) != NULL) {
+		error = copyin(SCARG(uap, timeout), &lts, sizeof(lts));
+		if (error != 0)
+			return error;
+
+		ltsp = &lts;
+	} else
+		ltsp = NULL;
+
+	return linux_epoll_pwait2_common(l, retval, SCARG(uap, epfd),
+	    SCARG(uap, events), SCARG(uap, maxevents), ltsp,
+	    SCARG(uap, sigmask));
+}
+
+#define	LINUX_MFD_CLOEXEC	0x0001U
+#define	LINUX_MFD_ALLOW_SEALING	0x0002U
+#define	LINUX_MFD_HUGETLB	0x0004U
+#define	LINUX_MFD_NOEXEC_SEAL	0x0008U
+#define	LINUX_MFD_EXEC		0x0010U
+#define	LINUX_MFD_HUGE_FLAGS	(0x3f << 26)
+
+#define	LINUX_MFD_ALL_FLAGS	(LINUX_MFD_CLOEXEC|LINUX_MFD_ALLOW_SEALING \
+				|LINUX_MFD_HUGETLB|LINUX_MFD_NOEXEC_SEAL \
+				|LINUX_MFD_EXEC|LINUX_MFD_HUGE_FLAGS)
+#define	LINUX_MFD_KNOWN_FLAGS	(LINUX_MFD_CLOEXEC|LINUX_MFD_ALLOW_SEALING)
+
+#define LINUX_MFD_NAME_MAX	249
+
+/*
+ * memfd_create(2).  Do some error checking and then call NetBSD's
+ * version.
+ */
+int
+linux_sys_memfd_create(struct lwp *l,
+    const struct linux_sys_memfd_create_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(const char *) name;
+		syscallarg(unsigned int) flags;
+	} */
+	int error;
+	char *pbuf;
+	struct sys_memfd_create_args muap;
+	const unsigned int lflags = SCARG(uap, flags);
+
+	KASSERT(LINUX_MFD_NAME_MAX < NAME_MAX); /* sanity check */
+
+	if (lflags & ~LINUX_MFD_ALL_FLAGS)
+		return EINVAL;
+	if ((lflags & LINUX_MFD_HUGE_FLAGS) != 0 &&
+	    (lflags & LINUX_MFD_HUGETLB) == 0)
+		return EINVAL;
+	if ((lflags & LINUX_MFD_HUGETLB) && (lflags & LINUX_MFD_ALLOW_SEALING))
+		return EINVAL;
+
+	/* Linux has a stricter limit for name size */
+	pbuf = PNBUF_GET();
+	error = copyinstr(SCARG(uap, name), pbuf, LINUX_MFD_NAME_MAX+1, NULL);
+	PNBUF_PUT(pbuf);
+	pbuf = NULL;
+	if (error != 0) {
+		if (error == ENAMETOOLONG)
+			error = EINVAL;
+		return error;
+	}
+
+	if (lflags & ~LINUX_MFD_KNOWN_FLAGS) {
+		DPRINTF(("linux_sys_memfd_create: ignored flags %x\n",
+		    lflags & ~LINUX_MFD_KNOWN_FLAGS));
+	}
+
+	SCARG(&muap, name) = SCARG(uap, name);
+	SCARG(&muap, flags) = lflags & LINUX_MFD_KNOWN_FLAGS;
+
+	return sys_memfd_create(l, &muap, retval);
+}
+
+#define	LINUX_CLOSE_RANGE_UNSHARE	0x02U
+#define	LINUX_CLOSE_RANGE_CLOEXEC	0x04U
+
+/*
+ * close_range(2).
+ */
+int
+linux_sys_close_range(struct lwp *l,
+    const struct linux_sys_close_range_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(unsigned int) first;
+		syscallarg(unsigned int) last;
+		syscallarg(unsigned int) flags;
+	} */
+	unsigned int fd, last;
+	file_t *fp;
+	filedesc_t *fdp;
+	const unsigned int flags = SCARG(uap, flags);
+
+	if (flags & ~(LINUX_CLOSE_RANGE_CLOEXEC|LINUX_CLOSE_RANGE_UNSHARE))
+		return EINVAL;
+	if (SCARG(uap, first) > SCARG(uap, last))
+		return EINVAL;
+
+	if (flags & LINUX_CLOSE_RANGE_UNSHARE) {
+		fdp = fd_copy();
+		fd_free();
+	        l->l_proc->p_fd = fdp;
+	        l->l_fd = fdp;
+	}
+
+	last = MIN(SCARG(uap, last), l->l_proc->p_fd->fd_lastfile);
+	for (fd = SCARG(uap, first); fd <= last; fd++) {
+		fp = fd_getfile(fd);
+		if (fp == NULL)
+			continue;
+
+		if (flags & LINUX_CLOSE_RANGE_CLOEXEC) {
+			fd_set_exclose(l, fd, true);
+			fd_putfile(fd);
+		} else
+			fd_close(fd);
+	}
+
+	return 0;
+}
+
+/*
+ * readahead(2).  Call posix_fadvise with POSIX_FADV_WILLNEED with some extra
+ * error checking.
+ */
+int
+linux_sys_readahead(struct lwp *l, const struct linux_sys_readahead_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(int) fd;
+		syscallarg(off_t) offset;
+		syscallarg(size_t) count;
+	} */
+	file_t *fp;
+	int error = 0;
+	const int fd = SCARG(uap, fd);
+
+	fp = fd_getfile(fd);
+	if (fp == NULL)
+		return EBADF;
+	if ((fp->f_flag & FREAD) == 0)
+		error = EBADF;
+	else if (fp->f_type != DTYPE_VNODE || fp->f_vnode->v_type != VREG)
+		error = EINVAL;
+	fd_putfile(fd);
+	if (error != 0)
+		return error;
+
+	return do_posix_fadvise(fd, SCARG(uap, offset), SCARG(uap, count),
+	    POSIX_FADV_WILLNEED);
 }

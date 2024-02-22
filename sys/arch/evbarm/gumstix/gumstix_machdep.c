@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_machdep.c,v 1.72 2022/10/29 13:10:25 jmcneill Exp $ */
+/*	$NetBSD: gumstix_machdep.c,v 1.75 2023/10/12 11:33:37 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006, 2007  WIDE Project and SOUM Corporation.
  * All rights reserved.
@@ -277,73 +277,51 @@ read_ttb(void)
  * using the 2nd page tables.
  */
 
-#define	_A(a)	((a) & ~L1_S_OFFSET)
-#define	_S(s)	(((s) + L1_S_SIZE - 1) & ~(L1_S_SIZE-1))
-
 static const struct pmap_devmap gumstix_devmap[] = {
 #if defined(GUMSTIX)
-	{
+	DEVMAP_ENTRY(
 		GUMSTIX_GPIO_VBASE,
-		_A(PXA2X0_GPIO_BASE),
-		_S(PXA250_GPIO_SIZE),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_GPIO_BASE,
+		PXA250_GPIO_SIZE
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_CLKMAN_VBASE,
-		_A(PXA2X0_CLKMAN_BASE),
-		_S(PXA2X0_CLKMAN_SIZE),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_CLKMAN_BASE,
+		PXA2X0_CLKMAN_SIZE
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_INTCTL_VBASE,
-		_A(PXA2X0_INTCTL_BASE),
-		_S(PXA2X0_INTCTL_SIZE),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_INTCTL_BASE,
+		PXA2X0_INTCTL_SIZE
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_FFUART_VBASE,
-		_A(PXA2X0_FFUART_BASE),
-		_S(4 * COM_NPORTS),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_FFUART_BASE,
+		4 * COM_NPORTS
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_STUART_VBASE,
-		_A(PXA2X0_STUART_BASE),
-		_S(4 * COM_NPORTS),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_STUART_BASE,
+		4 * COM_NPORTS
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_BTUART_VBASE,
-		_A(PXA2X0_BTUART_BASE),
-		_S(4 * COM_NPORTS),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_BTUART_BASE,
+		4 * COM_NPORTS
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_HWUART_VBASE,
-		_A(PXA2X0_HWUART_BASE),
-		_S(4 * COM_NPORTS),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
-	{
+		PXA2X0_HWUART_BASE,
+		4 * COM_NPORTS
+	),
+	DEVMAP_ENTRY(
 		GUMSTIX_LCDC_VBASE,
-		_A(PXA2X0_LCDC_BASE),
-		_S(4 * COM_NPORTS),
-		VM_PROT_READ | VM_PROT_WRITE,
-		PTE_NOCACHE,
-	},
+		PXA2X0_LCDC_BASE,
+		4 * COM_NPORTS
+	),
 #endif
-	{ 0, 0, 0, 0, 0 }
+	DEVMAP_ENTRY_END
 };
-
-#undef	_A
-#undef	_S
 
 extern uint32_t *uboot_args;
 
@@ -381,7 +359,6 @@ initarm(void *arg)
 	 * 0xa0000000 - 0xa3ffffff    SDRAM Bank 0 (64MB or 128MB)
 	 * 0xc0000000 - 0xc3ffffff    KERNEL_BASE
 	 */
-	extern vaddr_t xscale_cache_clean_addr;
 	xscale_cache_clean_addr = 0xff000000U;
 
 	cpu_reset_address = NULL;
@@ -489,6 +466,13 @@ read_system_serial(void)
 	char system_serial[GUMSTIX_SYSTEM_SERIAL_SIZE], *src;
 	char x;
 
+/*
+ * XXXGCC12.
+ * This accesses beyond what "char *src" is known to supply.
+ */
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Warray-bounds"
+
 	src = (char *)(FLASH_OFFSET_USER_PROTECTION * 2 /*word*/);
 	*(volatile uint16_t *)0 = FLASH_CMD_READ_ID;
 	memcpy(system_serial,
@@ -509,6 +493,7 @@ read_system_serial(void)
 		 * gumstix_serial_hash(system_serial);
 		 */
 	}
+#pragma GCC pop_options
 	system_serial_high = system_serial[0] << 24 | system_serial[1] << 16 |
 	    system_serial[2] << 8 | system_serial[3];
 	system_serial_low = system_serial[4] << 24 | system_serial[5] << 16 |

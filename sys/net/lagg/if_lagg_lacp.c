@@ -1,4 +1,4 @@
-/*	$NetBSD: if_lagg_lacp.c,v 1.25 2022/04/10 09:50:46 andvar Exp $	*/
+/*	$NetBSD: if_lagg_lacp.c,v 1.29 2023/11/22 03:52:58 yamaguchi Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-NetBSD
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_lagg_lacp.c,v 1.25 2022/04/10 09:50:46 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_lagg_lacp.c,v 1.29 2023/11/22 03:52:58 yamaguchi Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_lagg.h"
@@ -126,7 +126,7 @@ struct lacp_port {
 	struct lacp_aggregator	*lp_aggregator;
 	struct lacp_aggregator_systemid
 				 lp_aggregator_sidbuf;
-	uint32_t		 lp_media;
+	uint64_t		 lp_linkspeed;
 	int			 lp_pending;
 	LIST_ENTRY(lacp_port)	 lp_entry_la;
 	struct timeval		 lp_last_lacpdu;
@@ -165,6 +165,7 @@ struct lacp_softc {
 	struct workqueue	*lsc_workq;
 	struct lagg_work	 lsc_work_tick;
 	struct lagg_work	 lsc_work_rcvdu;
+	struct lagg_work	 lsc_work_linkspeed;
 	callout_t		 lsc_tick;
 	pcq_t			*lsc_du_q;
 
@@ -247,7 +248,6 @@ static void	lacp_dprintf(const struct lacp_softc *,
 static void	lacp_tick(void *);
 static void	lacp_tick_work(struct lagg_work *, void *);
 static void	lacp_linkstate(struct lagg_proto_softc *, struct lagg_port *);
-static uint32_t	lacp_ifmedia2lacpmedia(u_int);
 static void	lacp_port_disable(struct lacp_softc *, struct lacp_port *);
 static void	lacp_port_enable(struct lacp_softc *, struct lacp_port *);
 static void	lacp_peerinfo_actor(struct lacp_softc *, struct lacp_port *,
@@ -285,6 +285,7 @@ static void	lacp_sm_ptx_update_timeout(struct lacp_port *, uint8_t);
 
 static void	lacp_rcvdu_work(struct lagg_work *, void *);
 static void	lacp_marker_work(struct lagg_work *, void *);
+static void	lacp_linkspeed_work(struct lagg_work *, void *);
 static void	lacp_dump_lacpdutlv(const struct lacpdu_peerinfo *,
 		    const struct lacpdu_peerinfo *,
 		    const struct lacpdu_collectorinfo *);
@@ -413,9 +414,9 @@ lacp_port_priority_max(struct lacp_port *a, struct lacp_port *b)
 	if (pri_b < pri_a)
 		return b;
 
-	if (a->lp_media > b->lp_media)
+	if (a->lp_linkspeed > b->lp_linkspeed)
 		return a;
-	if (b->lp_media > a->lp_media)
+	if (b->lp_linkspeed > a->lp_linkspeed)
 		return b;
 
 	return a;
@@ -487,6 +488,8 @@ lacp_attach(struct lagg_softc *sc, struct lagg_proto_softc **lscp)
 
 	lagg_work_set(&lsc->lsc_work_tick, lacp_tick_work, lsc);
 	lagg_work_set(&lsc->lsc_work_rcvdu, lacp_rcvdu_work, lsc);
+	lagg_work_set(&lsc->lsc_work_linkspeed,
+	    lacp_linkspeed_work, lsc);
 
 	snprintf(xnamebuf, sizeof(xnamebuf), "%s.lacp",
 	    sc->sc_if.if_xname);
@@ -852,7 +855,7 @@ lacp_linkstate_ifnet_locked(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 	struct ifmediareq ifmr;
 	struct ifnet *ifp_port;
 	uint8_t old_state;
-	uint32_t media, old_media;
+	uint64_t old_linkspeed, new_linkspeed;
 	int error;
 
 	KASSERT(IFNET_LOCKED(lp->lp_ifp));
@@ -861,14 +864,24 @@ lacp_linkstate_ifnet_locked(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 
 	ifp_port = lp->lp_ifp;
 	lacpp = lp->lp_proto_ctx;
-	media = LACP_MEDIA_DEFAULT;
 
 	memset(&ifmr, 0, sizeof(ifmr));
 	ifmr.ifm_count = 0;
 	error = if_ioctl(ifp_port, SIOCGIFMEDIA, (void *)&ifmr);
 	if (error == 0) {
-		media = lacp_ifmedia2lacpmedia(ifmr.ifm_active);
-	} else if (error != ENOTTY){
+		new_linkspeed = ifmedia_baudrate(ifmr.ifm_active);
+#ifdef LACP_NOFDX
+		/*
+		 * some driver that has no media, e.g. vioif(4),
+		 * returns (IFM_ETHER | IFM_AUTO)
+		 */
+		if ((ifmr.ifm_active & ~(IFM_ETHER | IFM_AUTO)) == 0)
+			ifmr.ifm_active |= IFM_FDX;
+#endif
+	} else if (error == ENOTTY) {
+		ifmr.ifm_active = IFM_FDX | IF_Gbps(0);
+		new_linkspeed = 0;
+	} else {
 		LACP_DPRINTF((lsc, lacpp,
 		    "SIOCGIFMEDIA failed (%d)\n", error));
 		return;
@@ -876,34 +889,31 @@ lacp_linkstate_ifnet_locked(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 
 	LACP_LOCK(lsc);
 	if (lsc->lsc_running) {
-		old_media = lacpp->lp_media;
+		old_linkspeed = lacpp->lp_linkspeed;
 		old_state = lacpp->lp_actor.lpi_state;
 
-		if (lacpp->lp_media != media) {
+		if (new_linkspeed != old_linkspeed) {
 			LACP_DPRINTF((lsc, lacpp,
-			    "media changed 0x%"PRIx32"->0x%"PRIx32", "
-			    "ether = %d, fdx = %d, link = %d, running = %d\n",
-			    lacpp->lp_media, media,
-			    ISSET(media, LACP_MEDIA_ETHER) != 0,
-			    ISSET(media, LACP_MEDIA_FDX) != 0,
-			    ifp_port->if_link_state != LINK_STATE_DOWN,
-			    ISSET(ifp_port->if_flags, IFF_RUNNING) != 0));
-			lacpp->lp_media = media;
+			    "linkspeed changed %"PRIu64" -> %"PRIu64"\n",
+			    old_linkspeed, new_linkspeed));
+			lacpp->lp_linkspeed = new_linkspeed;
 		}
 
-		if (ISSET(media, LACP_MEDIA_ETHER) &&
-#ifndef LACP_NOFDX
-		    ISSET(media, LACP_MEDIA_FDX) &&
-#endif
-		    ifp_port->if_link_state != LINK_STATE_DOWN &&
-		    ISSET(ifp_port->if_flags, IFF_RUNNING)) {
+		if (ISSET(ifmr.ifm_active, IFM_FDX) &&
+		    ISSET(ifp_port->if_flags, IFF_RUNNING) &&
+		    ifp_port->if_link_state != LINK_STATE_DOWN) {
 			lacp_port_enable(lsc, lacpp);
 		} else {
+			LACP_DPRINTF((lsc, lacpp,
+			    "FDX=%d, RUNNING=%d, link=%d\n",
+			    ISSET(ifmr.ifm_active, IFM_FDX) != 0,
+			    ISSET(ifp_port->if_flags, IFF_RUNNING) != 0,
+			    ifp_port->if_link_state != LINK_STATE_DOWN));
 			lacp_port_disable(lsc, lacpp);
 		}
 
 		if (old_state != lacpp->lp_actor.lpi_state ||
-		    old_media != media) {
+		    old_linkspeed != new_linkspeed) {
 			LACP_DPRINTF((lsc, lacpp,
 			    "state changed to UNSELECTED\n"));
 			lacpp->lp_selected = LACP_UNSELECTED;
@@ -912,7 +922,6 @@ lacp_linkstate_ifnet_locked(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 		LACP_DPRINTF((lsc, lacpp,
 		    "LACP is inactive, skip linkstate\n"));
 	}
-
 	LACP_UNLOCK(lsc);
 }
 
@@ -1689,6 +1698,8 @@ lacp_sm_rx_record_default(struct lacp_softc *lsc, struct lacp_port *lacpp)
 		LACP_STATE_STR(pi->lpi_state, buf, sizeof(buf));
 		LACP_DPRINTF((lsc, lacpp, "newpstate %s\n", buf));
 	}
+
+	lacp_sm_ptx_update_timeout(lacpp, oldpstate);
 }
 
 static inline bool
@@ -1764,12 +1775,17 @@ lacp_sm_rx_record_peerinfo(struct lacp_softc *lsc, struct lacp_port *lacpp,
 static void
 lacp_sm_rx_set_expired(struct lacp_port *lacpp)
 {
+	uint8_t oldpstate;
+
+	oldpstate = lacpp->lp_partner.lpi_state;
 
 	CLR(lacpp->lp_partner.lpi_state, LACP_STATE_SYNC);
 	SET(lacpp->lp_partner.lpi_state, LACP_STATE_TIMEOUT);
 	LACP_TIMER_ARM(lacpp, LACP_TIMER_CURRENT_WHILE,
 	    LACP_SHORT_TIMEOUT_TIME);
 	SET(lacpp->lp_actor.lpi_state, LACP_STATE_EXPIRED);
+
+	lacp_sm_ptx_update_timeout(lacpp, oldpstate);
 }
 
 static void
@@ -1855,7 +1871,7 @@ lacp_sm_ptx_schedule(struct lacp_port *lacpp)
 	if (LACP_TIMER_ISARMED(lacpp, LACP_TIMER_PERIODIC))
 		return;
 
-	timeout = ISSET(lacpp->lp_actor.lpi_state, LACP_STATE_TIMEOUT) ?
+	timeout = ISSET(lacpp->lp_partner.lpi_state, LACP_STATE_TIMEOUT) ?
 		LACP_FAST_PERIODIC_TIME : LACP_SLOW_PERIODIC_TIME;
 
 	LACP_TIMER_ARM(lacpp, LACP_TIMER_PERIODIC, timeout);
@@ -2044,6 +2060,8 @@ lacp_update_portmap(struct lacp_softc *lsc)
 		if_link_state_change(&sc->sc_if, link);
 	}
 
+	lagg_workq_add(lsc->lsc_workq,  &lsc->lsc_work_linkspeed);
+
 	/* cleanup */
 	pm_act->pm_count = 0;
 	memset(pm_act->pm_ports, 0, sizeof(pm_act->pm_ports));
@@ -2059,8 +2077,11 @@ lacp_disable_distributing(struct lacp_softc *lsc, struct lacp_port *lacpp)
 
 	KASSERT(LACP_LOCKED(lsc));
 
-	LACP_DPRINTF((lsc, lacpp, "distributing disabled\n"));
-	CLR(lacpp->lp_actor.lpi_state, LACP_STATE_DISTRIBUTING);
+	if (ISSET(lacpp->lp_actor.lpi_state, LACP_STATE_DISTRIBUTING)) {
+		LAGG_LOG(lsc->lsc_softc, LOG_INFO,
+		    "disable distributing on %s\n", LACP_PORT_XNAME(lacpp));
+		CLR(lacpp->lp_actor.lpi_state, LACP_STATE_DISTRIBUTING);
+	}
 
 	s = pserialize_read_enter();
 	act = LACP_PORTMAP_ACTIVE(lsc);
@@ -2087,7 +2108,8 @@ lacp_enable_distributing(struct lacp_softc *lsc, struct lacp_port *lacpp)
 
 	KASSERT(lacp_isactive(lsc, lacpp));
 
-	LACP_DPRINTF((lsc, lacpp, "distributing enabled\n"));
+	LAGG_LOG(lsc->lsc_softc, LOG_INFO,
+	    "enable distributing on %s\n", LACP_PORT_XNAME(lacpp));
 	SET(lacpp->lp_actor.lpi_state, LACP_STATE_DISTRIBUTING);
 	lacp_suppress_distributing(lsc);
 	lacp_update_portmap(lsc);
@@ -2347,8 +2369,10 @@ static void
 lacp_selected_update(struct lacp_softc *lsc, struct lacp_aggregator *la)
 {
 	struct lacp_port *lacpp;
+	enum lacp_selected next_selected;
+	const char *msg;
 	size_t nselected;
-	uint32_t media;
+	uint64_t linkspeed;
 
 	KASSERT(LACP_LOCKED(lsc));
 
@@ -2356,27 +2380,34 @@ lacp_selected_update(struct lacp_softc *lsc, struct lacp_aggregator *la)
 	if (lacpp == NULL)
 		return;
 
-	media = lacpp->lp_media;
+	linkspeed = lacpp->lp_linkspeed;
 	nselected = 0;
 	LIST_FOREACH(lacpp, &la->la_ports, lp_entry_la) {
-		if (nselected >= lsc->lsc_max_ports ||
-		    (!lsc->lsc_multi_linkspeed && media != lacpp->lp_media)) {
-			if (lacpp->lp_selected == LACP_SELECTED)
-				lacpp->lp_selected = LACP_STANDBY;
+		if (lacpp->lp_selected == LACP_UNSELECTED)
 			continue;
+
+		next_selected = LACP_SELECTED;
+		msg = " is selected";
+
+		if (nselected >= lsc->lsc_max_ports) {
+			next_selected = LACP_STANDBY;
+			msg = " is standby because of too many active ports";
 		}
 
-		switch (lacpp->lp_selected) {
-		case LACP_STANDBY:
-			lacpp->lp_selected = LACP_SELECTED;
-			/* fall through */
-		case LACP_SELECTED:
-			nselected++;
-			break;
-		default:
-			/* do nothing */
-			break;
+		if (!lsc->lsc_multi_linkspeed &&
+		    linkspeed != lacpp->lp_linkspeed) {
+			next_selected = LACP_STANDBY;
+			msg = " is standby because of link speed mismatch";
 		}
+
+		if (lacpp->lp_selected != next_selected) {
+			lacpp->lp_selected = next_selected;
+			LAGG_LOG(lsc->lsc_softc, LOG_INFO,
+			    "%s%s\n", LACP_PORT_XNAME(lacpp), msg);
+		}
+
+		if (lacpp->lp_selected == LACP_SELECTED)
+			nselected++;
 	}
 }
 
@@ -2670,62 +2701,6 @@ lacp_dump_markertlv(const struct markerdu_info *mi_info,
 	}
 }
 
-static uint32_t
-lacp_ifmedia2lacpmedia(u_int ifmedia)
-{
-	uint32_t rv;
-
-	switch (IFM_SUBTYPE(ifmedia)) {
-	case IFM_10_T:
-	case IFM_10_2:
-	case IFM_10_5:
-	case IFM_10_STP:
-	case IFM_10_FL:
-		rv = LACP_LINKSPEED_10;
-		break;
-	case IFM_100_TX:
-	case IFM_100_FX:
-	case IFM_100_T4:
-	case IFM_100_VG:
-	case IFM_100_T2:
-		rv = LACP_LINKSPEED_100;
-		break;
-	case IFM_1000_SX:
-	case IFM_1000_LX:
-	case IFM_1000_CX:
-	case IFM_1000_T:
-	case IFM_1000_BX10:
-	case IFM_1000_KX:
-		rv = LACP_LINKSPEED_1000;
-		break;
-	case IFM_2500_SX:
-	case IFM_2500_KX:
-		rv = LACP_LINKSPEED_2500;
-		break;
-	case IFM_5000_T:
-		rv = LACP_LINKSPEED_5000;
-		break;
-	case IFM_10G_LR:
-	case IFM_10G_SR:
-	case IFM_10G_CX4:
-	case IFM_10G_TWINAX:
-	case IFM_10G_TWINAX_LONG:
-	case IFM_10G_LRM:
-	case IFM_10G_T:
-		rv = LACP_LINKSPEED_10G;
-		break;
-	default:
-		rv = LACP_LINKSPEED_UNKNOWN;
-	}
-
-	if (IFM_TYPE(ifmedia) == IFM_ETHER)
-		SET(rv, LACP_MEDIA_ETHER);
-	if ((ifmedia & IFM_FDX) != 0)
-		SET(rv, LACP_MEDIA_FDX);
-
-	return rv;
-}
-
 static void
 lacp_linkstate(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 {
@@ -2735,4 +2710,32 @@ lacp_linkstate(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 	IFNET_LOCK(lp->lp_ifp);
 	lacp_linkstate_ifnet_locked(xlsc, lp);
 	IFNET_UNLOCK(lp->lp_ifp);
+}
+
+static void
+lacp_linkspeed_work(struct lagg_work *lw __unused, void *xlsc)
+{
+	struct lacp_softc *lsc = (struct lacp_softc *)xlsc;
+	struct lagg_softc *sc = lsc->lsc_softc;
+	struct lacp_portmap *pm;
+	struct lagg_port *lp;
+	struct lacp_port *lacpp;
+	uint64_t linkspeed;
+	size_t act, i;
+
+	linkspeed = 0;
+
+	LACP_LOCK(lsc);
+	act = LACP_PORTMAP_ACTIVE(lsc);
+	pm = &lsc->lsc_portmaps[act];
+	for (i = 0; i < pm->pm_count; i++) {
+		lp = pm->pm_ports[i];
+		lacpp = lp->lp_proto_ctx;
+		linkspeed = MAX(linkspeed, lacpp->lp_linkspeed);
+	}
+	LACP_UNLOCK(lsc);
+
+	LAGG_LOCK(sc);
+	lagg_set_linkspeed(sc, linkspeed);
+	LAGG_UNLOCK(sc);
 }

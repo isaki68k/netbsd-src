@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.c,v 1.108 2021/10/09 20:00:41 tsutsui Exp $ */
+/* $NetBSD: machdep.c,v 1.111 2024/01/15 19:44:07 andvar Exp $ */
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.108 2021/10/09 20:00:41 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.111 2024/01/15 19:44:07 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -49,7 +49,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.108 2021/10/09 20:00:41 tsutsui Exp $"
 #include <sys/conf.h>
 #include <sys/file.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/msgbuf.h>
 #include <sys/ioctl.h>
@@ -223,7 +222,7 @@ luna68k_init(void)
 	 *
 	 * 'bootarg' on LUNA-II has "<args of x command>" only.
 	 *
-	 * NetBSD/luna68k cares only the first argment; any of "sda".
+	 * NetBSD/luna68k cares only the first argument; any of "sda".
 	 */
 	bootarg[63] = '\0';
 	for (cp = bootarg; *cp != '\0'; cp++) {
@@ -822,14 +821,7 @@ luna68k_abort(const char *cp)
 int
 cpu_exec_aout_makecmds(struct lwp *l, struct exec_package *epp)
 {
-	int error = ENOEXEC;
-#ifdef COMPAT_SUNOS
-	extern sunos_exec_aout_makecmds(struct proc *, struct exec_package *);
-
-	if ((error = sunos_exec_aout_makecmds(l->l_proc, epp)) == 0)
-		return 0;
-#endif
-	return error;
+	return ENOEXEC;
 }
 
 #ifdef MODULAR

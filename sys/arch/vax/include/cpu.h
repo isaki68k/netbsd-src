@@ -1,4 +1,4 @@
-/*      $NetBSD: cpu.h,v 1.106 2022/12/11 18:02:40 oster Exp $      */
+/*      $NetBSD: cpu.h,v 1.108 2023/12/19 00:29:48 kalvisd Exp $      */
 
 /*
  * Copyright (c) 1994 Ludd, University of Lule}, Sweden

@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.11 2022/10/11 22:03:37 andvar Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.13 2024/01/28 09:03:22 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,11 +58,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.11 2022/10/11 22:03:37 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.13 2024/01/28 09:03:22 macallan Exp $");
 
 #include "locators.h"
 #include "power.h"
 #include "lcd.h"
+#include "opt_useleds.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -83,9 +84,7 @@ __KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.11 2022/10/11 22:03:37 andvar Exp $");
 #include <hppa/hppa/machdep.h>
 #include <hppa/dev/cpudevs.h>
 
-#if NLCD > 0
 static struct pdc_chassis_info pdc_chassis_info;
-#endif
 
 #ifdef MBUSDEBUG
 
@@ -714,7 +713,9 @@ const struct hppa_bus_space_tag hppa_bustag = {
 	mbus_map, mbus_unmap, mbus_subregion, mbus_alloc, mbus_free,
 	mbus_barrier, mbus_vaddr, mbus_mmap,
 	mbus_r1,    mbus_r2,   mbus_r4,   mbus_r8,
+	            mbus_r2,   mbus_r4,   mbus_r8,
 	mbus_w1,    mbus_w2,   mbus_w4,   mbus_w8,
+	            mbus_w2,   mbus_w4,   mbus_w8,
 	mbus_rm_1,  mbus_rm_2, mbus_rm_4, mbus_rm_8,
 	mbus_wm_1,  mbus_wm_2, mbus_wm_4, mbus_wm_8,
 	mbus_sm_1,  mbus_sm_2, mbus_sm_4, mbus_sm_8,
@@ -1362,9 +1363,7 @@ mbattach(device_t parent, device_t self, void *aux)
 	struct mainbus_softc *sc = device_private(self);
 	struct confargs nca;
 	bus_space_handle_t ioh;
-#if NLCD > 0
 	int err;
-#endif
 
 	sc->sc_dv = self;
 	mb_attached = 1;
@@ -1409,11 +1408,11 @@ mbattach(device_t parent, device_t self, void *aux)
 	config_found(self, &nca, mbprint, CFARGS_NONE);
 #endif
 
-#if NLCD > 0
 	memset(&nca, 0, sizeof(nca));
 	err = pdcproc_chassis_info(&pdc_chassis_info, &nca.ca_pcl);
 	if (!err) {
 		if (nca.ca_pcl.enabled) {
+#if NLCD > 0
 			nca.ca_name = "lcd";
 			nca.ca_dp.dp_bc[0] = nca.ca_dp.dp_bc[1] = nca.ca_dp.dp_bc[2] =
 			nca.ca_dp.dp_bc[3] = nca.ca_dp.dp_bc[4] = nca.ca_dp.dp_bc[5] = -1;
@@ -1423,13 +1422,15 @@ mbattach(device_t parent, device_t self, void *aux)
 			nca.ca_hpa = nca.ca_pcl.cmd_addr;
 
 			config_found(self, &nca, mbprint, CFARGS_NONE);
+#endif
 		} else if (nca.ca_pcl.model == 2) {
+#ifdef USELEDS
 			bus_space_map(&hppa_bustag, nca.ca_pcl.cmd_addr,
 		  	  4, 0, (bus_space_handle_t *)&machine_ledaddr);
 		  	machine_ledword = 1;
+#endif
 		}
 	}
-#endif
 
 	hppa_modules_scan();
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: mvxpsec.c,v 1.18 2022/12/31 21:15:20 andvar Exp $	*/
+/*	$NetBSD: mvxpsec.c,v 1.20 2024/02/09 22:08:35 andvar Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -2010,7 +2010,7 @@ fail:
 	if (mv_s)
 		mvxpsec_session_dealloc(mv_s);
 	log(LOG_WARNING,
-	    "%s: Failed to add H/W crypto sessoin (id:%u): err=%d\n",
+	    "%s: Failed to add H/W crypto session (id:%u): err=%d\n",
 	   __func__, session, err);
 
 	mutex_exit(&sc->sc_session_mtx);
@@ -2432,7 +2432,7 @@ mvxpsec_packet_setcrp(struct mvxpsec_packet *mv_p, struct cryptop *crp)
 {
 	int err = EINVAL;
 
-	/* regiseter crp to the MVXPSEC packet */
+	/* register crp to the MVXPSEC packet */
 	if (crp->crp_flags & CRYPTO_F_IMBUF) {
 		err = mvxpsec_packet_setmbuf(mv_p,
 		    (struct mbuf *)crp->crp_buf);

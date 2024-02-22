@@ -1,4 +1,4 @@
-/*	$NetBSD: virtio.c,v 1.74 2023/03/31 07:34:26 yamaguchi Exp $	*/
+/*	$NetBSD: virtio.c,v 1.81 2024/02/10 02:25:15 isaki Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.74 2023/03/31 07:34:26 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.81 2024/02/10 02:25:15 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -85,7 +85,7 @@ virtio_set_status(struct virtio_softc *sc, int status)
  *	virtio_reset(sc);	     // this will stop the device activity
  *	<dequeue finished requests>; // virtio_dequeue() still can be called
  *	<revoke pending requests in the vqs if any>;
- *	virtio_reinit_start(sc);     // dequeue prohibitted
+ *	virtio_reinit_start(sc);     // dequeue prohibited
  *	newfeatures = virtio_negotiate_features(sc, requestedfeatures);
  *	<some other initialization>;
  *	virtio_reinit_end(sc);	     // device activated; enqueue allowed
@@ -276,8 +276,15 @@ virtio_read_device_config_le_2(struct virtio_softc *sc, int index)
 	uint16_t val;
 
 	val = bus_space_read_2(iot, ioh, index);
+#if !defined(__aarch64__) && !defined(__arm__)
+	/*
+	 * For big-endian aarch64/armv7, bus endian is always LSB, but
+	 * byte-order is automatically swapped by bus_space(9) (see also
+	 * comments in virtio_pci.c). Therefore, no need to swap here.
+	 */
 	if (sc->sc_bus_endian != LITTLE_ENDIAN)
 		val = bswap16(val);
+#endif
 
 	DPRINTFR("read_le_2", "%04x", val, index, 2);
 	DPRINTFR2("read_le_2", "%04x",
@@ -294,8 +301,11 @@ virtio_read_device_config_le_4(struct virtio_softc *sc, int index)
 	uint32_t val;
 
 	val = bus_space_read_4(iot, ioh, index);
+#if !defined(__aarch64__) && !defined(__arm__)
+	/* See virtio_read_device_config_le_2() above. */
 	if (sc->sc_bus_endian != LITTLE_ENDIAN)
 		val = bswap32(val);
+#endif
 
 	DPRINTFR("read_le_4", "%08x", val, index, 4);
 	DPRINTFR2("read_le_4", "%08x",
@@ -660,7 +670,7 @@ virtio_stop_vq_intr(struct virtio_softc *sc, struct virtqueue *vq)
 		 * No way to disable the interrupt completely with
 		 * RingEventIdx. Instead advance used_event by half the
 		 * possible value. This won't happen soon and is far enough in
-		 * the past to not trigger a spurios interrupt.
+		 * the past to not trigger a spurious interrupt.
 		 */
 		*vq->vq_used_event = virtio_rw16(sc, vq->vq_used_idx + 0x8000);
 		vq_sync_aring_used(sc, vq, BUS_DMASYNC_PREWRITE);
@@ -944,12 +954,12 @@ vq_alloc_slot_locked(struct virtio_softc *sc, struct virtqueue *vq,
     size_t nslots)
 {
 	struct vring_desc *vd;
-	uint16_t rv, tail;
+	uint16_t head, tail;
 	size_t i;
 
 	KASSERT(mutex_owned(&vq->vq_freedesc_lock));
 
-	tail = virtio_rw16(sc, vq->vq_free_idx);
+	head = tail = virtio_rw16(sc, vq->vq_free_idx);
 	for (i = 0; i < nslots - 1; i++) {
 		if (tail == VRING_DESC_CHAIN_END)
 			return VRING_DESC_CHAIN_END;
@@ -962,13 +972,11 @@ vq_alloc_slot_locked(struct virtio_softc *sc, struct virtqueue *vq,
 	if (tail == VRING_DESC_CHAIN_END)
 		return VRING_DESC_CHAIN_END;
 
-	rv = virtio_rw16(sc, vq->vq_free_idx);
-
 	vd = &vq->vq_desc[tail];
 	vd->flags = virtio_rw16(sc, 0);
 	vq->vq_free_idx = vd->next;
 
-	return rv;
+	return head;
 }
 static uint16_t
 vq_alloc_slot(struct virtio_softc *sc, struct virtqueue *vq, size_t nslots)
@@ -1061,7 +1069,8 @@ virtio_enqueue_reserve(struct virtio_softc *sc, struct virtqueue *vq,
 	struct vring_desc_extra *vdx;
 	int i;
 
-	KASSERT(1 <= nsegs && nsegs <= vq->vq_num);
+	KASSERT(1 <= nsegs);
+	KASSERT(nsegs <= vq->vq_num);
 
 	vdx = &vq->vq_descx[slot];
 	vd = &vq->vq_desc[slot];
@@ -1096,16 +1105,17 @@ virtio_enqueue_reserve(struct virtio_softc *sc, struct virtqueue *vq,
 		}
 		vd[i].flags  = virtio_rw16(sc, 0);
 	} else {
-		uint16_t s;
+		if (nsegs > 1) {
+			uint16_t s;
 
-		s = vq_alloc_slot(sc, vq, nsegs - 1);
-		if (s == VRING_DESC_CHAIN_END) {
-			vq_free_slot(sc, vq, slot);
-			return EAGAIN;
+			s = vq_alloc_slot(sc, vq, nsegs - 1);
+			if (s == VRING_DESC_CHAIN_END) {
+				vq_free_slot(sc, vq, slot);
+				return EAGAIN;
+			}
+			vd->next = virtio_rw16(sc, s);
+			vd->flags = virtio_rw16(sc, VRING_DESC_F_NEXT);
 		}
-
-		vd->next = virtio_rw16(sc, s);
-		vd->flags = virtio_rw16(sc, VRING_DESC_F_NEXT);
 
 		vdx->desc_base = &vq->vq_desc[0];
 		vdx->desc_free_idx = slot;
@@ -1259,11 +1269,11 @@ virtio_enqueue_abort(struct virtio_softc *sc, struct virtqueue *vq, int slot)
 {
 	struct vring_desc_extra *vdx;
 
-	vq_free_slot(sc, vq, slot);
-
 	vdx = &vq->vq_descx[slot];
 	vdx->desc_free_idx = VRING_DESC_CHAIN_END;
 	vdx->desc_base = NULL;
+
+	vq_free_slot(sc, vq, slot);
 
 	return 0;
 }
@@ -1309,11 +1319,11 @@ virtio_dequeue_commit(struct virtio_softc *sc, struct virtqueue *vq, int slot)
 {
 	struct vring_desc_extra *vdx;
 
-	vq_free_slot(sc, vq, slot);
-
 	vdx = &vq->vq_descx[slot];
 	vdx->desc_base = NULL;
 	vdx->desc_free_idx = VRING_DESC_CHAIN_END;
+
+	vq_free_slot(sc, vq, slot);
 
 	return 0;
 }
@@ -1328,7 +1338,7 @@ virtio_child_attach_start(struct virtio_softc *sc, device_t child, int ipl,
 	char buf[1024];
 
 	KASSERT(sc->sc_child == NULL);
-	KASSERT(!ISSET(sc->sc_child_flags, VIRTIO_CHILD_DETACHED));
+	KASSERT(sc->sc_child_state == VIRTIO_NO_CHILD);
 
 	sc->sc_child = child;
 	sc->sc_ipl = ipl;
@@ -1404,7 +1414,7 @@ virtio_child_attach_finish(struct virtio_softc *sc,
 		}
 	}
 
-	SET(sc->sc_child_flags, VIRTIO_CHILD_ATTACH_FINISHED);
+	sc->sc_child_state = VIRTIO_CHILD_ATTACH_FINISHED;
 	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK);
 	return 0;
 
@@ -1425,10 +1435,9 @@ virtio_child_detach(struct virtio_softc *sc)
 {
 
 	/* already detached */
-	if (ISSET(sc->sc_child_flags, VIRTIO_CHILD_DETACHED))
+	if (sc->sc_child == NULL)
 		return;
 
-	sc->sc_vqs = NULL;
 
 	virtio_device_reset(sc);
 
@@ -1439,7 +1448,8 @@ virtio_child_detach(struct virtio_softc *sc)
 		sc->sc_soft_ih = NULL;
 	}
 
-	SET(sc->sc_child_flags, VIRTIO_CHILD_DETACHED);
+	sc->sc_vqs = NULL;
+	sc->sc_child = NULL;
 }
 
 void
@@ -1449,7 +1459,7 @@ virtio_child_attach_failed(struct virtio_softc *sc)
 
 	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_FAILED);
 
-	SET(sc->sc_child_flags, VIRTIO_CHILD_ATTACH_FAILED);
+	sc->sc_child_state = VIRTIO_CHILD_ATTACH_FAILED;
 }
 
 bus_dma_tag_t
@@ -1485,19 +1495,29 @@ virtio_attach_failed(struct virtio_softc *sc)
 	if (sc->sc_childdevid == 0)
 		return 1;
 
-	if (ISSET(sc->sc_child_flags, VIRTIO_CHILD_ATTACH_FAILED)) {
-		aprint_error_dev(self, "virtio configuration failed\n");
-		return 1;
-	}
-
 	if (sc->sc_child == NULL) {
-		aprint_error_dev(self,
-		    "no matching child driver; not configured\n");
+		switch (sc->sc_child_state) {
+		case VIRTIO_CHILD_ATTACH_FAILED:
+			aprint_error_dev(self,
+			    "virtio configuration failed\n");
+			break;
+		case VIRTIO_NO_CHILD:
+			aprint_error_dev(self,
+			    "no matching child driver; not configured\n");
+			break;
+		default:
+			/* sanity check */
+			aprint_error_dev(self,
+			    "virtio internal error, "
+			    "child driver is not configured\n");
+			break;
+		}
+
 		return 1;
 	}
 
 	/* sanity check */
-	if (!ISSET(sc->sc_child_flags, VIRTIO_CHILD_ATTACH_FINISHED)) {
+	if (sc->sc_child_state != VIRTIO_CHILD_ATTACH_FINISHED) {
 		aprint_error_dev(self, "virtio internal error, child driver "
 		    "signaled OK but didn't initialize interrupts\n");
 		return 1;

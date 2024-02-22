@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.101 2022/01/17 20:38:49 andvar Exp $ */
+/*	$NetBSD: fd.c,v 1.104 2023/10/14 08:05:26 andvar Exp $ */
 
 /*
  * Copyright (c) 1994 Christian E. Hopps
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.101 2022/01/17 20:38:49 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.104 2023/10/14 08:05:26 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -159,7 +159,7 @@ struct fd_softc {
 	int curcyl;		/* current curcyl head positioned on */
 	int flags;		/* misc flags */
 	int wlabel;
-	int stepdelay;		/* useq to delay after seek user setable */
+	int stepdelay;		/* useq to delay after seek user settable */
 	int nsectors;		/* number of sectors per track */
 	int openpart;		/* which partition [ab] == [12] is open */
 	short retries;		/* number of times to retry failed io */
@@ -1182,7 +1182,7 @@ fdstart(struct fd_softc *sc)
 #endif
 
 	/*
-	 * if DMA'ing just return. we must have been called from fdstartegy.
+	 * if DMA'ing just return. we must have been called from fdstrategy.
 	 */
 	if (fdc_indma)
 		return;
@@ -1675,11 +1675,11 @@ fdminphys(struct buf *bp)
 	toff = sec * FDSECSIZE;
 	tsz = sc->nsectors * FDSECSIZE;
 #ifdef FDDEBUG
-	printf("fdminphys: before %ld", bp->b_bcount);
+	printf("fdminphys: before %d", bp->b_bcount);
 #endif
 	bp->b_bcount = uimin(bp->b_bcount, tsz - toff);
 #ifdef FDDEBUG
-	printf(" after %ld\n", bp->b_bcount);
+	printf(" after %d\n", bp->b_bcount);
 #endif
 	minphys(bp);
 }
@@ -2142,7 +2142,7 @@ msblkencode(u_short *rp, u_char *cp, int len, u_short *crc)
 		td = (msencode[*cp >> 4] << 8) | msencode[*cp & 0x0f];
 
 		/* Check for zeros in top bit of encode and bottom
-		 * bit of previous encode.  if so, slap a one in betweem
+		 * bit of previous encode.  if so, slap a one in between
 		 * them.
 		 */
 		if ((td & 0x140) == 0)

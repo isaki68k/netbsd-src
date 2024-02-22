@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwmreg.h,v 1.12 2021/12/05 04:37:12 msaitoh Exp $	*/
+/*	$NetBSD: if_iwmreg.h,v 1.14 2023/09/01 11:23:39 andvar Exp $	*/
 /*	OpenBSD: if_iwmreg.h,v 1.19 2016/09/20 11:46:09 stsp Exp 	*/
 
 /*-
@@ -5372,12 +5372,12 @@ enum iwm_scan_offload_channel_flags {
  * @type:		bitmap - see enum iwm_scan_offload_channel_flags.
  *			0:	passive (0) or active (1) scan.
  *			1-20:	directed scan to i'th ssid.
- *			22:	channel width configuation - 1 for narrow.
+ *			22:	channel width configuration - 1 for narrow.
  *			24:	full scan.
  *			25:	partial scan.
  * @channel_number:	channel number 1-13 etc.
  * @iter_count:		repetition count for the channel.
- * @iter_interval:	interval between two innteration on one channel.
+ * @iter_interval:	interval between two iterations on one channel.
  * @dwell_time:	entry 0 - active scan, entry 1 - passive scan.
  */
 struct iwm_scan_channel_cfg {

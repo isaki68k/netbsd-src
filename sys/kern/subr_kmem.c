@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_kmem.c,v 1.87 2022/05/30 23:36:26 mrg Exp $	*/
+/*	$NetBSD: subr_kmem.c,v 1.89 2023/09/10 14:29:13 ad Exp $	*/
 
 /*
- * Copyright (c) 2009-2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2009-2023 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.87 2022/05/30 23:36:26 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.89 2023/09/10 14:29:13 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kmem.h"
@@ -325,6 +325,8 @@ kmem_intr_alloc(size_t requested_size, km_flag_t kmflags)
 			return NULL;
 		}
 		FREECHECK_OUT(&kmem_freecheck, p);
+		KASSERT(size < coherency_unit ||
+		    ALIGNED_POINTER(p, coherency_unit));
 		return p;
 	}
 
@@ -334,6 +336,8 @@ kmem_intr_alloc(size_t requested_size, km_flag_t kmflags)
 		kasan_mark(p, origsize, size, KASAN_KMEM_REDZONE);
 		return p;
 	}
+
+	KASSERT(size < coherency_unit || ALIGNED_POINTER(p, coherency_unit));
 	return p;
 }
 
@@ -346,7 +350,7 @@ kmem_intr_zalloc(size_t size, km_flag_t kmflags)
 	void *p;
 
 	p = kmem_intr_alloc(size, kmflags);
-	if (p != NULL) {
+	if (__predict_true(p != NULL)) {
 		memset(p, 0, size);
 	}
 	return p;
@@ -406,8 +410,9 @@ kmem_alloc(size_t size, km_flag_t kmflags)
 {
 	void *v;
 
-	KASSERTMSG((!cpu_intr_p() && !cpu_softintr_p()),
-	    "kmem(9) should not be used from the interrupt context");
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
+
 	v = kmem_intr_alloc(size, kmflags);
 	if (__predict_true(v != NULL)) {
 		kmsan_mark(v, size, KMSAN_STATE_UNINIT);
@@ -426,8 +431,9 @@ kmem_zalloc(size_t size, km_flag_t kmflags)
 {
 	void *v;
 
-	KASSERTMSG((!cpu_intr_p() && !cpu_softintr_p()),
-	    "kmem(9) should not be used from the interrupt context");
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
+
 	v = kmem_intr_zalloc(size, kmflags);
 	KASSERT(v || (kmflags & KM_NOSLEEP) != 0);
 	return v;
@@ -440,8 +446,10 @@ kmem_zalloc(size_t size, km_flag_t kmflags)
 void
 kmem_free(void *p, size_t size)
 {
+
 	KASSERT(!cpu_intr_p());
 	KASSERT(!cpu_softintr_p());
+
 	kmem_intr_free(p, size);
 	kmsan_mark(p, size, KMSAN_STATE_INITED);
 }

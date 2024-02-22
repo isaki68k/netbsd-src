@@ -1,4 +1,4 @@
-# $NetBSD: files.fdt,v 1.67 2023/04/07 08:55:31 skrll Exp $
+# $NetBSD: files.fdt,v 1.72 2024/01/18 07:48:57 skrll Exp $
 
 include	"external/bsd/libfdt/conf/files.libfdt"
 
@@ -66,6 +66,7 @@ device	iicmux: i2cbus, i2cmux
 attach	iicmux at fdt with iicmux_fdt
 file	dev/fdt/i2cmux_fdt.c			iicmux_fdt
 
+file	dev/fdt/fdt_boot.c			fdtbase
 file	dev/fdt/fdt_memory.c			fdtbase
 file	dev/fdt/fdt_openfirm.c			fdtbase
 file	dev/fdt/fdt_platform.c			fdtbase
@@ -149,6 +150,10 @@ file	dev/fdt/ehci_fdt.c			ehci_fdt
 attach	ohci at fdt with ohci_fdt
 file	dev/fdt/ohci_fdt.c			ohci_fdt
 
+# Cadence USB3 XHCI
+attach	xhci at fdt with cdns3_fdt
+file	dev/fdt/cdns3_fdt.c			cdns3_fdt
+
 # Designware USB2 OTG
 attach	dwctwo at fdt with dwc2_fdt
 file	dev/fdt/dwc2_fdt.c			dwc2_fdt
@@ -162,7 +167,6 @@ attach	dwcmmc at fdt with dwcmmc_fdt
 file	dev/fdt/dwcmmc_fdt.c			dwcmmc_fdt
 
 # Designware Watchdog Timer
-device	dwcwdt: sysmon_wdog
 attach	dwcwdt at fdt with dwcwdt_fdt
 file	dev/fdt/dwcwdt_fdt.c			dwcwdt_fdt
 
@@ -215,3 +219,7 @@ file	dev/fdt/genet_fdt.c			genet_fdt
 # VMware Tools driver
 attach	vmt at fdt with vmt_fdt
 file	dev/fdt/vmt_fdt.c			vmt_fdt
+
+# Google Goldfish RTC
+attach	gfrtc at fdt with gfrtc_fdt
+file	dev/fdt/gfrtc_fdt.c			gfrtc_fdt

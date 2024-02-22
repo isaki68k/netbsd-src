@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.95 2023/01/06 10:28:28 tsutsui Exp $	*/
+/*	$NetBSD: fd.c,v 1.98 2023/12/20 00:40:42 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman.
@@ -44,13 +44,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.95 2023/01/06 10:28:28 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.98 2023/12/20 00:40:42 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/callout.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
 #include <sys/proc.h>
@@ -472,7 +471,7 @@ fdopen(dev_t dev, int flags, int devtype, struct lwp *l)
 	int s;
 
 #ifdef FLP_DEBUG
-	printf("fdopen dev=0x%x\n", dev);
+	printf("fdopen dev=0x%llx\n", dev);
 #endif
 
 	if (FLP_TYPE(dev) >= NR_TYPES)
@@ -590,7 +589,7 @@ fdstrategy(struct buf *bp)
 	sc = device_lookup_private(&fd_cd, DISKUNIT(bp->b_dev));
 
 #ifdef FLP_DEBUG
-	printf("fdstrategy: %p, b_bcount: %ld\n", bp, bp->b_bcount);
+	printf("fdstrategy: %p, b_bcount: %d\n", bp, bp->b_bcount);
 #endif
 
 	/*
@@ -618,7 +617,7 @@ fdstrategy(struct buf *bp)
 			bp->b_error = EINVAL;
 			goto done;
 		}
-		/* Trucate it */
+		/* Truncate it */
 		if (bp->b_flags & B_RAW)
 			bp->b_bcount = sz << DEV_BSHIFT;
 		else
@@ -1213,13 +1212,13 @@ fdminphys(struct buf *bp)
 	tsz  = sc->nsectors * sc->nheads * SECTOR_SIZE;
 
 #ifdef FLP_DEBUG
-	printf("fdminphys: before %ld", bp->b_bcount);
+	printf("fdminphys: before %d", bp->b_bcount);
 #endif
 
 	bp->b_bcount = uimin(bp->b_bcount, tsz - toff);
 
 #ifdef FLP_DEBUG
-	printf(" after %ld\n", bp->b_bcount);
+	printf(" after %d\n", bp->b_bcount);
 #endif
 
 	minphys(bp);

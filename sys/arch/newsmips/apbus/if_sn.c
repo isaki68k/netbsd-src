@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sn.c,v 1.52 2022/09/18 12:49:34 thorpej Exp $	*/
+/*	$NetBSD: if_sn.c,v 1.55 2023/09/02 07:15:30 andvar Exp $	*/
 
 /*
  * National Semiconductor  DP8393X SONIC Driver
@@ -16,7 +16,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sn.c,v 1.52 2022/09/18 12:49:34 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sn.c,v 1.55 2023/09/02 07:15:30 andvar Exp $");
 
 #include "opt_inet.h"
 
@@ -51,9 +51,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_sn.c,v 1.52 2022/09/18 12:49:34 thorpej Exp $");
 #include <newsmips/apbus/if_snreg.h>
 #include <newsmips/apbus/if_snvar.h>
 
-/* #define SONIC_DEBUG */
+/* #define SNDEBUG */
 
-#ifdef SONIC_DEBUG
+#ifdef SNDEBUG
 # define DPRINTF printf
 #else
 # define DPRINTF while (0) printf
@@ -83,8 +83,6 @@ static inline u_int	sonicput(struct sn_softc *sc, struct mbuf *m0,
     int mtd_next);
 static inline int	sonic_read(struct sn_softc *, void *, int);
 static inline struct mbuf *sonic_get(struct sn_softc *, void *, int);
-
-int sndebug = 0;
 
 /*
  * SONIC buffers need to be aligned 16 or 32 bit aligned.
@@ -202,7 +200,7 @@ snsetup(struct sn_softc	*sc, uint8_t *lladdr)
 
 #ifdef SNDEBUG
 	aprint_debug_dev(sc->sc_dev, "buffers: rra=%p cda=%p rda=%p tda=%p\n",
-	    device_xname(sc->sc_dev), sc->p_rra[0], sc->p_cda,
+	    sc->p_rra[0], sc->p_cda,
 	    sc->p_rda, sc->mtda[0].mtd_txp);
 #endif
 
@@ -1033,21 +1031,24 @@ sonic_read(struct sn_softc *sc, void *pkt, int len)
 	struct ifnet *ifp = &sc->sc_if;
 	struct mbuf *m;
 
-#ifdef SNDEBUG
-	{
-		printf("%s: rcvd %p len=%d type=0x%x from %s",
-		    devoce_xname(sc->sc_dev), et, len, htons(et->ether_type),
-		    ether_sprintf(et->ether_shost));
-		printf(" (to %s)\n", ether_sprintf(et->ether_dhost));
-	}
-#endif /* SNDEBUG */
-
 	if (len < (ETHER_MIN_LEN - ETHER_CRC_LEN) ||
 	    len > (ETHER_MAX_LEN - ETHER_CRC_LEN)) {
 		printf("%s: invalid packet length %d bytes\n",
 		    device_xname(sc->sc_dev), len);
 		return 0;
 	}
+
+#ifdef SNDEBUG
+	{       
+		struct ether_header eh_s, *eh = &eh_s;
+		memcpy(eh, pkt, sizeof(*eh));
+		CTASSERT(sizeof(*eh) <= ETHER_MIN_LEN);
+		printf("%s: rcvd %p len=%d type=0x%x from %s",
+		    device_xname(sc->sc_dev), eh, len, htons(eh->ether_type),
+		    ether_sprintf(eh->ether_shost));
+		printf(" (to %s)\n", ether_sprintf(eh->ether_dhost));
+	}       
+#endif /* SNDEBUG */
 
 	m = sonic_get(sc, pkt, len);
 	if (m == NULL)

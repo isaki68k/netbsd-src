@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vioif.c,v 1.107 2023/03/27 14:56:40 nakayama Exp $	*/
+/*	$NetBSD: if_vioif.c,v 1.110 2024/02/09 22:08:36 andvar Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.107 2023/03/27 14:56:40 nakayama Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.110 2024/02/09 22:08:36 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -205,7 +205,7 @@ struct virtio_net_ctrl_mq {
 
 /*
  * Locking notes:
- * + a field in vioif_netueue is protected by netq_lock (a spin mutex)
+ * + a field in vioif_netqueue is protected by netq_lock (a spin mutex)
  *      - more than one lock cannot be held at onece
  * + a field in vioif_tx_context and vioif_rx_context is also protected
  *   by netq_lock.
@@ -1924,6 +1924,9 @@ vioif_rx_intr(void *arg)
 	if (netq->netq_running_handle)
 		goto done;
 
+	if (netq->netq_stopping)
+		goto done;
+
 	netq->netq_running_handle = true;
 
 	limit = sc->sc_rx_intr_process_limit;
@@ -1961,7 +1964,7 @@ done:
 }
 
 /*
- * Transmition implementation
+ * Transmission implementation
  */
 /* enqueue mbufs to send */
 static void
@@ -2388,7 +2391,7 @@ vioif_ctrl_send_command(struct vioif_softc *sc, uint8_t class, uint8_t cmd,
 	while (ctrlq->ctrlq_inuse != DONE)
 		cv_wait(&ctrlq->ctrlq_wait, &ctrlq->ctrlq_wait_lock);
 	mutex_exit(&ctrlq->ctrlq_wait_lock);
-	/* already dequeueued */
+	/* already dequeued */
 
 	bus_dmamap_sync(virtio_dmat(vsc), ctrlq->ctrlq_cmd_dmamap, 0,
 	    sizeof(struct virtio_net_ctrl_cmd), BUS_DMASYNC_POSTWRITE);

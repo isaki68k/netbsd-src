@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.601 2023/02/09 14:09:48 abs Exp $
+# $NetBSD: GENERIC,v 1.609 2024/01/29 18:27:10 christos Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.601 $"
+#ident		"GENERIC-$Revision: 1.609 $"
 
 maxusers	64		# estimated number of users
 
@@ -171,6 +171,10 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 # Fault Injection Driver.
 #options 	FAULT
 
+# Heartbeat checks
+options 	HEARTBEAT
+options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
+
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
 # only relevant to 32-bit i386 binaries
@@ -211,8 +215,6 @@ options 	WAPBL		# File system journaling support
 # lfs
 options 	LFS_DIRHASH	# LFS version of UFS_DIRHASH
 # ext2fs
-#options 	EXT2FS_SYSTEM_FLAGS # makes ext2fs file flags (append and
-				# immutable) behave as system flags.
 # other
 options 	DISKLABEL_EI	# disklabel Endian Independent support
 options 	NFSSERVER	# Network File System server
@@ -401,7 +403,7 @@ ichlpcib* at pci? dev ? function ?	# Intel ICH PCI-LPC w/ timecounter,
 					# watchdog, gpio, Speedstep and HPET
 fwhrng* at ichlpcib?		# Intel 82802 FWH Random Number Generator
 #hpet*	at ichlpcib?
-tco*	at ichlpcib?		# TCO watch dog timer
+tco*	at tcoichbus?		# TCO watch dog timer
 
 aapic*	at pci? dev ? function ?	# AMD 8131 IO apic
 
@@ -467,7 +469,8 @@ radeondrmkmsfb* at radeonfbbus?
 nouveau*	at pci? dev ? function ?
 nouveaufb*	at nouveaufbbus?
 
-# DRMUMS drivers
+# DRMUMS drivers -- make them loadable, but not statically linked in
+options 	DRM_LEGACY
 #viadrmums*	at drm?
 
 #options 	DRM_MAX_RESOLUTION_HORIZONTAL=1920	# Limit DRM size in horizontal dimension
@@ -822,6 +825,7 @@ dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
 ena*	at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
+#eqos*	at pci? dev ? function ?	# DesignWare Ethernet QoS
 et*	at pci? dev ? function ?	# Agere/LSI ET1310/ET1301 Gigabit
 ex*	at pci? dev ? function ?	# 3Com 90x[BC]
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
@@ -829,6 +833,7 @@ gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
 iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
+igc*	at pci? dev ? function ?	# Intel I225 2.5 gigabit
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260

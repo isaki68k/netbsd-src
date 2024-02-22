@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.423 2022/09/24 11:05:47 riastradh Exp $	*/
+/*	$NetBSD: pmap.c,v 1.426 2023/10/04 20:28:06 ad Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017, 2019, 2020 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.423 2022/09/24 11:05:47 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.426 2023/10/04 20:28:06 ad Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -822,7 +822,7 @@ pmap_map_ptes(struct pmap *pmap, struct pmap **pmap2, pd_entry_t **ptepp,
 	}
 	KASSERT(ci->ci_tlbstate == TLBSTATE_VALID);
 #ifdef DIAGNOSTIC
-	pmap->pm_ncsw = lwp_pctr();
+	pmap->pm_pctr = lwp_pctr();
 #endif
 	*ptepp = PTE_BASE;
 
@@ -861,7 +861,7 @@ pmap_unmap_ptes(struct pmap *pmap, struct pmap * pmap2)
 	ci = l->l_cpu;
 
 	KASSERT(mutex_owned(&pmap->pm_lock));
-	KASSERT(pmap->pm_ncsw == lwp_pctr());
+	KASSERT(pmap->pm_pctr == lwp_pctr());
 
 #if defined(XENPV) && defined(__x86_64__)
 	KASSERT(ci->ci_normal_pdes[PTP_LEVELS - 2] != L4_BASE);
@@ -1351,7 +1351,19 @@ pmap_bootstrap(vaddr_t kva_start)
 #endif
 
 	/*
-	 * Allocate space for the IDT, GDT and LDT.
+	 * Allocate space for the Interrupt Descriptor Table (IDT),
+	 * Global Descriptor Table (GDT), and Local Descriptor Table
+	 * (LDT).
+	 *
+	 * Currently there is an initial temporary GDT allocated on the
+	 * stack by the caller of init386/init_x86_64, which is (among
+	 * other things) needed on i386 for %fs-relative addressing for
+	 * CPU-local data (CPUVAR(...), curcpu(), curlwp).  This
+	 * initial temporary GDT will be popped off the stack before we
+	 * can enter main, so we need to make sure there is space for a
+	 * second temporary GDT to continue existing when we enter main
+	 * before we allocate space for the permanent GDT with
+	 * uvm_km(9) in gdt_init via cpu_startup and switch to that.
 	 */
 	idt_vaddr = pmap_bootstrap_valloc(1);
 	idt_paddr = pmap_bootstrap_palloc(1);
@@ -3561,7 +3573,9 @@ pmap_load(void)
 	struct cpu_info *ci;
 	struct pmap *pmap, *oldpmap;
 	struct lwp *l;
-	uint64_t ncsw;
+	uint64_t pctr;
+	int ilevel __diagused;
+	u_long psl __diagused;
 
 	kpreempt_disable();
  retry:
@@ -3571,16 +3585,16 @@ pmap_load(void)
 		return;
 	}
 	l = ci->ci_curlwp;
-	ncsw = l->l_ncsw;
+	pctr = lwp_pctr();
 	__insn_barrier();
 
 	/* should be able to take ipis. */
-	KASSERT(ci->ci_ilevel < IPL_HIGH);
+	KASSERTMSG((ilevel = ci->ci_ilevel) < IPL_HIGH, "ilevel=%d", ilevel);
 #ifdef XENPV
 	/* Check to see if interrupts are enabled (ie; no events are masked) */
-	KASSERT(x86_read_psl() == 0);
+	KASSERTMSG((psl = x86_read_psl()) == 0, "psl=0x%lx", psl);
 #else
-	KASSERT((x86_read_psl() & PSL_I) != 0);
+	KASSERTMSG(((psl = x86_read_psl()) & PSL_I) != 0, "psl=0x%lx", psl);
 #endif
 
 	KASSERT(l != NULL);
@@ -3610,7 +3624,7 @@ pmap_load(void)
 
 	pmap_destroy(oldpmap);
 	__insn_barrier();
-	if (l->l_ncsw != ncsw) {
+	if (lwp_pctr() != pctr) {
 		goto retry;
 	}
 

@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.c,v 1.55 2017/11/06 03:47:48 christos Exp $ */
+/* $NetBSD: machdep.c,v 1.57 2023/12/20 15:29:07 thorpej Exp $ */
 
 /*
  * Copyright 2000, 2001
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.55 2017/11/06 03:47:48 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.57 2023/12/20 15:29:07 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_execfmt.h"
@@ -75,7 +75,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.55 2017/11/06 03:47:48 christos Exp $"
 #include <sys/kcore.h>
 #include <sys/kernel.h>
 #include <sys/ksyms.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
 #include <sys/msgbuf.h>
@@ -319,7 +318,7 @@ mach_init(long fwhandle, long magic, long bootdata, long reserved)
 	}
 
 #ifdef MULTIPROCESSOR
-	mips_fixup_exceptions(mips_fixup_zero_relative);
+	mips_fixup_exceptions(mips_fixup_zero_relative, NULL);
 #endif
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: cons.c,v 1.92 2022/10/25 23:21:33 riastradh Exp $	*/
+/*	$NetBSD: cons.c,v 1.95 2023/09/02 17:44:59 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,23 +39,25 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cons.c,v 1.92 2022/10/25 23:21:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cons.c,v 1.95 2023/09/02 17:44:59 riastradh Exp $");
 
 #include <sys/param.h>
-#include <sys/proc.h>
-#include <sys/systm.h>
-#include <sys/buf.h>
-#include <sys/ioctl.h>
-#include <sys/poll.h>
-#include <sys/tty.h>
-#include <sys/file.h>
-#include <sys/conf.h>
-#include <sys/vnode.h>
-#include <sys/kauth.h>
-#include <sys/mutex.h>
-#include <sys/module.h>
+
 #include <sys/atomic.h>
+#include <sys/buf.h>
+#include <sys/conf.h>
+#include <sys/file.h>
+#include <sys/heartbeat.h>
+#include <sys/ioctl.h>
+#include <sys/kauth.h>
+#include <sys/module.h>
+#include <sys/mutex.h>
+#include <sys/poll.h>
+#include <sys/proc.h>
 #include <sys/pserialize.h>
+#include <sys/systm.h>
+#include <sys/tty.h>
+#include <sys/vnode.h>
 
 #include <dev/cons.h>
 
@@ -416,8 +418,26 @@ cnpollc(int on)
 		return;
 	if (!on)
 		--refcount;
-	if (refcount == 0)
+	if (refcount == 0) {
+		if (on) {
+			/*
+			 * Bind to the current CPU by disabling
+			 * preemption (more convenient than finding a
+			 * place to store a stack to unwind for
+			 * curlwp_bind/bindx, and preemption wouldn't
+			 * happen anyway while spinning at high IPL in
+			 * cngetc) so that curcpu() is stable so that
+			 * we can suspend heartbeat checks for it.
+			 */
+			kpreempt_disable();
+			heartbeat_suspend();
+		}
 		(*cn_tab->cn_pollc)(cn_tab->cn_dev, on);
+		if (!on) {
+			heartbeat_resume();
+			kpreempt_enable();
+		}
+	}
 	if (on)
 		++refcount;
 }

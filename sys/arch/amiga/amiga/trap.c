@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.139 2020/08/10 10:51:21 rin Exp $	*/
+/*	$NetBSD: trap.c,v 1.142 2024/01/20 00:15:30 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -45,7 +45,7 @@
 #include "opt_m68k_arch.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.139 2020/08/10 10:51:21 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.142 2024/01/20 00:15:30 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,6 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.139 2020/08/10 10:51:21 rin Exp $");
 #include <machine/psl.h>
 #include <machine/trap.h>
 #include <machine/cpu.h>
+#include <machine/fcode.h>
 #include <machine/pcb.h>
 #include <machine/pte.h>
 
@@ -136,7 +137,7 @@ extern struct emul emul_sunos;
  * XXX End hack
  */
 
-int	astpending;
+volatile int astpending;
 
 const char *trap_type[] = {
 	"Bus error",
@@ -522,7 +523,6 @@ trap(struct frame *fp, int type, u_int code, u_int v)
 		type |= T_USER;
 		sticks = p->p_sticks;
 		l->l_md.md_regs = fp->f_regs;
-		LWP_CACHE_CREDS(l, p);
 	}
 
 #ifdef DDB

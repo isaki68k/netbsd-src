@@ -1,4 +1,4 @@
-/* $NetBSD: virtio_pci.c,v 1.40 2023/03/31 07:34:26 yamaguchi Exp $ */
+/* $NetBSD: virtio_pci.c,v 1.44 2023/11/19 19:49:44 thorpej Exp $ */
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.40 2023/03/31 07:34:26 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.44 2023/11/19 19:49:44 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -50,6 +50,15 @@ __KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.40 2023/03/31 07:34:26 yamaguchi Ex
 #define VIRTIO_PRIVATE
 #include <dev/pci/virtiovar.h> /* XXX: move to non-pci */
 
+#if defined(__alpha__) || defined(__sparc64__)
+/*
+ * XXX VIRTIO_F_ACCESS_PLATFORM is required for standard PCI DMA
+ * XXX to work on these platforms, at least by Qemu.
+ * XXX
+ * XXX Generalize this later.
+ */
+#define	__NEED_VIRTIO_F_ACCESS_PLATFORM
+#endif /* __alpha__ || __sparc64__ */
 
 #define VIRTIO_PCI_LOG(_sc, _use_log, _fmt, _args...)	\
 do {							\
@@ -138,15 +147,16 @@ static bool	virtio_pci_msix_enabled(struct virtio_pci_softc *);
 #define VIRTIO_MSIX_QUEUE_VECTOR_INDEX	1
 
 /*
- * When using PCI attached virtio on aarch64-eb under Qemu, the IO space
- * suddenly read BIG_ENDIAN where it should stay LITTLE_ENDIAN. The data read
- * 1 byte at a time seem OK but reading bigger lengths result in swapped
- * endian. This is most notable on reading 8 byters since we can't use
- * bus_space_{read,write}_8().
+ * For big-endian aarch64/armv7 on QEMU (and most real HW), only CPU cores
+ * are running in big-endian mode, with all peripheral being configured to
+ * little-endian mode. Their default bus_space(9) functions forcibly swap
+ * byte-order. This guarantees that PIO'ed data from pci(4), e.g., are
+ * correctly handled by bus_space(9), while DMA'ed ones should be swapped
+ * by hand, in violation of virtio(4) specifications.
  */
 
-#if defined(__aarch64__) && BYTE_ORDER == BIG_ENDIAN
-#	define READ_ENDIAN_09	BIG_ENDIAN	/* should be LITTLE_ENDIAN */
+#if (defined(__aarch64__) || defined(__arm__)) && BYTE_ORDER == BIG_ENDIAN
+#	define READ_ENDIAN_09	BIG_ENDIAN
 #	define READ_ENDIAN_10	BIG_ENDIAN
 #	define STRUCT_ENDIAN_09	BIG_ENDIAN
 #	define STRUCT_ENDIAN_10	LITTLE_ENDIAN
@@ -274,8 +284,28 @@ virtio_pci_attach(device_t parent, device_t self, void *aux)
 		ret = virtio_pci_attach_10(self, aux);
 	}
 	if (ret == 0 && revision == 0) {
-		/* revision 0 means 0.9 only or both 0.9 and 1.0 */
+		/*
+		 * revision 0 means 0.9 only or both 0.9 and 1.0.  The
+		 * latter are so-called "Transitional Devices".  For
+		 * those devices, we want to use the 1.0 interface if
+		 * possible.
+		 *
+		 * XXX Currently only on platforms that require 1.0
+		 * XXX features, such as VIRTIO_F_ACCESS_PLATFORM.
+		 */
+#ifdef __NEED_VIRTIO_F_ACCESS_PLATFORM
+		/* First, try to attach 1.0 */
+		ret = virtio_pci_attach_10(self, aux);
+		if (ret != 0) {
+			aprint_error_dev(self,
+			    "VirtIO 1.0 error = %d, falling back to 0.9\n",
+			    ret);
+			/* Fall back to 0.9. */
+			ret = virtio_pci_attach_09(self, aux);
+		}
+#else
 		ret = virtio_pci_attach_09(self, aux);
+#endif /* __NEED_VIRTIO_F_ACCESS_PLATFORM */
 	}
 	if (ret) {
 		aprint_error_dev(self, "cannot attach (%d)\n", ret);
@@ -333,8 +363,8 @@ virtio_pci_detach(device_t self, int flags)
 	if (r != 0)
 		return r;
 
-	/* Check that child detached properly */
-	KASSERT(ISSET(sc->sc_child_flags, VIRTIO_CHILD_DETACHED));
+	/* Check that child never attached, or detached properly */
+	KASSERT(sc->sc_child == NULL);
 	KASSERT(sc->sc_vqs == NULL);
 	KASSERT(psc->sc_ihs_num == 0);
 
@@ -780,6 +810,10 @@ virtio_pci_negotiate_features_10(struct virtio_softc *sc, uint64_t guest_feature
 	uint64_t host, negotiated, device_status;
 
 	guest_features |= VIRTIO_F_VERSION_1;
+#ifdef __NEED_VIRTIO_F_ACCESS_PLATFORM
+	/* XXX This could use some work. */
+	guest_features |= VIRTIO_F_ACCESS_PLATFORM;
+#endif /* __NEED_VIRTIO_F_ACCESS_PLATFORM */
 	/* notify on empty is 0.9 only */
 	guest_features &= ~VIRTIO_F_NOTIFY_ON_EMPTY;
 	sc->sc_active_features = 0;

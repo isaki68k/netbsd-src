@@ -1,4 +1,4 @@
-/*	$NetBSD: emul.c,v 1.197 2023/02/26 07:27:14 skrll Exp $	*/
+/*	$NetBSD: emul.c,v 1.201 2023/10/15 11:11:37 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: emul.c,v 1.197 2023/02/26 07:27:14 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: emul.c,v 1.201 2023/10/15 11:11:37 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/cprng.h>
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: emul.c,v 1.197 2023/02/26 07:27:14 skrll Exp $");
 #ifdef LOCKDEBUG
 #include <sys/sleepq.h>
 #endif
+#include <sys/syncobj.h>
 
 #include <dev/cons.h>
 
@@ -83,6 +84,8 @@ int mem_no = 2;
 
 device_t booted_device;
 device_t booted_wedge;
+daddr_t booted_startblk;
+uint64_t booted_nblks;
 int booted_partition;
 const char *booted_method;
 
@@ -324,6 +327,21 @@ rump_fstrans_lwp_dtor(struct lwp *l)
 
 }
 __weak_alias(fstrans_lwp_dtor,rump_fstrans_lwp_dtor);
+
+static int
+rump_filt_fsattach(struct knote *kn)
+{
+
+	return EOPNOTSUPP;
+}
+
+struct filterops rump_fs_filtops = {
+	.f_attach = rump_filt_fsattach,
+};
+__weak_alias(fs_filtops,rump_fs_filtops);
+
+struct pool_cache *rump_pnbuf_cache;
+__weak_alias(pnbuf_cache,rump_pnbuf_cache);
 
 /*
  * Provide weak aliases for tty routines used by printf.

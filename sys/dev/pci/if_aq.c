@@ -1,4 +1,4 @@
-/*	$NetBSD: if_aq.c,v 1.44 2023/01/26 01:24:19 ryo Exp $	*/
+/*	$NetBSD: if_aq.c,v 1.46 2024/02/07 04:20:28 msaitoh Exp $	*/
 
 /**
  * aQuantia Corporation Network Driver
@@ -36,7 +36,7 @@
  */
 
 /*-
- * Copyright (c) 2020 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2020 Ryo Shimizu
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.44 2023/01/26 01:24:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.46 2024/02/07 04:20:28 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_aq.h"
@@ -5901,7 +5901,9 @@ aq_transmit(struct ifnet *ifp, struct mbuf *m)
 		aq_send_common_locked(ifp, sc, txring, true);
 		mutex_exit(&txring->txr_mutex);
 	} else {
+		kpreempt_disable();
 		softint_schedule(txring->txr_softint);
+		kpreempt_enable();
 	}
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_cl.c,v 1.56 2023/02/14 20:27:17 andvar Exp $ */
+/*	$NetBSD: grf_cl.c,v 1.58 2023/12/20 00:40:42 thorpej Exp $ */
 
 /*
  * Copyright (c) 1997 Klaus Burkert
@@ -36,7 +36,7 @@
 #include "opt_amigacons.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.56 2023/02/14 20:27:17 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.58 2023/12/20 00:40:42 thorpej Exp $");
 
 #include "grfcl.h"
 #include "ite.h"
@@ -79,7 +79,6 @@ __KERNEL_RCSID(0, "$NetBSD: grf_cl.c,v 1.56 2023/02/14 20:27:17 andvar Exp $");
 #include <sys/ioctl.h>
 #include <sys/device.h>
 #include <sys/device_impl.h>	/* XXX autoconf abuse */
-#include <sys/malloc.h>
 
 #include <machine/cpu.h>
 #include <dev/cons.h>
@@ -908,6 +907,7 @@ cl_setmousepos(struct grf_softc *gp, struct grf_position *data)
 	volatile char *ba = gp->g_regkva;
         short rx, ry;
 #ifdef CL_SHIFTSPRITE
+	short prx, pry;
 	volatile char *fb = gp->g_fbkva;
         volatile char *sprite = fb + (cl_fbsize - 1024);
 #endif
@@ -926,6 +926,8 @@ cl_setmousepos(struct grf_softc *gp, struct grf_position *data)
          * and kind of buggy anyhow).
          */
 #ifdef CL_SHIFTSPRITE
+	prx = cl_cursprite.pos.x - cl_cursprite.hot.x;
+	pry = cl_cursprite.pos.y - cl_cursprite.hot.y;
         if (rx < 0 || ry < 0 || prx < 0 || pry < 0) {
                 writeshifted(sprite, rx < 0 ? -rx : 0, ry < 0 ? -ry : 0);
         }

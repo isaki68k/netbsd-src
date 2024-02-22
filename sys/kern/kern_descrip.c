@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_descrip.c,v 1.255 2023/02/24 11:02:27 riastradh Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.262 2023/10/04 22:17:09 ad Exp $	*/
 
 /*-
- * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2009, 2023 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.255 2023/02/24 11:02:27 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.262 2023/10/04 22:17:09 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -106,12 +106,11 @@ kmutex_t		filelist_lock	__cacheline_aligned;
 
 static pool_cache_t	filedesc_cache	__read_mostly;
 static pool_cache_t	file_cache	__read_mostly;
-static pool_cache_t	fdfile_cache	__read_mostly;
 
 static int	file_ctor(void *, void *, int);
 static void	file_dtor(void *, void *);
-static int	fdfile_ctor(void *, void *, int);
-static void	fdfile_dtor(void *, void *);
+static void	fdfile_ctor(fdfile_t *);
+static void	fdfile_dtor(fdfile_t *);
 static int	filedesc_ctor(void *, void *, int);
 static void	filedesc_dtor(void *, void *);
 static int	filedescopen(dev_t, int, int, lwp_t *);
@@ -156,11 +155,6 @@ fd_sys_init(void)
 	file_cache = pool_cache_init(sizeof(file_t), coherency_unit, 0,
 	    0, "file", NULL, IPL_NONE, file_ctor, file_dtor, NULL);
 	KASSERT(file_cache != NULL);
-
-	fdfile_cache = pool_cache_init(sizeof(fdfile_t), coherency_unit, 0,
-	    PR_LARGECACHE, "fdfile", NULL, IPL_NONE, fdfile_ctor, fdfile_dtor,
-	    NULL);
-	KASSERT(fdfile_cache != NULL);
 
 	filedesc_cache = pool_cache_init(sizeof(filedesc_t), coherency_unit,
 	    0, 0, "filedesc", NULL, IPL_NONE, filedesc_ctor, filedesc_dtor,
@@ -727,14 +721,14 @@ fd_close(unsigned fd)
 	 * If the descriptor was in a message, POSIX-style locks
 	 * aren't passed with the descriptor.
 	 */
-	if (__predict_false((p->p_flag & PK_ADVLOCK) != 0 &&
-	    fp->f_type == DTYPE_VNODE)) {
+	if (__predict_false((p->p_flag & PK_ADVLOCK) != 0) &&
+	    fp->f_ops->fo_advlock != NULL) {
 		lf.l_whence = SEEK_SET;
 		lf.l_start = 0;
 		lf.l_len = 0;
 		lf.l_type = F_UNLCK;
 		mutex_exit(&fdp->fd_lock);
-		(void)VOP_ADVLOCK(fp->f_vnode, p, F_UNLCK, &lf, F_POSIX);
+		(void)(*fp->f_ops->fo_advlock)(fp, p, F_UNLCK, &lf, F_POSIX);
 		mutex_enter(&fdp->fd_lock);
 	}
 
@@ -788,7 +782,8 @@ fd_dup2(file_t *fp, unsigned newfd, int flags)
 	while (newfd >= atomic_load_consume(&fdp->fd_dt)->dt_nfiles) {
 		fd_tryexpand(curproc);
 	}
-	ff = pool_cache_get(fdfile_cache, PR_WAITOK);
+	ff = kmem_alloc(sizeof(*ff), KM_SLEEP);
+	fdfile_ctor(ff);
 
 	/*
 	 * If there is already a file open, close it.  If the file is
@@ -824,7 +819,8 @@ fd_dup2(file_t *fp, unsigned newfd, int flags)
 	/* Slot is now allocated.  Insert copy of the file. */
 	fd_affix(curproc, fp, newfd);
 	if (ff != NULL) {
-		pool_cache_put(fdfile_cache, ff);
+		cv_destroy(&ff->ff_closing);
+		kmem_free(ff, sizeof(*ff));
 	}
 	return 0;
 }
@@ -852,12 +848,14 @@ closef(file_t *fp)
 	mutex_exit(&fp->f_lock);
 
 	/* We held the last reference - release locks, close and free. */
-	if ((fp->f_flag & FHASLOCK) && fp->f_type == DTYPE_VNODE) {
+	if (fp->f_ops->fo_advlock == NULL) {
+		KASSERT((fp->f_flag & FHASLOCK) == 0);
+	} else if (fp->f_flag & FHASLOCK) {
 		lf.l_whence = SEEK_SET;
 		lf.l_start = 0;
 		lf.l_len = 0;
 		lf.l_type = F_UNLCK;
-		(void)VOP_ADVLOCK(fp->f_vnode, fp, F_UNLCK, &lf, F_FLOCK);
+		(void)(*fp->f_ops->fo_advlock)(fp, fp, F_UNLCK, &lf, F_FLOCK);
 	}
 	if (fp->f_ops != NULL) {
 		error = (*fp->f_ops->fo_close)(fp);
@@ -873,6 +871,8 @@ closef(file_t *fp)
 
 /*
  * Allocate a file descriptor for the process.
+ *
+ * Future idea for experimentation: replace all of this with radixtree.
  */
 int
 fd_alloc(proc_t *p, int want, int *result)
@@ -894,6 +894,7 @@ fd_alloc(proc_t *p, int want, int *result)
 	KASSERT(dt->dt_ff[0] == (fdfile_t *)fdp->fd_dfdfile[0]);
 	lim = uimin((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, maxfiles);
 	last = uimin(dt->dt_nfiles, lim);
+
 	for (;;) {
 		if ((i = want) < fdp->fd_freefile)
 			i = fdp->fd_freefile;
@@ -918,7 +919,8 @@ fd_alloc(proc_t *p, int want, int *result)
 		}
 		if (dt->dt_ff[i] == NULL) {
 			KASSERT(i >= NDFDFILE);
-			dt->dt_ff[i] = pool_cache_get(fdfile_cache, PR_WAITOK);
+			dt->dt_ff[i] = kmem_alloc(sizeof(fdfile_t), KM_SLEEP);
+			fdfile_ctor(dt->dt_ff[i]);
 		}
 		KASSERT(dt->dt_ff[i]->ff_file == NULL);
 		fd_used(fdp, i);
@@ -1137,8 +1139,7 @@ fd_allocfile(file_t **resultfp, int *resultfd)
 	cred = curlwp->l_cred;
 	if (__predict_false(cred != fp->f_cred)) {
 		kauth_cred_free(fp->f_cred);
-		kauth_cred_hold(cred);
-		fp->f_cred = cred;
+		fp->f_cred = kauth_cred_hold(cred);
 	}
 
 	/*
@@ -1224,12 +1225,18 @@ fd_abort(proc_t *p, file_t *fp, unsigned fd)
 static int
 file_ctor(void *arg, void *obj, int flags)
 {
+	/*
+	 * It's easy to exhaust the open file limit on a system with many
+	 * CPUs due to caching.  Allow a bit of leeway to reduce the element
+	 * of surprise.
+	 */
+	u_int slop = PCG_NOBJECTS_NORMAL * (ncpu - 1);
 	file_t *fp = obj;
 
 	memset(fp, 0, sizeof(*fp));
 
 	mutex_enter(&filelist_lock);
-	if (__predict_false(nfiles >= maxfiles)) {
+	if (__predict_false(nfiles >= slop + maxfiles)) {
 		mutex_exit(&filelist_lock);
 		tablefull("file", "increase kern.maxfiles or MAXFILES");
 		return ENFILE;
@@ -1237,8 +1244,7 @@ file_ctor(void *arg, void *obj, int flags)
 	nfiles++;
 	LIST_INSERT_HEAD(&filehead, fp, f_list);
 	mutex_init(&fp->f_lock, MUTEX_DEFAULT, IPL_NONE);
-	fp->f_cred = curlwp->l_cred;
-	kauth_cred_hold(fp->f_cred);
+	fp->f_cred = kauth_cred_hold(curlwp->l_cred);
 	mutex_exit(&filelist_lock);
 
 	return 0;
@@ -1259,21 +1265,17 @@ file_dtor(void *arg, void *obj)
 	mutex_destroy(&fp->f_lock);
 }
 
-static int
-fdfile_ctor(void *arg, void *obj, int flags)
+static void
+fdfile_ctor(fdfile_t *ff)
 {
-	fdfile_t *ff = obj;
 
 	memset(ff, 0, sizeof(*ff));
 	cv_init(&ff->ff_closing, "fdclose");
-
-	return 0;
 }
 
 static void
-fdfile_dtor(void *arg, void *obj)
+fdfile_dtor(fdfile_t *ff)
 {
-	fdfile_t *ff = obj;
 
 	cv_destroy(&ff->ff_closing);
 }
@@ -1359,8 +1361,7 @@ filedesc_ctor(void *arg, void *obj, int flag)
 
 	CTASSERT(sizeof(fdp->fd_dfdfile[0]) >= sizeof(fdfile_t));
 	for (i = 0, ffp = fdp->fd_dt->dt_ff; i < NDFDFILE; i++, ffp++) {
-		*ffp = (fdfile_t *)fdp->fd_dfdfile[i];
-		(void)fdfile_ctor(NULL, fdp->fd_dfdfile[i], PR_WAITOK);
+		fdfile_ctor(*ffp = (fdfile_t *)fdp->fd_dfdfile[i]);
 	}
 
 	return 0;
@@ -1373,7 +1374,7 @@ filedesc_dtor(void *arg, void *obj)
 	int i;
 
 	for (i = 0; i < NDFDFILE; i++) {
-		fdfile_dtor(NULL, fdp->fd_dfdfile[i]);
+		fdfile_dtor((fdfile_t *)fdp->fd_dfdfile[i]);
 	}
 
 	mutex_destroy(&fdp->fd_lock);
@@ -1508,7 +1509,8 @@ fd_copy(void)
 
 		/* Allocate an fdfile_t to represent it. */
 		if (i >= NDFDFILE) {
-			ff2 = pool_cache_get(fdfile_cache, PR_WAITOK);
+			ff2 = kmem_alloc(sizeof(*ff2), KM_SLEEP);
+			fdfile_ctor(ff2);
 			*nffp = ff2;
 		} else {
 			ff2 = newdt->dt_ff[i];
@@ -1597,7 +1599,8 @@ fd_free(void)
 		KASSERT(!ff->ff_exclose);
 		KASSERT(!ff->ff_allocated);
 		if (fd >= NDFDFILE) {
-			pool_cache_put(fdfile_cache, ff);
+			cv_destroy(&ff->ff_closing);
+			kmem_free(ff, sizeof(*ff));
 			dt->dt_ff[fd] = NULL;
 		}
 	}

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.86 2022/05/30 05:08:17 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.98 2023/12/30 06:16:44 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -119,19 +119,18 @@
 /* Tunables */
 
 /*
- * TxDescriptors Valid Range: 64-4096 Default Value: 256 This value is the
+ * TxDescriptors Valid Range: 64-4096 Default Value: 2048 This value is the
  * number of transmit descriptors allocated by the driver. Increasing this
  * value allows the driver to queue more transmits. Each descriptor is 16
  * bytes. Performance tests have show the 2K value to be optimal for top
  * performance.
  */
-#define DEFAULT_TXD	1024
-#define PERFORM_TXD	2048
+#define DEFAULT_TXD	2048
 #define MAX_TXD		4096
 #define MIN_TXD		64
 
 /*
- * RxDescriptors Valid Range: 64-4096 Default Value: 256 This value is the
+ * RxDescriptors Valid Range: 64-4096 Default Value: 2048 This value is the
  * number of receive descriptors allocated for each RX queue. Increasing this
  * value allows the driver to buffer more incoming packets. Each descriptor
  * is 16 bytes.  A receive buffer is also allocated for each descriptor.
@@ -140,8 +139,7 @@
  *	against the system mbuf pool limit, you can tune nmbclusters
  *	to adjust for this.
  */
-#define DEFAULT_RXD	1024
-#define PERFORM_RXD	2048
+#define DEFAULT_RXD	2048
 #define MAX_RXD		4096
 #define MIN_RXD		64
 
@@ -201,11 +199,6 @@
  */
 #define IXGBE_82599_SCATTER_MAX	(40 - IXGBE_TX_WTHRESH - 2)
 #define IXGBE_SCATTER_DEFAULT	33
-
-/* Keep older OS drivers building... */
-#if !defined(SYSCTL_ADD_UQUAD)
-#define SYSCTL_ADD_UQUAD SYSCTL_ADD_QUAD
-#endif
 
 /* Defines for printing debug information */
 #define DEBUG_INIT  0
@@ -329,10 +322,10 @@ struct ixgbe_mc_addr {
  *                      for the associated tx and rx ring.
  */
 struct ix_queue {
-	struct adapter   *adapter;
+	struct ixgbe_softc *sc;
 	u32              msix;           /* This queue's MSI-X vector */
 	u32              eitr_setting;
-	u32              me;
+	u8               me;
 	struct resource  *res;
 	int              busy;
 	struct tx_ring   *txr;
@@ -362,9 +355,9 @@ struct ix_queue {
  * The transmit ring, one per queue
  */
 struct tx_ring {
-	struct adapter		*adapter;
+	struct ixgbe_softc	*sc;
 	kmutex_t		tx_mtx;
-	u32			me;
+	u8			me;
 	u32			tail;
 	int			busy;
 	union ixgbe_adv_tx_desc	*tx_base;
@@ -383,17 +376,19 @@ struct tx_ring {
 	void			*txr_si;
 	bool			txr_no_space; /* Like IFF_OACTIVE */
 
+#ifdef IXGBE_FDIR
 	/* Flow Director */
 	u16			atr_sample;
 	u16			atr_count;
+#endif
 
 	u64			bytes;  /* Used for AIM */
 	u64			packets;
 	/* Soft Stats */
-	struct evcnt		tso_tx;
-	struct evcnt		no_desc_avail;
 	struct evcnt		total_packets;
 	struct evcnt		pcq_drops;
+	struct evcnt		no_desc_avail;
+	struct evcnt		tso_tx;
 	/* Per queue conters.  The adapter total is in struct adapter */
 	u64              q_efbig_tx_dma_setup;
 	u64              q_mbuf_defrag_failed;
@@ -410,17 +405,19 @@ struct tx_ring {
  * The Receive ring, one per rx queue
  */
 struct rx_ring {
-	struct adapter		*adapter;
+	struct ixgbe_softc	*sc;
 	kmutex_t		rx_mtx;
-	u32			me;
+	u8			me;
 	u32			tail;
 	union ixgbe_adv_rx_desc	*rx_base;
 	struct ixgbe_dma_alloc	rxdma;
 #ifdef LRO
 	struct lro_ctrl		lro;
-#endif /* LRO */
 	bool			lro_enabled;
+#endif /* LRO */
+#ifdef RSC
 	bool			hw_rsc;
+#endif
 	bool			vtag_strip;
 	bool			discard_multidesc;
 	u16			next_to_refresh;
@@ -442,10 +439,9 @@ struct rx_ring {
 	struct evcnt		rx_bytes;
 	struct evcnt		rx_discarded;
 	struct evcnt		no_mbuf;
+#ifdef RSC
 	u64			rsc_num;
-
-	/* Flow Director */
-	u64			flm;
+#endif
 };
 
 struct ixgbe_vf {
@@ -470,7 +466,7 @@ struct ixgbe_tc {
 };
 
 /* Our adapter structure */
-struct adapter {
+struct ixgbe_softc {
 	struct ixgbe_hw		hw;
 	struct ixgbe_osdep	osdep;
 
@@ -506,11 +502,13 @@ struct adapter {
 	/* Info about the interface */
 	int			advertise;  /* link speeds */
 	bool			enable_aim; /* adaptive interrupt moderation */
+	int			max_interrupt_rate;
 	int			link_active; /* Use LINK_STATE_* value */
 	u16			max_frame_size;
 	u16			num_segs;
 	u32			link_speed;
 	bool			link_up;
+	bool                    link_enabled;
 	u32			vector;
 	u16			dmac;
 	u32			phy_layer;
@@ -592,7 +590,7 @@ struct adapter {
 	struct ixgbe_bp_data    bypass;
 
 	/* Netmap */
-	void			(*init_locked)(struct adapter *);
+	void			(*init_locked)(struct ixgbe_softc *);
 	void			(*stop_locked)(void *);
 
 	/* Firmware error check */
@@ -691,19 +689,6 @@ struct adapter {
 	"\t2 - tx pause\n" \
 	"\t3 - tx and rx pause"
 
-/* Workaround to make 8.0 buildable */
-#if __FreeBSD_version >= 800000 && __FreeBSD_version < 800504
-static __inline int
-drbr_needs_enqueue(struct ifnet *ifp, struct buf_ring *br)
-{
-#ifdef ALTQ
-	if (ALTQ_IS_ENABLED(&ifp->if_snd))
-		return (1);
-#endif
-	return (!buf_ring_empty(br));
-}
-#endif
-
 /*
  * Find the number of unrefreshed RX descriptors
  */
@@ -750,15 +735,15 @@ ixv_check_ether_addr(u8 *addr)
 }
 
 /*
- * This checks the adapter->recovery_mode software flag which is
+ * This checks the sc->recovery_mode software flag which is
  * set by ixgbe_fw_recovery_mode().
  *
  */
 static inline bool
-ixgbe_fw_recovery_mode_swflag(struct adapter *adapter)
+ixgbe_fw_recovery_mode_swflag(struct ixgbe_softc *sc)
 {
-	return (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) &&
-	    atomic_load_acq_uint(&adapter->recovery_mode);
+	return (sc->feat_en & IXGBE_FEATURE_RECOVERY_MODE) &&
+	    atomic_load_acq_uint(&sc->recovery_mode);
 }
 
 /* Shared Prototypes */
@@ -768,14 +753,14 @@ int  ixgbe_mq_start(struct ifnet *, struct mbuf *);
 int  ixgbe_mq_start_locked(struct ifnet *, struct tx_ring *);
 void ixgbe_deferred_mq_start(void *);
 void ixgbe_deferred_mq_start_work(struct work *, void *);
-void ixgbe_drain_all(struct adapter *);
+void ixgbe_drain_all(struct ixgbe_softc *);
 
-int  ixgbe_allocate_queues(struct adapter *);
-void ixgbe_free_queues(struct adapter *);
-int  ixgbe_setup_transmit_structures(struct adapter *);
-void ixgbe_free_transmit_structures(struct adapter *);
-int  ixgbe_setup_receive_structures(struct adapter *);
-void ixgbe_free_receive_structures(struct adapter *);
+int  ixgbe_allocate_queues(struct ixgbe_softc *);
+void ixgbe_free_queues(struct ixgbe_softc *);
+int  ixgbe_setup_transmit_structures(struct ixgbe_softc *);
+void ixgbe_free_transmit_structures(struct ixgbe_softc *);
+int  ixgbe_setup_receive_structures(struct ixgbe_softc *);
+void ixgbe_free_receive_structures(struct ixgbe_softc *);
 bool ixgbe_txeof(struct tx_ring *);
 bool ixgbe_rxeof(struct ix_queue *);
 
@@ -789,7 +774,7 @@ bool ixgbe_rxeof(struct ix_queue *);
 #define IXGBE_REQUEST_TASK_LSC		0x80
 
 /* For NetBSD */
-const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
+const struct sysctlnode *ixgbe_sysctl_instance(struct ixgbe_softc *);
 
 #include "ixgbe_bypass.h"
 #include "ixgbe_fdir.h"
