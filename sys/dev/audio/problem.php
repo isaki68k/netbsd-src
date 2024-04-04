@@ -894,6 +894,10 @@ item(-55175, false,	/* it's not mine */
 "Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples",
 "nia が勝手に commit したので放棄。");
 
+item(55301, true,
+"rare audio panic on resume, assertion \"sc->sc_pbusy == false\" failed",
+"nia が勝手に変更したがその後書き直した。");
+
 item(-55507, false,
 "sometimes hdaudio panics on attach, possible memory corruption",
 "hdafg(4) が起動中にパニックした?");
@@ -949,7 +953,7 @@ item(56660, false,
 "Douk Audio U2 PRO USB (XMOS HIFI DSD) audio autoconfiguration error",
 "たぶん uaudio 側");
 
-item(56947, true,
+item(-56947, true,
 "audio(4) may fail uobj allocation under VA fragmentation/preassure",
 "malloc まわりを色々修正してみた");
 
