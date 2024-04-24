@@ -544,6 +544,9 @@ item(14065, false,
 "Record DMA not supported in the audio driver isa/wss_isa.c",
 "wss(4) の録音側が不十分な件?");
 
+item(14819, false,
+"changing ym /dev/audio encoding is unreliable");
+
 item(23571, false,
 "devel/pth is unable to read audio device in various packages",
 "詳細未調査。");
@@ -571,6 +574,11 @@ item(35465, false,
 
 
 <dt><font color=#555><s>kern/36883</s> azalia device doesn't sense plugging of the headphone</font>
+
+<?php
+item(-38493, false,
+"no good audio with cdplay");
+?>
 
 <dt><font color=#555><a href="http://gnats.netbsd.org/38859">kern/38859</a>
 azalia record does not work on Analog Devices AD1984</font>
@@ -953,6 +961,10 @@ item(56660, false,
 "Douk Audio U2 PRO USB (XMOS HIFI DSD) audio autoconfiguration error",
 "たぶん uaudio 側");
 
+item(56738, false,
+"ukbd(4): PMFE_AUDIO_VOLUE* event issue, Xorg KeyPress events ...",
+"キー側の話");
+
 item(-56947, true,
 "audio(4) may fail uobj allocation under VA fragmentation/preassure",
 "malloc まわりを色々修正してみた");
@@ -960,6 +972,33 @@ item(-56947, true,
 item(56980, true,
 "The Sound Blaster Audigy Rx is not supported by NetBSD",
 "emuxki(4) への追加パッチのようだが、まだ動かないようだ?");
+
+item(57030, false,
+"pinebook:Can't see audio interface.aiomixer do nothing.",
+"");
+
+item(57087, false,
+"audio from speaker not working",
+"hdafg(4)?");
+
+
+item(57322, false,
+"hdafg(4) hotplug switch detection races with suspend/resume and detach");
+
+item(57612, false,
+"Using audio locks up Shark");
+
+item(-57890, false,
+"uvm_fault followed by: fatal page fault in supervisor mode, right before reboot - amd64/10.0_RC3",
+"");
+
+item(58031, false,
+"audio keys don't work on thinkpad X200",
+"pckbd(4) 側の話");
+
+item("58181/port-amd64", false,
+"wsbell causes system to freeze on VE-900",
+"hdafg(4) の問題");
 
 ?>
 
