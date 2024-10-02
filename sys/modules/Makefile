@@ -1,7 +1,8 @@
-#	$NetBSD: Makefile,v 1.281 2023/12/26 16:20:01 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.292 2024/08/26 13:38:28 riastradh Exp $
 
 .include <bsd.own.mk>
 
+.if !make(includes)
 # For all platforms
 
 # Modules for compatibility with earlier versions of NetBSD
@@ -11,6 +12,10 @@ SUBDIR+=	compat_43   compat_sysctl_09_43
 SUBDIR+=	compat_09   compat_10   compat_12   compat_13   compat_14
 SUBDIR+=	compat_16   compat_20   compat_30   compat_40   compat_50
 SUBDIR+=	compat_60   compat_70   compat_80   compat_90   compat_100
+
+# Not until 11.0 is released and we need binary compatibility with it
+# in >11.0.
+#SUBDIR+= compat_110
 
 SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
 
@@ -109,7 +114,9 @@ SUBDIR+=	if_vlan
 SUBDIR+=	if_wg
 SUBDIR+=	iic
 SUBDIR+=	ip_ecn
+.if ${MKIPFILTER:Uno} != no
 SUBDIR+=	ipl
+.endif
 SUBDIR+=	kernfs
 SUBDIR+=	layerfs
 SUBDIR+=	lfs
@@ -241,6 +248,11 @@ SUBDIR+=	odcm
 SUBDIR+=	powernow
 SUBDIR+=	tco
 SUBDIR+=	tprof_x86
+.endif
+
+.if ${MACHINE_CPU} == "aarch64" || \
+    ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	vmt
 .endif
 
@@ -260,14 +272,8 @@ SUBDIR+=	ubsec
 .endif
 
 .if ${MKSLJIT} != "no"
-# No modules for 32-bit arm, mips and powerpc yet.
-.if ${MACHINE_ARCH} == "aarch64" || \
-    ${MACHINE_ARCH} == "i386"    || \
-    ${MACHINE_ARCH} == "sparc"   || \
-    ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	bpfjit
 SUBDIR+=	sljit
-.endif
 .endif
 
 #
@@ -287,13 +293,16 @@ SUBDIR+=	acpibut
 SUBDIR+=	acpicpu
 SUBDIR+=	acpidalb
 SUBDIR+=	acpifan
+SUBDIR+=	acpihed
 SUBDIR+=	acpilid
 SUBDIR+=	acpipmtr
 SUBDIR+=	acpitz
 SUBDIR+=	acpivga
+SUBDIR+=	acpivmgenid
 SUBDIR+=	acpiwdrt
 SUBDIR+=	acpiwmi
 SUBDIR+=	aibs
+SUBDIR+=	apei
 SUBDIR+=	asus
 SUBDIR+=	fujbp
 SUBDIR+=	fujhk
@@ -508,5 +517,7 @@ SUBDIR+=	vioscsi
 .endif
 
 SUBDIR+=	examples	# build these regularly to avoid bit-rot
+
+.endif
 
 .include <bsd.subdir.mk>

@@ -1,4 +1,4 @@
-/* $NetBSD: plic_fdt.c,v 1.5 2024/02/09 18:39:53 andvar Exp $ */
+/* $NetBSD: plic_fdt.c,v 1.8 2024/08/11 08:29:12 skrll Exp $ */
 
 /*-
  * Copyright (c) 2022 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plic_fdt.c,v 1.5 2024/02/09 18:39:53 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plic_fdt.c,v 1.8 2024/08/11 08:29:12 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -47,9 +47,10 @@ __KERNEL_RCSID(0, "$NetBSD: plic_fdt.c,v 1.5 2024/02/09 18:39:53 andvar Exp $");
 #include <riscv/dev/plicvar.h>
 
 static const struct device_compatible_entry compat_data[] = {
-        { .compat = "riscv,plic0" },
-        { .compat = "sifive,plic-1.0.0" },
-        DEVICE_COMPAT_EOL
+	{ .compat = "riscv,plic0" },
+	{ .compat = "sifive,plic-1.0.0" },
+	{ .compat = "thead,c900-plic" },
+	DEVICE_COMPAT_EOL
 };
 
 static void *
@@ -88,7 +89,7 @@ plic_intrstr(device_t dev, u_int *specifier, char *buf, size_t buflen)
 
 	snprintf(buf, buflen, "%s irq %d", device_xname(dev), irq);
 
-        return true;
+	return true;
 }
 
 static struct fdtbus_interrupt_controller_func plic_funcs = {
@@ -240,7 +241,7 @@ plic_fdt_attach(device_t parent, device_t self, void *aux)
 		context++;
 	}
 
-	aprint_verbose_dev(self, "");
+	aprint_verbose_dev(self, "attaching");
 	error = plic_attach_common(sc, addr, size);
 	if (error != 0) {
 		return;

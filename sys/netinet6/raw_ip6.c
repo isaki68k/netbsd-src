@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip6.c,v 1.183 2023/03/22 03:17:18 ozaki-r Exp $	*/
+/*	$NetBSD: raw_ip6.c,v 1.185 2024/07/05 04:31:54 rin Exp $	*/
 /*	$KAME: raw_ip6.c,v 1.82 2001/07/23 18:57:56 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.183 2023/03/22 03:17:18 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.185 2024/07/05 04:31:54 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -140,7 +140,8 @@ rip6_sbappendaddr(struct inpcb *last, struct ip6_hdr *ip6,
 {
 	struct mbuf *opts = NULL;
 
-	if (last->inp_flags & IN6P_CONTROLOPTS)
+	if (last->inp_flags & IN6P_CONTROLOPTS ||
+	    SOOPT_TIMESTAMP(last->inp_socket->so_options))
 		ip6_savecontrol(last, &opts, ip6, n);
 
 	m_adj(n, hlen);
@@ -148,8 +149,7 @@ rip6_sbappendaddr(struct inpcb *last, struct ip6_hdr *ip6,
 	if (sbappendaddr(&last->inp_socket->so_rcv, sa, n, opts) == 0) {
 		soroverflow(last->inp_socket);
 		m_freem(n);
-		if (opts)
-			m_freem(opts);
+		m_freem(opts);
 		RIP6_STATINC(RIP6_STAT_FULLSOCK);
 	} else {
 		sorwakeup(last->inp_socket);
@@ -517,8 +517,7 @@ rip6_output(struct mbuf *m, struct socket * const so,
 	goto freectl;
 
  bad:
-	if (m)
-		m_freem(m);
+	m_freem(m);
 
  freectl:
 	if (control) {
@@ -907,8 +906,7 @@ rip6_send(struct socket *so, struct mbuf *m, struct sockaddr *nam,
 	m = NULL;
 
 release:
-	if (m)
-		m_freem(m);
+	m_freem(m);
 
 	return error;
 }

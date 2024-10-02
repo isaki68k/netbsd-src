@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.75 2023/02/26 07:13:55 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.80 2024/05/06 07:18:19 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.75 2023/02/26 07:13:55 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.80 2024/05/06 07:18:19 skrll Exp $");
 
 /*
  *	Manages physical address maps.
@@ -366,6 +366,12 @@ kmutex_t pmap_pvlist_mutex	__cacheline_aligned;
  */
 
 #ifdef DEBUG
+
+bool pmap_stealdebug = false;
+
+#define DPRINTF(...)							     \
+    do { if (pmap_stealdebug) { printf(__VA_ARGS__); } } while (false)
+
 static inline void
 pmap_asid_check(pmap_t pm, const char *func)
 {
@@ -378,6 +384,10 @@ pmap_asid_check(pmap_t pm, const char *func)
 		panic("%s: inconsistency for active TLB update: %u <-> %u",
 		    func, asid, pai->pai_asid);
 }
+#else
+
+#define DPRINTF(...) __nothing
+
 #endif
 
 static void
@@ -405,21 +415,21 @@ pmap_addr_range_check(pmap_t pmap, vaddr_t sva, vaddr_t eva, const char *func)
  */
 
 bool
-pmap_page_clear_attributes(struct vm_page_md *mdpg, u_int clear_attributes)
+pmap_page_clear_attributes(struct vm_page_md *mdpg, u_long clear_attributes)
 {
-	volatile unsigned long * const attrp = &mdpg->mdpg_attrs;
+	volatile u_long * const attrp = &mdpg->mdpg_attrs;
 
 #ifdef MULTIPROCESSOR
 	for (;;) {
-		u_int old_attr = *attrp;
+		u_long old_attr = *attrp;
 		if ((old_attr & clear_attributes) == 0)
 			return false;
-		u_int new_attr = old_attr & ~clear_attributes;
+		u_long new_attr = old_attr & ~clear_attributes;
 		if (old_attr == atomic_cas_ulong(attrp, old_attr, new_attr))
 			return true;
 	}
 #else
-	unsigned long old_attr = *attrp;
+	u_long old_attr = *attrp;
 	if ((old_attr & clear_attributes) == 0)
 		return false;
 	*attrp &= ~clear_attributes;
@@ -428,7 +438,7 @@ pmap_page_clear_attributes(struct vm_page_md *mdpg, u_int clear_attributes)
 }
 
 void
-pmap_page_set_attributes(struct vm_page_md *mdpg, u_int set_attributes)
+pmap_page_set_attributes(struct vm_page_md *mdpg, u_long set_attributes)
 {
 #ifdef MULTIPROCESSOR
 	atomic_or_ulong(&mdpg->mdpg_attrs, set_attributes);
@@ -564,7 +574,7 @@ pmap_steal_memory(vsize_t size, vaddr_t *vstartp, vaddr_t *vendp)
 	size = round_page(size);
 	npgs = atop(size);
 
-	aprint_debug("%s: need %zu pages\n", __func__, npgs);
+	DPRINTF("%s: need %zu pages\n", __func__, npgs);
 
 	for (uvm_physseg_t bank = uvm_physseg_get_first();
 	     uvm_physseg_valid_p(bank);
@@ -573,19 +583,19 @@ pmap_steal_memory(vsize_t size, vaddr_t *vstartp, vaddr_t *vendp)
 		if (uvm.page_init_done == true)
 			panic("pmap_steal_memory: called _after_ bootstrap");
 
-		aprint_debug("%s: seg %"PRIxPHYSSEG": %#"PRIxPADDR" %#"PRIxPADDR" %#"PRIxPADDR" %#"PRIxPADDR"\n",
+		DPRINTF("%s: seg %"PRIxPHYSSEG": %#"PRIxPADDR" %#"PRIxPADDR" %#"PRIxPADDR" %#"PRIxPADDR"\n",
 		    __func__, bank,
 		    uvm_physseg_get_avail_start(bank), uvm_physseg_get_start(bank),
 		    uvm_physseg_get_avail_end(bank), uvm_physseg_get_end(bank));
 
 		if (uvm_physseg_get_avail_start(bank) != uvm_physseg_get_start(bank)
 		    || uvm_physseg_get_avail_start(bank) >= uvm_physseg_get_avail_end(bank)) {
-			aprint_debug("%s: seg %"PRIxPHYSSEG": bad start\n", __func__, bank);
+			DPRINTF("%s: seg %"PRIxPHYSSEG": bad start\n", __func__, bank);
 			continue;
 		}
 
 		if (uvm_physseg_get_avail_end(bank) - uvm_physseg_get_avail_start(bank) < npgs) {
-			aprint_debug("%s: seg %"PRIxPHYSSEG": too small for %zu pages\n",
+			DPRINTF("%s: seg %"PRIxPHYSSEG": too small for %zu pages\n",
 			    __func__, bank, npgs);
 			continue;
 		}
@@ -614,7 +624,7 @@ pmap_steal_memory(vsize_t size, vaddr_t *vstartp, vaddr_t *vendp)
 		pa = ptoa(uvm_physseg_get_start(bank));
 		uvm_physseg_unplug(atop(pa), npgs);
 
-		aprint_debug("%s: seg %"PRIxPHYSSEG": %zu pages stolen (%#"PRIxPADDR" left)\n",
+		DPRINTF("%s: seg %"PRIxPHYSSEG": %zu pages stolen (%#"PRIxPADDR" left)\n",
 		    __func__, bank, npgs, VM_PHYSMEM_SPACE(bank));
 
 		va = pmap_md_map_poolpage(pa, size);
@@ -1819,7 +1829,9 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vaddr_t dst_addr, vsize_t len,
     vaddr_t src_addr)
 {
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLED(pmaphist);
+	UVMHIST_CALLARGS(pmaphist, "(dpm=#%jx spm=%#jx dva=%#jx sva=%#jx",
+	    (uintptr_t)dst_pmap, (uintptr_t)src_pmap, dst_addr, src_addr);
+	UVMHIST_LOG(pmaphist, "... len=%#jx)", len, 0, 0, 0);
 	PMAP_COUNT(copy);
 }
 

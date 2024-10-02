@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vmx.c,v 1.14 2024/02/09 18:39:52 andvar Exp $	*/
+/*	$NetBSD: if_vmx.c,v 1.17 2024/07/05 04:31:51 rin Exp $	*/
 /*	$OpenBSD: if_vmx.c,v 1.16 2014/01/22 06:04:17 brad Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.14 2024/02/09 18:39:52 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.17 2024/07/05 04:31:51 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_vmx.h"
@@ -2160,10 +2160,10 @@ vmxnet3_txq_eof(struct vmxnet3_txqueue *txq, u_int limit)
 			    BUS_DMASYNC_POSTWRITE);
 			bus_dmamap_unload(sc->vmx_dmat, txb->vtxb_dmamap);
 
-			if_statinc_ref(nsr, if_opackets);
-			if_statadd_ref(nsr, if_obytes, m->m_pkthdr.len);
+			if_statinc_ref(ifp, nsr, if_opackets);
+			if_statadd_ref(ifp, nsr, if_obytes, m->m_pkthdr.len);
 			if (m->m_flags & M_MCAST)
-				if_statinc_ref(nsr, if_omcasts);
+				if_statinc_ref(ifp, nsr, if_omcasts);
 
 			m_freem(m);
 			txb->vtxb_m = NULL;
@@ -2338,8 +2338,8 @@ vmxnet3_rxq_input(struct vmxnet3_rxqueue *rxq,
 		vlan_set_tag(m, rxcd->vtag);
 
 	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
-	if_statinc_ref(nsr, if_ipackets);
-	if_statadd_ref(nsr, if_ibytes, m->m_pkthdr.len);
+	if_statinc_ref(ifp, nsr, if_ipackets);
+	if_statadd_ref(ifp, nsr, if_ibytes, m->m_pkthdr.len);
 	IF_STAT_PUTREF(ifp);
 
 	if_percpuq_enqueue(ifp->if_percpuq, m);
@@ -3240,8 +3240,7 @@ vmxnet3_tx_common_locked(struct ifnet *ifp, struct vmxnet3_txqueue *txq, int txt
 			break;
 
 		if (vmxnet3_txq_encap(txq, &m_head) != 0) {
-			if (m_head != NULL)
-				m_freem(m_head);
+			m_freem(m_head);
 			break;
 		}
 
@@ -3288,7 +3287,7 @@ vmxnet3_select_txqueue(struct ifnet *ifp, struct mbuf *m __unused)
 	sc = ifp->if_softc;
 	cpuid = cpu_index(curcpu());
 	/*
-	 * Furure work
+	 * Future work
 	 * We should select txqueue to even up the load even if ncpu is
 	 * different from sc->vmx_ntxqueues. Currently, the load is not
 	 * even, that is, when ncpu is six and ntxqueues is four, the load
@@ -3606,7 +3605,7 @@ vmxnet3_if_link_status(struct vmxnet3_softc *sc)
  * check vmx(4) state by VMXNET3_CMD and update ifp->if_baudrate
  *   returns
  *       - true:  link up
- *       - flase: link down
+ *       - false: link down
  */
 static bool
 vmxnet3_cmd_link_status(struct ifnet *ifp)

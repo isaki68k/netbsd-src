@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_heartbeat.c,v 1.10 2023/09/06 12:29:14 riastradh Exp $	*/
+/*	$NetBSD: kern_heartbeat.c,v 1.14 2024/08/25 01:14:01 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2023 The NetBSD Foundation, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_heartbeat.c,v 1.10 2023/09/06 12:29:14 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_heartbeat.c,v 1.14 2024/08/25 01:14:01 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -132,24 +132,20 @@ void *heartbeat_sih			__read_mostly;
  *
  *	Called after the current CPU has been marked offline but before
  *	it has stopped running, or after IPL has been raised for
- *	polling-mode console input.  Binds to the current CPU as a side
- *	effect.  Nestable (but only up to 2^32 times, so don't do this
- *	in a loop).  Reversed by heartbeat_resume.
+ *	polling-mode console input.  Nestable (but only 2^32 times, so
+ *	don't do this in a loop).  Reversed by heartbeat_resume.
+ *
+ *	Caller must be bound to the CPU, i.e., curcpu_stable() must be
+ *	true.  This function does not assert curcpu_stable() since it
+ *	is used in the ddb entry path, where any assertions risk
+ *	infinite regress into undebuggable chaos, so callers must be
+ *	careful.
  */
 void
 heartbeat_suspend(void)
 {
 	unsigned *p;
 
-	/*
-	 * We could use curlwp_bind, but we'd have to record whether we
-	 * were already bound or not to pass to curlwp_bindx in
-	 * heartbeat_resume.  Using kpreempt_disable is simpler and
-	 * unlikely to have any adverse consequences, since this only
-	 * happens when we're about to go into a tight polling loop at
-	 * raised IPL anyway.
-	 */
-	kpreempt_disable();
 	p = &curcpu()->ci_heartbeat_suspend;
 	atomic_store_relaxed(p, *p + 1);
 }
@@ -174,7 +170,7 @@ heartbeat_resume_cpu(struct cpu_info *ci)
 	/* XXX KASSERT IPL_SCHED */
 
 	ci->ci_heartbeat_count = 0;
-	ci->ci_heartbeat_uptime_cache = time_uptime;
+	ci->ci_heartbeat_uptime_cache = time_uptime32;
 	ci->ci_heartbeat_uptime_stamp = 0;
 }
 
@@ -186,6 +182,9 @@ heartbeat_resume_cpu(struct cpu_info *ci)
  *	Called after the current CPU has started running but before it
  *	has been marked online, or when ending polling-mode input
  *	before IPL is restored.  Reverses heartbeat_suspend.
+ *
+ *	Caller must be bound to the CPU, i.e., curcpu_stable() must be
+ *	true.
  */
 void
 heartbeat_resume(void)
@@ -193,6 +192,8 @@ heartbeat_resume(void)
 	struct cpu_info *ci = curcpu();
 	unsigned *p;
 	int s;
+
+	KASSERT(curcpu_stable());
 
 	/*
 	 * Reset the state so nobody spuriously thinks we had a heart
@@ -204,7 +205,6 @@ heartbeat_resume(void)
 
 	p = &ci->ci_heartbeat_suspend;
 	atomic_store_relaxed(p, *p - 1);
-	kpreempt_enable();
 }
 
 /*
@@ -283,7 +283,7 @@ set_max_period(unsigned max_period)
 
 	/*
 	 * If we're enabling heartbeat checks, make sure we have a
-	 * reasonably up-to-date time_uptime cache on all CPUs so we
+	 * reasonably up-to-date time_uptime32 cache on all CPUs so we
 	 * don't think we had an instant heart attack.
 	 */
 	if (heartbeat_max_period_secs == 0 && max_period != 0) {
@@ -406,7 +406,7 @@ static void
 heartbeat_intr(void *cookie)
 {
 	unsigned count = atomic_load_relaxed(&curcpu()->ci_heartbeat_count);
-	unsigned uptime = time_uptime;
+	unsigned uptime = time_uptime32;
 
 	atomic_store_relaxed(&curcpu()->ci_heartbeat_uptime_stamp, count);
 	atomic_store_relaxed(&curcpu()->ci_heartbeat_uptime_cache, uptime);
@@ -420,7 +420,15 @@ heartbeat_intr(void *cookie)
 void
 heartbeat_start(void)
 {
-	const unsigned max_period = HEARTBEAT_MAX_PERIOD_DEFAULT;
+	enum { max_period = HEARTBEAT_MAX_PERIOD_DEFAULT };
+
+	/*
+	 * Ensure the maximum period is small enough that we never have
+	 * to worry about 32-bit wraparound even if there's a lot of
+	 * slop.  (In fact this is required to be less than
+	 * UINT_MAX/4/hz, but that's not a compile-time constant.)
+	 */
+	__CTASSERT(max_period < UINT_MAX/4);
 
 	/*
 	 * Establish a softint so we can schedule it once ready.  This
@@ -433,7 +441,7 @@ heartbeat_start(void)
 	/*
 	 * Now that the softint is established, kick off heartbeat
 	 * monitoring with the default period.  This will initialize
-	 * the per-CPU state to an up-to-date cache of time_uptime.
+	 * the per-CPU state to an up-to-date cache of time_uptime32.
 	 */
 	mutex_enter(&heartbeat_lock);
 	set_max_period(max_period);
@@ -627,11 +635,17 @@ heartbeat(void)
 
 	KASSERT(curcpu_stable());
 
+	/*
+	 * If heartbeat checks are disabled globally, or if they are
+	 * suspended locally, or if we're already panicking so it's not
+	 * helpful to trigger more panics for more reasons, do nothing.
+	 */
 	period_ticks = atomic_load_relaxed(&heartbeat_max_period_ticks);
 	period_secs = atomic_load_relaxed(&heartbeat_max_period_secs);
 	if (__predict_false(period_ticks == 0) ||
 	    __predict_false(period_secs == 0) ||
-	    __predict_false(curcpu()->ci_heartbeat_suspend))
+	    __predict_false(curcpu()->ci_heartbeat_suspend) ||
+	    __predict_false(panicstr != NULL))
 		return;
 
 	/*
@@ -645,7 +659,7 @@ heartbeat(void)
 	 * changed, and stop here -- we only do the cross-CPU work once
 	 * per second.
 	 */
-	uptime = time_uptime;
+	uptime = time_uptime32;
 	cache = atomic_load_relaxed(&curcpu()->ci_heartbeat_uptime_cache);
 	if (__predict_true(cache == uptime)) {
 		/*
@@ -655,7 +669,7 @@ heartbeat(void)
 		 * suspended too.
 		 *
 		 * Our own heartbeat count can't roll back, and
-		 * time_uptime should be updated before it wraps
+		 * time_uptime32 should be updated before it wraps
 		 * around, so d should never go negative; hence no
 		 * check for d < UINT_MAX/2.
 		 */
@@ -673,8 +687,10 @@ heartbeat(void)
 	/*
 	 * If the uptime has changed, make sure that it hasn't changed
 	 * so much that softints must be stuck on this CPU.  Since
-	 * time_uptime is monotonic, this can't go negative, hence no
-	 * check for d < UINT_MAX/2.
+	 * time_uptime32 is monotonic and our cache of it is updated at
+	 * most every UINT_MAX/4/hz sec (hence no concern about
+	 * wraparound even after 68 or 136 years), this can't go
+	 * negative, hence no check for d < UINT_MAX/2.
 	 *
 	 * This uses the hard timer interrupt handler on the current
 	 * CPU to ensure soft interrupts at all priority levels have

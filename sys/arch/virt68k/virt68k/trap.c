@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.2 2024/01/20 00:15:33 thorpej Exp $	*/
+/*	$NetBSD: trap.c,v 1.4 2024/09/23 10:43:33 rin Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.2 2024/01/20 00:15:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.4 2024/09/23 10:43:33 rin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_execfmt.h"
@@ -505,6 +505,10 @@ trap(struct frame *fp, int type, unsigned int code, unsigned int v)
 	case T_TRAP15|T_USER:	/* SUN user trace trap */
 		fp->f_sr &= ~PSL_T;
 		ksi.ksi_signo = SIGTRAP;
+		if (type == (T_TRAP15|T_USER))
+			ksi.ksi_code = TRAP_BRKPT;
+		else
+			ksi.ksi_code = TRAP_TRACE;
 		break;
 
 	case T_ASTFLT:		/* system async trap, cannot happen */
@@ -554,7 +558,7 @@ trap(struct frame *fp, int type, unsigned int code, unsigned int v)
 
 		va = trunc_page((vaddr_t)v);
 
-		if (map == kernel_map && va == 0) {
+		if (map == kernel_map && va == 0 && onfault == 0) {
 			printf("trap: bad kernel %s access at 0x%x\n",
 			    (ftype & VM_PROT_WRITE) ? "read/write" :
 			    "read", v);
