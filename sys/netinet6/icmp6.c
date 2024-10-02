@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.255 2023/12/09 15:21:02 pgoyette Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.258 2024/07/05 04:31:54 rin Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.255 2023/12/09 15:21:02 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.258 2024/07/05 04:31:54 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -694,9 +694,10 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 		nicmp6->icmp6_type = ICMP6_ECHO_REPLY;
 		nicmp6->icmp6_code = 0;
 		if (n) {
-			uint64_t *icmp6s = ICMP6_STAT_GETREF();
-			icmp6s[ICMP6_STAT_REFLECT]++;
-			icmp6s[ICMP6_STAT_OUTHIST + ICMP6_ECHO_REPLY]++;
+			net_stat_ref_t icmp6s = ICMP6_STAT_GETREF();
+			_NET_STATINC_REF(icmp6s, ICMP6_STAT_REFLECT);
+			_NET_STATINC_REF(icmp6s,
+			    ICMP6_STAT_OUTHIST + ICMP6_ECHO_REPLY);
 			ICMP6_STAT_PUTREF();
 			icmp6_reflect(n, off);
 		}
@@ -807,9 +808,10 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			nicmp6->icmp6_code = 0;
 		}
 		if (n) {
-			uint64_t *icmp6s = ICMP6_STAT_GETREF();
-			icmp6s[ICMP6_STAT_REFLECT]++;
-			icmp6s[ICMP6_STAT_OUTHIST + ICMP6_WRUREPLY]++;
+			net_stat_ref_t icmp6s = ICMP6_STAT_GETREF();
+			_NET_STATINC_REF(icmp6s, ICMP6_STAT_REFLECT);
+			_NET_STATINC_REF(icmp6s,
+			    ICMP6_STAT_OUTHIST + ICMP6_WRUREPLY);
 			ICMP6_STAT_PUTREF();
 			icmp6_reflect(n, sizeof(struct ip6_hdr));
 		}
@@ -1513,8 +1515,7 @@ ni6_input(struct mbuf *m, int off)
 bad:
 	if_put(ifp, &psref);
 	m_freem(m);
-	if (n)
-		m_freem(n);
+	m_freem(n);
 	return NULL;
 }
 
@@ -1628,8 +1629,7 @@ ni6_nametodns(const char *name, int namelen, int old)
 	/* NOTREACHED */
 
 fail:
-	if (m)
-		m_freem(m);
+	m_freem(m);
 	return NULL;
 }
 
@@ -1987,7 +1987,8 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 		}
 #endif
 		else if ((n = m_copypacket(m, M_DONTWAIT)) != NULL) {
-			if (last->inp_flags & IN6P_CONTROLOPTS)
+			if (last->inp_flags & IN6P_CONTROLOPTS ||
+			    SOOPT_TIMESTAMP(last->inp_socket->so_options))
 				ip6_savecontrol(last, &opts, ip6, n);
 			/* strip intermediate headers */
 			m_adj(n, off);
@@ -1995,8 +1996,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 			    sin6tosa(&rip6src), n, opts) == 0) {
 				soroverflow(last->inp_socket);
 				m_freem(n);
-				if (opts)
-					m_freem(opts);
+				m_freem(opts);
 			} else {
 				sorwakeup(last->inp_socket);
 			}
@@ -2014,7 +2014,8 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 	} else
 #endif
 	if (last) {
-		if (last->inp_flags & IN6P_CONTROLOPTS)
+		if (last->inp_flags & IN6P_CONTROLOPTS ||
+		    SOOPT_TIMESTAMP(last->inp_socket->so_options))
 			ip6_savecontrol(last, &opts, ip6, m);
 		/* strip intermediate headers */
 		m_adj(m, off);
@@ -2022,8 +2023,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 		    sin6tosa(&rip6src), m, opts) == 0) {
 			soroverflow(last->inp_socket);
 			m_freem(m);
-			if (opts)
-				m_freem(opts);
+			m_freem(opts);
 		} else {
 			sorwakeup(last->inp_socket);
 		}
@@ -2699,10 +2699,8 @@ nolladdropt:
 		m0 = NULL;
 	}
 noredhdropt:
-	if (m0) {
-		m_freem(m0);
-		m0 = NULL;
-	}
+	m_freem(m0);
+	m0 = NULL;
 
 	/* XXX: clear embedded link IDs in the inner header */
 	in6_clearscope(&sip6->ip6_src);
@@ -2727,10 +2725,8 @@ noredhdropt:
 	return;
 
 fail:
-	if (m)
-		m_freem(m);
-	if (m0)
-		m_freem(m0);
+	m_freem(m);
+	m_freem(m0);
 }
 
 /*

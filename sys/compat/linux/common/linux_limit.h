@@ -1,4 +1,4 @@
-/* 	$NetBSD: linux_limit.h,v 1.8 2021/12/02 04:29:48 ryo Exp $ */
+/* 	$NetBSD: linux_limit.h,v 1.10 2024/10/01 16:41:29 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1995, 1998, 1999 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@ static int linux_to_bsd_limit(int);
 
 static int
 linux_to_bsd_limit(int lim)
-{      
+{
 	switch (lim) {
 	case LINUX_RLIMIT_CPU:
 		return RLIMIT_CPU;
@@ -94,11 +94,16 @@ linux_to_bsd_limit(int lim)
 	case LINUX_RLIMIT_AS:
 		return RLIMIT_AS;
 	case LINUX_RLIMIT_LOCKS:
+	case LINUX_RLIMIT_SIGPENDING:
+	case LINUX_RLIMIT_MSGQUEUE:
+	case LINUX_RLIMIT_NICE:
+	case LINUX_RLIMIT_RTPRIO:
+	case LINUX_RLIMIT_RTTIME:
 		return -EOPNOTSUPP;
 	default:
 		return -EINVAL;
 	}
-}      
+}
 
 
 #endif /* _LINUX_LIMIT_H_ */

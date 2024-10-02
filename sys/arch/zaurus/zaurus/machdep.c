@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.53 2023/12/23 18:59:27 andvar Exp $	*/
+/*	$NetBSD: machdep.c,v 1.55 2024/05/13 00:08:06 msaitoh Exp $	*/
 /*	$OpenBSD: zaurus_machdep.c,v 1.25 2006/06/20 18:24:04 todd Exp $	*/
 
 /*
@@ -107,7 +107,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.53 2023/12/23 18:59:27 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.55 2024/05/13 00:08:06 msaitoh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -371,11 +371,6 @@ cpu_reboot(int howto, char *bootstr)
 	 */
 	if (!(howto & RB_NOSYNC)) {
 		bootsync();
-		/*
-		 * If we've been adjusting the clock, the todr
-		 * will be out of synch; adjust it now.
-		 */
-		resettodr();
 	}
 
 	/* Wait 3s */
@@ -1095,7 +1090,7 @@ initarm(void *arg)
 	 * Until then we will use a handler that just panics but tells us
 	 * why.
 	 * Initialisation of the vectors will just panic on a data abort.
-	 * This just fills in a slighly better one.
+	 * This just fills in a slightly better one.
 	 */
 #ifdef VERBOSE_INIT_ARM
 	printf("vectors ");

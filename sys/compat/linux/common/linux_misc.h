@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.h,v 1.29 2023/08/18 19:41:19 christos Exp $	*/
+/*	$NetBSD: linux_misc.h,v 1.34 2024/10/01 16:41:29 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -94,6 +94,11 @@ struct linux_sysinfo {
 #define	LINUX_RLIMIT_MEMLOCK	8
 #define	LINUX_RLIMIT_AS		9
 #define	LINUX_RLIMIT_LOCKS	10
+#define	LINUX_RLIMIT_SIGPENDING	11
+#define	LINUX_RLIMIT_MSGQUEUE	12
+#define	LINUX_RLIMIT_NICE	13
+#define	LINUX_RLIMIT_RTPRIO	14
+#define	LINUX_RLIMIT_RTTIME	15
 #ifdef __mips__  /* XXX only mips32. On mips64, it's ~0ul */
 #define	LINUX_RLIM_INFINITY	0x7fffffffUL
 #define	LINUX32_RLIM_INFINITY	0x7fffffffU
@@ -151,16 +156,21 @@ extern const int linux_fstypes_cnt;
 /* Personality flags. */
 #define LINUX_PER_ADDR_NO_RANDOMIZE	0x00040000
 
-/* 
+/*
  * Convert POSIX_FADV_* constants from Linux to NetBSD
  * (it's f(x)=x everywhere except S390)
  */
 #define linux_to_bsd_posix_fadv(advice) (advice)
 
+struct linux_getcpu_cache{
+	unsigned long blob[128 / sizeof(long)];
+};
+
 struct linux_epoll_event {
 	uint32_t	events;
 	uint64_t	data;
 }
+
 #if defined(__amd64__)
 /* Only for x86_64. See include/uapi/linux/eventpoll.h. */
 __packed
@@ -169,6 +179,7 @@ __packed
 
 #ifdef _KERNEL
 __BEGIN_DECLS
+struct linux_timeval;
 int bsd_to_linux_wstat(int);
 int linux_select1(struct lwp *, register_t *, int, fd_set *, fd_set *,
 		       fd_set *, struct linux_timeval *);

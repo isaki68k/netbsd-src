@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.19 2024/01/22 07:15:25 skrll Exp $	*/
+/*	$NetBSD: machdep.c,v 1.21 2024/04/17 07:47:48 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.19 2024/01/22 07:15:25 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.21 2024/04/17 07:47:48 macallan Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -1395,12 +1395,6 @@ cpu_reboot(int howto, char *user_boot_string)
 	if (!(howto & RB_NOSYNC) && waittime < 0) {
 		waittime = 0;
 		vfs_shutdown();
-
-		/*
-		 * If we've been adjusting the clock, the todr
-		 * will be out of synch; adjust it now.
-		 */
-		resettodr();
 	}
 
 	/* XXX probably save howto into stable storage */
@@ -1420,6 +1414,8 @@ cpu_reboot(int howto, char *user_boot_string)
 	/* in case we came on powerfail interrupt */
 	if (cold_hook)
 		(*cold_hook)(HPPA_COLD_COLD);
+
+	hppa_led_ctl(0xf, 0, 0);
 
 	if (howto & RB_HALT) {
 		if ((howto & RB_POWERDOWN) == RB_POWERDOWN && cold_hook) {
