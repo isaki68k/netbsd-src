@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arp.c,v 1.315 2024/09/09 07:25:32 ozaki-r Exp $	*/
+/*	$NetBSD: if_arp.c,v 1.317 2024/11/13 09:25:52 roy Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.315 2024/09/09 07:25:32 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.317 2024/11/13 09:25:52 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -793,6 +793,8 @@ in_arpinput(struct mbuf *m)
 	if (ah->ar_pln != sizeof(struct in_addr))
 		goto out;
 
+	/* RFC5227 2.4 says any of the host's own interface addresses
+	 * are not conflicting ARP packets. */
 	ifp = if_get_bylla(ar_sha(ah), ah->ar_hln, &psref);
 	if (ifp) {
 		/* it's from me, ignore it. */
