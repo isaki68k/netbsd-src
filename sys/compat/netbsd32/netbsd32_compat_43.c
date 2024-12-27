@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_compat_43.c,v 1.63 2021/11/01 05:07:16 thorpej Exp $	*/
+/*	$NetBSD: netbsd32_compat_43.c,v 1.65 2024/12/20 16:12:31 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_43.c,v 1.63 2021/11/01 05:07:16 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_43.c,v 1.65 2024/12/20 16:12:31 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_43.h"
