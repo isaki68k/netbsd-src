@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.269 2024/07/05 04:31:53 rin Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.273 2025/12/31 14:15:20 roy Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.269 2024/07/05 04:31:53 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.273 2025/12/31 14:15:20 roy Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -5250,7 +5250,7 @@ sppp_pap_scr(struct sppp *sp)
 /*
  * Send a PAP or CHAP proto packet.
  *
- * Varadic function, each of the elements for the ellipsis is of type
+ * Variadic function, each of the elements for the ellipsis is of type
  * ``size_t mlen, const u_char *msg''.  Processing will stop iff
  * mlen == 0.
  * NOTE: never declare variadic functions with types subject to type
@@ -5557,39 +5557,27 @@ sppp_get_ip_addrs(struct sppp *sp, uint32_t *src, uint32_t *dst, uint32_t *srcma
 {
 	struct ifnet *ifp = &sp->pp_if;
 	struct ifaddr *ifa;
-	struct sockaddr_in *si, *sm;
 	uint32_t ssrc, ddst;
-	int bound, s;
+	int bound;
 	struct psref psref;
 
-	sm = NULL;
 	ssrc = ddst = 0;
 	/*
 	 * Pick the first AF_INET address from the list,
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
-	si = 0;
 	bound = curlwp_bind();
-	s = pserialize_read_enter();
-	IFADDR_READER_FOREACH(ifa, ifp) {
-		if (ifa->ifa_addr->sa_family == AF_INET) {
-			si = (struct sockaddr_in *)ifa->ifa_addr;
-			sm = (struct sockaddr_in *)ifa->ifa_netmask;
-			if (si) {
-				ifa_acquire(ifa, &psref);
-				break;
-			}
-		}
-	}
-	pserialize_read_exit(s);
-	if (ifa) {
-		if (si && si->sin_addr.s_addr) {
+	ifa = if_first_addr_psref(ifp, AF_INET, &psref);
+	if (ifa != NULL) {
+		struct sockaddr_in *si = satosin(ifa->ifa_addr);
+		struct sockaddr_in *sm = satosin(ifa->ifa_netmask);
+		if (si->sin_addr.s_addr) {
 			ssrc = si->sin_addr.s_addr;
 			if (srcmask)
 				*srcmask = ntohl(sm->sin_addr.s_addr);
 		}
 
-		si = (struct sockaddr_in *)ifa->ifa_dstaddr;
+		si = satosin(ifa->ifa_dstaddr);
 		if (si && si->sin_addr.s_addr)
 			ddst = si->sin_addr.s_addr;
 		ifa_release(ifa, &psref);
@@ -5611,7 +5599,8 @@ sppp_set_ip_addrs(struct sppp *sp)
 	struct ifaddr *ifa;
 	struct sockaddr_in *si, *dest;
 	uint32_t myaddr = 0, hisaddr = 0;
-	int s;
+	int bound;
+	struct psref psref;
 
 	KASSERT(SPPP_WLOCKED(sp));
 
@@ -5626,15 +5615,12 @@ sppp_set_ip_addrs(struct sppp *sp)
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
 	si = dest = NULL;
-	s = pserialize_read_enter();
-	IFADDR_READER_FOREACH(ifa, ifp) {
-		if (ifa->ifa_addr->sa_family == AF_INET) {
-			si = (struct sockaddr_in *)ifa->ifa_addr;
-			dest = (struct sockaddr_in *)ifa->ifa_dstaddr;
-			break;
-		}
+	bound = curlwp_bind();
+	ifa = if_first_addr_psref(ifp, AF_INET, &psref);
+	if (ifa != NULL) {
+		si = satosin(ifa->ifa_addr);
+		dest = satosin(ifa->ifa_dstaddr);
 	}
-	pserialize_read_exit(s);
 
 	if ((sp->ipcp.flags & IPCP_MYADDR_DYN) && (sp->ipcp.flags & IPCP_MYADDR_SEEN))
 		myaddr = sp->ipcp.req_myaddr;
@@ -5672,6 +5658,9 @@ sppp_set_ip_addrs(struct sppp *sp)
 			pfil_run_addrhooks(if_pfil, SIOCAIFADDR, ifa);
 		}
 	}
+	if (ifa != NULL)
+		ifa_release(ifa, &psref);
+	curlwp_bindx(bound);
 
 	IFNET_UNLOCK(ifp);
 
@@ -5687,7 +5676,8 @@ sppp_clear_ip_addrs(struct sppp *sp)
 	struct ifnet *ifp;
 	struct ifaddr *ifa;
 	struct sockaddr_in *si, *dest;
-	int s;
+	int bound;
+	struct psref psref;
 
 	KASSERT(SPPP_WLOCKED(sp));
 
@@ -5702,15 +5692,17 @@ sppp_clear_ip_addrs(struct sppp *sp)
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
 	si = dest = NULL;
-	s = pserialize_read_enter();
-	IFADDR_READER_FOREACH(ifa, ifp) {
-		if (ifa->ifa_addr->sa_family == AF_INET) {
-			si = (struct sockaddr_in *)ifa->ifa_addr;
-			dest = (struct sockaddr_in *)ifa->ifa_dstaddr;
-			break;
-		}
+	bound = curlwp_bind();
+	ifa = if_first_addr_psref(ifp, AF_INET, &psref);
+	if (ifa != NULL) {
+		si = satosin(ifa->ifa_addr);
+		dest = satosin(ifa->ifa_dstaddr);
+		/*
+		 * ignore "0.0.0.0" which means ppp is not opened yet.
+		 */
+		if (si->sin_addr.s_addr == INADDR_ANY)
+			si = NULL;
 	}
-	pserialize_read_exit(s);
 
 	if (si != NULL) {
 		struct sockaddr_in new_sin = *si;
@@ -5736,6 +5728,9 @@ sppp_clear_ip_addrs(struct sppp *sp)
 			pfil_run_addrhooks(if_pfil, SIOCAIFADDR, ifa);
 		}
 	}
+	if (ifa != NULL)
+		ifa_release(ifa, &psref);
+	curlwp_bindx(bound);
 
 	IFNET_UNLOCK(ifp);
 }
@@ -5751,35 +5746,22 @@ sppp_get_ip6_addrs(struct sppp *sp, struct in6_addr *src, struct in6_addr *dst,
 {
 	struct ifnet *ifp = &sp->pp_if;
 	struct ifaddr *ifa;
-	struct sockaddr_in6 *si, *sm;
 	struct in6_addr ssrc, ddst;
-	int bound, s;
+	int bound;
 	struct psref psref;
 
-	sm = NULL;
 	memset(&ssrc, 0, sizeof(ssrc));
 	memset(&ddst, 0, sizeof(ddst));
 	/*
 	 * Pick the first link-local AF_INET6 address from the list,
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
-	si = 0;
 	bound = curlwp_bind();
-	s = pserialize_read_enter();
-	IFADDR_READER_FOREACH(ifa, ifp) {
-		if (ifa->ifa_addr->sa_family == AF_INET6) {
-			si = (struct sockaddr_in6 *)ifa->ifa_addr;
-			sm = (struct sockaddr_in6 *)ifa->ifa_netmask;
-			if (si && IN6_IS_ADDR_LINKLOCAL(&si->sin6_addr)) {
-				ifa_acquire(ifa, &psref);
-				break;
-			}
-		}
-	}
-	pserialize_read_exit(s);
-
-	if (ifa) {
-		if (si && !IN6_IS_ADDR_UNSPECIFIED(&si->sin6_addr)) {
+	ifa = in6ifa_first_lladdr_psref(ifp, &psref);
+	if (ifa != NULL) {
+		struct sockaddr_in6 *si = satosin6(ifa->ifa_addr);
+		struct sockaddr_in6 *sm = satosin6(ifa->ifa_netmask);
+		if (!IN6_IS_ADDR_UNSPECIFIED(&si->sin6_addr)) {
 			memcpy(&ssrc, &si->sin6_addr, sizeof(ssrc));
 			if (srcmask) {
 				memcpy(srcmask, &sm->sin6_addr,
@@ -5818,8 +5800,7 @@ sppp_set_ip6_addr(struct sppp *sp, const struct in6_addr *src)
 {
 	struct ifnet *ifp;
 	struct ifaddr *ifa;
-	struct sockaddr_in6 *sin6;
-	int s;
+	int bound, s;
 	struct psref psref;
 
 	KASSERT(SPPP_WLOCKED(sp));
@@ -5834,26 +5815,12 @@ sppp_set_ip6_addr(struct sppp *sp, const struct in6_addr *src)
 	 * Pick the first link-local AF_INET6 address from the list,
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
-
-	sin6 = NULL;
-	s = pserialize_read_enter();
-	IFADDR_READER_FOREACH(ifa, ifp)
-	{
-		if (ifa->ifa_addr->sa_family == AF_INET6)
-		{
-			sin6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-			if (sin6 && IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
-				ifa_acquire(ifa, &psref);
-				break;
-			}
-		}
-	}
-	pserialize_read_exit(s);
-
-	if (ifa && sin6)
-	{
-		int error;
+	bound = curlwp_bind();
+	ifa = in6ifa_first_lladdr_psref(ifp, &psref);
+	if (ifa != NULL) {
+		struct sockaddr_in6 *sin6 = satosin6(ifa->ifa_addr);
 		struct sockaddr_in6 new_sin6 = *sin6;
+		int error;
 
 		memcpy(&new_sin6.sin6_addr, src, sizeof(new_sin6.sin6_addr));
 		error = in6_ifinit(ifp, ifatoia6(ifa), &new_sin6, 1);
@@ -5865,6 +5832,7 @@ sppp_set_ip6_addr(struct sppp *sp, const struct in6_addr *src)
 		}
 		ifa_release(ifa, &psref);
 	}
+	curlwp_bindx(bound);
 
 	IFNET_UNLOCK(ifp);
 }

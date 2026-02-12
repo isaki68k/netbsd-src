@@ -1,4 +1,4 @@
-/*	$NetBSD: amiga_init.c,v 1.133 2024/01/09 07:28:25 thorpej Exp $	*/
+/*	$NetBSD: amiga_init.c,v 1.136 2025/11/30 20:09:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1994 Michael L. Hitch
@@ -39,7 +39,7 @@
 #include "ser.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amiga_init.c,v 1.133 2024/01/09 07:28:25 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amiga_init.c,v 1.136 2025/11/30 20:09:17 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -702,7 +702,7 @@ start_c(int id, u_int fphystart, u_int fphysize, u_int cphysize,
 	 */
 	RELOC(maxmem, u_int)  = pend >> PGSHIFT;
 	RELOC(lowram, u_int)  = fphystart;
-	RELOC(physmem, u_int) = fphysize >> PGSHIFT;
+	RELOC(physmem, psize_t) = fphysize >> PGSHIFT;
 
 	RELOC(virtual_avail, u_int) = vstart;
 
@@ -715,12 +715,14 @@ start_c(int id, u_int fphystart, u_int fphysize, u_int cphysize,
 	RELOC(m68k_uptbase, vaddr_t) =
 	    roundup(vstart + 0x10000000, 0x10000000);
 
+#if defined(M68020) || defined(M68030)
 	/*
 	 * set this before copying the kernel, so the variable is updated in
 	 * the `real' place too. protorp[0] is already preset to the
 	 * CRP setting.
 	 */
 	RELOC(protorp[1], u_int) = RELOC(Sysseg_pa, u_int);
+#endif
 
 	RELOC(start_c_fphystart, u_int) = fphystart;
 	RELOC(start_c_pstart, u_int) = pstart;
@@ -778,14 +780,15 @@ start_c(int id, u_int fphystart, u_int fphysize, u_int cphysize,
 		} else
 ((volatile struct Custom *)0xdff000)->color[0] = 0xA70;		/* ORANGE */
 #endif
-	} else
-#endif
-	{
-		/*
-		 * setup and load SRP (see pmap.h)
-		 */
-		__asm volatile ("pmove %0@,%%srp":: "a" (&RELOC(protorp, u_int)));
+		return;
 	}
+#endif /* M68040 || M68060 */
+#if defined(M68020) || defined(M68030)
+	/*
+	 * setup and load SRP (see pmap.h)
+	 */
+	__asm volatile ("pmove %0@,%%srp":: "a" (&RELOC(protorp, u_int)));
+#endif /* M68020 || M68030 */
 }
 
 void
@@ -815,7 +818,7 @@ start_c_finish(void)
 #endif
 
 	pmap_bootstrap(start_c_pstart, start_c_fphystart);
-	pmap_bootstrap_finalize();
+	pmap_bootstrap2();
 
 	/*
 	 * to make life easier in locore.s, set these addresses explicitly

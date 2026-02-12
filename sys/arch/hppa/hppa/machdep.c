@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.21 2024/04/17 07:47:48 macallan Exp $	*/
+/*	$NetBSD: machdep.c,v 1.25 2026/01/04 21:16:29 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.21 2024/04/17 07:47:48 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.25 2026/01/04 21:16:29 skrll Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -451,10 +451,10 @@ hppa_init(paddr_t start, void *bi)
 	ci = curcpu();
 
 	ci->ci_psw =
-		PSW_Q |         /* Interrupt State Collection Enable */
-		PSW_P |         /* Protection Identifier Validation Enable */
-		PSW_C |         /* Instruction Address Translation Enable */
-		PSW_D;          /* Data Address Translation Enable */
+		PSW_Q |		/* Interrupt State Collection Enable */
+		PSW_P |		/* Protection Identifier Validation Enable */
+		PSW_C |		/* Instruction Address Translation Enable */
+		PSW_D;		/* Data Address Translation Enable */
 
 	/* Copy bootinfo */
 	if (bi != NULL)
@@ -797,7 +797,8 @@ cpuid(void)
 	}
 
 	if (!cpu_found) {
-		panic("CPU detection failed. Please report the problem.");
+		panic("CPU detection failed. Please report the problem. "
+		    "CPU version %#x/type %#x", cpu_version, cpu_type);
 	}
 
 	hppa_cpu_info = p;
@@ -883,6 +884,7 @@ cpu_model_cpuid(int modelno)
 	case HPPA_BOARD_HP725_50:
 	case HPPA_BOARD_HP725_75:
 	case HPPA_BOARD_HP725_99:
+	case HPPA_BOARD_HP745I_50:
 		return hpcxt;
 	}
 	return hpc_unknown;
@@ -1637,14 +1639,14 @@ hppa_pim64_dump(int check_type, void *data, size_t size)
 
 		/* Print out some interesting registers. */
 		printf("\n\nIIA head 0x%lx:0x%016lx\n"
-	            "IIA tail 0x%lx:0x%016lx",
+		    "IIA tail 0x%lx:0x%016lx",
 		    (unsigned long)regs->pim_regs_cr17,
 		    (unsigned long)regs->pim_regs_cr18,
 		    (unsigned long)regs->pim_regs_iisq_tail,
 		    (unsigned long)regs->pim_regs_iioq_tail);
 		PIM_WORD("\nIPSW", regs->pim_regs_cr22, PSW_BITS);
 		printf("\nSP 0x%lx:0x%016lx\nFP 0x%lx:0x%016lx",
-       		    (unsigned long)regs->pim_regs_sr0,
+		    (unsigned long)regs->pim_regs_sr0,
 		    (unsigned long)regs->pim_regs_r30,
 		    (unsigned long)regs->pim_regs_sr0,
 		    (unsigned long)regs->pim_regs_r3);
@@ -1889,6 +1891,22 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	struct trapframe *tf = l->l_md.md_regs;
 	struct pcb *pcb = lwp_getpcb(l);
 
+	memset(tf, 0, sizeof(*tf));
+
+	/*
+	 * Initialize the External Interrupt Enable Mask, Processor
+	 * Status Word, and NetBSD's floating-point register area
+	 * pointer to the correct defaults for a user process.
+	 *
+	 * XXXMPSAFE If curcpu()->ci_eiem can vary from CPU to CPU, we
+	 * have bigger problems here -- if the lwp is migrated from one
+	 * CPU to another CPU between when the trapframe is saved and
+	 * when the trapframe is restored, it might be invalidated.
+	 */
+	tf->tf_eiem = curcpu()->ci_eiem;
+	tf->tf_ipsw = PSW_MBS | (hppa_cpu_ispa20_p() ? PSW_O : 0);
+	tf->tf_cr30 = (u_int)pcb->pcb_fpregs;
+
 	tf->tf_flags = TFF_SYS|TFF_LAST;
 	tf->tf_iioq_tail = 4 +
 	    (tf->tf_iioq_head = pack->ep_entry | HPPA_PC_PRIV_USER);
@@ -1906,6 +1924,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	/* reset any of the pending FPU exceptions */
 	hppa_fpu_flush(l);
+	memset(pcb->pcb_fpregs, 0, sizeof(*pcb->pcb_fpregs));
 	pcb->pcb_fpregs->fpr_regs[0] = ((uint64_t)HPPA_FPU_INIT) << 32;
 	pcb->pcb_fpregs->fpr_regs[1] = 0;
 	pcb->pcb_fpregs->fpr_regs[2] = 0;

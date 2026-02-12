@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmcvar.h,v 1.37 2024/10/18 11:03:52 jmcneill Exp $	*/
+/*	$NetBSD: sdmmcvar.h,v 1.39 2026/01/09 22:54:34 jmcneill Exp $	*/
 /*	$OpenBSD: sdmmcvar.h,v 1.13 2009/01/09 10:55:22 jsg Exp $	*/
 
 /*
@@ -187,6 +187,7 @@ struct sdmmc_cis {
 	u_char		 cis1_minor;
 	char		 cis1_info_buf[256];
 	char		*cis1_info[4];
+	uint8_t		 lan_nid[6];
 };
 
 /*
@@ -240,6 +241,7 @@ struct sdmmc_softc {
 	bus_dma_tag_t sc_dmat;
 	bus_dmamap_t sc_dmap;
 #define	SDMMC_MAXNSEGS		((MAXPHYS / PAGE_SIZE) + 1)
+	bus_addr_t sc_dma_align_mask;	/* DMA alignment required */
 
 	struct kmutex sc_mtx;		/* lock around host controller */
 	int sc_dying;			/* bus driver is shutting down */
@@ -393,6 +395,7 @@ int	sdmmc_io_function_enable(struct sdmmc_function *);
 void	sdmmc_io_function_disable(struct sdmmc_function *);
 int	sdmmc_io_function_abort(struct sdmmc_function *);
 
+uint32_t sdmmc_cisptr(struct sdmmc_function *);
 int	sdmmc_read_cis(struct sdmmc_function *, struct sdmmc_cis *);
 void	sdmmc_print_cis(struct sdmmc_function *);
 void	sdmmc_check_cis_quirks(struct sdmmc_function *);
@@ -412,5 +415,23 @@ int	sdmmc_mem_discard(struct sdmmc_function *, uint32_t, uint32_t);
 int	sdmmc_mem_flush_cache(struct sdmmc_function *, bool);
 
 void	sdmmc_pause(u_int, kmutex_t *);
+
+static inline bool
+sdmmc_alignment_ok(struct sdmmc_softc *sc, bus_dmamap_t dm)
+{
+	const bus_addr_t align_mask = sc->sc_dma_align_mask;
+
+	if (align_mask != 0) {
+		int n;
+
+		for (n = 0; n < dm->dm_nsegs; n++) {
+			if ((dm->dm_segs[n].ds_addr & align_mask) != 0 ||
+			    (dm->dm_segs[n].ds_len & align_mask) != 0) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
 
 #endif	/* _SDMMCVAR_H_ */

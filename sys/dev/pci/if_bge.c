@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bge.c,v 1.397 2024/11/10 11:44:08 mlelstv Exp $	*/
+/*	$NetBSD: if_bge.c,v 1.399 2025/10/04 04:44:21 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 Wind River Systems
@@ -79,7 +79,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bge.c,v 1.397 2024/11/10 11:44:08 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bge.c,v 1.399 2025/10/04 04:44:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -3239,7 +3239,6 @@ bge_attach(device_t parent, device_t self, void *aux)
 	pcireg_t		memtype, subid, reg;
 	bus_addr_t		memaddr;
 	uint32_t		pm_ctl;
-	bool			no_seeprom;
 	int			capmask, trys;
 	int			mii_flags;
 	int			map_flags;
@@ -3597,8 +3596,7 @@ bge_attach(device_t parent, device_t self, void *aux)
 	 * SEEPROM check.
 	 * First check if firmware knows we do not have SEEPROM.
 	 */
-	if (prop_dictionary_get_bool(device_properties(self),
-	    "without-seeprom", &no_seeprom) && no_seeprom)
+	if (device_getprop_bool(self, "without-seeprom"))
 		sc->bge_flags |= BGEF_NO_EEPROM;
 
 	else if (BGE_ASICREV(sc->bge_chipid) == BGE_ASICREV_BCM5906)
@@ -3643,6 +3641,7 @@ bge_attach(device_t parent, device_t self, void *aux)
 	DPRINTFN(5, ("pci_intr_string\n"));
 	intrstr = pci_intr_string(pc, sc->bge_pihp[0], intrbuf,
 	    sizeof(intrbuf));
+	pci_intr_setattr(pc, &sc->bge_pihp[0], PCI_INTR_MPSAFE, true);
 	DPRINTFN(5, ("pci_intr_establish\n"));
 	sc->bge_intrhand = pci_intr_establish_xname(pc, sc->bge_pihp[0],
 	    IPL_NET, bge_intr, sc, device_xname(sc->bge_dev));
@@ -6527,18 +6526,10 @@ bge_debug_info(struct bge_softc *sc)
 static int
 bge_get_eaddr_fw(struct bge_softc *sc, uint8_t ether_addr[])
 {
-	prop_dictionary_t dict;
-	prop_data_t ea;
-
 	if ((sc->bge_flags & BGEF_NO_EEPROM) == 0)
 		return 1;
 
-	dict = device_properties(sc->bge_dev);
-	ea = prop_dictionary_get(dict, "mac-address");
-	if (ea != NULL) {
-		KASSERT(prop_object_type(ea) == PROP_TYPE_DATA);
-		KASSERT(prop_data_size(ea) == ETHER_ADDR_LEN);
-		memcpy(ether_addr, prop_data_value(ea), ETHER_ADDR_LEN);
+	if (ether_getaddr(sc->bge_dev, ether_addr)) {
 		return 0;
 	}
 

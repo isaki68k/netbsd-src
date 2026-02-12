@@ -1,4 +1,4 @@
-/*	$NetBSD: sbc_obio.c,v 1.26 2024/11/22 07:16:01 nat Exp $	*/
+/*	$NetBSD: sbc_obio.c,v 1.29 2025/05/24 10:08:35 nat Exp $	*/
 
 /*
  * Copyright (C) 1996,1997 Scott Reynolds.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbc_obio.c,v 1.26 2024/11/22 07:16:01 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbc_obio.c,v 1.29 2025/05/24 10:08:35 nat Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -139,7 +139,24 @@ sbc_obio_attach(device_t parent, device_t self, void *aux)
 		sc->sc_regs = (struct sbc_regs *)(SCSIBase + SBC_REG_OFS);
 		sc->sc_drq_addr = (vaddr_t)(SCSIBase + SBC_HSK_OFS); /*??*/
 		sc->sc_nodrq_addr = (vaddr_t)(SCSIBase + SBC_DMA_OFS_PB500);
+		if (sc->sc_options & SBC_INTR)
+			sc->sc_options |= SBC_PDMA;
 		sc->sc_options &= ~(SBC_INTR | SBC_RESELECT);
+		break;
+	case MACH_MACPB140:
+	case MACH_MACPB145:
+	case MACH_MACPB160:
+	case MACH_MACPB165:
+	case MACH_MACPB165C:
+	case MACH_MACPB170:
+	case MACH_MACPB180:
+	case MACH_MACPB180C:
+		if (sc->sc_options & SBC_PDMA)
+			sc->sc_options |= SBC_INTR;
+		sc->sc_options &= ~(SBC_PDMA);
+		sc->sc_regs = (struct sbc_regs *)(SCSIBase + SBC_REG_OFS);
+		sc->sc_drq_addr = (vaddr_t)(SCSIBase + SBC_HSK_OFS);
+		sc->sc_nodrq_addr = (vaddr_t)(SCSIBase + SBC_DMA_OFS);
 		break;
 	case MACH_MACPB210:
 	case MACH_MACPB230:
@@ -208,7 +225,7 @@ sbc_obio_attach(device_t parent, device_t self, void *aux)
 		via2_register_irq(VIA2_SCSIDRQ, sbc_drq_intr, ncr_sc);
 	}
 
-	mutex_init(&sc->sc_drq_lock, MUTEX_DEFAULT, IPL_SOFTBIO);
+	mutex_init(&sc->sc_drq_lock, MUTEX_DEFAULT, IPL_BIO);
 
 	via2_register_irq(VIA2_SCSIIRQ, sbc_irq_intr, ncr_sc);
 	sc->sc_clrintr = sbc_obio_clrintr;

@@ -1,4 +1,4 @@
-/*	$NetBSD: altq_classq.h,v 1.9 2025/01/08 13:00:04 joe Exp $	*/
+/*	$NetBSD: altq_classq.h,v 1.12 2025/01/22 22:41:38 joe Exp $	*/
 /*	$KAME: altq_classq.h,v 1.6 2003/01/07 07:33:38 kjc Exp $	*/
 
 /*
@@ -52,6 +52,8 @@ extern "C" {
 #define	Q_DROPTAIL	0x03
 
 #ifdef _KERNEL
+
+#include <sys/cprng.h>
 
 /*
  * Packet Queue structures and macros to manipulate them.
@@ -155,7 +157,7 @@ _getq_random(class_queue_t *q)
 	else {
 		struct mbuf *prev = NULL;
 
-		n = random() % qlen(q) + 1;
+		n = cprng_fast32() % qlen(q) + 1;
 		for (i = 0; i < n; i++) {
 			prev = m;
 			m = m->m_nextpkt;

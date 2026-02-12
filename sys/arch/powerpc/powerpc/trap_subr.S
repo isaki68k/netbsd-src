@@ -1,4 +1,4 @@
-/*	$NetBSD: trap_subr.S,v 1.86 2022/05/18 13:56:32 andvar Exp $	*/
+/*	$NetBSD: trap_subr.S,v 1.89 2026/01/09 22:54:34 jmcneill Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -43,6 +43,7 @@
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_ppcarch.h"
+#include "opt_multiprocessor.h"
 #endif
 
 /* LINTSTUB: include <sys/param.h> */
@@ -66,6 +67,15 @@
 #else
 #define	RFI	rfi
 #endif /* PPC_OEA64 || PPC_OEA64_BRIDGE*/
+
+#ifdef MULTIPROCESSOR
+/* Clear reservation on trap exit, PR# 59386 */
+#define CLEAR_RESERVATION						\
+	POWERPC_STWCX_PRE(0,%r1);					\
+	stwcx.  %r1,0,%r1;
+#else
+#define CLEAR_RESERVATION
+#endif
 
 #if defined (PPC_OEA64_BRIDGE)
 #define ENABLE_64BIT_BRIDGE(t0)						\
@@ -292,7 +302,7 @@ dsitrap_fix_dbat4:
 	/*
 	 * If we are running on a CPU that has HIGHBAT, these will be replaced
 	 * by instructions to test bit 30 (aka bit 1 for normal people) and if
-	 * set skip ahead to 5f (4 instructions),  follored by instructions to
+	 * set skip ahead to 5f (4 instructions),  followed by instructions to
 	 * update BAT4.
 	 */
 	mtspr	SPR_DBAT2U,%r30		/*	bt	30,dsitrap_fix_dbat5 */
@@ -1008,6 +1018,7 @@ trapexit:
 trapleave:
 	FRAME_RESTORE_CALLEE
 intrleave:
+	CLEAR_RESERVATION
 	FRAME_LEAVE(CI_TEMPSAVE)
 	RFI
 
@@ -1231,6 +1242,7 @@ ddbtrap:
 	or.	%r3,%r3,%r3
 	beq	trapagain
 	FRAME_RESTORE_CALLEE
+	CLEAR_RESERVATION
 	FRAME_LEAVE(CI_DDBSAVE)
 	RFI
 #endif /* DDB || KGDB */

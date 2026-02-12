@@ -1,4 +1,4 @@
-/*	$NetBSD: voyager.c,v 1.18 2022/09/25 17:52:25 thorpej Exp $	*/
+/*	$NetBSD: voyager.c,v 1.20 2025/09/15 13:23:03 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2009, 2011 Michael Lorenz
@@ -26,7 +26,7 @@
  */
  
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: voyager.c,v 1.18 2022/09/25 17:52:25 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: voyager.c,v 1.20 2025/09/15 13:23:03 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -80,7 +80,6 @@ struct voyager_softc {
 	bus_size_t sc_fbsize, sc_regsize;
 
 	struct i2c_controller sc_i2c;
-	kmutex_t sc_i2c_lock;
 
 	/* interrupt dispatcher */
 	void *sc_ih;
@@ -98,8 +97,6 @@ CFATTACH_DECL_NEW(voyager, sizeof(struct voyager_softc),
     voyager_match, voyager_attach, NULL, NULL);
     
 /* I2C glue */
-static int voyager_i2c_acquire_bus(void *, int);
-static void voyager_i2c_release_bus(void *, int);
 static int voyager_i2c_send_start(void *, int);
 static int voyager_i2c_send_stop(void *, int);
 static int voyager_i2c_initiate_xfer(void *, i2c_addr_t, int);
@@ -151,7 +148,6 @@ voyager_attach(device_t parent, device_t self, void *aux)
 	struct pci_attach_args	*pa = aux;
 	pci_intr_handle_t ih;
 	struct voyager_attach_args vaa;
-	struct i2cbus_attach_args iba;
 	uint32_t reg;
 	const char *intrstr;
 	int i;
@@ -239,9 +235,6 @@ voyager_attach(device_t parent, device_t self, void *aux)
 	config_found(sc->sc_dev, &vaa, voyager_print,
 	    CFARGS(.iattr = "voyagerbus"));
 #endif
-	/* we use this mutex whether there's an i2c bus or not */
-	mutex_init(&sc->sc_i2c_lock, MUTEX_DEFAULT, IPL_NONE);
-
 	/*
 	 * see if the i2c pins are configured as gpio and if so, use them
 	 * should probably be a compile time option
@@ -252,19 +245,14 @@ voyager_attach(device_t parent, device_t self, void *aux)
 		voyager_gpio_dir(sc, 0xffffffff, GPIO_I2C_BITS);
 		
 		/* Fill in the i2c tag */
-		memset(&iba, 0, sizeof(iba));
 		iic_tag_init(&sc->sc_i2c);
 		sc->sc_i2c.ic_cookie = sc;
-		sc->sc_i2c.ic_acquire_bus = voyager_i2c_acquire_bus;
-		sc->sc_i2c.ic_release_bus = voyager_i2c_release_bus;
 		sc->sc_i2c.ic_send_start = voyager_i2c_send_start;
 		sc->sc_i2c.ic_send_stop = voyager_i2c_send_stop;
 		sc->sc_i2c.ic_initiate_xfer = voyager_i2c_initiate_xfer;
 		sc->sc_i2c.ic_read_byte = voyager_i2c_read_byte;
 		sc->sc_i2c.ic_write_byte = voyager_i2c_write_byte;
-		iba.iba_tag = &sc->sc_i2c;
-		config_found(self, &iba, iicbus_print,
-		    CFARGS(.iattr = "i2cbus"));
+		iicbus_attach(self, &sc->sc_i2c);
 	}
 	voyager_control_gpio(sc, ~(1 << 16), 0);
 	voyager_gpio_dir(sc, 0xffffffff, 1 << 16);
@@ -318,25 +306,6 @@ voyager_i2cbb_read(void *cookie)
 	return reg;
 }
 
-/* higher level I2C stuff */
-static int
-voyager_i2c_acquire_bus(void *cookie, int flags)
-{
-	struct voyager_softc *sc = cookie;
-
-	/* We also have to serialize against voyager_twiddle_bits() */
-	mutex_enter(&sc->sc_i2c_lock);
-	return 0;
-}
-
-static void
-voyager_i2c_release_bus(void *cookie, int flags)
-{
-	struct voyager_softc *sc = cookie;
-
-	mutex_exit(&sc->sc_i2c_lock);
-}
-
 static int
 voyager_i2c_send_start(void *cookie, int flags)
 {
@@ -387,12 +356,12 @@ voyager_twiddle_bits(void *cookie, int regnum, uint32_t mask, uint32_t bits)
 	uint32_t reg;
 
 	/* don't interfere with i2c ops */
-	mutex_enter(&sc->sc_i2c_lock);
+	mutex_enter(&sc->sc_i2c.ic_bus_lock);
 	reg = bus_space_read_4(sc->sc_memt, sc->sc_regh, regnum);
 	reg &= mask;
 	reg |= bits;
 	bus_space_write_4(sc->sc_memt, sc->sc_regh, regnum, reg);
-	mutex_exit(&sc->sc_i2c_lock);
+	mutex_exit(&sc->sc_i2c.ic_bus_lock);
 }
 
 static int

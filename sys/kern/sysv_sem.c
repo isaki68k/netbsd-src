@@ -1,4 +1,4 @@
-/*	$NetBSD: sysv_sem.c,v 1.101 2024/10/06 22:15:33 mlelstv Exp $	*/
+/*	$NetBSD: sysv_sem.c,v 1.105 2025/10/26 16:15:12 christos Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2007 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysv_sem.c,v 1.101 2024/10/06 22:15:33 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysv_sem.c,v 1.105 2025/10/26 16:15:12 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sysv.h"
@@ -55,7 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: sysv_sem.c,v 1.101 2024/10/06 22:15:33 mlelstv Exp $
 #include <sys/kauth.h>
 #include <sys/once.h>
 
-/* 
+/*
  * Memory areas:
  *  1st: Pool of semaphore identifiers
  *  2nd: Semaphores
@@ -343,7 +343,8 @@ semrealloc(int newsemmni, int newsemmns, int newsemmnu)
  */
 
 int
-sys_semconfig(struct lwp *l, const struct sys_semconfig_args *uap, register_t *retval)
+sys_semconfig(struct lwp *l, const struct sys_semconfig_args *uap,
+    register_t *retval)
 {
 
 	RUN_ONCE(&exithook_control, seminit_exithook);
@@ -699,7 +700,8 @@ semctl1(struct lwp *l, int semid, int semnum, int cmd, void *v,
 }
 
 int
-sys_semget(struct lwp *l, const struct sys_semget_args *uap, register_t *retval)
+sys_semget(struct lwp *l, const struct sys_semget_args *uap,
+    register_t *retval)
 {
 	/* {
 		syscallarg(key_t) key;
@@ -800,27 +802,32 @@ sys_semget(struct lwp *l, const struct sys_semget_args *uap, register_t *retval)
 
 #define SMALL_SOPS 8
 
-static int
-do_semop(struct lwp *l, int usemid, struct sembuf *usops,
-    size_t nsops, struct timespec *utimeout, register_t *retval)
+void
+do_semop_init(void)
+{
+
+	RUN_ONCE(&exithook_control, seminit_exithook);
+}
+
+/* all pointers already in kernel space */
+int
+do_semop1(struct lwp *l, int usemid, struct sembuf *sops,
+    size_t nsops, struct timespec *timeout, register_t *retval)
 {
 	struct proc *p = l->l_proc;
 	int semid, seq;
-	struct sembuf small_sops[SMALL_SOPS];
-	struct sembuf *sops;
 	struct semid_ds *semaptr;
 	struct sembuf *sopptr = NULL;
 	struct __sem *semptr = NULL;
 	struct sem_undo *suptr = NULL;
 	kauth_cred_t cred = l->l_cred;
-	struct timespec timeout;
 	int timo = 0;
 	int i, error;
 	int do_wakeup, do_undos;
 
 	RUN_ONCE(&exithook_control, seminit_exithook);
 
-	SEM_PRINTF(("call to semop(%d, %p, %zu)\n", usemid, usops, nsops));
+	SEM_PRINTF(("do_semop1(%d, %p, %zu)\n", usemid, sops, nsops));
 
 	if (__predict_false((p->p_flag & PK_SYSVSEM) == 0)) {
 		mutex_enter(p->p_lock);
@@ -829,25 +836,6 @@ do_semop(struct lwp *l, int usemid, struct sembuf *usops,
 	}
 
 restart:
-	if (nsops <= SMALL_SOPS) {
-		sops = small_sops;
-	} else if (nsops <= seminfo.semopm) {
-		sops = kmem_alloc(nsops * sizeof(*sops), KM_SLEEP);
-	} else {
-		SEM_PRINTF(("too many sops (max=%d, nsops=%zu)\n",
-		    seminfo.semopm, nsops));
-		return (E2BIG);
-	}
-
-	error = copyin(usops, sops, nsops * sizeof(sops[0]));
-	if (error) {
-		SEM_PRINTF(("error = %d from copyin(%p, %p, %zu)\n", error,
-		    usops, &sops, nsops * sizeof(sops[0])));
-		if (sops != small_sops)
-			kmem_free(sops, nsops * sizeof(*sops));
-		return error;
-	}
-
 	mutex_enter(&semlock);
 	/* In case of reallocation, we will wait for completion */
 	while (__predict_false(sem_realloc_state))
@@ -859,14 +847,8 @@ restart:
 		goto out;
 	}
 
-	if (utimeout) {
-		error = copyin(utimeout, &timeout, sizeof(timeout));
-		if (error) {
-			SEM_PRINTF(("error = %d from copyin(%p, %p, %zu)\n",
-			    error, utimeout, &timeout, sizeof(timeout)));
-			return error;
-		}
-		error = ts2timo(CLOCK_MONOTONIC, TIMER_RELTIME, &timeout,
+	if (timeout) {
+		error = ts2timo(CLOCK_MONOTONIC, TIMER_RELTIME, timeout,
 		    &timo, NULL);
 		if (error)
 			return error;
@@ -1061,7 +1043,8 @@ done:
 				semaptr->_sem_base[sops[i].sem_num].semval -=
 				    sops[i].sem_op;
 
-			SEM_PRINTF(("error = %d from semundo_adjust\n", error));
+			SEM_PRINTF(("error = %d from semundo_adjust\n",
+			    error));
 			goto out;
 		} /* loop through the sops */
 	} /* if (do_undos) */
@@ -1087,8 +1070,57 @@ done:
 
 out:
 	mutex_exit(&semlock);
+	return error;
+}
+
+int
+do_semop(struct lwp *l, int usemid, struct sembuf *usops,
+    size_t nsops, void *utimeout, register_t *retval,
+    int (*timeout_copyin)(const void *, void *, size_t))
+{
+	struct sembuf small_sops[SMALL_SOPS];
+	struct sembuf *sops;
+	struct timespec timeout;
+	int error;
+
+	do_semop_init();
+
+	SEM_PRINTF(("do_semop(%d, %p, %zu)\n", usemid, usops, nsops));
+
+	if (nsops <= SMALL_SOPS) {
+		sops = small_sops;
+	} else if (seminfo.semopm > 0 && nsops <= (size_t)seminfo.semopm) {
+		sops = kmem_alloc(nsops * sizeof(*sops), KM_SLEEP);
+	} else {
+		SEM_PRINTF(("too many sops (max=%d, nsops=%zu)\n",
+		    seminfo.semopm, nsops));
+		return (E2BIG);
+	}
+
+	error = copyin(usops, sops, nsops * sizeof(sops[0]));
+	if (error) {
+		SEM_PRINTF(("error = %d from copyin(%p, %p, %zu)\n", error,
+		    usops, &sops, nsops * sizeof(sops[0])));
+		if (sops != small_sops)
+			kmem_free(sops, nsops * sizeof(*sops));
+		return error;
+	}
+
+	if (utimeout) {
+		error = (*timeout_copyin)(utimeout, &timeout, sizeof(timeout));
+		if (error) {
+			SEM_PRINTF(("error = %d from copyin(%p, %p, %zu)\n",
+			    error, utimeout, &timeout, sizeof(timeout)));
+			return error;
+		}
+	}
+
+	error = do_semop1(l, usemid, sops, nsops, utimeout ? &timeout : NULL,
+	    retval);
+
 	if (sops != small_sops)
 		kmem_free(sops, nsops * sizeof(*sops));
+
 	return error;
 }
 
@@ -1107,7 +1139,7 @@ sys_semtimedop(struct lwp *l, const struct sys_semtimedop_args *uap,
 	size_t nsops = SCARG(uap, nsops);
 	struct timespec *utimeout = SCARG(uap, timeout);
 
-	return do_semop(l, semid, sops, nsops, utimeout, retval);
+	return do_semop(l, semid, sops, nsops, utimeout, retval, copyin);
 }
 
 int
@@ -1122,7 +1154,7 @@ sys_semop(struct lwp *l, const struct sys_semop_args *uap, register_t *retval)
 	struct sembuf *sops = SCARG(uap, sops);
 	size_t nsops = SCARG(uap, nsops);
 
-	return do_semop(l, semid, sops, nsops, NULL, retval);
+	return do_semop(l, semid, sops, nsops, NULL, retval, copyin);
 }
 
 /*
@@ -1182,8 +1214,8 @@ semexit(struct proc *p, void *v)
 
 			semaptr = &sema[semid];
 			if ((semaptr->sem_perm.mode & SEM_ALLOC) == 0)
-			if (semnum >= semaptr->sem_nsems)
-				panic("semexit - semnum out of range");
+				if (semnum >= semaptr->sem_nsems)
+					panic("semexit - semnum out of range");
 
 			SEM_PRINTF(("semexit:  %p id=%d num=%d(adj=%d) ; "
 			    "sem=%d\n",
@@ -1269,31 +1301,31 @@ SYSCTL_SETUP(sysctl_ipc_sem_setup, "sysctl kern.ipc subtree setup")
 	const struct sysctlnode *node = NULL;
 
 	sysctl_createv(clog, 0, NULL, &node,
-		CTLFLAG_PERMANENT,
-		CTLTYPE_NODE, "ipc",
-		SYSCTL_DESCR("SysV IPC options"),
-		NULL, 0, NULL, 0,
-		CTL_KERN, KERN_SYSVIPC, CTL_EOL);
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_NODE, "ipc",
+	    SYSCTL_DESCR("SysV IPC options"),
+	    NULL, 0, NULL, 0,
+	    CTL_KERN, KERN_SYSVIPC, CTL_EOL);
 
 	if (node == NULL)
 		return;
 
 	sysctl_createv(clog, 0, &node, NULL,
-		CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
-		CTLTYPE_INT, "semmni",
-		SYSCTL_DESCR("Max number of number of semaphore identifiers"),
-		sysctl_ipc_semmni, 0, &seminfo.semmni, 0,
-		CTL_CREATE, CTL_EOL);
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+	    CTLTYPE_INT, "semmni",
+	    SYSCTL_DESCR("Max number of number of semaphore identifiers"),
+	    sysctl_ipc_semmni, 0, &seminfo.semmni, 0,
+	    CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, &node, NULL,
-		CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
-		CTLTYPE_INT, "semmns",
-		SYSCTL_DESCR("Max number of number of semaphores in system"),
-		sysctl_ipc_semmns, 0, &seminfo.semmns, 0,
-		CTL_CREATE, CTL_EOL);
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+	    CTLTYPE_INT, "semmns",
+	    SYSCTL_DESCR("Max number of number of semaphores in system"),
+	    sysctl_ipc_semmns, 0, &seminfo.semmns, 0,
+	    CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, &node, NULL,
-		CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
-		CTLTYPE_INT, "semmnu",
-		SYSCTL_DESCR("Max number of undo structures in system"),
-		sysctl_ipc_semmnu, 0, &seminfo.semmnu, 0,
-		CTL_CREATE, CTL_EOL);
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+	    CTLTYPE_INT, "semmnu",
+	    SYSCTL_DESCR("Max number of undo structures in system"),
+	    sysctl_ipc_semmnu, 0, &seminfo.semmnu, 0,
+	    CTL_CREATE, CTL_EOL);
 }

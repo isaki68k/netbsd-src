@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -366,7 +366,7 @@ ResetHere2:
          * at the correct offset value which is resetted every iteration
          */
 JumpHere2:
-        strncpy (AslGbl_MacroTokenReplaceBuffer, AslGbl_MacroTokenBuffer, Args->Offset[i]);
+        memcpy (AslGbl_MacroTokenReplaceBuffer, AslGbl_MacroTokenBuffer, Args->Offset[i]);
         strcat (AslGbl_MacroTokenReplaceBuffer, Token);
         strcat (AslGbl_MacroTokenReplaceBuffer, (AslGbl_MacroTokenBuffer +
             (Args->Offset[i] + strlen (Args->Name))));
@@ -562,7 +562,7 @@ PrOpenIncludeFile (
 
 ErrorExit:
     snprintf (AslGbl_MainTokenBuffer, ASL_DEFAULT_LINE_BUFFER_SIZE, "%s, %s",
-	Filename, strerror (errno));
+      Filename, strerror (errno));
     PrError (ASL_ERROR, ASL_MSG_INCLUDE_FILE_OPEN, 0);
     return (NULL);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.156 2024/12/06 10:53:41 bouyer Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.160 2025/12/05 17:58:12 khorben Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.156 2024/12/06 10:53:41 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.160 2025/12/05 17:58:12 khorben Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -215,6 +215,62 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 }
 
 #ifdef MODULAR
+#ifdef XEN
+void x86_add_xen_modules(void);
+void
+x86_add_xen_modules(void)
+{
+#if defined(XENPVHVM) || defined(XENPVH)
+	uint32_t i;
+	struct hvm_modlist_entry *modlist;
+
+	if (hvm_start_info->nr_modules == 0) {
+		aprint_verbose("No Xen module info at boot\n");
+		return;
+	}
+	aprint_debug("%d Xen module(s) at boot\n", hvm_start_info->nr_modules);
+	modlist = (void *)((uintptr_t)hvm_start_info->modlist_paddr + KERNBASE);
+	for (i = 0; i < hvm_start_info->nr_modules; i++) {
+		if (memcmp(
+			    (char *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    "\177ELF", 4) == 0) {
+			aprint_debug("Prep module path=%s len=%"PRIu64" pa=%p\n",
+			    "pvh-module",
+			    modlist[i].size,
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE));
+			module_prime(
+			    "pvh-module",
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    modlist[i].size);
+#ifdef SPLASHSCREEN
+		} else if (memcmp(
+			    (char *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    "\211PNG\r\n\032\n", 8) == 0 ||
+			   memcmp(
+			    (char *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    "\377\330\377", 3) == 0) {
+			aprint_debug("Splash image path=%s len=%"PRIu64" pa=%p\n",
+			    "pvh-image", modlist[i].size,
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE));
+			splash_setimage(
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    modlist[i].size);
+#endif
+#if defined(MEMORY_DISK_HOOKS) && defined(MEMORY_DISK_DYNAMIC)
+		} else {
+			aprint_debug("File-system image path=%s len=%"PRIu64" pa=%p\n",
+			    "pvh-filesystem",
+			    modlist[i].size,
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE));
+			md_root_setconf(
+			    (void *)((uintptr_t)modlist[i].paddr + KERNBASE),
+			    modlist[i].size);
+#endif
+		}
+	}
+#endif
+}
+#endif	/* XEN */
 /*
  * Push any modules loaded by the boot loader.
  */
@@ -435,6 +491,9 @@ void
 cpu_kpreempt_exit(uintptr_t where)
 {
 	extern char x86_copyfunc_start, x86_copyfunc_end;
+#if defined(XENPV) && defined(i386)
+	extern char i386_calltrap_start, i386_calltrap_end;
+#endif
 	struct pcb *pcb;
 
 	KASSERT(kpreempt_disabled());
@@ -448,6 +507,12 @@ cpu_kpreempt_exit(uintptr_t where)
 	    where < (uintptr_t)&x86_copyfunc_end) {
 		pmap_load();
 	}
+#if defined(XENPV) && defined(i386)
+	else if (where >= (uintptr_t)&i386_calltrap_start &&
+	    where < (uintptr_t)&i386_calltrap_end) {
+		pmap_load();
+	}
+#endif
 
 	/* Restore cr2 only after the pmap, as pmap_load can block. */
 	pcb = lwp_getpcb(curlwp);
@@ -911,8 +976,11 @@ init_x86_clusters(void)
 	 * the boot program).
 	 */
 #ifdef XEN
-	if (vm_guest_is_pvh()) {
+	if (pvh_boot) {
 		x86_add_xen_clusters();
+#ifdef MODULAR
+		x86_add_xen_modules();
+#endif
 	}
 #endif /* XEN */
 
@@ -1342,10 +1410,12 @@ static const char * const vm_guest_name[VM_LAST] = {
 	[VM_GUEST_XENPVH] =	"XenPVH",
 	[VM_GUEST_XENHVM] =	"XenHVM",
 	[VM_GUEST_XENPVHVM] =	"XenPVHVM",
+	[VM_GUEST_GENPVH] =	"GenPVH",
 	[VM_GUEST_HV] =		"Hyper-V",
 	[VM_GUEST_VMWARE] =	"VMware",
 	[VM_GUEST_KVM] =	"KVM",
 	[VM_GUEST_VIRTUALBOX] =	"VirtualBox",
+	[VM_GUEST_NVMM] =	"NVMM",
 };
 
 static int

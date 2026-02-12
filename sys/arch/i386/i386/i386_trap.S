@@ -1,4 +1,4 @@
-/*	$NetBSD: i386_trap.S,v 1.23 2022/09/07 00:40:18 knakahara Exp $	*/
+/*	$NetBSD: i386_trap.S,v 1.25 2026/01/17 10:59:09 bouyer Exp $	*/
 
 /*
  * Copyright 2002 (c) Wasabi Systems, Inc.
@@ -66,7 +66,7 @@
 
 #if 0
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.23 2022/09/07 00:40:18 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.25 2026/01/17 10:59:09 bouyer Exp $");
 #endif
 
 /*
@@ -214,6 +214,7 @@ IDTVEC(trap07)
 	pushl	$0			/* dummy error code */
 	pushl	$T_DNA
 	INTRENTRY
+	/* Xen note: this is going to panic so no need to deal with CLI */
 #ifdef DIAGNOSTIC
 	movzbl	CPUVAR(ILEVEL),%ebx
 #endif
@@ -278,7 +279,9 @@ IDTVEC(trap0f)
 	pushl	$0			/* dummy error code */
 	pushl	$T_ASTFLT
 	INTRENTRY
+#ifndef XENPV
 	STI(%eax)
+#endif
 #ifdef DIAGNOSTIC
 	movzbl	CPUVAR(ILEVEL),%ebx
 #endif
@@ -296,11 +299,12 @@ IDTVEC(trap10)
 	pushl	$T_ARITHTRAP
 .Ldo_fputrap:
 	INTRENTRY
+	CLI2(%eax, %ebx)
 	movzbl	CPUVAR(ILEVEL),%ebx
 	pushl	%esp
 	addl	$1,CPUVAR(NTRAP)	/* statistical info */
 	adcl	$0,CPUVAR(NTRAP)+4
-	call	_C_LABEL(fputrap)
+	call	_C_LABEL(fputrap) /* enables interrupts */
 	addl	$4,%esp
 	jmp	.Lalltraps_checkusr
 IDTVEC_END(trap10)
@@ -400,8 +404,11 @@ END(trap_return_fault_return)
 /* LINTSTUB: Ignore */
 ENTRY(alltraps)
 	INTRENTRY
+#ifndef XENPV
 	STI(%eax)
+#endif
 
+LABEL(i386_calltrap_start)
 calltrap:
 #ifdef DIAGNOSTIC
 	movzbl	CPUVAR(ILEVEL),%ebx
@@ -415,11 +422,18 @@ calltrap:
 .Lalltraps_checkusr:
 	testb	$CHK_UPL,TF_CS(%esp)
 	jnz	.Lalltraps_checkast
+#ifdef XENPV
+	/*
+	 * trap() may, or may not, have disabled interrupts.
+	 * Make sure they're disabled before STIC()
+	 */
+	CLI2(%eax, %edx)
+#endif
 	jmp	6f
 
 .Lalltraps_checkast:
 	/* Check for ASTs on exit to user mode. */
-	CLI(%eax)
+	CLI2(%eax, %edx)
 	CHECK_ASTPENDING(%eax)
 	jz	3f
 	CLEAR_ASTPENDING(%eax)
@@ -436,6 +450,7 @@ calltrap:
 
 	HANDLE_DEFERRED_FPU
 
+6:
 #ifdef XENPV
 	STIC(%eax)
 	jz	22f
@@ -443,7 +458,7 @@ calltrap:
 	testl	%eax,%eax
 	jz	22f
 	/* process pending interrupts */
-	CLI(%eax)
+	CLI2(%eax, %edx)
 	movzbl	CPUVAR(ILEVEL),%ebx
 	movl	$.Lalltraps_resume,%esi /* address to resume loop at */
 .Lalltraps_resume:
@@ -458,14 +473,32 @@ calltrap:
 11:	movb	%bl,CPUVAR(ILEVEL)	/* restore cpl */
 	jmp	.Lalltraps_checkusr
 22:
-#endif /* XEN */
-
-6:
+#endif /* XENPV */
 #ifdef DIAGNOSTIC
 	cmpb	CPUVAR(ILEVEL),%bl
 	jne	.Lspl_error
 #endif
+#ifdef XENPV
+	/*
+	 * INTRFASTEXIT jumps to external code; as interrupts have
+	 * been re-enabled we can't call it.
+	 */
+	movw	TF_GS(%esp),%gs
+	movw	TF_FS(%esp),%fs
+	movw	TF_ES(%esp),%es
+	movw	TF_DS(%esp),%ds
+	movl	TF_EDI(%esp),%edi
+	movl	TF_ESI(%esp),%esi
+	movl	TF_EBP(%esp),%ebp
+	movl	TF_EBX(%esp),%ebx
+	movl	TF_EDX(%esp),%edx
+	movl	TF_ECX(%esp),%ecx
+	movl	TF_EAX(%esp),%eax
+	addl	$(TF_PUSHSIZE+8),%esp
+	iret
+#else
 	INTRFASTEXIT
+#endif
 
 9:	STI(%eax)
 	call	_C_LABEL(pmap_load)
@@ -473,7 +506,9 @@ calltrap:
 
 #ifdef DIAGNOSTIC
 .Lspl_error:
+#ifndef XENPV
 	STI(%eax)
+#endif
 	pushl	$4f
 	call	_C_LABEL(panic)
 	addl	$4,%esp
@@ -484,3 +519,4 @@ calltrap:
 4:	.asciz	"SPL NOT LOWERED ON TRAP EXIT\n"
 #endif
 END(alltraps)
+LABEL(i386_calltrap_end)

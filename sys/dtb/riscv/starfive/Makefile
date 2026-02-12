@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2024/01/14 07:39:25 skrll Exp $
+#	$NetBSD: Makefile,v 1.3 2025/11/29 08:01:01 skrll Exp $
 
 DTSSUBDIR=	starfive
 DTSMAKEVARS=	CONFIG_ARCH_STARFIVE=y

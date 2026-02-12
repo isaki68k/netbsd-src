@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -57,6 +57,7 @@ AcpiTbGetRootTableEntry (
     UINT32                  TableEntrySize);
 
 
+#if (!ACPI_REDUCED_HARDWARE)
 /*******************************************************************************
  *
  * FUNCTION:    AcpiTbInitializeFacs
@@ -76,7 +77,15 @@ AcpiTbInitializeFacs (
 {
     ACPI_TABLE_FACS         *Facs;
 
-    if (AcpiGbl_FADT.XFacs &&
+
+    /* If Hardware Reduced flag is set, there is no FACS */
+
+    if (AcpiGbl_ReducedHardware)
+    {
+        AcpiGbl_FACS = NULL;
+        return (AE_OK);
+    }
+    else if (AcpiGbl_FADT.XFacs &&
          (!AcpiGbl_FADT.Facs || !AcpiGbl_Use32BitFacsAddresses))
     {
         (void) AcpiGetTableByIndex (AcpiGbl_XFacsIndex,
@@ -94,6 +103,7 @@ AcpiTbInitializeFacs (
 
     return (AE_OK);
 }
+#endif /* !ACPI_REDUCED_HARDWARE */
 
 
 /*******************************************************************************

@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ ACPI_STATUS (*ACPI_REPAIR_FUNCTION) (
 
 typedef struct acpi_repair_info
 {
-    char                    Name[ACPI_NAMESEG_SIZE];
+    char                    Name[ACPI_NAMESEG_SIZE] ACPI_NONSTRING;
     ACPI_REPAIR_FUNCTION    RepairFunction;
 
 } ACPI_REPAIR_INFO;

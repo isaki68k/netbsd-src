@@ -1,4 +1,4 @@
-/*	$NetBSD: i386_mainbus.c,v 1.8 2025/01/07 14:37:09 imil Exp $	*/
+/*	$NetBSD: i386_mainbus.c,v 1.13 2025/10/20 00:14:22 thorpej Exp $	*/
 /*	NetBSD: mainbus.c,v 1.104 2018/12/02 08:19:44 cherry Exp 	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i386_mainbus.c,v 1.8 2025/01/07 14:37:09 imil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i386_mainbus.c,v 1.13 2025/10/20 00:14:22 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,7 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: i386_mainbus.c,v 1.8 2025/01/07 14:37:09 imil Exp $"
 #include "pnpbios.h"
 #include "acpica.h"
 #include "ipmi.h"
-#include "pvbus.h"
+#include "pv.h"
 
 #include "opt_acpi.h"
 #include "opt_mpbios.h"
@@ -91,7 +91,7 @@ __KERNEL_RCSID(0, "$NetBSD: i386_mainbus.c,v 1.8 2025/01/07 14:37:09 imil Exp $"
 #endif /* PCI_ADDR_FIXUP */
 #endif /* PCI_BUS_FIXUP */
 #endif /* NPCI > 0 */
-#if NPVBUS > 0
+#if NPV > 0
 #include <arch/x86/pv/pvvar.h>
 #endif
 
@@ -119,7 +119,7 @@ union i386_mainbus_attach_args {
 #if NIPMI > 0
 	struct ipmi_attach_args mba_ipmi;
 #endif
-#if NPVBUS > 0
+#if NPV > 0
 	struct pvbus_attach_args mba_pvba;
 #endif
 };
@@ -233,8 +233,7 @@ i386_mainbus_attach(device_t parent, device_t self, void *aux)
 #if NEISA > 0
 		mba.mba_eba.eba_dmat = &eisa_bus_dma_tag;
 #endif
-		config_found(self, &mba.mba_eba, eisabusprint,
-		    CFARGS(.iattr = "eisabus"));
+		eisabus_attach(self, &mba.mba_eba);
 	}
 
 #if NISA > 0
@@ -242,17 +241,17 @@ i386_mainbus_attach(device_t parent, device_t self, void *aux)
 		mba.mba_iba = mba_iba;
 		mba.mba_iba.iba_iot = x86_bus_space_io;
 		mba.mba_iba.iba_memt = x86_bus_space_mem;
-		config_found(self, &mba.mba_iba, isabusprint,
-		    CFARGS(.iattr = "isabus"));
+		isabus_attach(self, &mba.mba_iba);
 	}
 #endif
 
-#if NPVBUS > 0
+#if NPV > 0
 	/* add here more VM guests types that would benefit from a pv bus */
 	switch(vm_guest) {
 	/* FALLTHROUGH */
 	case VM_GUEST_GENPVH:
 	case VM_GUEST_KVM:
+	case VM_GUEST_NVMM:
 		mba.mba_pvba.pvba_busname = "pvbus";
 		config_found(self, &mba.mba_pvba.pvba_busname, NULL,
 			CFARGS(.iattr = "pvbus"));
@@ -384,9 +383,7 @@ i386_mainbus_rescan(device_t self, const char *ifattr, const int *locators)
 			mba.mba_mba.mba_dmat = &mca_bus_dma_tag;
 			mba.mba_mba.mba_mc = NULL;
 			mba.mba_mba.mba_bus = 0;
-			sc->sc_mca = config_found(self,
-			    &mba.mba_mba, mcabusprint,
-			    CFARGS(.iattr = "mcabus"));
+			sc->sc_mca = mcabus_attach(self, &mba.mba_mba);
 		}
 #endif
 	}

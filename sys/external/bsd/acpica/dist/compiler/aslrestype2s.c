@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1361,7 +1361,7 @@ RsDoCsi2SerialBusDescriptor (
 
         case 2: /* Local Port Instance [Integer] (_PRT) */
 
-            RsSetFlagBits16 ((UINT16 *) &Descriptor->Csi2SerialBus.TypeSpecificFlags, InitializerOp, 0, 0);
+            RsSetFlagBits16 ((UINT16 *) &Descriptor->Csi2SerialBus.TypeSpecificFlags, InitializerOp, 2, 0);
             RsCreateMultiBitField (InitializerOp, ACPI_RESTAG_LOCALPORT,
                 CurrentByteOffset + ASL_RESDESC_OFFSET (Csi2SerialBus.TypeSpecificFlags), 2, 6);
             break;

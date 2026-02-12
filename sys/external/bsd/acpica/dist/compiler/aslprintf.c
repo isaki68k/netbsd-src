@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -186,7 +186,7 @@ OpcParsePrintf (
         if (StringToProcess)
         {
             NewString = UtLocalCacheCalloc (StringLength + 1);
-            strncpy (NewString, StartPosition, StringLength);
+            memcpy (NewString, StartPosition, StringLength);
 
             NewOp = TrAllocateOp (PARSEOP_STRING_LITERAL);
             NewOp->Asl.Value.String = NewString;
@@ -275,7 +275,7 @@ OpcParsePrintf (
     if (StringToProcess)
     {
         NewString = UtLocalCacheCalloc (StringLength + 1);
-        strncpy (NewString, StartPosition, StringLength);
+        memcpy (NewString, StartPosition, StringLength);
 
         NewOp = TrAllocateOp (PARSEOP_STRING_LITERAL);
         NewOp->Asl.Value.String = NewString;

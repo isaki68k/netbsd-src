@@ -1,4 +1,4 @@
-/*	$NetBSD: cd9660_vfsops.c,v 1.104 2024/05/15 11:01:27 reinoud Exp $	*/
+/*	$NetBSD: cd9660_vfsops.c,v 1.106 2025/11/29 21:45:57 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 1994
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cd9660_vfsops.c,v 1.104 2024/05/15 11:01:27 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cd9660_vfsops.c,v 1.106 2025/11/29 21:45:57 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -158,13 +158,9 @@ cd9660_modcmd(modcmd_t cmd, void *arg)
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 		error = vfs_attach(&cd9660_vfsops);
-		if (error != 0)
-			break;
 		break;
 	case MODULE_CMD_FINI:
 		error = vfs_detach(&cd9660_vfsops);
-		if (error != 0)
-			break;
 		break;
 	default:
 		error = ENOTTY;
@@ -423,7 +419,8 @@ iso_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l,
 	error = VOP_IOCTL(devvp, DIOCGDINFO, &label, FREAD, FSCRED);
 	if (!error) {
 		/* XXX more sanity checks? */
-		sess = label.d_partitions[DISKPART(dev)].p_cdsession;
+		if (label.d_partitions[DISKPART(dev)].p_fstype == FS_ISO9660)
+			sess = label.d_partitions[DISKPART(dev)].p_cdsession;
 	} else {
 		/* fallback to old method */
 		error = VOP_IOCTL(devvp, CDIOREADMSADDR, &sess, 0, FSCRED);

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -464,10 +464,22 @@ ApCheckForGpeNameConflict (
     ACPI_PARSE_OBJECT       *NextOp;
     UINT32                  GpeNumber;
     char                    Name[ACPI_NAMESEG_SIZE + 1];
-    char                    Target[ACPI_NAMESEG_SIZE];
+    char                    Target[ACPI_NAMESEG_SIZE] ACPI_NONSTRING;
 
 
-    /* Need a null-terminated string version of NameSeg */
+    /**
+     * Need a null-terminated string version of NameSeg
+     *
+     * NOTE: during a review on Name[ACPI_NAMESEG_SIZE + 1] having an extra
+     *       byte[1], compiler testing exhibited a difference in behavior between
+     *       GCC and Clang[2] (at least; MSVC may also exhibit the same) in
+     *       how optimization is done. The extra byte is needed to ensure
+     *       the signature does not get mangled, subsequently avoiding
+     *       GpeNumber being a completely different return value from strtoul.
+     *
+     *       [1] https://github.com/acpica/acpica/pull/1019#discussion_r2058687704
+     *       [2] https://github.com/acpica/acpica/pull/1019#discussion_r2061953039
+     */
 
     ACPI_MOVE_32_TO_32 (Name, Op->Asl.NameSeg);
     Name[ACPI_NAMESEG_SIZE] = 0;

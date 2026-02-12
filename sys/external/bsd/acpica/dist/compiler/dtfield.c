@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -173,8 +173,8 @@ DtCompileString (
     if (Length > ByteLength)
     {
         snprintf (AslGbl_MsgBuffer, sizeof(AslGbl_MsgBuffer),
-            "Maximum %u characters, found %u characters [%.*s]",
-            ByteLength, Length, (ASL_MSG_BUFFER_SIZE / 2), Field->Value);
+            "Maximum %u characters, found %u characters [%s]",
+            ByteLength, Length, Field->Value);
         DtError (ASL_ERROR, ASL_MSG_STRING_LENGTH, Field, AslGbl_MsgBuffer);
         Length = ByteLength;
     }

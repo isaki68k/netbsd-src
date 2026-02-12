@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -72,6 +72,11 @@ const AH_UUID  Gbl_AcpiUuids[] =
     {"Device Labeling Interface",   UUID_DEVICE_LABELING},
     {"Physical Presence Interface", UUID_PHYSICAL_PRESENCE},
 
+    {"[Trusted Platform Module]",   NULL},
+    {"TPM Hardware Information",    UUID_HARDWARE_INFORMATION},
+    {"TPM Start Method",            UUID_START_METHOD},
+    {"TPM Memory Clear",            UUID_MEMORY_CLEAR},
+
     {"[Non-volatile DIMM and NFIT table]",       NULL},
     {"NVDIMM Device",               UUID_NFIT_DIMM},
     {"Volatile Memory Region",      UUID_VOLATILE_MEMORY},
@@ -103,6 +108,7 @@ const AH_UUID  Gbl_AcpiUuids[] =
     {"USB4 Capabilities",           UUID_USB4_CAPABILITIES},
     {"First Function ID for _DSM",  UUID_1ST_FUNCTION_ID},
     {"Second Function ID for _DSM", UUID_2ND_FUNCTION_ID},
+    {"Fan Trip Points",             UUID_FAN_TRIP_POINTS},
 
     {NULL, NULL}
 };

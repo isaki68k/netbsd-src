@@ -1,4 +1,4 @@
-/*	$NetBSD: riscv_machdep.c,v 1.42 2025/01/04 14:23:03 skrll Exp $	*/
+/*	$NetBSD: riscv_machdep.c,v 1.47 2026/01/17 07:13:25 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014, 2019, 2022 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #include "opt_riscv_debug.h"
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: riscv_machdep.c,v 1.42 2025/01/04 14:23:03 skrll Exp $");
+__RCSID("$NetBSD: riscv_machdep.c,v 1.47 2026/01/17 07:13:25 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -73,8 +73,10 @@ __RCSID("$NetBSD: riscv_machdep.c,v 1.42 2025/01/04 14:23:03 skrll Exp $");
 #include <libfdt.h>
 #include <dev/fdt/fdtvar.h>
 #include <dev/fdt/fdt_boot.h>
+#include <dev/fdt/fdt_console.h>
 #include <dev/fdt/fdt_memory.h>
 #include <dev/fdt/fdt_private.h>
+#include <dev/fdt/fdt_platform.h>
 
 int cpu_printfataltraps = 1;
 char machine[] = MACHINE;
@@ -571,6 +573,7 @@ cpu_kernel_vm_init(paddr_t memory_start, paddr_t memory_end)
 	fdt_memory_remove_range(kernstart_phys,
 	    kernend_phys - kernstart_phys);
 
+#if 0
 	/*
 	 * Don't give these pages to UVM.
 	 *
@@ -590,6 +593,7 @@ cpu_kernel_vm_init(paddr_t memory_start, paddr_t memory_end)
 		    " end %#" PRIxPADDR "\n", __func__, spa, epa);
 		fdt_memory_remove_range(spa, epa - spa);
 	}
+#endif
 
 #ifdef _LP64
 	paddr_t pa = memory_start & ~XSEGOFSET;
@@ -607,8 +611,10 @@ cpu_kernel_vm_init(paddr_t memory_start, paddr_t memory_end)
 	const size_t eidx = (eva >> vshift) & pdetab_mask;
 
 	/* Allocate gigapages covering all physical memory in the direct map. */
+	pt_entry_t pbmt_flag = pte_enter_flags_to_pbmt(0);
 	for (size_t i = sidx; i < eidx && pa < memory_end; i++, pa += inc) {
-		l2_pte[i] = PA_TO_PTE(pa) | PTE_KERN | PTE_HARDWIRED | PTE_RW;
+		l2_pte[i] = PA_TO_PTE(pa) | PTE_KERN | PTE_HARDWIRED | PTE_RW |
+		    pbmt_flag;
 		VPRINTF("dm:   %p :  %#" PRIxPADDR "\n", &l2_pte[i], l2_pte[i]);
 	}
 #endif
@@ -695,6 +701,9 @@ init_riscv(register_t hartid, paddr_t dtb)
 
 	/* set temporally to work printf()/panic() even before consinit() */
 	cn_tab = &earlycons;
+
+	/* Critical to do this before mucking around with any more mappings. */
+	pmap_probe_pbmt();
 
 	/* Load FDT */
 	const vaddr_t dtbva = VM_KERNEL_DTB_BASE + (dtb & (NBSEG - 1));
@@ -893,7 +902,6 @@ init_riscv(register_t hartid, paddr_t dtb)
 
 	/* Finish setting up lwp0 on our end before we call main() */
 	riscv_init_lwp0_uarea();
-
 
 	error = 0;
 	if ((boothowto & RB_MD1) == 0) {

@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -672,7 +672,7 @@ AcpiDmCsi2SerialBusDescriptor (
 
     AcpiOsPrintf (" 0x%2.2X, 0x%2.2X,\n",
         Resource->Csi2SerialBus.TypeSpecificFlags & 0x03,
-        Resource->Csi2SerialBus.TypeSpecificFlags & 0xFC);
+        (Resource->Csi2SerialBus.TypeSpecificFlags & 0xFC) >> 2);
 
     /* ResourceSource is a required field */
 

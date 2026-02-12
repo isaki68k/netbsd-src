@@ -1,4 +1,4 @@
-/*	$NetBSD: float.h,v 1.24 2024/10/30 15:56:11 riastradh Exp $	*/
+/*	$NetBSD: float.h,v 1.27 2025/10/07 02:15:36 nat Exp $	*/
 
 #ifndef _M68K_FLOAT_H_
 #define _M68K_FLOAT_H_
@@ -9,10 +9,12 @@
  * LDBL_MIN is half the x86 LDBL_MIN, even though both are 12-byte
  * floats with the same base properties and both allegedly
  * IEEE-compliant, because both these representations materialize the
- * top (integer-part) bit of the mantissa. But on m68k if the exponent
- * is 0 and the integer bit is set, it's a regular number, whereas on
- * x86 it's called a pseudo-denormal and apparently treated as a
- * denormal, so it doesn't count as a valid value for LDBL_MIN.
+ * top (integer-part) bit of the significand.  But on m68k if the
+ * exponent is 0 and the integer bit is set, it's a regular number,
+ * whereas on x86 it's called a pseudo-denormal and apparently treated
+ * as a denormal, so it doesn't count as a valid value for LDBL_MIN.
+ *
+ * If you are running a softloat userland LDBL_MIN is half that again.
  *
  * x86 citation: Intel 64 and IA-32 Architectures Software Developer's
  * Manual, vol. 1 (Order Number: 253665-077US, April 2022), Sec. 8.2.2
@@ -28,7 +30,8 @@
  * x86/include/float.h also gets updated.
  */
 
-#if defined(__LDBL_MANT_DIG__)
+#if defined(__LDBL_MANT_DIG__) && \
+			!(defined(__m68k__) && !defined(__HAVE_68881__))
 #define LDBL_MANT_DIG	__LDBL_MANT_DIG__
 #define LDBL_EPSILON	__LDBL_EPSILON__
 #define LDBL_DIG	__LDBL_DIG__
@@ -42,8 +45,13 @@
 #define LDBL_MANT_DIG	64
 #define LDBL_EPSILON	1.0842021724855044340E-19L
 #define LDBL_DIG	18
+#if !defined(__HAVE_68881__)
+#define LDBL_MIN_EXP	(-16382)
+#define LDBL_MIN	0.8405257857780233760E-4932L
+#else
 #define LDBL_MIN_EXP	(-16381)
 #define LDBL_MIN	1.6810515715560467531E-4932L
+#endif
 #define LDBL_MIN_10_EXP	(-4931)
 #define LDBL_MAX_EXP	16384
 #define LDBL_MAX	1.1897314953572317650E+4932L

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_disk_mbr.c,v 1.58 2023/04/03 18:03:24 gutteridge Exp $	*/
+/*	$NetBSD: subr_disk_mbr.c,v 1.61 2026/01/04 03:16:30 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1988 Regents of the University of California.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_disk_mbr.c,v 1.58 2023/04/03 18:03:24 gutteridge Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_disk_mbr.c,v 1.61 2026/01/04 03:16:30 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mbr.h"
@@ -62,20 +62,23 @@ __KERNEL_RCSID(0, "$NetBSD: subr_disk_mbr.c,v 1.58 2023/04/03 18:03:24 gutteridg
 #endif /* _KERNEL_OPT */
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/buf.h>
-#include <sys/bootblock.h>
-#include <sys/disklabel.h>
-#include <sys/disk.h>
-#include <sys/syslog.h>
-#include <sys/vnode.h>
-#include <sys/fcntl.h>
-#include <sys/conf.h>
-#include <sys/cdio.h>
-#include <sys/dkbad.h>
-#include <fs/udf/ecma167-udf.h>
+#include <sys/types.h>
 
+#include <sys/bootblock.h>
+#include <sys/buf.h>
+#include <sys/cdio.h>
+#include <sys/conf.h>
+#include <sys/disk.h>
+#include <sys/disklabel.h>
+#include <sys/dkbad.h>
+#include <sys/fcntl.h>
 #include <sys/kauth.h>
+#include <sys/sdt.h>
+#include <sys/syslog.h>
+#include <sys/systm.h>
+#include <sys/vnode.h>
+
+#include <fs/udf/ecma167-udf.h>
 
 typedef struct mbr_partition mbr_partition_t;
 
@@ -258,10 +261,9 @@ scan_iso_vrs_session(mbr_args_t *a, uint32_t first_sector,
 	struct vrs_desc *vrsd;
 	uint64_t vrs;
 	int sector_size;
-	int blks, inc;
+	int inc;
 
 	sector_size = a->lp->d_secsize;
-	blks = sector_size / DEV_BSIZE;
 	inc  = MAX(1, 2048 / sector_size);
 
 	/* by definition */
@@ -269,7 +271,7 @@ scan_iso_vrs_session(mbr_args_t *a, uint32_t first_sector,
 	        + first_sector;
 
 	/* read first vrs sector */
-	if (read_sector(a, vrs * blks, 1))
+	if (read_sector(a, vrs, 1))
 		return;
 
 	/* skip all CD001 records */
@@ -280,7 +282,7 @@ scan_iso_vrs_session(mbr_args_t *a, uint32_t first_sector,
 		*is_iso9660 = first_sector;
 
 		vrs += inc;
-		if (read_sector(a, vrs * blks, 1))
+		if (read_sector(a, vrs, 1))
 			return;
 	}
 
@@ -292,7 +294,7 @@ scan_iso_vrs_session(mbr_args_t *a, uint32_t first_sector,
 
 	/* read successor */
 	vrs += inc;
-	if (read_sector(a, vrs * blks, 1))
+	if (read_sector(a, vrs, 1))
 		return;
 
 	/* check for NSR[23] */
@@ -328,7 +330,7 @@ scan_iso_vrs(mbr_args_t *a)
 		dev = a->bp->b_dev;
 		error = bdev_ioctl(dev, MMCGETDISCINFO, &di, FKIOCTL, curlwp);
 		if (error)
-			return SCAN_CONTINUE;
+			goto notmmc;
 
 		/* go through all (data) tracks */
 		sessionnr = -1;
@@ -339,7 +341,7 @@ scan_iso_vrs(mbr_args_t *a)
 			error = bdev_ioctl(dev, MMCGETTRACKINFO, &ti,
 					FKIOCTL, curlwp);
 			if (error)
-				return SCAN_CONTINUE;
+				goto notmmc;
 			new_session = (ti.sessionnr != sessionnr);
 			sessionnr = ti.sessionnr;
 			if (new_session) {
@@ -353,6 +355,7 @@ scan_iso_vrs(mbr_args_t *a)
 			}
 		}
 	} else {
+notmmc:
 		/* try start of disc */
 		sector = 0;
 		scan_iso_vrs_session(a, sector, &is_iso9660, &is_udf);
@@ -725,7 +728,7 @@ writedisklabel(dev_t dev, void (*strat)(struct buf *), struct disklabel *lp,
 	validate_label(&a, 0);
 
 	if (a.written == 0 && a.error == 0)
-		a.error = ESRCH;
+		a.error = SET_ERROR(ESRCH);
 
 	brelse(a.bp, 0);
 	return a.error;

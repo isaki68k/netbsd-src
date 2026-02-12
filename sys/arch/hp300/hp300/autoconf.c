@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.115 2024/12/20 22:43:26 tsutsui Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.119 2025/11/29 19:32:52 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 2002 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.115 2024/12/20 22:43:26 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.119 2025/11/29 19:32:52 thorpej Exp $");
 
 #include "dvbox.h"
 #include "gbox.h"
@@ -97,6 +97,7 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.115 2024/12/20 22:43:26 tsutsui Exp $
 #include "topcat.h"
 #include "tvrx.h"
 #include "gendiofb.h"
+#include "sti_dio.h"
 #include "sti_sgc.h"
 #include "com_dio.h"
 #include "com_frodo.h"
@@ -111,11 +112,12 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.115 2024/12/20 22:43:26 tsutsui Exp $
 #include <sys/device.h>
 #include <sys/disklabel.h>
 #include <sys/kmem.h>
-#include <sys/extent.h>
 #include <sys/mount.h>
 #include <sys/queue.h>
 #include <sys/reboot.h>
 #include <sys/tty.h>
+#include <sys/vmem.h>
+#include <sys/vmem_impl.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -153,6 +155,12 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.115 2024/12/20 22:43:26 tsutsui Exp $
 #include <hp300/dev/com_frodovar.h>
 #endif
 
+#if NSTI_DIO > 0 || NSTI_SGC > 0
+#include <hp300/dev/sti_machdep.h>
+#endif
+#if NSTI_DIO > 0
+#include <hp300/dev/sti_diovar.h>
+#endif
 #if NSTI_SGC > 0
 #include <hp300/dev/sgcreg.h>
 #include <hp300/dev/sgcvar.h>
@@ -174,14 +182,14 @@ static int	dio_scode_probe(int,
 u_int	bootdev;
 
 /*
- * Extent map to manage the external I/O (DIO/DIO-II) space.  We
- * allocate storate for 8 regions in the map.  extio_ex_malloc_safe
- * will indicate that it's safe to use malloc() to dynamically allocate
- * region descriptors in case we run out.
+ * Vmem arena for external I/O (DIO/DIO-II) address space (allocated
+ * in pmap_bootstrap1()).  We allocate sufficient boundary tags for
+ * 8 regions.
  */
-static long extio_ex_storage[EXTENT_FIXED_STORAGE_SIZE(8) / sizeof(long)];
-struct extent *extio_ex;
-int extio_ex_malloc_safe;
+#define	EXTIO_BTAG_COUNT	VMEM_EST_BTCOUNT(1, 8)
+static struct vmem extio_arena_store;
+static struct vmem_btag extio_btag_store[EXTIO_BTAG_COUNT];
+vmem_t *extio_arena;
 
 /*
  * This information is built during the autoconfig process.
@@ -878,6 +886,12 @@ hp300_cninit(void)
 	if (!dio_scan(tvrxcnattach))
 		goto find_kbd;
 #endif
+#if NSTI_DIO > 0
+	if (!dio_scan(sti_dio_cnprobe)) {
+		cninit_deferred = true;
+		goto find_kbd;
+	}
+#endif
 #if NGENDIOFB > 0
 	if (!dio_scan(gendiofbcnattach))
 		goto find_kbd;
@@ -894,8 +908,7 @@ hp300_cninit(void)
 		memset(sgc_bst, 0, sizeof(struct bus_space_tag));
 		sgc_bst->bustype = HP300_BUS_SPACE_SGC;
 		for (slot = 0; slot < SGC_NSLOTS; slot++) {
-			if (sti_sgc_cnprobe(sgc_bst, sgc_slottopa(slot),
-			    slot)) {
+			if (sti_sgc_cnprobe(sgc_bst, slot)) {
 				cninit_deferred = true;
 				consslot = slot;
 				goto find_kbd;
@@ -905,7 +918,7 @@ hp300_cninit(void)
 #endif
 
 #if (NDVBOX + NGBOX + NRBOX + NTOPCAT + NDVBOX + NGBOX + NHYPER + NRBOX + \
-     NTOPCAT + NTVRX + NGENDIOFB + NSTI_SGC) > 0
+     NTOPCAT + NTVRX + NGENDIOFB + NSTI_DIO + NSTI_SGC) > 0
 find_kbd:
 #endif
 
@@ -917,7 +930,7 @@ find_kbd:
 	/* not yet */
 	hilkbdcnattach(bst, HIL_BASE);
 #endif
-;
+	return;
 }
 
 static int
@@ -971,6 +984,18 @@ hp300_cninit_deferred(void)
 	if (!cninit_deferred)
 		return;
 
+#if NSTI_DIO > 0
+	if (machineid == HP_362 ||
+	    machineid == HP_382) {
+		struct bus_space_tag dio_tag;
+		bus_space_tag_t dio_bst;
+
+		dio_bst = &dio_tag;
+		memset(dio_bst, 0, sizeof(struct bus_space_tag));
+		dio_bst->bustype = HP300_BUS_SPACE_DIO;
+		sti_dio_cnattach(dio_bst, conscode);
+	}
+#endif
 #if NSTI_SGC > 0
 	if (machineid == HP_400 ||
 	    machineid == HP_425 ||
@@ -981,7 +1006,7 @@ hp300_cninit_deferred(void)
 		sgc_bst = &sgc_tag;
 		memset(sgc_bst, 0, sizeof(struct bus_space_tag));
 		sgc_bst->bustype = HP300_BUS_SPACE_SGC;
-		sti_sgc_cnattach(sgc_bst, sgc_slottopa(consslot), consslot);
+		sti_sgc_cnattach(sgc_bst, consslot);
 	}
 #endif
 }
@@ -997,12 +1022,26 @@ hp300_cninit_deferred(void)
 void
 iomap_init(void)
 {
+	int error;
 
-	/* extiobase is initialized by pmap_bootstrap(). */
-	extio_ex = extent_create("extio", (u_long) extiobase,
-	    (u_long) extiobase + (ptoa(EIOMAPSIZE) - 1),
-	    (void *) extio_ex_storage, sizeof(extio_ex_storage),
-	    EX_NOCOALESCE|EX_NOWAIT);
+	/* extiobase is initialized by pmap_bootstrap1(). */
+	extio_arena = vmem_init(&extio_arena_store,
+				"extio",		/* name */
+				0,			/* addr */
+				0,			/* size */
+				PAGE_SIZE,		/* quantum */
+				NULL,			/* importfn */
+				NULL,			/* releasefn */
+				NULL,			/* source */
+				0,			/* qcache_max */
+				VM_NOSLEEP | VM_PRIVTAGS,
+				IPL_NONE);
+	KASSERT(extio_arena != NULL);
+
+	vmem_add_bts(extio_arena, extio_btag_store, EXTIO_BTAG_COUNT);
+	error = vmem_add(extio_arena, (vmem_addr_t)extiobase,
+	    ptoa(EIOMAPSIZE), VM_NOSLEEP);
+	KASSERT(error == 0);
 }
 
 /*
@@ -1010,23 +1049,29 @@ iomap_init(void)
  * space mapping the indicated physical address range [pa - pa+size)
  */
 void *
-iomap(void *pa, int size)
+iomap(void *vpa, int size)
 {
-	u_long kva;
+	paddr_t pa = (paddr_t)vpa;
+	vmem_addr_t kva;
 	int error;
 
-#ifdef DEBUG
-	if (((int)pa & PGOFSET) || (size & PGOFSET))
-		panic("iomap: unaligned");
-#endif
+	KASSERT((pa & PGOFSET) == 0);
+	KASSERT((size & PGOFSET) == 0);
 
-	error = extent_alloc(extio_ex, size, PAGE_SIZE, 0,
-	    EX_FAST | EX_NOWAIT | (extio_ex_malloc_safe ? EX_MALLOCOK : 0),
-	    &kva);
-	if (error)
-		return 0;
+	error = vmem_alloc(extio_arena, size, VM_BESTFIT | VM_NOSLEEP, &kva);
+	if (error) {
+		return NULL;
+	}
 
-	physaccess((void *) kva, pa, size, PG_RW|PG_CI);
+	vaddr_t va = kva;
+	vaddr_t eva = kva + size;
+	while (va < eva) {
+		pmap_kenter_pa(va, pa, VM_PROT_READ | VM_PROT_WRITE,
+		    PMAP_NOCACHE);
+		va += PAGE_SIZE;
+		pa += PAGE_SIZE;
+	}
+
 	return (void *)kva;
 }
 
@@ -1036,17 +1081,15 @@ iomap(void *pa, int size)
 void
 iounmap(void *kva, int size)
 {
+	vaddr_t va = (vaddr_t)kva;
 
-#ifdef DEBUG
-	if (((vaddr_t)kva & PGOFSET) || (size & PGOFSET))
-		panic("iounmap: unaligned");
-	if ((uint8_t *)kva < extiobase ||
-	    (uint8_t *)kva >= extiobase + ptoa(EIOMAPSIZE))
-		panic("iounmap: bad address");
-#endif
-	physunaccess(kva, size);
-	if (extent_free(extio_ex, (vaddr_t)kva, size,
-	    EX_NOWAIT | (extio_ex_malloc_safe ? EX_MALLOCOK : 0)))
-		printf("iounmap: kva %p size 0x%x: can't free region\n",
-		    kva, size);
+	KASSERT((va & PGOFSET) == 0);
+	KASSERT((size & PGOFSET) == 0);
+
+	KASSERT((uint8_t *)kva >= extiobase);
+	KASSERT((uint8_t *)kva < extiobase + ptoa(EIOMAPSIZE));
+
+	pmap_kremove(va, size);
+
+	vmem_free(extio_arena, va, size);
 }

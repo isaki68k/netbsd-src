@@ -1,4 +1,4 @@
-#	$NetBSD: files.amdgpu,v 1.31 2024/04/16 14:34:01 riastradh Exp $
+#	$NetBSD: files.amdgpu,v 1.33 2025/09/19 05:18:23 mrg Exp $
 
 version	20180827
 
@@ -7,7 +7,8 @@ device	amdgpu: drmkms, drmkms_pci, drmkms_sched, drmkms_ttm, amdgpufbbus, firmlo
 attach	amdgpu at pci
 makeoptions	amdgpu		"CPPFLAGS.amdgpu"+="${CPPFLAGS.drmkms}"
 
-defflag	opt_amdgpu_cik.h AMDGPU_CIK
+defflag	opt_amdgpu_cik.h	AMDGPU_CIK
+defflag	opt_amdgpu_si.h		AMDGPU_SI
 
 device	amdgpufb: amdgpufbbus, drmfb, drmfb_pci, wsemuldisplaydev
 attach	amdgpufb at amdgpufbbus
@@ -64,6 +65,11 @@ makeoptions	amdgpu	"CWARNFLAGS.amdgpu_rn_clk_mgr.c"+="-Wno-type-limits"
 # half the file.
 makeoptions	amdgpu	"CWARNFLAGS.amdgpu_vega10_reg_init.c"+="-Wno-cast-qual"
 makeoptions	amdgpu	"CWARNFLAGS.amdgpu_vega20_reg_init.c"+="-Wno-cast-qual"
+
+# GCC 14 seems to get dangling pointer wrong, but array bounds may be valid.
+makeoptions	amdgpu	"CWARNFLAGS.amdgpu_cgs.c"+="${CC_WNO_ARRAY_BOUNDS}"
+makeoptions	amdgpu	"CWARNFLAGS.amdgpu_dce_aux.c"+="${CC_WNO_DANGLING_POINTER}"
+makeoptions	amdgpu	"CWARNFLAGS.amdgpu_device.c"+="${CC_WNO_DANGLING_POINTER}"
 
 ifdef amd64
 makeoptions	amdgpu	"COPTS.amdgpu_float"+="-mhard-float -msse -msse2"

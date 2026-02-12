@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.131 2024/12/02 13:31:32 bouyer Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.139 2025/11/23 22:48:26 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,31 +30,32 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.131 2024/12/02 13:31:32 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.139 2025/11/23 22:48:26 riastradh Exp $");
 
 #include "opt_xen.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/device.h>
+
 #include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/systm.h>
 
 #include <crypto/aes/aes_impl.h>
 #include <crypto/aes/arch/x86/aes_ni.h>
-#include <crypto/aes/arch/x86/aes_sse2.h>
+#include <crypto/aes/arch/x86/aes_sse2_4x32.h>
 #include <crypto/aes/arch/x86/aes_ssse3.h>
 #include <crypto/aes/arch/x86/aes_via.h>
-#include <crypto/chacha/chacha_impl.h>
 #include <crypto/chacha/arch/x86/chacha_sse2.h>
+#include <crypto/chacha/chacha_impl.h>
 
 #include <uvm/uvm_extern.h>
 
-#include <machine/specialreg.h>
-#include <machine/pio.h>
 #include <machine/cpu.h>
+#include <machine/pio.h>
+#include <machine/specialreg.h>
 
-#include <x86/cputypes.h>
 #include <x86/cacheinfo.h>
+#include <x86/cputypes.h>
 #include <x86/cpuvar.h>
 #include <x86/fpu.h>
 
@@ -81,6 +82,7 @@ unsigned int x86_fpu_save_size __read_mostly = sizeof(struct save87);
 uint64_t x86_xsave_features __read_mostly = 0;
 size_t x86_xsave_offsets[XSAVE_MAX_COMPONENT+1] __read_mostly;
 size_t x86_xsave_sizes[XSAVE_MAX_COMPONENT+1] __read_mostly;
+u_int cpu_max_hypervisor_cpuid = 0;
 
 /*
  * Note: these are just the ones that may not have a cpuid instruction.
@@ -144,13 +146,27 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 static void
 cpu_probe_intel_errata(struct cpu_info *ci)
 {
-	u_int family, model, stepping;
+	u_int family, model;
 
 	family = CPUID_TO_FAMILY(ci->ci_signature);
 	model = CPUID_TO_MODEL(ci->ci_signature);
-	stepping = CPUID_TO_STEPPING(ci->ci_signature);
 
-	if (family == 0x6 && model == 0x5C && stepping == 0x9) { /* Apollo Lake */
+	/*
+	 * For details, refer to the Intel Pentium and Celeron Processor
+	 * N- and J- Series Specification Update (Document number: 334820-010),
+	 * August 2022, Revision 010. See page 28, Section 5.30: "APL30 A Store
+	 * Instruction May Not Wake Up MWAIT."
+	 * https://cdrdv2-public.intel.com/334820/334820-APL_Spec_Update_rev010.pdf
+	 * https://web.archive.org/web/20250114072355/https://cdrdv2-public.intel.com/334820/334820-APL_Spec_Update_rev010.pdf
+	 *
+	 * Disable MWAIT/MONITOR on Apollo Lake CPUs to address the
+	 * APL30 erratum.  When using the MONITOR/MWAIT instruction
+	 * pair, stores to the armed address range may fail to trigger
+	 * MWAIT to resume execution.  When these instructions are used
+	 * to hatch secondary CPUs, this erratum causes SMP boot
+	 * failures.
+	 */
+	if (family == 0x6 && model == 0x5C) {
 		wrmsr(MSR_MISC_ENABLE,
 		    rdmsr(MSR_MISC_ENABLE) & ~IA32_MISC_MWAIT_EN);
 
@@ -791,21 +807,44 @@ cpu_probe_fpu(struct cpu_info *ci)
 
 	x86_fpu_save = FPU_SAVE_XSAVE;
 
-	x86_cpuid2(0xd, 1, descs);
+	x86_cpuid2(0x0d, 1, descs);
 	if (descs[0] & CPUID_PES1_XSAVEOPT)
 		x86_fpu_save = FPU_SAVE_XSAVEOPT;
 
-	/* Get features and maximum size of the save area */
-	x86_cpuid(0xd, descs);
-	if (descs[2] > sizeof(struct fxsave))
-		x86_fpu_save_size = descs[2];
-
+	/*
+	 * Get the hardware-supported features with CPUID.
+	 */
+	x86_cpuid2(0x0d, 0, descs);
 	x86_xsave_features = (uint64_t)descs[3] << 32 | descs[0];
+
+	/*
+	 * Turn on XSAVE in CR4 so we can write to XCR0, and write to
+	 * XCR0 enable only those features that NetBSD software
+	 * supports.
+	 *
+	 * CR4_OSXSAVE support and and XCR0 access are both allowed
+	 * because we tested ci->ci_feat_val[1] & CPUID2_XSAVE above.
+	 *
+	 * (This is redundant with cpu_init when it runs on the primary
+	 * CPU, but it's harmless.)
+	 */
+	lcr4(rcr4() | CR4_OSXSAVE);
+	wrxcr(0, x86_xsave_features & XCR0_FPU);
+
+	/*
+	 * Get the size of the save area with those features enabled
+	 * with the second CPUID.
+	 *
+	 * (Let's hope the features don't change!)
+	 */
+	x86_cpuid2(0x0d, 0, descs);
+	if (descs[1] > x86_fpu_save_size)
+		x86_fpu_save_size = descs[1];
 
 	/* Get component offsets and sizes for the save area */
 	for (i = XSAVE_YMM_Hi128; i < __arraycount(x86_xsave_offsets); i++) {
 		if (x86_xsave_features & __BIT(i)) {
-			x86_cpuid2(0xd, i, descs);
+			x86_cpuid2(0x0d, i, descs);
 			x86_xsave_offsets[i] = descs[1];
 			x86_xsave_sizes[i] = descs[0];
 		}
@@ -972,7 +1011,7 @@ cpu_probe(struct cpu_info *ci)
 		    (cpu_feature[1] & CPUID2_SSSE3))
 			aes_md_init(&aes_ssse3_impl);
 		else if (i386_has_sse && i386_has_sse2)
-			aes_md_init(&aes_sse2_impl);
+			aes_md_init(&aes_sse2_4x32_impl);
 
 		/* ChaCha */
 		if (i386_has_sse && i386_has_sse2)
@@ -1080,7 +1119,8 @@ static const struct vm_name_guest vm_system_products[] = {
 	{ "Virtual Machine", VM_GUEST_VM },		/* Microsoft VirtualPC */
 	{ "VirtualBox", VM_GUEST_VIRTUALBOX },		/* Sun xVM VirtualBox */
 	{ "Parallels Virtual Platform", VM_GUEST_VM },	/* Parallels VM */
-	{ "KVM", VM_GUEST_VM },				/* KVM */
+	{ "KVM", VM_GUEST_KVM },			/* KVM */
+	{ "NVMM", VM_GUEST_NVMM },			/* NVMM */
 };
 
 void
@@ -1092,10 +1132,15 @@ identify_hypervisor(void)
 	int i;
 
 	switch (vm_guest) {
+	/* guest type already known, no bios info */
 	case VM_GUEST_XENPV:
 	case VM_GUEST_XENPVH:
-	case VM_GUEST_GENPVH:
-		/* guest type already known, no bios info */
+	/* The following are known from first pass */
+	case VM_GUEST_VMWARE:
+	case VM_GUEST_HV:
+	case VM_GUEST_XENHVM:
+	case VM_GUEST_KVM:
+	case VM_GUEST_NVMM:
 		return;
 	default:
 		break;
@@ -1110,9 +1155,15 @@ identify_hypervisor(void)
 	 * http://kb.vmware.com/kb/1009458
 	 */
 	if (ISSET(cpu_feature[1], CPUID2_RAZ)) {
-		vm_guest = VM_GUEST_VM;
+		/*
+		 * don't override if vm_guest is unknown but has booted in PVH
+		 * mode, so it can attach to pv(4) in (amd64|i386)_mainbus.c
+		 */
+		if (vm_guest != VM_GUEST_GENPVH)
+			vm_guest = VM_GUEST_VM;
 		x86_cpuid(0x40000000, regs);
 		if (regs[0] >= 0x40000000) {
+			cpu_max_hypervisor_cpuid = regs[0];
 			memcpy(&hv_vendor[0], &regs[1], sizeof(*regs));
 			memcpy(&hv_vendor[4], &regs[2], sizeof(*regs));
 			memcpy(&hv_vendor[8], &regs[3], sizeof(*regs));
@@ -1127,9 +1178,10 @@ identify_hypervisor(void)
 				vm_guest = VM_GUEST_KVM;
 			else if (memcmp(hv_vendor, "XenVMMXenVMM", 12) == 0)
 				vm_guest = VM_GUEST_XENHVM;
+			else if (memcmp(hv_vendor, "___ NVMM ___", 12) == 0)
+				vm_guest = VM_GUEST_NVMM;
 			/* FreeBSD bhyve: "bhyve bhyve " */
 			/* OpenBSD vmm:   "OpenBSDVMM58" */
-			/* NetBSD nvmm:   "___ NVMM ___" */
 		}
 		// VirtualBox returns KVM, so keep going.
 		if (vm_guest != VM_GUEST_KVM)

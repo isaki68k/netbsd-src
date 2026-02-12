@@ -1,4 +1,4 @@
-/*	$NetBSD: uaudio.c,v 1.183 2024/02/04 05:43:06 mrg Exp $	*/
+/*	$NetBSD: uaudio.c,v 1.185 2026/01/10 08:54:07 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1999, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.183 2024/02/04 05:43:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.185 2026/01/10 08:54:07 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -3142,16 +3142,18 @@ uaudio_round_blocksize(void *addr, int blk,
 		       int mode, const audio_params_t *param)
 {
 	struct uaudio_softc *sc;
+	struct chan *ch;
 	int b;
 
 	sc = addr;
 	DPRINTF("blk=%d mode=%s\n", blk,
 	    mode == AUMODE_PLAY ? "AUMODE_PLAY" : "AUMODE_RECORD");
 
+	ch = mode == AUMODE_PLAY ? &sc->sc_playchan : &sc->sc_recchan;
+
 	/* chan.bytes_per_frame can be 0. */
-	if (mode == AUMODE_PLAY || sc->sc_recchan.bytes_per_frame <= 0) {
-		b = param->sample_rate * sc->sc_recchan.nframes
-		    * sc->sc_recchan.nchanbufs;
+	if (mode == AUMODE_PLAY || ch->bytes_per_frame <= 0) {
+		b = param->sample_rate * ch->nframes * ch->nchanbufs;
 
 		/*
 		 * This does not make accurate value in the case
@@ -3165,8 +3167,7 @@ uaudio_round_blocksize(void *addr, int blk,
 		 * use wMaxPacketSize in bytes_per_frame.
 		 * See uaudio_set_format() and uaudio_chan_init()
 		 */
-		b = sc->sc_recchan.bytes_per_frame
-		    * sc->sc_recchan.nframes * sc->sc_recchan.nchanbufs;
+		b = ch->bytes_per_frame * ch->nframes * ch->nchanbufs;
 	}
 
 	if (b <= 0)
@@ -3687,6 +3688,7 @@ uaudio_chan_open(struct uaudio_softc *sc, struct chan *ch)
 {
 	struct as_info *as;
 	usb_device_descriptor_t *ddesc;
+	struct usbd_pipe *pipe;
 	int endpt, clkid;
 	usbd_status err;
 
@@ -3714,19 +3716,25 @@ uaudio_chan_open(struct uaudio_softc *sc, struct chan *ch)
 	}
 
 	DPRINTF("create pipe to 0x%02x\n", endpt);
-	err = usbd_open_pipe(as->ifaceh, endpt, USBD_MPSAFE, &ch->pipe);
+	err = usbd_open_pipe(as->ifaceh, endpt, USBD_MPSAFE, &pipe);
 	if (err)
 		return err;
+	pipe = atomic_swap_ptr(&ch->pipe, pipe);
+	KASSERT(pipe == NULL);
 	if (as->edesc1 != NULL) {
 		endpt = as->edesc1->bEndpointAddress;
 		if (endpt != 0) {
 			DPRINTF("create sync-pipe to 0x%02x\n", endpt);
 			err = usbd_open_pipe(as->ifaceh, endpt, USBD_MPSAFE,
-			    &ch->sync_pipe);
+			    &pipe);
+			if (err)
+				return err;
+			pipe = atomic_swap_ptr(&ch->sync_pipe, pipe);
+			KASSERT(pipe == NULL);
 		}
 	}
 
-	return err;
+	return 0;
 }
 
 Static void

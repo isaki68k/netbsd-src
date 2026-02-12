@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -248,6 +248,12 @@ AcpiExReadSerialBus (
     case ACPI_ADR_SPACE_PLATFORM_RT:
 
         BufferLength = ACPI_PRM_INPUT_BUFFER_SIZE;
+        Function = ACPI_READ;
+        break;
+
+    case ACPI_ADR_SPACE_FIXED_HARDWARE:
+
+        BufferLength = ACPI_FFH_INPUT_BUFFER_SIZE;
         Function = ACPI_READ;
         break;
 

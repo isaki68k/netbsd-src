@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_platform.c,v 1.38 2024/12/08 20:55:18 jmcneill Exp $ */
+/* $NetBSD: acpi_platform.c,v 1.40 2025/10/04 04:12:37 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.38 2024/12/08 20:55:18 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.40 2025/10/04 04:12:37 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.38 2024/12/08 20:55:18 jmcneill 
 #include <sys/kprintf.h>
 
 #include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_platform.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -324,7 +325,6 @@ static void
 acpi_platform_device_register(device_t self, void *aux)
 {
 #if NCOM > 0
-	prop_dictionary_t prop = device_properties(self);
 	ACPI_STATUS rv;
 
 	if (device_is_a(self, "com")) {
@@ -355,7 +355,7 @@ acpi_platform_device_register(device_t self, void *aux)
 
 			if (spcr->PciSegment == s && spcr->PciBus == b &&
 			    spcr->PciDevice == d && spcr->PciFunction == f) {
-				prop_dictionary_set_bool(prop,
+				device_setprop_bool(self,
 				    "force_console", true);
 			}
 		}
@@ -377,7 +377,7 @@ acpi_platform_device_register(device_t self, void *aux)
 			}
 
 			if (mem->ar_base == le64toh(spcr->SerialPort.Address)) {
-				prop_dictionary_set_bool(prop,
+				device_setprop_bool(self,
 				    "force_console", true);
 			}
 

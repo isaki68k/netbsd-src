@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.222 2024/12/30 12:31:09 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.230 2026/01/31 12:12:58 nia Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -139,6 +139,7 @@ vmt0		at cpu0			# VMware Tools
 # Performance monitors
 armpmu* 	at fdt?
 pseudo-device	tprof
+pseudo-device	lockstat		# lock profiling
 
 # CPU frequency scaling
 cpufreqdt*	at cpu?
@@ -362,6 +363,7 @@ bsciic* 	at acpi?
 dwiic*		at fdt?			# Designware I2C
 dwiic*		at acpi?
 imxi2c* 	at fdt? pass 4		# IMX I2C
+mesoniic* 	at fdt?			# Amlogic Meson I2C
 nxpiic* 	at acpi?		# NXP Layerscape I2C
 qcomiic*	at acpi?		# Qualcomm I2C
 rkiic*		at fdt? pass 4		# Rockchip I2C
@@ -385,6 +387,7 @@ cwfg*		at iic?			# CellWise CW2015 Fuel Gauge IC
 dsrtc*		at iic?			# Dallas Semiconductor RTCs
 es8316ac*	at iic?			# Everest Semi ES8316 Audio CODEC
 fan53555reg*	at iic?			# FAN53555 / SY82x regulator
+#fusbtc* 	at iic?			# USB-C power controller
 max77620pmic*	at iic?
 pcaiicmux*	at iic?			# PCA954x / PCA984x I2C switch / mux
 pcf8563rtc*	at iic?			# PCF8563 RTC
@@ -403,7 +406,7 @@ wskbd*		at ikbd? mux 1
 applepmgr* 	at fdt? pass 0
 
 # Random number generators and security devices
-amdccp* 	at fdt?			# AMD Cryptograhic Coprocessor RNG
+amdccp* 	at fdt?			# AMD Cryptographic Coprocessor RNG
 amdccp* 	at acpi?
 bcmrng* 	at fdt?			# Broadcom BCM283x RNG
 mesonrng*	at fdt?			# Amlogic Meson RNG
@@ -491,6 +494,7 @@ hdmicec*	at hdmicecbus?
 # Display
 anxdp*		at fdt?			# Analogix-based (e)DP
 anxedp* 	at iic?			# Analogix eDP TX
+bochsfb*	at pci? dev ? function ?	# Bochs framebuffer (QEMU)
 dispcon*	at fdt?			# Display connector devices
 panel*		at fdt?			# Display panels
 dwhdmi* 	at fdt?			# Designware HDMI TX
@@ -555,6 +559,8 @@ mesongxlu2phy*	at fdt? pass 9		# Amlogic Meson GXL USB2 PHY
 mesongxlu3phy*	at fdt? pass 9		# Amlogic Meson GXL USB3 PHY
 rkusb*		at fdt? pass 9		# Rockchip USB PHY
 rkusbphy*	at rkusb?
+#rktypec* 	at fdt?			# Rockchip USB-C PHY
+#rktcphy* 	at rktypec?
 sunxiusbphy*	at fdt? pass 9		# Allwinner USB PHY
 sunxiusb3phy*	at fdt? pass 9		# Allwinner USB3 PHY
 tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY
@@ -579,12 +585,12 @@ pseudo-device	sequencer			# MIDI sequencer
 virtio* 	at fdt?			# Virtio MMIO device
 virtio* 	at acpi?
 virtio* 	at pci? dev ? function ?
-#viomb*		at virtio?		# Virtio memory balloon device
-ld*		at virtio?		# Virtio disk device
-viocon*		at virtio?		# Virtio serial device
-vioif*		at virtio?		# Virtio network device
-viornd* 	at virtio?		# Virtio entropy device
-vioscsi*	at virtio?		# Virtio SCSI device
+
+include "dev/virtio/virtio.config"
+no viomb* 	at virtio?		# XXX ?
+
+# VMWare devices
+pvscsi* 	at pci? dev ? function?	# PV SCSI device
 
 # SCSI controllers
 mpt*		at pci? dev ? function ?

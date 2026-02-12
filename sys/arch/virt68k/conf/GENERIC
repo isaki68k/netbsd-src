@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.9 2024/11/01 14:31:59 mlelstv Exp $
+# $NetBSD: GENERIC,v 1.13 2025/12/17 02:09:59 thorpej Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include 	"arch/virt68k/conf/std.virt68k"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.9 $"
+#ident 		"GENERIC-$Revision: 1.13 $"
 
 makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
 
@@ -32,8 +32,8 @@ makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
 makeoptions     COPY_SYMTAB=1
 
 # CPUs this kernel supports
-options		M68030
-options		M68040
+options 	M68030
+options 	M68040
 
 maxusers	16
 
@@ -49,7 +49,7 @@ options 	DIAGNOSTIC
 options 	KTRACE
 
 options 	USERCONF	# userconf(4) support
-#options	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
+#options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # Alternate buffer queue strategies for better responsiveness under high
@@ -113,6 +113,9 @@ options 	SYSVMSG		# System V-like message queues
 options 	SYSVSEM		# System V-like semaphores
 options 	SYSVSHM		# System V-like memory sharing
 
+options 	MODULAR		# new style module(7) framework
+options 	MODULAR_DEFAULT_AUTOLOAD
+
 ## force NFS root and swap
 #config	netbsd		root on ? type nfs
 ## "generic" boot (put root on boot device)
@@ -174,11 +177,11 @@ virtctrl*	at mainbus? addr ?
 
 # VirtIO devices
 virtio*		at mainbus? addr ?	# VirtIO nexus
-ld*		at virtio?		# VirtIO disk device
-vioif*		at virtio?		# VirtIO network device
-viornd*		at virtio?		# VirtIO entropy device
-vioscsi*	at virtio?		# VirtIO SCSI device
-viocon*		at virtio?		# Virtio Console
+
+include "dev/virtio/virtio.config"
+no vio9p* 	at virtio?		# XXX ?
+no viomb* 	at virtio?		# XXX ?
+no viogpu*	at virtio?		# No rasops (yet?)
 
 # SCSI devices
 scsibus* at scsi?

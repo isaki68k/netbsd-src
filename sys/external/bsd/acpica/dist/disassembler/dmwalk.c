@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -860,6 +860,8 @@ AcpiDmDescendingOp (
                      */
                      AcpiDmPredefinedDescription (Op->Asl.Parent);
                 }
+
+                AcpiDmPredefinedDescription (Op->Asl.Parent);
 
                 AcpiOsPrintf ("\n");
                 AcpiDmIndent (Info->Level);

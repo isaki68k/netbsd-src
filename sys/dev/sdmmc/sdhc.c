@@ -1,4 +1,4 @@
-/*	$NetBSD: sdhc.c,v 1.119 2024/05/09 01:33:13 dyoung Exp $	*/
+/*	$NetBSD: sdhc.c,v 1.125 2026/01/09 22:54:34 jmcneill Exp $	*/
 /*	$OpenBSD: sdhc.c,v 1.25 2009/01/13 19:44:20 grange Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.119 2024/05/09 01:33:13 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdhc.c,v 1.125 2026/01/09 22:54:34 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -142,9 +142,6 @@ hwrite1(struct sdhc_host *hp, bus_size_t o, uint8_t val)
 		tmp = (val << shift) | (tmp & ~(0xffU << shift));
 		bus_space_write_4(hp->iot, hp->ioh, o, tmp);
 	}
-	if (hp->sc->sc_write_delay != 0) {
-		delay(hp->sc->sc_write_delay);
-	}
 }
 
 static void
@@ -160,9 +157,6 @@ hwrite2(struct sdhc_host *hp, bus_size_t o, uint16_t val)
 		tmp = (val << shift) | (tmp & ~(0xffffU << shift));
 		bus_space_write_4(hp->iot, hp->ioh, o, tmp);
 	}
-	if (hp->sc->sc_write_delay != 0) {
-		delay(hp->sc->sc_write_delay);
-	}
 }
 
 static void
@@ -170,9 +164,6 @@ hwrite4(struct sdhc_host *hp, bus_size_t o, uint32_t val)
 {
 
 	bus_space_write_4(hp->iot, hp->ioh, o, val);
-	if (hp->sc->sc_write_delay != 0) {
-		delay(hp->sc->sc_write_delay);
-	}
 }
 
 #define HWRITE1(hp, reg, val)		hwrite1(hp, reg, val)
@@ -613,6 +604,7 @@ adma_done:
 	saa.saa_sct = &sdhc_functions;
 	saa.saa_sch = hp;
 	saa.saa_dmat = hp->dmat;
+	saa.saa_dma_align_mask = hp->sc->sc_dma_align_mask;
 	saa.saa_clkmax = hp->clkbase;
 	if (ISSET(sc->sc_flags, SDHC_FLAG_HAVE_CGM))
 		saa.saa_clkmin = hp->clkbase / 256 / 2046;
@@ -944,8 +936,7 @@ sdhc_bus_power(sdmmc_chipset_handle_t sch, uint32_t ocr)
 	/*
 	 * Disable bus power before voltage change.
 	 */
-	if (!ISSET(hp->sc->sc_flags, SDHC_FLAG_32BIT_ACCESS)
-	    && !ISSET(hp->sc->sc_flags, SDHC_FLAG_NO_PWR0)) {
+	if (!ISSET(hp->sc->sc_flags, SDHC_FLAG_NO_PWR0)) {
 		hp->vdd = 0;
 		HWRITE1(hp, SDHC_POWER_CTL, 0);
 	}
@@ -1572,17 +1563,25 @@ sdhc_hw_reset(sdmmc_chipset_handle_t sch)
 static int
 sdhc_wait_state(struct sdhc_host *hp, uint32_t mask, uint32_t value)
 {
+	struct timeval start, diff;
 	uint32_t state;
-	int timeout;
 
-	for (timeout = 100000; timeout > 0; timeout--) {
-		if (((state = HREAD4(hp, SDHC_PRESENT_STATE)) & mask) == value)
+	microuptime(&start);
+	for (;;) {
+		state = HREAD4(hp, SDHC_PRESENT_STATE);
+		if ((state & mask) == value) {
 			return 0;
-		sdmmc_delay(10);
+		}
+		microuptime(&diff);
+		timersub(&diff, &start, &diff);
+		if (diff.tv_sec != 0) {
+			aprint_error_dev(hp->sc->sc_dev,
+			    "timeout waiting for mask %#x value %#x "
+			    "(state=%#x)\n",
+			    mask, value, state);
+			return ETIMEDOUT;
+		}
 	}
-	aprint_error_dev(hp->sc->sc_dev, "timeout waiting for mask %#x value %#x (state=%#x)\n",
-	    mask, value, state);
-	return ETIMEDOUT;
 }
 
 static void
@@ -1810,7 +1809,10 @@ sdhc_start_command(struct sdhc_host *hp, struct sdmmc_command *cmd)
 	}
 
 	/* Set DMA start address. */
-	if (ISSET(hp->flags, SHF_USE_ADMA2_MASK) && cmd->c_data != NULL) {
+	if (ISSET(mode, SDHC_DMA_ENABLE) &&
+	    ISSET(hp->flags, SHF_USE_ADMA2_MASK) &&
+	    cmd->c_data != NULL) {
+		KASSERT(cmd->c_dmamap != NULL);
 		for (int seg = 0; seg < cmd->c_dmamap->dm_nsegs; seg++) {
 			bus_addr_t paddr =
 			    cmd->c_dmamap->dm_segs[seg].ds_addr;

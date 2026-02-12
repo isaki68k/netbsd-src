@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -372,7 +372,7 @@ ACPI_STATUS (*ACPI_INTERNAL_METHOD) (
  */
 typedef struct acpi_name_info
 {
-    char                        Name[ACPI_NAMESEG_SIZE];
+    char                        Name[ACPI_NAMESEG_SIZE] ACPI_NONSTRING;
     UINT16                      ArgumentList;
     UINT8                       ExpectedBtypes;
 
@@ -460,7 +460,7 @@ typedef ACPI_STATUS (*ACPI_OBJECT_CONVERTER) (
 
 typedef struct acpi_simple_repair_info
 {
-    char                        Name[ACPI_NAMESEG_SIZE];
+    char                        Name[ACPI_NAMESEG_SIZE] ACPI_NONSTRING;
     UINT32                      UnexpectedBtypes;
     UINT32                      PackageIndex;
     ACPI_OBJECT_CONVERTER       ObjectConverter;
@@ -664,7 +664,7 @@ typedef struct acpi_field_info
 typedef struct acpi_ged_handler_info
 {
     struct acpi_ged_handler_info    *Next;
-    UINT32                          IntId;      /* The interrupt ID that triggers the execution of the EvtMethod. */
+    UINT32                          IntId;      /* The interrupt ID that triggers the execution ofthe EvtMethod. */
     ACPI_NAMESPACE_NODE             *EvtMethod; /* The _EVT method to be executed when an interrupt with ID = IntID is received */
 
 } ACPI_GED_HANDLER_INFO;
@@ -1356,7 +1356,7 @@ typedef struct acpi_port_info
 #define ACPI_RESOURCE_NAME_PIN_GROUP_FUNCTION   0x91
 #define ACPI_RESOURCE_NAME_PIN_GROUP_CONFIG     0x92
 #define ACPI_RESOURCE_NAME_CLOCK_INPUT          0x93
-#define ACPI_RESOURCE_NAME_LARGE_MAX            0x94
+#define ACPI_RESOURCE_NAME_LARGE_MAX            0x93
 
 
 /*****************************************************************************

@@ -1,4 +1,4 @@
-/* $NetBSD: arm_fdt.c,v 1.21 2023/04/07 08:55:30 skrll Exp $ */
+/* $NetBSD: arm_fdt.c,v 1.24 2025/09/07 15:01:59 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_modular.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.21 2023/04/07 08:55:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.24 2025/09/07 15:01:59 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.21 2023/04/07 08:55:30 skrll Exp $");
 #include <uvm/uvm_extern.h>
 
 #include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_platform.h>
 
 #include <dev/ofw/openfirm.h>
 
@@ -68,6 +69,11 @@ static int	arm_fdt_efi_rtc_gettime(todr_chip_handle_t, struct clock_ymdhms *);
 static int	arm_fdt_efi_rtc_settime(todr_chip_handle_t, struct clock_ymdhms *);
 
 static struct todr_chip_handle efi_todr;
+
+static const char * const ignore_efi_runtime_models[] = {
+	/* RTC calls do not work with current firmware. */
+	"Radxa Computer (Shenzhen) Co., Ltd. Radxa Orion O6",
+};
 #endif
 
 CFATTACH_DECL_NEW(arm_fdt, 0,
@@ -244,6 +250,27 @@ arm_fdt_module_init(void)
 }
 
 #ifdef EFI_RUNTIME
+static bool
+arm_fdi_efi_ignored(void)
+{
+	const int phandle = OF_peer(0);
+	const char *descr;
+	u_int n;
+
+	descr = fdtbus_get_string(phandle, "model");
+	if (descr == NULL) {
+		return false;
+	}
+
+	for (n = 0; n < __arraycount(ignore_efi_runtime_models); n++) {
+		if (strcmp(descr, ignore_efi_runtime_models[n]) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static void
 arm_fdt_efi_init(device_t dev)
 {
@@ -254,6 +281,11 @@ arm_fdt_efi_init(device_t dev)
 	const int chosen = OF_finddevice("/chosen");
 	if (chosen < 0)
 		return;
+
+	if (arm_fdi_efi_ignored()) {
+		aprint_debug_dev(dev, "EFI runtime services ignored on this platform\n");
+		return;
+	}
 
 	if (of_getprop_uint64(chosen, "netbsd,uefi-system-table", &efi_system_table) != 0)
 		return;
@@ -266,7 +298,6 @@ arm_fdt_efi_init(device_t dev)
 
 	if (arm_efirt_gettime(&tm, NULL) == 0) {
 		aprint_normal_dev(dev, "using EFI runtime services for RTC\n");
-		efi_todr.cookie = NULL;
 		efi_todr.todr_gettime_ymdhms = arm_fdt_efi_rtc_gettime;
 		efi_todr.todr_settime_ymdhms = arm_fdt_efi_rtc_settime;
 		todr_attach(&efi_todr);

@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.842 2024/06/27 23:58:46 riastradh Exp $	*/
+/*	$NetBSD: machdep.c,v 1.851 2025/12/21 07:00:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.842 2024/06/27 23:58:46 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.851 2025/12/21 07:00:27 skrll Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -676,6 +676,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	KASSERT(mutex_owned(p->p_lock));
 
 	fp--;
+	fp = (struct sigframe_siginfo *)((uintptr_t)fp & ~STACK_ALIGNBYTES);
 
 	memset(&frame, 0, sizeof(frame));
 	frame.sf_ra = (int)ps->sa_sigdesc[sig].sd_tramp;
@@ -817,7 +818,7 @@ haltsys:
 		}
 #endif
 
-		cnpollc(1);	/* for proper keyboard command handling */
+		cnpollc(true);	/* for proper keyboard command handling */
 		if (cngetc() == 0) {
 			/* no console attached, so just hlt */
 			printf("No keyboard - cannot reboot after all.\n");
@@ -825,7 +826,7 @@ haltsys:
 				x86_hlt();
 			}
 		}
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -859,6 +860,9 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	x86_dbregs_clear(l);
 
 	tf = l->l_md.md_regs;
+	memset(tf, 0, sizeof(*tf));
+
+	tf->tf_trapno = T_ASTFLT;
 	tf->tf_gs = GSEL(GUGS_SEL, SEL_UPL);
 	tf->tf_fs = GSEL(GUFS_SEL, SEL_UPL);
 	tf->tf_es = LSEL(LUDATA_SEL, SEL_UPL);
@@ -1105,6 +1109,13 @@ init386_ksyms(void)
 		return;
 #endif
 
+#ifdef XEN
+	if (pvh_boot && vm_guest != VM_GUEST_XENPVH) {
+		ksyms_addsyms_elf(0, ((int *)&end) + 1, esym);
+		return;
+	}
+#endif
+
 	if ((symtab = lookup_bootinfo(BTINFO_SYMTAB)) == NULL) {
 		ksyms_addsyms_elf(*(int *)&end, ((int *)&end) + 1, esym);
 		return;
@@ -1184,7 +1195,7 @@ init386(paddr_t first_avail)
 #endif
 
 #ifdef XEN
-	if (vm_guest == VM_GUEST_XENPVH)
+	if (pvh_boot)
 		xen_parse_cmdline(XEN_PARSE_BOOTFLAGS, NULL);
 #endif
 
@@ -1417,7 +1428,7 @@ init386(paddr_t first_avail)
 	for (x = 0; x < 32; x++) {
 		/* Reset to default. Special cases below */
 		int sel;
-#ifdef XENPV		
+#ifdef XENPV
 		sel = SEL_XEN;
 #else
 		sel = SEL_KPL;
@@ -1480,7 +1491,7 @@ init386(paddr_t first_avail)
 #endif /* XENPV */
 
 #if NMCA > 0
-	/* 
+	/*
 	 * check for MCA bus, needed to be done before ISA stuff - if
 	 * MCA is detected, ISA needs to use level triggered interrupts
 	 * by default

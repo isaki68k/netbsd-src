@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_descrip.c,v 1.265 2024/12/21 19:02:31 riastradh Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.268 2026/01/04 01:32:23 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2023 The NetBSD Foundation, Inc.
@@ -70,32 +70,35 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.265 2024/12/21 19:02:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.268 2026/01/04 01:32:23 riastradh Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/filedesc.h>
-#include <sys/kernel.h>
-#include <sys/proc.h>
+#include <sys/types.h>
+
+#include <sys/atomic.h>
+#include <sys/conf.h>
+#include <sys/cpu.h>
+#include <sys/event.h>
+#include <sys/fcntl.h>
 #include <sys/file.h>
+#include <sys/filedesc.h>
+#include <sys/ioctl.h>
+#include <sys/kauth.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/ktrace.h>
+#include <sys/pool.h>
+#include <sys/proc.h>
+#include <sys/resourcevar.h>
+#include <sys/sdt.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <sys/fcntl.h>
-#include <sys/pool.h>
-#include <sys/unistd.h>
-#include <sys/resourcevar.h>
-#include <sys/conf.h>
-#include <sys/event.h>
-#include <sys/kauth.h>
-#include <sys/atomic.h>
 #include <sys/syscallargs.h>
-#include <sys/cpu.h>
-#include <sys/kmem.h>
-#include <sys/vnode.h>
 #include <sys/sysctl.h>
-#include <sys/ktrace.h>
+#include <sys/systm.h>
+#include <sys/unistd.h>
+#include <sys/vnode.h>
 
 /*
  * A list (head) of open files, counter, and lock protecting them.
@@ -510,17 +513,17 @@ fd_getvnode(unsigned fd, file_t **fpp)
 
 	fp = fd_getfile(fd);
 	if (__predict_false(fp == NULL)) {
-		return EBADF;
+		return SET_ERROR(EBADF);
 	}
 	if (__predict_false(fp->f_type != DTYPE_VNODE)) {
 		fd_putfile(fd);
-		return EINVAL;
+		return SET_ERROR(EINVAL);
 	}
 	vp = fp->f_vnode;
 	if (__predict_false(vp->v_type == VBAD)) {
 		/* XXX Is this case really necessary? */
 		fd_putfile(fd);
-		return EBADF;
+		return SET_ERROR(EBADF);
 	}
 	*fpp = fp;
 	return 0;
@@ -535,11 +538,11 @@ fd_getsock1(unsigned fd, struct socket **sop, file_t **fp)
 {
 	*fp = fd_getfile(fd);
 	if (__predict_false(*fp == NULL)) {
-		return EBADF;
+		return SET_ERROR(EBADF);
 	}
 	if (__predict_false((*fp)->f_type != DTYPE_SOCKET)) {
 		fd_putfile(fd);
-		return ENOTSOCK;
+		return SET_ERROR(ENOTSOCK);
 	}
 	*sop = (*fp)->f_socket;
 	return 0;
@@ -637,7 +640,7 @@ fd_close(unsigned fd)
 		 * was already closed.  We can't safely wait for it to
 		 * be closed without potentially deadlocking.
 		 */
-		return (EBADF);
+		return SET_ERROR(EBADF);
 	}
 	KASSERT((ff->ff_refcnt & FR_CLOSING) == 0);
 
@@ -649,6 +652,7 @@ fd_close(unsigned fd)
 	 */
 	atomic_store_relaxed(&ff->ff_file, NULL);
 	ff->ff_exclose = false;
+	ff->ff_foclose = false;
 
 	/*
 	 * We expect the caller to hold a descriptor reference - drop it.
@@ -744,7 +748,7 @@ fd_close(unsigned fd)
  * Duplicate a file descriptor.
  */
 int
-fd_dup(file_t *fp, int minfd, int *newp, bool exclose)
+fd_dup(file_t *fp, int minfd, int *newp, bool exclose, bool foclose)
 {
 	proc_t *p = curproc;
 	int error;
@@ -757,6 +761,7 @@ fd_dup(file_t *fp, int minfd, int *newp, bool exclose)
 	}
 
 	fd_set_exclose(curlwp, *newp, exclose);
+	fd_set_foclose(curlwp, *newp, foclose);
 	fd_affix(p, fp, *newp);
 	return 0;
 }
@@ -771,8 +776,8 @@ fd_dup2(file_t *fp, unsigned newfd, int flags)
 	fdfile_t *ff;
 	fdtab_t *dt;
 
-	if (flags & ~(O_CLOEXEC|O_NONBLOCK|O_NOSIGPIPE))
-		return EINVAL;
+	if (flags & ~(O_CLOEXEC|O_CLOFORK|O_NONBLOCK|O_NOSIGPIPE))
+		return SET_ERROR(EINVAL);
 	/*
 	 * Ensure there are enough slots in the descriptor table,
 	 * and allocate an fdfile_t up front in case we need it.
@@ -813,6 +818,7 @@ fd_dup2(file_t *fp, unsigned newfd, int flags)
 	mutex_exit(&fdp->fd_lock);
 
 	fd_set_exclose(curlwp, newfd, (flags & O_CLOEXEC) != 0);
+	fd_set_foclose(curlwp, newfd, (flags & O_CLOFORK) != 0);
 	fp->f_flag |= flags & (FNONBLOCK|FNOSIGPIPE);
 	/* Slot is now allocated.  Insert copy of the file. */
 	fd_affix(curproc, fp, newfd);
@@ -944,7 +950,7 @@ fd_alloc(proc_t *p, int want, int *result)
 	}
 
 	/* No space in current array.  Let the caller expand and retry. */
-	error = (dt->dt_nfiles >= lim) ? EMFILE : ENOSPC;
+	error = (dt->dt_nfiles >= lim) ? SET_ERROR(EMFILE) : SET_ERROR(ENOSPC);
 	mutex_exit(&fdp->fd_lock);
 	return error;
 }
@@ -1137,7 +1143,7 @@ fd_allocfile(file_t **resultfp, int *resultfd)
 	fp = pool_cache_get(file_cache, PR_WAITOK);
 	if (fp == NULL) {
 		fd_abort(p, NULL, *resultfd);
-		return ENFILE;
+		return SET_ERROR(ENFILE);
 	}
 	KASSERT(fp->f_count == 0);
 	KASSERT(fp->f_msgcount == 0);
@@ -1215,6 +1221,7 @@ fd_abort(proc_t *p, file_t *fp, unsigned fd)
 	fdp = p->p_fd;
 	ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
 	ff->ff_exclose = false;
+	ff->ff_foclose = false;
 
 	KASSERT(fd >= NDFDFILE || ff == (fdfile_t *)fdp->fd_dfdfile[fd]);
 
@@ -1247,7 +1254,7 @@ file_ctor(void *arg, void *obj, int flags)
 	if (__predict_false(nfiles >= slop + maxfiles)) {
 		mutex_exit(&filelist_lock);
 		tablefull("file", "increase kern.maxfiles or MAXFILES");
-		return ENFILE;
+		return SET_ERROR(ENFILE);
 	}
 	nfiles++;
 	LIST_INSERT_HEAD(&filehead, fp, f_list);
@@ -1329,6 +1336,7 @@ fd_init(filedesc_t *fdp)
 	KASSERT(fdp->fd_knhash == NULL);
 	KASSERT(fdp->fd_freefile == 0);
 	KASSERT(fdp->fd_exclose == false);
+	KASSERT(fdp->fd_foclose == false);
 	KASSERT(fdp->fd_dt == &fdp->fd_dtbuiltin);
 	KASSERT(fdp->fd_dtbuiltin.dt_nfiles == NDFILE);
 	for (fd = 0; fd < NDFDFILE; fd++) {
@@ -1434,6 +1442,7 @@ fd_copy(void)
 	KASSERT(newfdp->fd_knhash == NULL);
 	KASSERT(newfdp->fd_freefile == 0);
 	KASSERT(newfdp->fd_exclose == false);
+	KASSERT(newfdp->fd_foclose == false);
 	KASSERT(newfdp->fd_dt == &newfdp->fd_dtbuiltin);
 	KASSERT(newfdp->fd_dtbuiltin.dt_nfiles == NDFILE);
 	for (i = 0; i < NDFDFILE; i++) {
@@ -1489,6 +1498,7 @@ fd_copy(void)
 	}
 	newfdp->fd_freefile = fdp->fd_freefile;
 	newfdp->fd_exclose = fdp->fd_exclose;
+	newfdp->fd_foclose = false;	/* no close-on-fork will be copied */
 
 	ffp = fdp->fd_dt->dt_ff;
 	nffp = newdt->dt_ff;
@@ -1503,8 +1513,10 @@ fd_copy(void)
 			KASSERT(!fd_isused(newfdp, i));
 			continue;
 		}
-		if (__predict_false(fp->f_type == DTYPE_KQUEUE)) {
+		if (__predict_false(ff->ff_foclose ||
+				    fp->f_type == DTYPE_KQUEUE)) {
 			/* kqueue descriptors cannot be copied. */
+			/* close-on-fork descriptors aren't either */
 			if (i < newfdp->fd_freefile) {
 				newfdp->fd_freefile = i;
 			}
@@ -1525,6 +1537,7 @@ fd_copy(void)
 		}
 		ff2->ff_file = fp;
 		ff2->ff_exclose = ff->ff_exclose;
+		ff2->ff_foclose = false;
 		ff2->ff_allocated = true;
 
 		/* Fix up bitmaps. */
@@ -1595,6 +1608,7 @@ fd_free(void)
 			    (noadvlock || fp->f_type != DTYPE_VNODE)) {
 				ff->ff_file = NULL;
 				ff->ff_exclose = false;
+				ff->ff_foclose = false;
 				ff->ff_allocated = false;
 				closef(fp);
 			} else {
@@ -1605,6 +1619,7 @@ fd_free(void)
 		KASSERT(ff->ff_refcnt == 0);
 		KASSERT(ff->ff_file == NULL);
 		KASSERT(!ff->ff_exclose);
+		KASSERT(!ff->ff_foclose);
 		KASSERT(!ff->ff_allocated);
 		if (fd >= NDFDFILE) {
 			cv_destroy(&ff->ff_closing);
@@ -1641,6 +1656,7 @@ fd_free(void)
 	fdp->fd_lastfile = -1;
 	fdp->fd_freefile = 0;
 	fdp->fd_exclose = false;
+	fdp->fd_foclose = false;
 	memset(&fdp->fd_startzero, 0, sizeof(*fdp) -
 	    offsetof(filedesc_t, fd_startzero));
 	fdp->fd_himap = fdp->fd_dhimap;
@@ -1676,7 +1692,7 @@ filedescopen(dev_t dev, int mode, int type, lwp_t *l)
 	 * will simply report the error.
 	 */
 	l->l_dupfd = minor(dev);	/* XXX */
-	return EDUPFD;
+	return SET_ERROR(EDUPFD);
 }
 
 /*
@@ -1709,7 +1725,7 @@ fd_dupopen(int old, bool moveit, int flags, int *newp)
 	int error;
 
 	if ((fp = fd_getfile(old)) == NULL) {
-		return EBADF;
+		return SET_ERROR(EBADF);
 	}
 	fdp = curlwp->l_fd;
 	dt = atomic_load_consume(&fdp->fd_dt);
@@ -1731,15 +1747,15 @@ fd_dupopen(int old, bool moveit, int flags, int *newp)
 		 * subset of the mode of the existing descriptor.
 		 */
 		if (((flags & (FREAD|FWRITE)) | fp->f_flag) != fp->f_flag) {
-			error = EACCES;
+			error = SET_ERROR(EACCES);
 			goto out;
 		}
 
 		/* Copy it. */
-		error = fd_dup(fp, 0, newp, ff->ff_exclose);
+		error = fd_dup(fp, 0, newp, ff->ff_exclose, ff->ff_foclose);
 	} else {
 		/* Copy it. */
-		error = fd_dup(fp, 0, newp, ff->ff_exclose);
+		error = fd_dup(fp, 0, newp, ff->ff_exclose, ff->ff_foclose);
 		if (error != 0) {
 			goto out;
 		}
@@ -1772,15 +1788,24 @@ fd_closeexec(void)
 	fdp = p->p_fd;
 
 	if (fdp->fd_refcnt > 1) {
+		/*
+		 * Always unshare fd table on any exec
+		 */
 		fdp = fd_copy();
 		fd_free();
 		p->p_fd = fdp;
 		l->l_fd = fdp;
 	}
-	if (!fdp->fd_exclose) {
+
+	/*
+	 * If there are no "close-on" fd's nothing more to do
+	 */
+	if (!(fdp->fd_exclose || fdp->fd_foclose))
 		return;
-	}
-	fdp->fd_exclose = false;
+
+	fdp->fd_exclose = false;	/* there will be none when done */
+	fdp->fd_foclose = false;
+
 	dt = atomic_load_consume(&fdp->fd_dt);
 
 	for (fd = 0; fd <= fdp->fd_lastfile; fd++) {
@@ -1801,9 +1826,17 @@ fd_closeexec(void)
 			KASSERT((ff->ff_refcnt & FR_CLOSING) == 0);
 			ff->ff_refcnt++;
 			fd_close(fd);
+		} else if (ff->ff_foclose) {
+			/*
+			 * https://austingroupbugs.net/view.php?id=1851
+			 * (not yet approved, but probably will be: 202507)
+			 * FD_CLOFORK should not be preserved across exec
+			 */
+			ff->ff_foclose = false;
 		}
 	}
 }
+
 
 /*
  * Sets descriptor owner. If the owner is a process, 'pgid'
@@ -1817,12 +1850,12 @@ fsetown(pid_t *pgid, u_long cmd, const void *data)
 	int error;
 
 	if (id <= INT_MIN)
-		return EINVAL;
+		return SET_ERROR(EINVAL);
 
 	switch (cmd) {
 	case TIOCSPGRP:
 		if (id < 0)
-			return EINVAL;
+			return SET_ERROR(EINVAL);
 		id = -id;
 		break;
 	default:
@@ -1830,7 +1863,7 @@ fsetown(pid_t *pgid, u_long cmd, const void *data)
 	}
 	if (id > 0) {
 		mutex_enter(&proc_lock);
-		error = proc_find(id) ? 0 : ESRCH;
+		error = proc_find(id) ? 0 : SET_ERROR(ESRCH);
 		mutex_exit(&proc_lock);
 	} else if (id < 0) {
 		error = pgid_in_session(curproc, -id);
@@ -1852,6 +1885,17 @@ fd_set_exclose(struct lwp *l, int fd, bool exclose)
 	ff->ff_exclose = exclose;
 	if (exclose)
 		fdp->fd_exclose = true;
+}
+
+void
+fd_set_foclose(struct lwp *l, int fd, bool foclose)
+{
+	filedesc_t *fdp = l->l_fd;
+	fdfile_t *ff = atomic_load_consume(&fdp->fd_dt)->dt_ff[fd];
+
+	ff->ff_foclose = foclose;
+	if (foclose)
+		fdp->fd_foclose = true;
 }
 
 /*
@@ -1921,13 +1965,14 @@ fd_clone(file_t *fp, unsigned fd, int flag, const struct fileops *fops,
 
 	fp->f_flag = flag & FMASK;
 	fd_set_exclose(curlwp, fd, (flag & O_CLOEXEC) != 0);
+	fd_set_foclose(curlwp, fd, (flag & O_CLOFORK) != 0);
 	fp->f_type = DTYPE_MISC;
 	fp->f_ops = fops;
 	fp->f_data = data;
 	curlwp->l_dupfd = fd;
 	fd_affix(curproc, fp, fd);
 
-	return EMOVEFD;
+	return SET_ERROR(EMOVEFD);
 }
 
 int
@@ -1937,7 +1982,7 @@ fnullop_fcntl(file_t *fp, u_int cmd, void *data)
 	if (cmd == F_SETFL)
 		return 0;
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 int
@@ -1951,7 +1996,7 @@ int
 fnullop_kqfilter(file_t *fp, struct knote *kn)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 void
@@ -1965,7 +2010,7 @@ fbadop_read(file_t *fp, off_t *offset, struct uio *uio,
 	    kauth_cred_t cred, int flags)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 int
@@ -1973,28 +2018,28 @@ fbadop_write(file_t *fp, off_t *offset, struct uio *uio,
 	     kauth_cred_t cred, int flags)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 int
 fbadop_ioctl(file_t *fp, u_long com, void *data)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 int
 fbadop_stat(file_t *fp, struct stat *sb)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 int
 fbadop_close(file_t *fp)
 {
 
-	return EOPNOTSUPP;
+	return SET_ERROR(EOPNOTSUPP);
 }
 
 /*
@@ -2145,7 +2190,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 			if (buflen < sizeof(struct file)) {
 				*oldlenp = where - start;
 				mutex_exit(&fp->f_lock);
-				error = ENOMEM;
+				error = SET_ERROR(ENOMEM);
 				break;
 			}
 
@@ -2208,7 +2253,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 		return sysctl_query(SYSCTLFN_CALL(rnode));
 
 	if (namelen != 4)
-		return EINVAL;
+		return SET_ERROR(EINVAL);
 
 	error = 0;
 	dp = oldp;
@@ -2221,7 +2266,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 	needed = 0;
 
 	if (elem_size < 1 || elem_count < 0)
-		return EINVAL;
+		return SET_ERROR(EINVAL);
 
 	switch (op) {
 	case KERN_FILE_BYFILE:
@@ -2234,11 +2279,11 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 
 		/* doesn't use arg so it must be zero */
 		if ((op == KERN_FILE_BYFILE) && (arg != 0))
-			return EINVAL;
+			return SET_ERROR(EINVAL);
 
 		if ((op == KERN_FILE_BYPID) && (arg < -1))
 			/* -1 means all processes */
-			return EINVAL;
+			return SET_ERROR(EINVAL);
 
 		sysctl_unlock();
 		if (op == KERN_FILE_BYFILE)
@@ -2335,7 +2380,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 		sysctl_relock();
 		break;
 	default:
-		return EINVAL;
+		return SET_ERROR(EINVAL);
 	}
 
 	if (oldp == NULL)
@@ -2405,7 +2450,8 @@ fill_file2(struct kinfo_file *kp, const file_t *fp, const fdfile_t *ff,
 	if (ff != NULL) {
 		kp->ki_pid =		pid;
 		kp->ki_fd =		i;
-		kp->ki_ofileflags =	ff->ff_exclose;
+		kp->ki_ofileflags =	(ff->ff_exclose ? FD_CLOEXEC : 0) |
+					(ff->ff_foclose ? FD_CLOFORK : 0);
 		kp->ki_usecount =	ff->ff_refcnt;
 	}
 }

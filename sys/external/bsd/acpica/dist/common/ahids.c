@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -82,6 +82,7 @@ const AH_DEVICE_ID  AslDeviceIds[] =
     {"ACPI0014",    "Wireless Power Calibration Device"},
     {"ACPI0015",    "USB4 host interface device"},
     {"ACPI0016",    "Compute Express Link Host Bridge"},
+    {"ACPI0019",    "Firmware Inventory Device"},
     {"ADMA0F28",    "Intel Audio DMA"},
     {"AMCR0F28",    "Intel Audio Machine Driver"},
     {"ATK4001",     "Asus Radio Control Button"},
@@ -192,6 +193,7 @@ const AH_DEVICE_ID  AslDeviceIds[] =
     {"PNP0C12",     "Device Bay Controller"},
     {"PNP0C14",     "Windows Management Instrumentation Device"},
     {"PNP0C15",     "Docking Station"},
+    {"PNP0C32",     "Direct App Launch Button"},
     {"PNP0C33",     "Error Device"},
     {"PNP0C40",     "Standard Button Controller"},
     {"PNP0C50",     "HID Protocol Device (I2C bus)"},

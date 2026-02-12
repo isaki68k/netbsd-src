@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.525 2024/12/06 16:48:13 riastradh Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.531 2025/07/16 19:14:13 kre Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.525 2024/12/06 16:48:13 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.531 2025/07/16 19:14:13 kre Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -281,6 +281,7 @@ struct spawn_exec_data {
 	kcondvar_t		sed_cv_child_ready;
 	kmutex_t		sed_mtx_child;
 	int			sed_error;
+	bool			sed_child_ready;
 	volatile uint32_t	sed_refcnt;
 };
 
@@ -1244,14 +1245,8 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	 * until we have awoken the parent below, or it will defeat
 	 * lazy pmap switching (on x86).
 	 */
-	if (is_spawn)
-		uvmspace_spawn(l, epp->ep_vm_minaddr,
-		    epp->ep_vm_maxaddr,
-		    epp->ep_flags & EXEC_TOPDOWN_VM);
-	else
-		uvmspace_exec(l, epp->ep_vm_minaddr,
-		    epp->ep_vm_maxaddr,
-		    epp->ep_flags & EXEC_TOPDOWN_VM);
+	uvmspace_exec(l, epp->ep_vm_minaddr, epp->ep_vm_maxaddr,
+	    epp->ep_flags & EXEC_TOPDOWN_VM);
 	vm = p->p_vmspace;
 
 	vm->vm_taddr = (void *)epp->ep_taddr;
@@ -1266,7 +1261,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	pax_aslr_init_vm(l, vm, epp);
 
 	cwdexec(p);
-	fd_closeexec();		/* handle close on exec */
+	fd_closeexec();		/* handle close on exec & close on fork */
 
 	if (__predict_false(ktrace_on))
 		fd_ktrexecfd();
@@ -2159,7 +2154,7 @@ handle_posix_spawn_file_actions(struct posix_spawn_file_actions *actions)
 {
 	struct lwp *l = curlwp;
 	register_t retval;
-	int error, newfd;
+	int error = 0, newfd;
 
 	if (actions == NULL)
 		return 0;
@@ -2190,10 +2185,14 @@ handle_posix_spawn_file_actions(struct posix_spawn_file_actions *actions)
 			    fae->fae_newfildes, 0, &retval);
 			break;
 		case FAE_CLOSE:
-			if (fd_getfile(fae->fae_fildes) == NULL) {
-				return SET_ERROR(EBADF);
-			}
-			error = fd_close(fae->fae_fildes);
+			/*
+			 * posix specifies failures from close() due to
+			 * already closed file descriptors should be ignored.
+			 * out of range filedescriptors would have been
+			 * caught earlier already.
+			 */
+			if (fd_getfile(fae->fae_fildes) != NULL)
+				fd_close(fae->fae_fildes);
 			break;
 		case FAE_CHDIR:
 			error = do_sys_chdir(l, fae->fae_chdir_path,
@@ -2213,7 +2212,7 @@ static int
 handle_posix_spawn_attrs(struct posix_spawnattr *attrs, struct proc *parent)
 {
 	struct sigaction sigact;
-	int error;
+	int error = 0;
 	struct proc *p = curproc;
 	struct lwp *l = curlwp;
 
@@ -2302,7 +2301,6 @@ handle_posix_spawn_attrs(struct posix_spawnattr *attrs, struct proc *parent)
 				sigaction1(l, i, &sigact, NULL, NULL, 0);
 		}
 	}
-	error = 0;
 out:
 	mutex_enter(&proc_lock);
 	p->p_stat = ostat;
@@ -2347,6 +2345,9 @@ spawn_return(void *arg)
 	    && rw_tryenter(&exec_lock, RW_READER)) {
 		parent_is_waiting = false;
 		mutex_enter(&spawn_data->sed_mtx_child);
+		KASSERT(!spawn_data->sed_child_ready);
+		spawn_data->sed_error = 0;
+		spawn_data->sed_child_ready = true;
 		cv_signal(&spawn_data->sed_cv_child_ready);
 		mutex_exit(&spawn_data->sed_mtx_child);
 	}
@@ -2376,6 +2377,9 @@ spawn_return(void *arg)
 
 	if (parent_is_waiting) {
 		mutex_enter(&spawn_data->sed_mtx_child);
+		KASSERT(!spawn_data->sed_child_ready);
+		spawn_data->sed_error = 0;
+		spawn_data->sed_child_ready = true;
 		cv_signal(&spawn_data->sed_cv_child_ready);
 		mutex_exit(&spawn_data->sed_mtx_child);
 	}
@@ -2409,7 +2413,9 @@ spawn_return(void *arg)
 	if (parent_is_waiting) {
 		/* pass error to parent */
 		mutex_enter(&spawn_data->sed_mtx_child);
+		KASSERT(!spawn_data->sed_child_ready);
 		spawn_data->sed_error = error;
+		spawn_data->sed_child_ready = true;
 		cv_signal(&spawn_data->sed_cv_child_ready);
 		mutex_exit(&spawn_data->sed_mtx_child);
 	} else {
@@ -2632,7 +2638,14 @@ do_posix_spawn(struct lwp *l1, pid_t *pid_res, bool *child_ok, const char *path,
 	    (unsigned) ((char *)&p2->p_endzero - (char *)&p2->p_startzero));
 	memcpy(&p2->p_startcopy, &p1->p_startcopy,
 	    (unsigned) ((char *)&p2->p_endcopy - (char *)&p2->p_startcopy));
-	p2->p_vmspace = proc0.p_vmspace;
+
+	/*
+	 * Allocate an empty user vmspace for the new process now.
+	 * The min/max and topdown parameters given here are just placeholders,
+	 * the right values will be assigned in uvmspace_exec().
+	 */
+	p2->p_vmspace = uvmspace_alloc(exec_vm_minaddr(VM_MIN_ADDRESS),
+	    VM_MAXUSER_ADDRESS, true);
 
 	TAILQ_INIT(&p2->p_sigpend.sp_info);
 
@@ -2814,7 +2827,10 @@ do_posix_spawn(struct lwp *l1, pid_t *pid_res, bool *child_ok, const char *path,
 	mutex_exit(p2->p_lock);
 	mutex_exit(&proc_lock);
 
-	cv_wait(&spawn_data->sed_cv_child_ready, &spawn_data->sed_mtx_child);
+	while (!spawn_data->sed_child_ready) {
+		cv_wait(&spawn_data->sed_cv_child_ready,
+		    &spawn_data->sed_mtx_child);
+	}
 	error = spawn_data->sed_error;
 	mutex_exit(&spawn_data->sed_mtx_child);
 	spawn_exec_data_release(spawn_data);

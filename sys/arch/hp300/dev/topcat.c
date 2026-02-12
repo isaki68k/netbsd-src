@@ -1,4 +1,4 @@
-/*	$NetBSD: topcat.c,v 1.13 2024/12/20 22:42:57 tsutsui Exp $	*/
+/*	$NetBSD: topcat.c,v 1.15 2025/05/27 18:44:31 tsutsui Exp $	*/
 /*	$OpenBSD: topcat.c,v 1.15 2006/08/11 18:33:13 miod Exp $	*/
 
 /*
@@ -153,12 +153,12 @@ static void	topcat_putchar8(void *, int, int, u_int, long);
 static void	topcat_putchar1_4(void *, int, int, u_int, long);
 
 static struct wsdisplay_accessops topcat_accessops = {
-	topcat_ioctl,
-	diofb_mmap,
-	diofb_alloc_screen,
-	diofb_free_screen,
-	diofb_show_screen,
-	NULL,	/* load_font */
+	.ioctl        = topcat_ioctl,
+	.mmap         = diofb_mmap,
+	.alloc_screen = diofb_alloc_screen,
+	.free_screen  = diofb_free_screen,
+	.show_screen  = diofb_show_screen,
+	.load_font    = NULL,
 };
 
 /*
@@ -355,7 +355,7 @@ topcat_reset(struct diofb *fb, int scode, struct diofbreg *fbr)
 	 * enough 64KB (1bpp) or 256KB (4bpp) VRAM and RAMDAC capabilities
 	 * to display 1024x400 pixels.
 	 *
-	 * However HP's officlal "Service Information Manual" for
+	 * However HP's official "Service Information Manual" for
 	 * "HP 900 Series 300 Computers Models 330/350" says:
 	 *  "The medium-resolution board uses eight memory chips per plane.
 	 *   This is enough to display 512 doubled pixels by 400 scan lines."

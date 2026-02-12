@@ -1,7 +1,7 @@
-/*	$NetBSD: pm_direct.c,v 1.36 2024/09/26 01:16:50 riastradh Exp $	*/
+/*	$NetBSD: pm_direct.c,v 1.43 2025/05/14 06:31:45 nat Exp $	*/
 
 /*
- * Copyright (c) 2024 Nathanial Sloss <nathanialsloss@yahoo.com.au>
+ * Copyright (c) 2024, 2025 Nathanial Sloss <nathanialsloss@yahoo.com.au>
  * All rights reserved.
  *
  * Copyright (C) 1997 Takashi Hamada
@@ -35,7 +35,7 @@
 /* From: pm_direct.c 1.3 03/18/98 Takashi Hamada */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pm_direct.c,v 1.36 2024/09/26 01:16:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pm_direct.c,v 1.43 2025/05/14 06:31:45 nat Exp $");
 
 #include "opt_adb.h"
 
@@ -48,6 +48,10 @@ __KERNEL_RCSID(0, "$NetBSD: pm_direct.c,v 1.36 2024/09/26 01:16:50 riastradh Exp
 /* #define	PM_GRAB_SI	1 */
 
 #include <sys/types.h>
+#include <sys/kthread.h>
+#include <sys/proc.h>
+#include <sys/mutex.h>
+#include <sys/sysctl.h>
 #include <sys/systm.h>
 
 #include <dev/sysmon/sysmonvar.h>
@@ -66,11 +70,6 @@ extern u_short ADBDelay;
 extern u_int32_t HwCfgFlags3;
 extern struct mac68k_machine_S mac68k_machine;
 
-
-/* define the types of the Power Manager */
-#define PM_HW_UNKNOWN		0x00	/* don't know */
-#define PM_HW_PB1XX		0x01	/* PowerBook 1XX series */
-#define	PM_HW_PB5XX		0x02	/* PowerBook Duo and 5XX series */
 
 /* useful macros */
 #define PM_SR()			via_reg(VIA1, vSR)
@@ -91,6 +90,7 @@ u_int	pm_LCD_brightness = 0x0;
 u_int	pm_LCD_contrast = 0x0;
 u_int	pm_counter = 0;			/* clock count */
 struct sysmon_pswitch pbutton;
+struct sysctllog	*sc_log;	/* Sysctl log */
 
 /* these values shows that number of data returned after 'send' cmd is sent */
 char pm_send_cmd_type[] = {
@@ -165,6 +165,9 @@ char pm_receive_cmd_type[] = {
 };
 
 
+/* Spin mutex to seriaize powermanager requests. */
+kmutex_t pm_mutex;
+
 /*
  * Define the private functions
  */
@@ -182,6 +185,7 @@ int	pm_receive_pm1(u_char *);
 int	pm_send_pm1(u_char, int);
 int	pm_pmgrop_pm1(PMData *);
 void	pm_intr_pm1(void *);
+void	brightness_slider(void *);	/* brightness slider thread */
 
 /* these functions are for the PB Duo series and the PB 5XX series */
 int	pm_receive_pm2(u_char *);
@@ -204,6 +208,8 @@ void	pm_adb_get_TALK_result(PMData *);
 void	pm_adb_get_ADB_data(PMData *);
 void	pm_adb_poll_next_device_pm1(PMData *);
 
+static void	brightness_sysctl_setup(void *);
+static int	sysctl_brightness(SYSCTLFN_PROTO);
 
 /*
  * These variables are in adb_direct.c.
@@ -253,6 +259,7 @@ pm_printerr(const char *ttl, int rval, int num, char *data)
 void
 pm_setup_adb(void)
 {
+	mutex_init(&pm_mutex, MUTEX_DEFAULT, IPL_HIGH);
 	switch (mac68k_machine.machineid) {
 		case MACH_MACPB140:
 		case MACH_MACPB145:
@@ -269,6 +276,9 @@ pm_setup_adb(void)
 			pbutton.smpsw_type = PSWITCH_TYPE_POWER;
 			if (sysmon_pswitch_register(&pbutton) != 0)
 				printf("Unable to register soft power\n");
+			brightness_sysctl_setup(NULL);
+			kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,
+			    brightness_slider, NULL, NULL, "britethrd");
 			break;
 		case MACH_MACPB150:
 		case MACH_MACPB210:
@@ -429,6 +439,8 @@ pm_pmgrop_pm1(PMData *pmdata)
 	u_char pm_data;
 	u_char *pm_buf;
 
+	mutex_spin_enter(&pm_mutex);
+
 	/* disable all interrupts but PM */
 	via1_vIER = via_reg(VIA1, vIER);
 	PM_VIA_INTR_DISABLE();
@@ -446,6 +458,7 @@ pm_pmgrop_pm1(PMData *pmdata)
 					/* restore formar value */
 					via_reg(VIA1, vDirA) = via1_vDirA;
 					via_reg(VIA1, vIER) = via1_vIER;
+					mutex_spin_exit(&pm_mutex);
 					return 0xffffcd38;
 				}
 
@@ -467,6 +480,7 @@ pm_pmgrop_pm1(PMData *pmdata)
 								via_reg(VIA2, vDirA) = 0x00;
 								/* restore formar value */
 								via_reg(VIA1, vIER) = via1_vIER;
+								mutex_spin_exit(&pm_mutex);
 								return 0xffffcd38;
 							}
 						}
@@ -493,6 +507,7 @@ pm_pmgrop_pm1(PMData *pmdata)
 				via_reg(VIA1, vIER) = via1_vIER;
 				if (s != 0x81815963)
 					splx(s);
+				mutex_spin_exit(&pm_mutex);
 				return 0xffffcd38;
 			}
 
@@ -549,6 +564,8 @@ pm_pmgrop_pm1(PMData *pmdata)
 	via_reg(VIA1, vIER) = via1_vIER;
 	if (s != 0x81815963)
 		splx(s);
+
+	mutex_spin_exit(&pm_mutex);
 
 	return rval;
 }
@@ -609,7 +626,44 @@ pm_intr_pm1(void *arg)
 	splx(s);
 }
 
+void
+brightness_slider(void *arg)
+{
+	int s;
+	int rval;
+	PMData pmdata;
 
+	for (;;) {
+		kpause("brslider", false, hz / 4, NULL);
+
+		s = splhigh();
+
+		pmdata.command = 0x49;
+		pmdata.num_data = 0;
+		pmdata.data[0] = pmdata.data[1] = 0;
+		pmdata.s_buf = &pmdata.data[0];
+		pmdata.r_buf = &pmdata.data[0];
+		rval = pm_pmgrop_pm1(&pmdata);
+		if (rval != 0) {
+#ifdef ADB_DEBUG
+			if (adb_debug) {
+				printf("pm: PM is not ready. "
+				    "error code=%08x\n", rval);
+			}
+#endif
+			splx(s);
+			continue;
+		}
+
+		if (((uint8_t)pmdata.data[0] / 8) != pm_LCD_brightness) {
+			pm_LCD_brightness = (uint8_t)pmdata.data[0] / 8;
+			pm_LCD_brightness =
+			    pm_set_brightness(pm_LCD_brightness);
+		}
+
+		splx(s);
+	}
+}
 
 /*
  * Functions for the PB Duo series and the PB 5XX series
@@ -701,6 +755,7 @@ pm_pmgrop_pm2(PMData *pmdata)
 	u_char pm_data;
 	u_char *pm_buf;
 
+	mutex_spin_enter(&pm_mutex);
 	s = splhigh();
 
 	/* disable all interrupts but PM */
@@ -815,6 +870,7 @@ pm_pmgrop_pm2(PMData *pmdata)
 	via_reg(VIA1, vIER) = via1_vIER;
 	splx(s);
 
+	mutex_spin_exit(&pm_mutex);
 	return rval;
 }
 
@@ -853,7 +909,7 @@ pm_intr_pm2(void *arg)
 		case 0x80:			/* 1 sec interrupt? */
 			pm_counter++;
 			break;
-		case 0x08:			/* Brightness/Contrast button on LCD panel */
+		case 0x08:	/* Brightness/Contrast button on LCD panel */
 			/* get brightness and contrast of the LCD */
 			pm_LCD_brightness = (u_int)pmdata.data[3] & 0xff;
 			pm_LCD_contrast = (u_int)pmdata.data[4] & 0xff;
@@ -1178,7 +1234,7 @@ pm_poweroff(void)
 	int attempt = 3;
 
 	while (pmHardware == PM_HW_PB1XX && attempt > 0) {
-		pmdata.command = 0x7e;
+		pmdata.command = 0xef;
 		pmdata.num_data = 0;
 		pmdata.data[0] = pmdata.data[1] = 0;
 		pmdata.s_buf = &pmdata.data[2];
@@ -1203,12 +1259,11 @@ pm_set_brightness(u_int brightness)
 	case PM_HW_PB5XX:
 		/* this is an experimental code */
 		pmdata.command = 0x41;
-		brightness = 0x7f - brightness / 2;
-		if (brightness < 0x25)
-			brightness = 0x25;
-		if (brightness > 0x5a)
-			brightness = 0x7f;
-		pmdata.data[0] = brightness;
+		if ((int)brightness < 0)
+			brightness = 0;
+		if ((int)brightness > 31)
+			brightness = 31;
+		pmdata.data[0] = (31 - brightness) * 23 / 10 + 37;
 		(void)pm_pmgrop_pm2(&pmdata);
 		break;
 	case PM_HW_PB1XX:
@@ -1228,4 +1283,46 @@ pm_set_brightness(u_int brightness)
 	}
 
 	return brightness;
+}
+
+static void
+brightness_sysctl_setup(void *arg)
+{
+	const struct sysctlnode *rnode;
+
+	if ((sysctl_createv(&sc_log, 0, NULL, &rnode,
+	    0, CTLTYPE_NODE, "screen",
+	    SYSCTL_DESCR("Internal display output device controls"),
+	    NULL, 0, NULL, 0, CTL_HW, CTL_CREATE, CTL_EOL)) != 0)
+		goto fail;
+
+	(void)sysctl_createv(&sc_log, 0, &rnode, NULL,
+	    CTLFLAG_READWRITE, CTLTYPE_INT, "brightness",
+	    SYSCTL_DESCR("Current brightness level"),
+	    sysctl_brightness, 0, NULL, 0, CTL_CREATE, CTL_EOL);
+
+	return;
+
+ fail:
+	aprint_error("screen: couldn't add sysctl nodes\n");
+}
+
+static int
+sysctl_brightness(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int val, error;
+
+	node = *rnode;
+
+	val = pm_LCD_brightness;
+
+	node.sysctl_data = &val;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	val = pm_set_brightness(val);
+
+	return error;
 }

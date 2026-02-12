@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -102,7 +102,8 @@ UtLocalCacheCalloc (
         }
     }
 
-    if ((AslGbl_StringCacheNext + Length) >= AslGbl_StringCacheLast)
+    if ((!AslGbl_StringCacheNext) ||
+        ((AslGbl_StringCacheNext + Length) >= AslGbl_StringCacheLast))
     {
         /* Allocate a new buffer */
 

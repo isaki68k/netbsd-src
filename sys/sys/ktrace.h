@@ -1,4 +1,4 @@
-/*	$NetBSD: ktrace.h,v 1.70 2024/05/12 09:34:25 rillig Exp $	*/
+/*	$NetBSD: ktrace.h,v 1.72 2026/02/01 19:41:46 christos Exp $	*/
 
 /*
  * Copyright (c) 1988, 1993
@@ -33,6 +33,8 @@
 
 #ifndef _SYS_KTRACE_H_
 #define _SYS_KTRACE_H_
+
+#include <sys/param.h>
 
 #include <sys/mutex.h>
 #include <sys/lwp.h>
@@ -233,6 +235,16 @@ struct ktr_execfd {
 };
 
 /*
+ * KTR_SIGMASK - Signal mask change
+ */
+#define KTR_SIGMASK		16
+struct ktr_sigmask {
+	int   ktr_how;
+	sigset_t ktr_nset;
+	sigset_t ktr_oset;
+	sigset_t ktr_rset;
+};
+/*
  * kernel trace points (in p_traceflag)
  */
 #define KTRFAC_MASK	0x00ffffff
@@ -248,6 +260,7 @@ struct ktr_execfd {
 #define KTRFAC_EXEC_ENV	(1<<KTR_EXEC_ENV)
 #define	KTRFAC_MIB	(1<<KTR_MIB)
 #define	KTRFAC_EXEC_FD	(1<<KTR_EXEC_FD)
+#define	KTRFAC_SIGMASK	(1<<KTR_SIGMASK)
 
 #define __KTRACE_FLAG_BITS \
     "\177\020" \
@@ -264,6 +277,7 @@ struct ktr_execfd {
     "b\15SAUPCALL\0" \
     "b\16MIB\0" \
     "b\17EXEC_FD\0" \
+    "b\20SIGMASK\0" \
     "f\30\4VERSION\0" \
     "b\34TRC_EMUL\0" \
     "b\36INHERIT\0" \
@@ -324,6 +338,7 @@ void ktr_mib(const int *a , u_int b);
 void ktr_execarg(const void *, size_t);
 void ktr_execenv(const void *, size_t);
 void ktr_execfd(int, u_int);
+void ktr_sigmask(int, const sigset_t *, const sigset_t *, const sigset_t *);
 
 int  ktrace_common(lwp_t *, int, int, int, file_t **);
 
@@ -453,6 +468,14 @@ ktrexecfd(int fd, u_int dtype)
 {
 	if (__predict_false(ktrace_on))
 		ktr_execfd(fd, dtype);
+}
+
+static __inline void
+ktrsigmask(int how, const sigset_t *nset,
+    const sigset_t *oset, const sigset_t *rset)
+{
+	if (__predict_false(ktrace_on))
+		ktr_sigmask(how, nset, oset, rset);
 }
 
 struct ktrace_entry;

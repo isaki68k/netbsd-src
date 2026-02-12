@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_machdep.h,v 1.8 2023/07/26 07:00:31 skrll Exp $	*/
+/*	$NetBSD: pmap_machdep.h,v 1.10 2025/10/09 06:18:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2022 The NetBSD Foundation, Inc.
@@ -372,7 +372,6 @@ pte_pde_cas(pd_entry_t *pdep, pd_entry_t opde, pt_entry_t npde)
 {
 #ifdef MULTIPROCESSOR
 	opde = atomic_cas_64(pdep, opde, npde);
-	dsb(ishst);
 #else
 	*pdep = npde;
 #endif
@@ -439,6 +438,7 @@ pte_make_kenter_pa(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 }
 
 
+#if defined(EFI_RUNTIME)
 static inline pt_entry_t
 pte_make_enter_efirt(paddr_t pa, vm_prot_t prot, u_int flags)
 {
@@ -463,6 +463,7 @@ pte_make_enter_efirt(paddr_t pa, vm_prot_t prot, u_int flags)
 
 	return npte;
 }
+#endif
 
 
 static inline pt_entry_t

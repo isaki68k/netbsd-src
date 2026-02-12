@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.7 2024/08/10 07:27:04 skrll Exp $	*/
+/*	$NetBSD: cpu.c,v 1.10 2025/10/12 04:08:26 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2023 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.7 2024/08/10 07:27:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.10 2025/10/12 04:08:26 thorpej Exp $");
 
 #include <sys/param.h>
 
@@ -46,6 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.7 2024/08/10 07:27:04 skrll Exp $");
 #include <riscv/cpuvar.h>
 #include <riscv/machdep.h>
 #include <riscv/sbi.h>
+#include <riscv/sysreg.h>
 
 #ifdef MULTIPROCESSOR
 #define NCPUINFO	MAXCPUS
@@ -65,12 +66,6 @@ void (*cpu_sdcache_wb_range)(vaddr_t, paddr_t, psize_t) = cache_nullop;
 u_int   riscv_dcache_align = CACHE_LINE_SIZE;
 u_int   riscv_dcache_align_mask = CACHE_LINE_SIZE - 1;
 
-#define CPU_VENDOR_SIFIVE	0x489
-
-#define CPU_ARCH_7SERIES	0x8000000000000007
-
-#define CPU_VENDOR_THEAD	0x5b7
-
 struct cpu_arch {
 	uint64_t	 ca_id;
 	const char	*ca_name;
@@ -78,7 +73,7 @@ struct cpu_arch {
 
 struct cpu_arch cpu_arch_sifive[] = {
     {
-	.ca_id = CPU_ARCH_7SERIES,
+	.ca_id = CPU_SIFIVE_ARCH_7SERIES,
 	.ca_name = "7-Series Processor (E7, S7, U7 series)",
     },
     { },	// terminator
@@ -183,7 +178,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 
 	aprint_naive("\n");
 	aprint_normal(": %s %s imp. %" PRIx32 "\n", cv_name, ca_name, mimpid);
-        aprint_verbose_dev(ci->ci_dev,
+	aprint_verbose_dev(ci->ci_dev,
 	    "vendor 0x%" PRIxREGISTER " arch. %" PRIxREGISTER " imp. %" PRIx32 "\n",
 	    mvendorid, marchid, mimpid);
 }
@@ -234,6 +229,15 @@ cpu_attach(device_t dv, cpuid_t hartid)
 
 	ci->ci_dev = dv;
 	device_set_private(dv, ci);
+
+	const char * const xname = device_xname(dv);
+
+	evcnt_attach_dynamic(&ci->ci_ev_fpu_loads, EVCNT_TYPE_MISC, NULL,
+	    xname, "fpu loads");
+	evcnt_attach_dynamic(&ci->ci_ev_fpu_saves, EVCNT_TYPE_MISC, NULL,
+	    xname, "fpu saves");
+	evcnt_attach_dynamic(&ci->ci_ev_fpu_reenables, EVCNT_TYPE_MISC, NULL,
+	    xname, "fpu reenables");
 
 	cpu_identify(dv, ci);
 

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2024/08/12 10:55:52 skrll Exp $
+#	$NetBSD: Makefile,v 1.3 2025/11/29 08:01:01 skrll Exp $
 
 DTSSUBDIR=	thead
 DTSMAKEVARS=	CONFIG_ARCH_THEAD=y

@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_clock.c,v 1.20 2024/12/01 20:36:00 andvar Exp $	*/
+/*	$NetBSD: xen_clock.c,v 1.23 2025/08/18 20:59:54 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2017, 2018 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_clock.c,v 1.20 2024/12/01 20:36:00 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_clock.c,v 1.23 2025/08/18 20:59:54 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -172,25 +172,11 @@ static int	sysctl_xen_timepush(SYSCTLFN_ARGS);
 #endif
 
 /*
- * xen_rdtsc()
- *
- *	Read the local pCPU's tsc.
- */
-static inline uint64_t
-xen_rdtsc(void)
-{
-	uint32_t lo, hi;
-
-	asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
-
-	return ((uint64_t)hi << 32) | lo;
-}
-
-/*
  * struct xen_vcputime_ticket
  *
  *	State for a vCPU read section, during which a caller may read
- *	from fields of a struct vcpu_time_info and call xen_rdtsc.
+ *	from fields of a struct vcpu_time_info and call rdtsc.
+ *
  *	Caller must enter with xen_vcputime_enter, exit with
  *	xen_vcputime_exit, and be prepared to retry if
  *	xen_vcputime_exit fails.
@@ -313,7 +299,7 @@ xen_vcputime_systime_ns(void)
 		tsc_shift = vt->tsc_shift;
 
 		/* Read the CPU's tsc.  */
-		tsc = xen_rdtsc();
+		tsc = rdtsc();
 	} while (!xen_vcputime_exit(vt, &ticket));
 
 	/*
@@ -622,7 +608,7 @@ xen_delay(unsigned n)
 		/* Get the starting tsc and tsc frequency.  */
 		do {
 			vt = xen_vcputime_enter(&ticket);
-			tsc_start = last_tsc = xen_rdtsc();
+			tsc_start = last_tsc = rdtsc();
 			tsc_to_system_mul = vt->tsc_to_system_mul;
 			tsc_shift = vt->tsc_shift;
 		} while (!xen_vcputime_exit(vt, &ticket));
@@ -633,7 +619,7 @@ xen_delay(unsigned n)
 		 * backwards meaning we've probably migrated pCPUs.
 		 */
 		for (;;) {
-			tsc = xen_rdtsc();
+			tsc = rdtsc();
 			if (__predict_false(tsc < last_tsc))
 				break;
 			if (xen_tsc_to_ns_delta(tsc - tsc_start,
@@ -867,7 +853,7 @@ xen_timer_handler(void *cookie, struct clockframe *frame)
 	 * Re-arm the timer.  If it fails, it's probably because the
 	 * time is in the past, possibly because we're in the
 	 * process of catching up missed hardclock calls.
-	 * In this case schedule a tick in the nead future.
+	 * In this case schedule a tick in the near future.
 	 */
 	next = ci->ci_xen_hardclock_systime_ns + ns_per_tick;
 	error = HYPERVISOR_set_timer_op(next);
@@ -1156,7 +1142,7 @@ xen_wallclock_time(struct timespec *tsp)
  *	Set the statclock to run at rate, in units of ticks per second.
  *
  *	Currently Xen does not have a separate statclock, so this is a
- *	noop; instad the statclock runs in hardclock.
+ *	noop; instead the statclock runs in hardclock.
  */
 void
 setstatclockrate(int rate)
