@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.49 2023/04/07 08:55:30 skrll Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.54 2026/01/08 00:51:20 christos Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.49 2023/04/07 08:55:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.54 2026/01/08 00:51:20 christos Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -62,6 +62,8 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.49 2023/04/07 08:55:30 skrll 
 #include <prop/proplib.h>
 
 #include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_console.h>
+#include <dev/fdt/fdt_platform.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -489,6 +491,8 @@ static struct {
 	}
 };
 
+static uint64_t vb_serial;
+
 #if NGENFB > 0
 static struct {
 	struct vcprop_buffer_hdr	vb_hdr;
@@ -776,6 +780,7 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 		curcpu()->ci_data.cpu_cc_freq =
 		    le32toh(vb.vbt_armclockrate.rate);
 
+	vb_serial = vb.vbt_serial.sn;
 #ifdef VERBOSE_INIT_ARM
 	if (vcprop_tag_success_p(&vb.vbt_memory.tag))
 		printf("%s: memory size  %zu\n", __func__,
@@ -1239,7 +1244,7 @@ SYSCTL_SETUP(sysctl_machdep_rpi, "sysctl machdep subtree setup (rpi)")
 	sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT|CTLFLAG_READONLY|CTLFLAG_HEX|CTLFLAG_PRIVATE,
 	    CTLTYPE_QUAD, "serial", NULL, NULL, 0,
-	    &vb.vbt_serial.sn, 0, CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	    &vb_serial, 0, CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 }
 
 #if defined(SOC_BCM2835)
@@ -1445,9 +1450,8 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 		     (addr >> 16) & 0xff, (addr >> 24) & 0xff,
 		     (addr >> 32) & 0xff, (addr >> 40) & 0xff
 		};
-
-		prop_dictionary_set_data(dict, "mac-address", enaddr,
-		    ETHER_ADDR_LEN);
+		device_setprop_data(dev, "mac-address", enaddr,
+		    sizeof(enaddr));
 	}
 
 #if NGENFB > 0
@@ -1463,13 +1467,14 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 			return;
 		if (get_bootconf_option(boot_args, "console",
 		    BOOTOPT_TYPE_STRING, &ptr) && strncmp(ptr, "fb", 2) == 0) {
-			prop_dictionary_set_bool(dict, "is_console", true);
+			device_setprop_bool(dev, "is_console", true);
 #if NUKBD > 0
 			/* allow ukbd to be the console keyboard */
 			ukbd_cnattach();
 #endif
 		} else {
-			prop_dictionary_set_bool(dict, "is_console", false);
+			/* XXX Needed? */
+			device_setprop_bool(dev, "is_console", false);
 		}
 	}
 #endif

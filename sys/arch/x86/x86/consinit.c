@@ -1,4 +1,4 @@
-/*	$NetBSD: consinit.c,v 1.40 2024/12/02 13:31:32 bouyer Exp $	*/
+/*	$NetBSD: consinit.c,v 1.44 2025/11/29 01:33:40 manu Exp $	*/
 
 /*
  * Copyright (c) 1998
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.40 2024/12/02 13:31:32 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.44 2025/11/29 01:33:40 manu Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_puc.h"
@@ -85,6 +85,11 @@ __KERNEL_RCSID(0, "$NetBSD: consinit.c,v 1.40 2024/12/02 13:31:32 bouyer Exp $")
 #endif
 #if (NCOM_PUC > 0)
 #include <dev/pci/puccn.h>
+#endif
+
+#include "ucom.h"
+#if (NUCOM > 0)
+#include <dev/usb/ucomvar.h>
 #endif
 
 #include "ukbd.h"
@@ -179,7 +184,7 @@ consinit(void)
 			return;
 		/* fallback to native console selection, useful for dom0 PVH */
 	}
-	if (vm_guest == VM_GUEST_GENPVH) {
+	if (pvh_boot) { /* GENPVH */
 		union xen_cmdline_parseinfo xcp;
 		/* get console= parameter from generic PVH VMM */
 		xen_parse_cmdline(XEN_PARSE_CONSOLE, &xcp);
@@ -284,6 +289,18 @@ dokbd:
 				 COM_FREQ, COM_TYPE_NORMAL, comcnmode);
 		if (rv != 0)
 			panic("can't init serial console @%x", consinfo->addr);
+
+		return;
+	}
+#endif
+#if (NUCOM > 0)
+	if (!strcmp(console_devname, "ucom")) {
+		int unit = consinfo->addr;
+		int speed = consinfo->speed;
+
+		if (ucom_cnattach(unit, speed) != 0)
+			panic("can't init console %s", console_devname);
+
 		return;
 	}
 #endif

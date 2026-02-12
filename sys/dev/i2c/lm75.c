@@ -1,4 +1,4 @@
-/*	$NetBSD: lm75.c,v 1.47 2025/01/02 18:40:54 skrll Exp $	*/
+/*	$NetBSD: lm75.c,v 1.50 2025/10/03 14:03:10 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.47 2025/01/02 18:40:54 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.50 2025/10/03 14:03:10 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -53,7 +53,6 @@ struct lmtemp_softc {
 	device_t sc_dev;
 	i2c_tag_t sc_tag;
 	int sc_address;
-	prop_dictionary_t sc_prop;
 
 	struct sysmon_envsys *sc_sme;
 	envsys_data_t sc_sensor;
@@ -196,8 +195,8 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	struct i2c_attach_args *ia = aux;
 	const struct device_compatible_entry *dce;
 	char name[64];
-	const char *desc;
 	int i;
+	uint8_t config = LM75_CONFIG_FAULT_QUEUE_4;
 
 	sc->sc_dev = self;
 	dce = iic_compatible_lookup(ia, compat_data);
@@ -214,9 +213,6 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_address = ia->ia_addr;
-	sc->sc_prop = ia->ia_prop;
-
-	if (ia->ia_prop != NULL) prop_object_retain(sc->sc_prop);
 
 	aprint_naive(": Temperature Sensor\n");
 	if (ia->ia_name) {
@@ -272,8 +268,12 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	if (i == lmtemp_lm75)
 		lmtemp_setup_sysctl(sc);
 
+	/* DS75 has better resolution */
+	if (i == lmtemp_ds75)
+		config = LM75_CONFIG_FAULT_QUEUE_4 | DS75_CONFIG_RES_11BIT;
+		
 	/* Set the configuration of the LM75 to defaults. */
-	if (lmtemp_config_write(sc, LM75_CONFIG_FAULT_QUEUE_4) != 0) {
+	if (lmtemp_config_write(sc, config) != 0) {
 		aprint_error_dev(self, "unable to write config register\n");
 		iic_release_bus(sc->sc_tag, 0);
 		return;
@@ -290,9 +290,7 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	    ia->ia_name? ia->ia_name : device_xname(self),
 	    sizeof(sc->sc_sensor.desc));
 
-	if (prop_dictionary_get_string(sc->sc_prop, "s00", &desc)) {
-		strncpy(name, desc, 64);
-	}
+	device_getprop_string(self, "s00", name, sizeof(name));
 
 	(void)strlcpy(sc->sc_sensor.desc, name,
 	    sizeof(sc->sc_sensor.desc));

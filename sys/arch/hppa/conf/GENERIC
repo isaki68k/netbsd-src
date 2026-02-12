@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.47 2024/12/01 14:50:04 jakllsch Exp $
+# $NetBSD: GENERIC,v 1.49 2025/03/27 12:22:43 riastradh Exp $
 #
 # GENERIC machine description file
 #
@@ -23,7 +23,7 @@ include 	"arch/hppa/conf/std.hppa"
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-#ident 		"GENERIC-$Revision: 1.47 $"
+#ident 		"GENERIC-$Revision: 1.49 $"
 
 maxusers	32		# estimated number of users
 
@@ -691,6 +691,14 @@ ucom*	at u3g?
 # USB generic serial port (e.g., data over cellular)
 ugensa* at uhub? port ?
 ucom*	at ugensa?
+
+# Virtio devices
+virtio* at pci? dev ? function ?	# Virtio PCI device
+
+include "dev/virtio/virtio.config"
+no vio9p* 	at virtio?		# XXX ?
+no viocon* 	at virtio?		# XXX ?
+no viomb* 	at virtio?		# XXX ?
 
 # Pseudo-Devices
 

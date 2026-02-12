@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_syscalls.c,v 1.176 2020/02/18 20:23:17 chs Exp $	*/
+/*	$NetBSD: lfs_syscalls.c,v 1.180 2026/01/05 05:02:47 perseant Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003, 2007, 2007, 2008
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_syscalls.c,v 1.176 2020/02/18 20:23:17 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_syscalls.c,v 1.180 2026/01/05 05:02:47 perseant Exp $");
 
 #ifndef LFS
 # define LFS		/* for prototypes in syscallargs.h */
@@ -236,6 +236,7 @@ lfs_markv(struct lwp *l, fsid_t *fsidp, BLOCK_INFO *blkiov,
 
 	error = kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_LFS,
 	    KAUTH_REQ_SYSTEM_LFS_MARKV, NULL, NULL, NULL);
+
 	if (error)
 		return (error);
 
@@ -251,10 +252,34 @@ lfs_markv(struct lwp *l, fsid_t *fsidp, BLOCK_INFO *blkiov,
 	maxino = (lfs_fragstoblks(fs, lfs_dino_getblocks(fs, VTOI(fs->lfs_ivnode)->i_din)) -
 		      lfs_sb_getcleansz(fs) - lfs_sb_getsegtabsz(fs)) * lfs_sb_getifpb(fs);
 
-	cnt = blkcnt;
-
 	if ((error = vfs_busy(mntp)) != 0)
 		return (error);
+
+	/*
+	 * Reference all the vnodes we will need before we lock.
+	 * This prevents a reclaimed vnode from being written
+	 * in the same partial segment with cleaning blocks.
+	 */
+	lfs_cleanerlock(fs);
+	lastino = LFS_UNUSED_INUM;
+	for (cnt = blkcnt, blkp = blkiov; cnt--; ++blkp) {
+		/* Bounds-check incoming data, avoid panic for failed VGET */
+		if (blkp->bi_inode <= 0 || blkp->bi_inode >= maxino) {
+			error = EINVAL;
+			goto err4;
+		}
+
+		if (lastino != blkp->bi_inode) {
+			/* Load the vnode and add a cleaning reference */
+			error = lfs_fastvget(mntp, blkp->bi_inode, blkp,
+					     LK_EXCLUSIVE | LK_NOWAIT, &vp);
+			lfs_setclean(fs, vp);
+			vput(vp);
+			vp = NULL;
+			
+			lastino = blkp->bi_inode;
+		}
+	}
 
 	/*
 	 * This seglock is just to prevent the fact that we might have to sleep
@@ -274,6 +299,7 @@ lfs_markv(struct lwp *l, fsid_t *fsidp, BLOCK_INFO *blkiov,
 	vp = NULL;
 	lastino = LFS_UNUSED_INUM;
 	nblkwritten = ninowritten = 0;
+	cnt = blkcnt;
 	for (blkp = blkiov; cnt--; ++blkp)
 	{
 		/* Bounds-check incoming data, avoid panic for failed VGET */
@@ -356,9 +382,7 @@ lfs_markv(struct lwp *l, fsid_t *fsidp, BLOCK_INFO *blkiov,
 			if (blkp->bi_inode != LFS_IFILE_INUM) {
 				LFS_IENTRY(ifp, fs, blkp->bi_inode, bp);
 				if (lfs_if_getdaddr(fs, ifp) == blkp->bi_daddr) {
-					mutex_enter(&lfs_lock);
-					LFS_SET_UINO(ip, IN_CLEANING);
-					mutex_exit(&lfs_lock);
+					lfs_setclean(fs, vp);
 				}
 				brelse(bp, 0);
 			}
@@ -508,6 +532,8 @@ err3:
 	}
 
 	lfs_segunlock(fs);
+
+err4:
 	vfs_unbusy(mntp);
 	KASSERTMSG((numrefed == 0), "lfs_markv: numrefed=%d", numrefed);
 
@@ -808,9 +834,9 @@ sys_lfs_segclean(struct lwp *l, const struct sys_lfs_segclean_args *uap, registe
 		return (error);
 
 	KERNEL_LOCK(1, NULL);
-	lfs_seglock(fs, SEGM_PROT);
-	error = lfs_do_segclean(fs, segnum);
-	lfs_segunlock(fs);
+	lfs_prelock(fs, 0);
+	error = lfs_do_segclean(fs, segnum, l->l_cred, l);
+	lfs_preunlock(fs);
 	KERNEL_UNLOCK_ONE(NULL);
 	vfs_unbusy(mntp);
 	return error;
@@ -821,12 +847,12 @@ sys_lfs_segclean(struct lwp *l, const struct sys_lfs_segclean_args *uap, registe
  * Must be called with the segment lock held.
  */
 int
-lfs_do_segclean(struct lfs *fs, unsigned long segnum)
+lfs_do_segclean(struct lfs *fs, unsigned long segnum, kauth_cred_t cred, struct lwp *l)
 {
-	extern int lfs_dostats;
 	struct buf *bp;
-	CLEANERINFO *cip;
 	SEGUSE *sup;
+
+	ASSERT_SEGLOCK(fs);
 
 	if (lfs_dtosn(fs, lfs_sb_getcurseg(fs)) == segnum) {
 		return (EBUSY);
@@ -852,6 +878,27 @@ lfs_do_segclean(struct lfs *fs, unsigned long segnum)
 		return (EALREADY);
 	}
 
+	lfs_markclean(fs, segnum, sup, cred, l);
+	LFS_WRITESEGENTRY(sup, fs, segnum, bp);
+
+	return 0;
+}
+
+int
+lfs_markclean(struct lfs *fs, unsigned long segnum, SEGUSE *sup,
+	      kauth_cred_t cred, struct lwp *l)
+{
+	extern int lfs_dostats;
+	struct buf *bp;
+	CLEANERINFO *cip;
+
+	ASSERT_SEGLOCK(fs);
+	
+#ifdef DEBUG
+	if (lfs_checkempty(fs, segnum, cred, l) == EEXIST)
+		panic("Live data in cleaned segment %jd\n", (intmax_t)segnum);
+#endif /* DEBUG */
+
 	lfs_sb_addavail(fs, lfs_segtod(fs, 1));
 	if (sup->su_flags & SEGUSE_SUPERBLOCK)
 		lfs_sb_subavail(fs, lfs_btofsb(fs, LFS_SBPAD));
@@ -866,8 +913,9 @@ lfs_do_segclean(struct lfs *fs, unsigned long segnum)
 	if (lfs_sb_getdmeta(fs) < 0)
 		lfs_sb_setdmeta(fs, 0);
 	mutex_exit(&lfs_lock);
-	sup->su_flags &= ~SEGUSE_DIRTY;
-	LFS_WRITESEGENTRY(sup, fs, segnum, bp);
+	sup->su_flags &= ~(SEGUSE_ACTIVE | SEGUSE_DIRTY
+			   | SEGUSE_EMPTY | SEGUSE_READY
+			   | SEGUSE_ERROR);
 
 	LFS_CLEANERINFO(cip, fs, bp);
 	lfs_ci_shiftdirtytoclean(fs, cip, 1);

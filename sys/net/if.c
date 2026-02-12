@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.531 2024/12/16 05:18:37 ozaki-r Exp $	*/
+/*	$NetBSD: if.c,v 1.536 2025/12/01 09:31:44 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.531 2024/12/16 05:18:37 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.536 2025/12/01 09:31:44 ozaki-r Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -642,12 +642,8 @@ static void
 if_getindex(ifnet_t *ifp)
 {
 	bool hitlimit = false;
-	char xnamebuf[HOOKNAMSIZ];
 
 	ifp->if_index_gen = index_gen++;
-	snprintf(xnamebuf, sizeof(xnamebuf), "%s-lshk", ifp->if_xname);
-	ifp->if_linkstate_hooks = simplehook_create(IPL_NET,
-	    xnamebuf);
 
 	ifp->if_index = if_index;
 	if (ifindex2ifnet == NULL) {
@@ -719,6 +715,7 @@ skip:
 void
 if_initialize(ifnet_t *ifp)
 {
+	char xnamebuf[HOOKNAMSIZ];
 
 	KASSERT(if_indexlim > 0);
 	TAILQ_INIT(&ifp->if_addrlist);
@@ -762,6 +759,9 @@ if_initialize(ifnet_t *ifp)
 	ifp->if_ioctl_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 	LIST_INIT(&ifp->if_multiaddrs);
 	if_stats_init(ifp);
+
+	snprintf(xnamebuf, sizeof(xnamebuf), "%s-lshk", ifp->if_xname);
+	ifp->if_linkstate_hooks = simplehook_create(IPL_NET, xnamebuf);
 
 	IFNET_GLOBAL_LOCK();
 	if_getindex(ifp);
@@ -2096,27 +2096,30 @@ ifa_ifwithladdr_psref(const struct sockaddr *addr, struct psref *psref)
 	return ifa;
 }
 
-/*
- * Find an interface using a specific address family
- */
 struct ifaddr *
-ifa_ifwithaf(int af)
+if_first_addr(const struct ifnet *ifp, const int af)
 {
-	struct ifnet *ifp;
 	struct ifaddr *ifa = NULL;
+
+	IFADDR_READER_FOREACH(ifa, ifp) {
+		if (ifa->ifa_addr->sa_family == af)
+			break;
+	}
+	return ifa;
+}
+
+struct ifaddr *
+if_first_addr_psref(const struct ifnet *ifp, const int af, struct psref *psref)
+{
+	struct ifaddr *ifa;
 	int s;
 
 	s = pserialize_read_enter();
-	IFNET_READER_FOREACH(ifp) {
-		if (if_is_deactivated(ifp))
-			continue;
-		IFADDR_READER_FOREACH(ifa, ifp) {
-			if (ifa->ifa_addr->sa_family == af)
-				goto out;
-		}
-	}
-out:
+	ifa = if_first_addr(ifp, af);
+	if (ifa != NULL)
+		ifa_acquire(ifa, psref);
 	pserialize_read_exit(s);
+
 	return ifa;
 }
 
@@ -2415,7 +2418,9 @@ if_link_state_change_work(struct work *work, void *arg)
 	if (state == LINK_STATE_UNSET)
 		goto out;
 
+	IFNET_LOCK(ifp);
 	if_link_state_change_process(ifp, state);
+	IFNET_UNLOCK(ifp);
 
 	/* If there is a link state change to come, schedule it. */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);

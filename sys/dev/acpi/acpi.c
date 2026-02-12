@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.302 2024/12/30 11:44:16 jmcneill Exp $	*/
+/*	$NetBSD: acpi.c,v 1.304 2026/01/12 20:09:52 joe Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,7 +100,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.302 2024/12/30 11:44:16 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.304 2026/01/12 20:09:52 joe Exp $");
 
 #include "pci.h"
 #include "opt_acpi.h"
@@ -1356,8 +1356,11 @@ acpi_register_notify(struct acpi_devnode *ad, ACPI_NOTIFY_HANDLER notify)
 	return true;
 
 fail:
-	aprint_error_dev(sc->sc_dev, "failed to register notify "
-	    "handler for %s (%p)\n", ad->ad_name, ad->ad_handle);
+	if (!ad)
+		aprint_error_dev(sc->sc_dev, "failed to initialize ACPI\n");
+	else
+		aprint_error_dev(sc->sc_dev, "failed to register notify "
+	    	"handler for %s (%p)\n", ad->ad_name, ad->ad_handle);
 
 	return false;
 }
@@ -1651,7 +1654,9 @@ acpi_enter_sleep_state(int state)
 
 			(void)pmf_system_bus_resume(PMF_Q_NONE);
 			(void)AcpiLeaveSleepState(state);
+#if (!ACPI_REDUCED_HARDWARE)
 			(void)AcpiSetFirmwareWakingVector(0, 0);
+#endif
 			(void)pmf_system_resume(PMF_Q_NONE);
 		}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_compat_16.c,v 1.7 2024/11/22 10:41:50 mlelstv Exp $	*/
+/*	$NetBSD: netbsd32_compat_16.c,v 1.10 2025/02/28 18:35:44 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_16.c,v 1.7 2024/11/22 10:41:50 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_16.c,v 1.10 2025/02/28 18:35:44 wiz Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,7 +52,7 @@ struct uvm_object *emul_netbsd32_object;
 #define __HAVE_MD_NETBSD32_SIGRETURN14
 #endif
 
-#if defined(__arm__) || defined(__mips__) || defined(__powerpc__) || defined(__riscv__)
+#if defined(__amd64__) || defined(__arm__) || defined(__mips__) || defined(__powerpc__) || defined(__riscv__)
 #define __HAVE_MD_NETBSD32_SIGCODE
 #endif
 

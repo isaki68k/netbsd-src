@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.306 2024/09/22 08:21:33 andvar Exp $	*/
+/*	$NetBSD: if.h,v 1.309 2025/11/25 02:45:41 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -1224,7 +1224,6 @@ void	ifafree(struct ifaddr *);
 
 struct	ifaddr *ifa_ifwithaddr(const struct sockaddr *);
 struct	ifaddr *ifa_ifwithaddr_psref(const struct sockaddr *, struct psref *);
-struct	ifaddr *ifa_ifwithaf(int);
 struct	ifaddr *ifa_ifwithdstaddr(const struct sockaddr *);
 struct	ifaddr *ifa_ifwithdstaddr_psref(const struct sockaddr *,
 	    struct psref *);
@@ -1237,6 +1236,9 @@ struct	ifaddr *ifaof_ifpforaddr_psref(const struct sockaddr *, struct ifnet *,
 	    struct psref *);
 void	link_rtrequest(int, struct rtentry *, const struct rt_addrinfo *);
 void	p2p_rtrequest(int, struct rtentry *, const struct rt_addrinfo *);
+
+struct ifaddr *if_first_addr(const struct ifnet *, const int);
+struct ifaddr *if_first_addr_psref(const struct ifnet *, const int, struct psref *);
 
 void	if_clone_attach(struct if_clone *);
 void	if_clone_detach(struct if_clone *);

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.233 2023/02/26 07:27:14 skrll Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.236 2025/11/10 01:22:16 mrg Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -298,7 +298,7 @@ struct vmtotal;
 #define	UVM_PCTPARAM_SHIFT	8
 #define	UVM_PCTPARAM_SCALE	(1 << UVM_PCTPARAM_SHIFT)
 #define	UVM_PCTPARAM_APPLY(pct, x) \
-	(((x) * (pct)->pct_scaled) >> UVM_PCTPARAM_SHIFT)
+	(((uint64_t)(x) * (pct)->pct_scaled) >> UVM_PCTPARAM_SHIFT)
 struct uvm_pctparam {
 	int pct_pct;	/* percent [0, 100] */ /* should be the first member */
 	int pct_scaled;
@@ -408,7 +408,7 @@ struct uvmexp {
 	int pdreact;	/* number of pages daemon reactivated since boot */
 	int pdbusy;	/* number of times daemon found a busy page */
 	int pdpageouts;	/* number of times daemon started a pageout */
-	int pdpending;	/* number of times daemon got a pending pagout */
+	int pdpending;	/* number of times daemon got a pending pageout */
 	int pddeact;	/* number of pages daemon deactivates */
 	int pdreanon;	/* anon pages reactivated due to thresholds */
 	int pdrefile;	/* file pages reactivated due to thresholds */
@@ -731,7 +731,6 @@ struct vmspace		*uvmspace_alloc(vaddr_t, vaddr_t, bool);
 void			uvmspace_init(struct vmspace *, struct pmap *,
 			    vaddr_t, vaddr_t, bool);
 void			uvmspace_exec(struct lwp *, vaddr_t, vaddr_t, bool);
-void			uvmspace_spawn(struct lwp *, vaddr_t, vaddr_t, bool);
 struct vmspace		*uvmspace_fork(struct vmspace *);
 void			uvmspace_addref(struct vmspace *);
 void			uvmspace_free(struct vmspace *);

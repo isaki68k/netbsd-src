@@ -1,4 +1,4 @@
-/*	$NetBSD: libi386.h,v 1.54 2024/09/18 00:44:03 rin Exp $	*/
+/*	$NetBSD: libi386.h,v 1.56 2025/10/09 16:10:03 manu Exp $	*/
 
 /*
  * Copyright (c) 1996
@@ -68,6 +68,8 @@ void initio(int);
 #define CONSDEV_COM1KBD 6
 #define CONSDEV_COM2KBD 7
 #define CONSDEV_COM3KBD 8
+#define CONSDEV_COM 9
+#define CONSDEV_UCOM 10
 #define CONSDEV_AUTO (-1)
 int iskey(int);
 char awaitkey(int, int);
@@ -149,6 +151,9 @@ void rnd_add(char *);
 void fs_add(char *);
 void userconf_add(char *);
 void module_add_split(const char *, uint8_t);
+
+/* Note: implementations differ in boot2, dosboot & efiboot */
+void command_dev(char *);
 
 struct btinfo_framebuffer;
 void framebuffer_configure(struct btinfo_framebuffer *);

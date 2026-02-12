@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -111,6 +111,7 @@ const AH_TABLE      AcpiGbl_SupportedTables[] =
     {ACPI_SIG_DSDT, "Differentiated System Description Table (AML table)"},
     {ACPI_SIG_ECDT, "Embedded Controller Boot Resources Table"},
     {ACPI_SIG_EINJ, "Error Injection Table"},
+    {ACPI_SIG_ERDT, "Enhanced Resource Director Technology Table"},
     {ACPI_SIG_ERST, "Error Record Serialization Table"},
     {ACPI_SIG_FACS, "Firmware ACPI Control Structure"},
     {ACPI_SIG_FADT, "Fixed ACPI Description Table (FADT)"},
@@ -120,6 +121,7 @@ const AH_TABLE      AcpiGbl_SupportedTables[] =
     {ACPI_SIG_HMAT, "Heterogeneous Memory Attributes Table"},
     {ACPI_SIG_HPET, "High Precision Event Timer Table"},
     {ACPI_SIG_IORT, "IO Remapping Table"},
+    {ACPI_SIG_IOVT, "I/O Virtualization Table"},
     {ACPI_SIG_IVRS, "I/O Virtualization Reporting Structure"},
     {ACPI_SIG_LPIT, "Low Power Idle Table"},
     {ACPI_SIG_MADT, "Multiple APIC Description Table (MADT)"},
@@ -127,6 +129,7 @@ const AH_TABLE      AcpiGbl_SupportedTables[] =
     {ACPI_SIG_MCHI, "Management Controller Host Interface Table"},
     {ACPI_SIG_MPAM, "Memory System Resource Partitioning and Monitoring Table"},
     {ACPI_SIG_MPST, "Memory Power State Table"},
+    {ACPI_SIG_MRRM, "Memory Range and Region Mapping Table"},
     {ACPI_SIG_MSCT, "Maximum System Characteristics Table"},
     {ACPI_SIG_MSDM, "Microsoft Data Management Table"},
     {ACPI_SIG_NFIT, "NVDIMM Firmware Interface Table"},
@@ -155,6 +158,7 @@ const AH_TABLE      AcpiGbl_SupportedTables[] =
     {ACPI_SIG_SSDT, "Secondary System Description Table (AML table)"},
     {ACPI_SIG_STAO, "Status Override Table"},
     {ACPI_SIG_SVKL, "Storage Volume Key Location Table"},
+    {ACPI_SIG_SWFT, "SoundWire File Table"},
     {ACPI_SIG_TCPA, "Trusted Computing Platform Alliance Table"},
     {ACPI_SIG_TDEL, "TD-Event Log Table"},
     {ACPI_SIG_TPM2, "Trusted Platform Module hardware interface Table"},

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -572,7 +572,7 @@ AxDumpTableHeader (
 
     /* RSDP has an oddball signature and header */
 
-    if (!strncmp (TableHeader->Signature, "RSD PTR ", 8))
+    if (ACPI_VALIDATE_RSDP_SIG (TableHeader->Signature))
     {
         AxCheckAscii ((char *) &Header[9], 6);
 

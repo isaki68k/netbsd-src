@@ -1,4 +1,4 @@
-/*	$NetBSD: ki2cvar.h,v 1.5 2017/09/15 21:34:42 macallan Exp $	*/
+/*	$NetBSD: ki2cvar.h,v 1.8 2025/09/21 18:03:28 thorpej Exp $	*/
 /*	Id: ki2c.c,v 1.7 2002/10/05 09:56:05 tsubai Exp	*/
 
 /*-
@@ -77,24 +77,37 @@
 #define I2C_INT_ADDR	0x02	/* Address sent */
 #define I2C_INT_STOP	0x04	/* STOP condition sent */
 #define I2C_INT_START	0x08	/* START condition sent */
+#define I2C_INT_ALL	0x0f
 
 /* I2C flags */
 #define I2C_BUSY	0x01
 #define I2C_READING	0x02
 #define I2C_ERROR	0x04
 
+#define	KI2C_MAX_CHANNELS	2
+
+struct ki2c_channel {
+	struct i2c_controller	ch_i2c;
+	struct ki2c_softc	*ch_sc;
+	int			ch_node;
+	int			ch_channel;
+};
+
 struct ki2c_softc {
 	device_t sc_dev;
 	bus_space_tag_t sc_tag;
 	bus_space_handle_t sc_bh;
 	int sc_regstep;
-	
-	struct i2c_controller sc_i2c;
-	kmutex_t sc_buslock;
 
+	struct ki2c_channel sc_channels[KI2C_MAX_CHANNELS];
+	kmutex_t sc_mux_lock;
+
+	kcondvar_t sc_todev;
+	kmutex_t sc_todevmtx;
 	int sc_flags;
 	u_char *sc_data;
 	int sc_resid;
+	int sc_poll;
 };
 
 struct ki2c_confargs {

@@ -1,4 +1,4 @@
-/* $NetBSD: hypervisor.c,v 1.98 2024/12/06 10:53:42 bouyer Exp $ */
+/* $NetBSD: hypervisor.c,v 1.101 2025/10/19 20:35:03 thorpej Exp $ */
 
 /*
  * Copyright (c) 2005 Manuel Bouyer.
@@ -53,7 +53,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.98 2024/12/06 10:53:42 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.101 2025/10/19 20:35:03 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -190,9 +190,11 @@ union start_info_union start_info_union __aligned(PAGE_SIZE);
 struct hvm_start_info *hvm_start_info;
 
 static int xen_hvm_vec = 0;
+
 #endif
 
 int xen_version;
+bool pvh_boot = false;
 
 /* power management, for save/restore */
 static bool hypervisor_suspend(device_t, const pmf_qual_t *);
@@ -234,8 +236,6 @@ xen_init_hypercall_page(void)
 	wrmsr(descs[1], (uintptr_t)&hypercall_page - KERNBASE);
 }
 
-uint32_t hvm_start_paddr;
-
 void init_xen_early(void);
 void
 init_xen_early(void)
@@ -244,7 +244,7 @@ init_xen_early(void)
 	if (!vm_guest_is_pvh())
 		return;
 
-	hvm_start_info = (void *)((uintptr_t)hvm_start_paddr + KERNBASE);
+	pvh_boot = true;
 
 	if (hvm_start_info->cmdline_paddr != 0) {
 		cmd_line =
@@ -762,8 +762,7 @@ hypervisor_attach(device_t parent, device_t self, void *aux)
 		hac.hac_iba.iba_memt = x86_bus_space_mem;
 		hac.hac_iba.iba_dmat = &isa_bus_dma_tag;
 		hac.hac_iba.iba_ic = NULL; /* No isa DMA yet */
-		config_found(self, &hac.hac_iba, isabusprint,
-		    CFARGS(.iattr = "isabus"));
+		isabus_attach(self, &hac.hac_iba);
 	}
 #endif /* NISA */
 #endif /* NPCI */

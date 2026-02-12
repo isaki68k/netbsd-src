@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mvxpe.c,v 1.41 2024/02/10 18:43:52 andvar Exp $	*/
+/*	$NetBSD: if_mvxpe.c,v 1.44 2025/10/04 04:44:20 thorpej Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.41 2024/02/10 18:43:52 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.44 2025/10/04 04:44:20 thorpej Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -290,8 +290,6 @@ mvxpe_attach(device_t parent, device_t self, void *aux)
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct mii_data * const mii = &sc->sc_mii;
 	struct marvell_attach_args *mva = aux;
-	prop_dictionary_t dict;
-	prop_data_t enaddrp = NULL;
 	uint32_t phyaddr, maddrh, maddrl;
 	uint8_t enaddr[ETHER_ADDR_LEN];
 	int q;
@@ -354,11 +352,7 @@ mvxpe_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * MAC address
 	 */
-	dict = device_properties(self);
-	if (dict)
-		enaddrp = prop_dictionary_get(dict, "mac-address");
-	if (enaddrp) {
-		memcpy(enaddr, prop_data_data_nocopy(enaddrp), ETHER_ADDR_LEN);
+	if (ether_getaddr(self, enaddr)) {
 		maddrh  = enaddr[0] << 24;
 		maddrh |= enaddr[1] << 16;
 		maddrh |= enaddr[2] << 8;
@@ -370,7 +364,7 @@ mvxpe_attach(device_t parent, device_t self, void *aux)
 	}
 	else {
 		/*
-		 * even if enaddr is not found in dictionary,
+		 * even if enaddr is not found in device properties,
 		 * the port may be initialized by IPL program such as U-BOOT.
 		 */
 		maddrh = MVXPE_READ(sc, MVXPE_MACAH);
@@ -967,7 +961,7 @@ mvxpe_dma_memalloc(struct mvxpe_softc *sc, bus_dmamap_t *map, size_t size)
 
 	/*
 	 * Allocate the descriptor queues.
-	 * struct mvxpe_ring_data contians array of descriptor per queue.
+	 * struct mvxpe_ring_data contains array of descriptors per queue.
 	 */
 	if (bus_dmamem_alloc(sc->sc_dmat,
 	    size, PAGE_SIZE, 0, &segs, 1, &nsegs, BUS_DMA_NOWAIT)) {
@@ -1300,8 +1294,8 @@ mvxpe_rx_queue_enable(struct ifnet *ifp, int q)
 
 	/* Unmask RXTX_TH Intr. */
 	reg = MVXPE_READ(sc, MVXPE_PRXTXTIM);
-	reg |= MVXPE_PRXTXTI_RBICTAPQ(q); /* Rx Buffer Interrupt Coalese */
-	reg |= MVXPE_PRXTXTI_RDTAQ(q); /* Rx Descriptor Alart */
+	reg |= MVXPE_PRXTXTI_RBICTAPQ(q); /* Rx Buffer Interrupt Coalesce */
+	reg |= MVXPE_PRXTXTI_RDTAQ(q); /* Rx Descriptor Alert */
 	MVXPE_WRITE(sc, MVXPE_PRXTXTIM, reg);
 
 	/* Enable Rx queue */
@@ -1837,7 +1831,7 @@ mvxpe_stop(struct ifnet *ifp, int disable)
 		reg = MVXPE_READ(sc, MVXPE_RQC);
 	} while (reg & MVXPE_RQC_EN_MASK);
 
-	/* Wait for all Tx activety to terminate. */
+	/* Wait for all Tx activity to terminate. */
 	reg  = MVXPE_READ(sc, MVXPE_PIE);
 	reg &= ~MVXPE_PIE_TXPKTINTRPTENB_MASK;
 	MVXPE_WRITE(sc, MVXPE_PIE, reg);
@@ -2642,7 +2636,7 @@ mvxpe_rx_set_csumflag(struct ifnet *ifp,
 		}
 		else if (r->status & MVXPE_RX_IPV4_FRAGMENT) {
 			/*
-			 * r->l4chk has partial checksum of each framgment.
+			 * r->l4chk has partial checksum of each fragment.
 			 * but there is no way to use it in NetBSD.
 			 */
 			return;

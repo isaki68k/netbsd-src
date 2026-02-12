@@ -1,4 +1,4 @@
-/* $NetBSD: udf_subr.c,v 1.176 2024/02/10 09:21:53 andvar Exp $ */
+/* $NetBSD: udf_subr.c,v 1.178 2025/11/22 21:27:08 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -29,7 +29,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.176 2024/02/10 09:21:53 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.178 2025/11/22 21:27:08 andvar Exp $");
 #endif /* not lint */
 
 
@@ -5394,7 +5394,7 @@ udf_loadvnode(struct mount *mp, struct vnode *vp,
 	udf_node->lockf  =  0;
 	mutex_init(&udf_node->node_mutex, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&udf_node->node_lock, "udf_nlk");
-	genfs_node_init(vp, &udf_genfsops);	/* inititise genfs */
+	genfs_node_init(vp, &udf_genfsops);	/* initialise genfs */
 	udf_node->outstanding_bufs = 0;
 	udf_node->outstanding_nodedscr = 0;
 	udf_node->uncommitted_lbs = 0;
@@ -5513,7 +5513,7 @@ udf_loadvnode(struct mount *mp, struct vnode *vp,
 	}
 	DPRINTF(NODE, ("\tnode fe/efe read in fine\n"));
 
-	/* assert no references to dscr anymore beyong this point */
+	/* assert no references to dscr anymore beyond this point */
 	assert((udf_node->fe) || (udf_node->efe));
 	dscr = NULL;
 

@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac.c,v 1.95 2024/09/07 06:17:37 andvar Exp $ */
+/* $NetBSD: dwc_gmac.c,v 1.99 2026/01/31 00:38:45 gutteridge Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.95 2024/09/07 06:17:37 andvar Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.99 2026/01/31 00:38:45 gutteridge Exp $");
 
 /* #define	DWC_GMAC_DEBUG	1 */
 
@@ -190,24 +190,13 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, int phy_id, uint32_t mii_clk)
 	uint32_t maclo, machi, hwft;
 	struct mii_data * const mii = &sc->sc_mii;
 	struct ifnet * const ifp = &sc->sc_ec.ec_if;
-	prop_dictionary_t dict;
 
 	mutex_init(&sc->sc_mdio_lock, MUTEX_DEFAULT, IPL_NET);
 	sc->sc_mii_clk = mii_clk & 7;
 
-	dict = device_properties(sc->sc_dev);
-	prop_data_t ea = dict ? prop_dictionary_get(dict, "mac-address") : NULL;
-	if (ea != NULL) {
+	if (! ether_getaddr(sc->sc_dev, enaddr)) {
 		/*
-		 * If the MAC address is overridden by a device property,
-		 * use that.
-		 */
-		KASSERT(prop_object_type(ea) == PROP_TYPE_DATA);
-		KASSERT(prop_data_size(ea) == ETHER_ADDR_LEN);
-		memcpy(enaddr, prop_data_value(ea), ETHER_ADDR_LEN);
-	} else {
-		/*
-		 * If we did not get an externally configure address,
+		 * If we did not get an externally configured address,
 		 * try to read one from the current filter setup,
 		 * before resetting the chip.
 		 */
@@ -521,6 +510,7 @@ dwc_gmac_alloc_rx_ring(struct dwc_gmac_softc *sc,
 		}
 		data->rd_m->m_len = data->rd_m->m_pkthdr.len
 		    = data->rd_m->m_ext.ext_size;
+		m_adj(data->rd_m, ETHER_ALIGN);
 		if (data->rd_m->m_len > AWGE_MAX_PACKET) {
 			data->rd_m->m_len = data->rd_m->m_pkthdr.len
 			    = AWGE_MAX_PACKET;
@@ -1304,6 +1294,7 @@ dwc_gmac_rx_intr(struct dwc_gmac_softc *sc)
 			goto skip;
 		}
 		mnew->m_len = mnew->m_pkthdr.len = mnew->m_ext.ext_size;
+		m_adj(mnew, ETHER_ALIGN);
 		if (mnew->m_len > AWGE_MAX_PACKET) {
 			mnew->m_len = mnew->m_pkthdr.len = AWGE_MAX_PACKET;
 		}
@@ -1717,7 +1708,7 @@ dwc_gmac_dump_rx_desc(struct dwc_gmac_softc *sc)
 			    "b\x09"	"first\0"
 			    "b\x08"	"last\0"
 			    "b\x07"	"giant\0"
-			    "b\x06"	"collison\0"
+			    "b\x06"	"collision\0"
 			    "b\x05"	"ether\0"
 			    "b\x04"	"watchdog\0"
 			    "b\x03"	"miierror\0"

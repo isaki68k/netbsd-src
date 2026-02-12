@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_mcfg.c,v 1.30 2024/11/10 10:45:37 mlelstv Exp $	*/
+/*	$NetBSD: acpi_mcfg.c,v 1.32 2025/03/03 19:38:26 riastradh Exp $	*/
 
 /*-
  * Copyright (C) 2015 NONAKA Kimihiro <nonaka@NetBSD.org>
@@ -28,7 +28,7 @@
 #include "opt_pci.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.30 2024/11/10 10:45:37 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.32 2025/03/03 19:38:26 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -683,10 +683,16 @@ out:
 }
 
 #ifdef PCI_RESOURCE
+struct acpimcfg_configure_bus_context {
+	struct pci_resource_info pciinfo;
+	bool bus_found;
+};
+
 ACPI_STATUS
 acpimcfg_configure_bus_cb(ACPI_RESOURCE *res, void *ctx)
 {
-	struct pci_resource_info *pciinfo = ctx;
+	struct acpimcfg_configure_bus_context *C = ctx;
+	struct pci_resource_info *pciinfo = &C->pciinfo;
 	bus_addr_t addr;
 	bus_size_t size;
 	int type;
@@ -755,8 +761,9 @@ acpimcfg_configure_bus_cb(ACPI_RESOURCE *res, void *ctx)
 	}
 
 	if (size > 0) {
-		pciinfo->ranges[type].start = addr;
-		pciinfo->ranges[type].end = addr + size - 1;
+		pci_resource_add_range(pciinfo, type, addr, addr + size - 1);
+		if (type == PCI_RANGE_BUS)
+			C->bus_found = true;
 	}
 
 	return AE_OK;
@@ -766,7 +773,7 @@ int
 acpimcfg_configure_bus(device_t self, pci_chipset_tag_t pc, ACPI_HANDLE handle,
     int bus, bool mapcfgspace)
 {
-	struct pci_resource_info pciinfo;
+	struct acpimcfg_configure_bus_context context, *C = &context;
 	struct mcfg_segment *seg;
 	struct mcfg_bus *mb;
 	bus_space_handle_t bsh[256];
@@ -822,21 +829,32 @@ acpimcfg_configure_bus(device_t self, pci_chipset_tag_t pc, ACPI_HANDLE handle,
 		endbus = 255;
 	}
 
-	memset(&pciinfo, 0, sizeof(pciinfo));
-	pciinfo.pc = pc;
-	pciinfo.ranges[PCI_RANGE_BUS].start = bus;
-	pciinfo.ranges[PCI_RANGE_BUS].end = endbus;
+	memset(C, 0, sizeof(*C));
+	C->pciinfo.pc = pc;
 	rv = AcpiWalkResources(handle, "_CRS", acpimcfg_configure_bus_cb,
-	    &pciinfo);
+	    &C->pciinfo);
 	if (ACPI_FAILURE(rv)) {
 		aprint_debug_dev(acpi_sc->sc_dev, "MCFG: Walk _CRS: %ld\n",
 		    (long)rv);
 		error = ENXIO;
 		goto cleanup;
 	}
+
+	/*
+	 * Paranoia: In case _CRS didn't list any bus ranges, guess
+	 * from the MCFG.
+	 */
+	if (!C->bus_found) {
+		aprint_error_dev(acpi_sc->sc_dev,
+		    "no PCI bus range in _CRS, guessing %d-%d from MCFG\n",
+		    bus, endbus);
+		pci_resource_add_range(&C->pciinfo, PCI_RANGE_BUS,
+		    bus, endbus);
+	}
+
 	error = 0;
 
-	pci_resource_init(&pciinfo);
+	pci_resource_init(&C->pciinfo);
 
 cleanup:
 	if (mapcfgspace) {

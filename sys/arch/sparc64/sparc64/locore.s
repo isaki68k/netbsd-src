@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.434 2024/02/17 19:36:07 palle Exp $	*/
+/*	$NetBSD: locore.s,v 1.438 2025/11/04 20:51:49 palle Exp $	*/
 
 /*
  * Copyright (c) 2006-2010 Matthew R. Green
@@ -3343,7 +3343,7 @@ sun4v_tl1_ptbl_miss:
 	bgeu,pt	%xcc, 1f
 	 nop
 
-	/* We had a miss inside rtf_user_fault_start/rtf_user_fault_end block (FILL)
+	/* We had a miss inside rtf_user_fault_start/rtf_user_fault_end block (FILL) */
 	
 	/* Fixup %cwp. */
 	rdpr	%cwp, %g1
@@ -3469,13 +3469,25 @@ pcbspill:
 	lduba	[%g6 + PCB_NSAVED] %asi, %g7		! Fetch current nsaved from the pcb
 	sllx	%g7, 7, %g5				! 8+8 registers each 8 bytes = 128 bytes (2^7)
 	add	%g6, %g5, %g5				! Offset into pcb_rw
-	SPILL	stxa, %g5 + PCB_RW, 8, %asi		! Store the locals and ins 
-	saved
+1:	
+	SPILL	stxa, %g5 + PCB_RW, 8, %asi		! Store the locals and ins
 
-	sllx	%g7, 3, %g5
-	add	%g6, %g5, %g5
+	add	%g5, 16*8, %g5				! Next location for saved register windows
 
-	inc	%g7
+	stxa	%o6, [%g5 + PCB_RW + (14*8)] %asi	! Save %sp so we can write these all out
+	
+	saved						! Increments %cansave and decrements %canrestore
+							! or %otherwin	
+	
+	rdpr	%cwp, %g1				! shift register window forward
+	inc	%g1
+	wrpr	%g1, %cwp
+	inc	%g7					! increment number of saved register windows
+
+	rdpr	%otherwin, %g1				! Check to see if done spill'ing otherwin
+	brnz,pt	%g1, 1b
+	 nop
+
 	stba	%g7, [%g6 + PCB_NSAVED] %asi
 
 	retry
@@ -3487,7 +3499,6 @@ pcbspill_fail:
 
 
 pcbspill_other:
-	
 	set	CPUINFO_VA, %g6
 	ldx	[%g6 + CI_CPCB], %g6
 	
@@ -3533,8 +3544,9 @@ pcbspill_other:
 
 	stxa	%o6, [%g5 + PCB_RW + (14*8)] %asi	! Save %sp so we can write these all out
 	
-	saved						! Increments %cansave and decrements %otherwin
-	
+	saved						! Increments %cansave and decrements %canrestore
+							! or %otherwin	
+
 	rdpr	%cwp, %g1				! shift register window forward
 	inc	%g1
 	wrpr	%g1, %cwp
@@ -7747,7 +7759,6 @@ ENTRY(longjmp)
 	flushw
 	mov	1, %i2
 	ldx	[%i0+0], %fp	! get return stack
-	movrz	%i1, %i1, %i2	! compute v ? v : 1
 	ldx	[%i0+8], %i7	! get rpc
 	ret
 	 restore	%i2, 0, %o0
@@ -7949,6 +7960,26 @@ ENTRY(sparc64_ipi_ccall)
 
 #endif
 
+ENTRY(paravirt_membar_sync)
+	/*
+	 * Store-before-load ordering with respect to matching logic
+	 * on the hypervisor side.
+	 *
+	 * This is the same as membar_sync, but without patching or
+	 * conditionalizing away the MEMBAR instruction on uniprocessor
+	 * builds or boots -- because under virtualization, we still
+	 * have to coordinate with a `device' backed by a hypervisor
+	 * that is potentially on another physical CPU even if we
+	 * observe only one virtual CPU as the guest.
+	 *
+	 * See common/lib/libc/arch/sparc64/atomic/membar_ops.S for why
+	 * we avoid using the delay slot and keep this in sync with the
+	 * implementation of membar_sync there.
+	 */
+	membar	#StoreLoad
+	retl
+	 nop
+END(paravirt_membar_sync)
 
 	.data
 	_ALIGN

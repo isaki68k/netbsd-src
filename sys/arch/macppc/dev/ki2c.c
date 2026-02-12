@@ -1,4 +1,4 @@
-/*	$NetBSD: ki2c.c,v 1.33 2022/06/29 17:59:40 mlelstv Exp $	*/
+/*	$NetBSD: ki2c.c,v 1.44 2025/09/28 11:32:23 thorpej Exp $	*/
 /*	Id: ki2c.c,v 1.7 2002/10/05 09:56:05 tsubai Exp	*/
 
 /*-
@@ -34,6 +34,7 @@
 
 #include <dev/ofw/openfirm.h>
 #include <machine/autoconf.h>
+#include <powerpc/pic/picvar.h>
 
 #include "opt_ki2c.h"
 #include <macppc/dev/ki2cvar.h>
@@ -55,7 +56,7 @@ u_int ki2c_getmode(struct ki2c_softc *);
 void ki2c_setmode(struct ki2c_softc *, u_int);
 u_int ki2c_getspeed(struct ki2c_softc *);
 void ki2c_setspeed(struct ki2c_softc *, u_int);
-int ki2c_intr(struct ki2c_softc *);
+int ki2c_intr(void *);
 int ki2c_poll(struct ki2c_softc *, int);
 int ki2c_start(struct ki2c_softc *, int, int, void *, int);
 int ki2c_read(struct ki2c_softc *, int, int, void *, int);
@@ -65,6 +66,72 @@ int ki2c_write(struct ki2c_softc *, int, int, void *, int);
 static int ki2c_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *, size_t,
 		    void *, size_t, int);
 
+static void
+ki2c_select_channel(struct ki2c_softc *sc, int channel)
+{
+	uint8_t val = channel ? 0x10 : 0x00;
+	
+	/* We handle the subaddress stuff ourselves. */
+	ki2c_setmode(sc, val | I2C_STDMODE);	
+}
+
+static int
+ki2c_acquire_bus(void *v, int flags)
+{
+	struct ki2c_channel *ch = v;
+	struct ki2c_softc *sc = ch->ch_sc;
+
+	int error = iic_acquire_bus_lock(&sc->sc_mux_lock, flags);
+	if (error) {
+		return error;
+	}
+
+	ki2c_select_channel(sc, ch->ch_channel);
+	return 0;
+}
+
+static void
+ki2c_release_bus(void *v, int flags)
+{
+	struct ki2c_channel *ch = v;
+	struct ki2c_softc *sc = ch->ch_sc;
+
+	iic_release_bus_lock(&sc->sc_mux_lock);
+}
+
+static void
+ki2c_init_channel(struct ki2c_softc *sc, int channel, int node)
+{
+	struct ki2c_channel *ch = &sc->sc_channels[channel];
+
+	/*
+	 * XXX PowerMac G5 11,2 has two channel-0 nodes for ki2c1.
+	 *
+	 * The first one has 2 audio codecs, the second one has
+	 * only 1 (which is a duplicate of the pcm3052 under the
+	 * first node).  This //appears// to be an error in the
+	 * OpenFirmware device tree.
+	 *
+	 * See port-macppc/59673.
+	 */
+	if (ch->ch_sc != NULL) {
+		aprint_debug_dev(sc->sc_dev,
+		    "skipping duplicate channel %d (device tree error?)\n",
+		    channel);
+		return;
+	}
+
+	iic_tag_init(&ch->ch_i2c);
+	ch->ch_i2c.ic_channel = channel;
+	ch->ch_i2c.ic_cookie = ch;
+	ch->ch_i2c.ic_exec = ki2c_i2c_exec;
+	ch->ch_i2c.ic_acquire_bus = ki2c_acquire_bus;
+	ch->ch_i2c.ic_release_bus = ki2c_release_bus;
+
+	ch->ch_sc = sc;
+	ch->ch_node = node;
+	ch->ch_channel = channel;
+}
 
 CFATTACH_DECL_NEW(ki2c, sizeof(struct ki2c_softc), ki2c_match, ki2c_attach,
 	NULL, NULL);
@@ -85,22 +152,21 @@ ki2c_attach(device_t parent, device_t self, void *aux)
 {
 	struct ki2c_softc *sc = device_private(self);
 	struct confargs *ca = aux;
-	int node = ca->ca_node;
-	uint32_t addr, channel, reg;
-	int rate, child, /*namelen,*/ i2cbus[2] = {0, 0};
-	struct i2cbus_attach_args iba;
-	prop_dictionary_t dict = device_properties(self);
-	prop_array_t cfg;
-	int devs, devc;
-	char compat[256], num[8], descr[32];
-	prop_dictionary_t dev;
-	prop_data_t data;
-	char name[32];
+	int node = ca->ca_node, root;
+	uint32_t addr, channel, intr[2];
+	int rate, child;
+	int intrparent;
+	char name[32], intr_xname[32], model[32];
+	uint32_t picbase;
 
 	sc->sc_dev = self;
 	sc->sc_tag = ca->ca_tag;
 	ca->ca_reg[0] += ca->ca_baseaddr;
 
+	root = OF_finddevice("/");
+	model[0] = 0;
+	OF_getprop(root, "model", model, 32);
+	DPRINTF("model %s\n", model);
 	if (OF_getprop(node, "AAPL,i2c-rate", &rate, 4) != 4) {
 		aprint_error(": cannot get i2c-rate\n");
 		return;
@@ -119,6 +185,46 @@ ki2c_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	if(OF_getprop(node, "interrupts", intr, 8) != 8) {
+		aprint_error(": can't find interrupt\n");
+		return;
+	}
+
+	/*
+	 * on some G5 we have two openpics, one in mac-io, one in /u3
+	 * in order to get interrupts we need to know which one we're
+	 * connected to
+	 */
+	sc->sc_poll = 0;
+
+	if(OF_getprop(node, "interrupt-parent", &intrparent, 4) == 4) {
+		uint32_t preg[8];
+		struct pic_ops *pic;
+		
+		sc->sc_poll = 1;
+		if(OF_getprop(intrparent, "reg", preg, 8) > 4) {
+			/* now look for a pic with that base... */
+			picbase = preg[0];
+			if ((picbase & 0x80000000) == 0) {
+				/* some OF versions have the openpic's reg as
+				 * an offset into mac-io just to be annoying */
+				int mio = OF_parent(intrparent);
+				if (OF_getprop(mio, "ranges", preg, 20) == 20)
+					picbase += preg[3];
+			}
+			DPRINTF("PIC base %08x\n", picbase);
+			pic = find_pic_by_cookie((void *)picbase);
+			if (pic != NULL) {
+				sc->sc_poll = 0;
+				intr[0] += pic->pic_intrbase;
+			}
+		}
+	}
+
+	if (sc->sc_poll) {
+		aprint_normal(" polling");
+	} else aprint_normal(" irq %d", intr[0]);
+
 	printf("\n");
 
 	ki2c_writereg(sc, STATUS, 0);
@@ -127,89 +233,69 @@ ki2c_attach(device_t parent, device_t self, void *aux)
 
 	ki2c_setmode(sc, I2C_STDSUBMODE);
 	ki2c_setspeed(sc, I2C_100kHz);		/* XXX rate */
-	
+
 	ki2c_writereg(sc, IER,I2C_INT_DATA|I2C_INT_ADDR|I2C_INT_STOP);
-	
-	cfg = prop_array_create();
-	prop_dictionary_set(dict, "i2c-child-devices", cfg);
-	prop_object_release(cfg);
 
-	/* 
-	 * newer OF puts I2C devices under 'i2c-bus' instead of attaching them 
-	 * directly to the ki2c node so we just check if we have a child named
-	 * 'i2c-bus' and if so we attach its children, not ours
-	 *
-	 * XXX
-	 * should probably check for multiple i2c-bus children
+	/*
+	 * Newer OpenFirmware will have "i2c-bus" nodes below the controller
+	 * node.  If we don't find any, then the devices are direct children
+	 * of the controller node, and the channel number is encoded in
+	 * bit 8 of the i2c address cell (see ofw_i2c_machdep.c).
 	 */
-
-	int found_busnode = 0;
-	channel = 0;
-	child = OF_child(node);
-	while (child != 0) {
+	bool found_busnode = false;
+	for (child = OF_child(node); child != 0; child = OF_peer(child)) {
 		OF_getprop(child, "name", name, sizeof(name));
 		if (strcmp(name, "i2c-bus") == 0) {
 			OF_getprop(child, "reg", &channel, sizeof(channel));
-			i2cbus[channel] = child;
 			DPRINTF("found channel %x\n", channel);
-			found_busnode = 1;
-		}
-		child = OF_peer(child);
-	}
-	if (found_busnode == 0) 
-		i2cbus[0] = node;
-
-	for (channel = 0; channel < 2; channel++) {
-		devs = OF_child(i2cbus[channel]);
-		while (devs != 0) {
-			if (OF_getprop(devs, "name", name, 32) <= 0)
-				goto skip;
-			if (OF_getprop(devs, "compatible", compat, 256) <= 0) {
-				/* some i2c device nodes don't have 'compatible' */
-				memset(compat, 0, 256);
-				strncpy(compat, name, 256);
-			} 
-			if (OF_getprop(devs, "reg", &addr, 4) <= 0)
-				if (OF_getprop(devs, "i2c-address", &addr, 4) <= 0)
-					goto skip;
-			addr |= channel << 8;
-			addr = addr >> 1;
-			DPRINTF("-> %s@%x\n", name, addr);
-			dev = prop_dictionary_create();
-			prop_dictionary_set_string(dev, "name", name);
-			data = prop_data_create_copy(compat, strlen(compat)+1);
-			prop_dictionary_set(dev, "compatible", data);
-			prop_object_release(data);
-			prop_dictionary_set_uint32(dev, "addr", addr);
-			prop_dictionary_set_uint64(dev, "cookie", devs);
-			/* look for location info for sensors */
-			devc = OF_child(devs);
-			while (devc != 0) {
-				if (OF_getprop(devc, "reg", &reg, 4) < 4) goto nope;
-				if (OF_getprop(devc, "location", descr, 32) <= 0)
-					goto nope;
-				DPRINTF("found '%s' at %02x\n", descr, reg);
-				snprintf(num, 7, "s%02x", reg);
-				prop_dictionary_set_string(dev, num, descr);
-			nope:
-				devc = OF_peer(devc);
+			if (channel >= KI2C_MAX_CHANNELS) {
+				aprint_error_dev(self,
+				    "ignoring invalid I2C channel %u\n",
+				    channel);
+				continue;
 			}
-			prop_array_add(cfg, dev);
-			prop_object_release(dev);
-		skip:
-			devs = OF_peer(devs);
+			ki2c_init_channel(sc, channel, child);
+			found_busnode = true;
+		}
+	}
+	if (!found_busnode) {
+		for (channel = 0; channel < KI2C_MAX_CHANNELS; channel++) {
+			ki2c_init_channel(sc, channel, node);
 		}
 	}
 
-	/* fill in the i2c tag */
-	iic_tag_init(&sc->sc_i2c);
-	sc->sc_i2c.ic_cookie = sc;
-	sc->sc_i2c.ic_exec = ki2c_i2c_exec;
+	/*
+	 * The Keywest I2C controller has a built-in I2C mux, but it's not
+	 * really a distinct device in the device tree, so we handle it here.
+	 *
+	 * The locking order is:
+	 *
+	 *	iic bus mutex -> mux_lock
+	 *
+	 * mux_lock is taken in ki2c_acquire_bus().
+	 */
+	mutex_init(&sc->sc_mux_lock, MUTEX_DEFAULT, IPL_NONE);
 
-	memset(&iba, 0, sizeof(iba));
-	iba.iba_tag = &sc->sc_i2c;
-	config_found(sc->sc_dev, &iba, iicbus_print, CFARGS_NONE);
-		
+	cv_init(&sc->sc_todev, device_xname(self));
+	mutex_init(&sc->sc_todevmtx, MUTEX_DEFAULT, IPL_NONE);
+
+	if(sc->sc_poll == 0) {
+		snprintf(intr_xname, sizeof(intr_xname), "%s intr", device_xname(self));
+		intr_establish_xname(intr[0], (intr[1] & 1) ? IST_LEVEL : IST_EDGE,
+		    IPL_BIO, ki2c_intr, sc, intr_xname);
+
+		ki2c_writereg(sc, IER, I2C_INT_DATA | I2C_INT_ADDR| I2C_INT_STOP);
+	}
+
+	for (channel = 0; channel < KI2C_MAX_CHANNELS; channel++) {
+		if (sc->sc_channels[channel].ch_node == 0) {
+			continue;
+		}
+		iicbus_attach_with_devhandle(sc->sc_dev,
+		    &sc->sc_channels[channel].ch_i2c,
+		    devhandle_from_of(device_handle(sc->sc_dev),
+				      sc->sc_channels[channel].ch_node));
+	}
 }
 
 uint8_t
@@ -258,10 +344,10 @@ ki2c_setspeed(struct ki2c_softc *sc, u_int speed)
 }
 
 int
-ki2c_intr(struct ki2c_softc *sc)
+ki2c_intr(void *cookie)
 {
+	struct ki2c_softc *sc = cookie;
 	u_int isr, x;
-
 	isr = ki2c_readreg(sc, ISR);
 	if (isr & I2C_INT_ADDR) {
 #if 0
@@ -316,6 +402,7 @@ out:
 	if (isr & I2C_INT_STOP) {
 		ki2c_writereg(sc, CONTROL, 0);
 		sc->sc_flags &= ~I2C_BUSY;
+		cv_signal(&sc->sc_todev);
 	}
 
 	ki2c_writereg(sc, ISR, isr);
@@ -326,15 +413,23 @@ out:
 int
 ki2c_poll(struct ki2c_softc *sc, int timo)
 {
+	int bail = 0;
 	while (sc->sc_flags & I2C_BUSY) {
-		if (ki2c_readreg(sc, ISR))
-			ki2c_intr(sc);
-		timo -= 100;
-		if (timo < 0) {
-			DPRINTF("i2c_poll: timeout\n");
-			return -1;
+		if ((cold) || (bail > 10) || (sc->sc_poll)) {
+			if (ki2c_readreg(sc, ISR))
+				ki2c_intr(sc);
+			timo -= 10;
+			if (timo < 0) {
+				DPRINTF("i2c_poll: timeout\n");
+				return -1;
+			}
+			delay(10);
+		} else {
+			mutex_enter(&sc->sc_todevmtx);
+			cv_timedwait_sig(&sc->sc_todev, &sc->sc_todevmtx, hz/10);
+			mutex_exit(&sc->sc_todevmtx);
+			bail++;
 		}
-		delay(100);
 	}
 	return 0;
 }
@@ -392,12 +487,12 @@ int
 ki2c_i2c_exec(void *cookie, i2c_op_t op, i2c_addr_t addr, const void *vcmd,
     size_t cmdlen, void *vbuf, size_t buflen, int flags)
 {
-	struct ki2c_softc *sc = cookie;
+	struct ki2c_channel *ch = cookie;
+	struct ki2c_softc *sc = ch->ch_sc;
 	int i;
 	size_t w_len;
 	uint8_t *wp;
 	uint8_t wrbuf[KI2C_EXEC_MAX_CMDLEN + KI2C_EXEC_MAX_CMDLEN];
-	uint8_t channel;
 
 	/*
 	 * We don't have any idea if the ki2c controller can execute
@@ -414,12 +509,8 @@ ki2c_i2c_exec(void *cookie, i2c_op_t op, i2c_addr_t addr, const void *vcmd,
 	if (cmdlen + buflen > sizeof(wrbuf))
 		return -1;
 
-	channel = (addr & 0xf80) ? 0x10 : 0x00;
-	addr &= 0x7f;
-	
+	addr &= 0x7f;	/* KASSERT((addr & ~0x7f) == 0); ??? */
 
-	/* we handle the subaddress stuff ourselves */
-	ki2c_setmode(sc, channel | I2C_STDMODE);	
 	ki2c_setspeed(sc, I2C_50kHz);
 
 	/* Write-buffer defaults to vcmd */

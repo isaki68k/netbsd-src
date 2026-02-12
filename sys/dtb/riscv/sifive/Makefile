@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.2 2024/08/12 10:55:52 skrll Exp $
+#	$NetBSD: Makefile,v 1.4 2025/11/29 08:01:00 skrll Exp $
 
 DTSSUBDIR=	sifive
 DTSMAKEVARS=	CONFIG_ARCH_SIFIVE=y

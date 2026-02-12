@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.243 2024/11/19 20:38:24 palle Exp $ */
+/*	$NetBSD: autoconf.c,v 1.247 2026/02/06 16:35:30 jdc Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.243 2024/11/19 20:38:24 palle Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.247 2026/02/06 16:35:30 jdc Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -77,6 +77,7 @@ __KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.243 2024/11/19 20:38:24 palle Exp $")
 
 #include <net/if.h>
 #include <net/if_ether.h>
+#include <net/ether_calls.h>
 
 #include <dev/cons.h>
 #include <sparc64/dev/cons.h>
@@ -1094,6 +1095,39 @@ dev_bi_unit_drive_match(device_t dev, int ctrlnode, int target,
 	    booted_partition));
 }
 
+static int
+sparc64_ether_get_mac_address(device_t dev, devhandle_t call_handle, void *v)
+{
+	struct ether_get_mac_address_args *args = v;
+	int node = devhandle_to_of(call_handle);
+	char name[32], device_type[32];
+
+	if (OF_getprop(node, "name", name, sizeof(name)) <= 0) {
+		name[0] = '\0';
+	}
+	if (OF_getprop(node, "device_type", device_type,
+		       sizeof(device_type)) <= 0) {
+		device_type[0] = '\0';
+	}
+
+	/*
+	 * Is it a network interface with FCode?
+	 */
+	if (strcmp(name, "network") == 0 ||
+	    strcmp(device_type, "network") == 0) {
+		/* XXX without-seeprom */
+		prom_getether(node, args->enaddr);
+	} else {
+		/* No fallback to idprom in this case. */
+		if (! prom_get_node_ether(node, args->enaddr)) {
+			return ENOENT;
+		}
+	}
+	return 0;
+}
+OF_DEVICE_CALL_REGISTER(ETHER_GET_MAC_ADDRESS_STR,
+			sparc64_ether_get_mac_address)
+
 /*
  * Called back during autoconfiguration for each device found
  */
@@ -1130,18 +1164,8 @@ device_register(device_t dev, void *aux)
 		if (ia->ia_name == NULL)	/* indirect config */
 			return;
 
-		ofnode = (int)ia->ia_cookie;
-		if (device_is_a(dev, "pcagpio")) {
-			if (!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
-			    !strcmp(machine_model, "SUNW,Sun-Fire-V210")) {
-				add_gpio_props_v210(dev, aux);
-			}
-		} 
-		if (device_is_a(dev, "pcf8574io")) {
-			if (!strcmp(machine_model, "SUNW,Ultra-250")) {
-				add_gpio_props_e250(dev, aux);
-			}
-		} 
+		set_i2c_dev_props(dev, aux);	/* i2c device patches */
+
 		return;
 	} else if (device_is_a(dev, "sd") || device_is_a(dev, "cd")) {
 		struct scsipibus_attach_args *sa = aux;
@@ -1229,14 +1253,12 @@ device_register(device_t dev, void *aux)
 		return;
 
 	if (ofnode != 0) {
-		uint8_t eaddr[ETHER_ADDR_LEN];
 		char tmpstr[32];
 		char tmpstr2[32];
 		int node;
 		uint32_t id = 0;
 		uint64_t nwwn = 0, pwwn = 0;
 		prop_dictionary_t dict;
-		prop_data_t blob;
 		prop_number_t pwwnd = NULL, nwwnd = NULL;
 		prop_number_t idd = NULL;
 
@@ -1248,39 +1270,13 @@ device_register(device_t dev, void *aux)
 			tmpstr2[0] = 0;
 
 		/*
-		 * If this is a network interface, note the
-		 * mac address.
+		 * Is it a network interface with FCode?
+		 * XXX Would like this to go away.
 		 */
-		if (strcmp(tmpstr, "network") == 0
-		   || strcmp(tmpstr, "ethernet") == 0
-		   || strcmp(tmpstr2, "network") == 0
-		   || strcmp(tmpstr2, "ethernet") == 0
-		   || OF_getprop(ofnode, "mac-address", &eaddr, sizeof(eaddr))
-		      >= ETHER_ADDR_LEN
-		   || OF_getprop(ofnode, "local-mac-address", &eaddr, sizeof(eaddr))
-		      >= ETHER_ADDR_LEN) {
-
-			dict = device_properties(dev);
-
-			/*
-			 * Is it a network interface with FCode?
-			 */
-			if (strcmp(tmpstr, "network") == 0 ||
-			    strcmp(tmpstr2, "network") == 0) {
-				prop_dictionary_set_bool(dict,
-				    "without-seeprom", true);
-				prom_getether(ofnode, eaddr);
-			} else {
-				if (!prom_get_node_ether(ofnode, eaddr))
-					goto noether;
-			}
-			blob = prop_data_create_copy(eaddr, ETHER_ADDR_LEN);
-			prop_dictionary_set(dict, "mac-address", blob);
-			prop_object_release(blob);
-			of_to_dataprop(dict, ofnode, "shared-pins",
-			    "shared-pins");
+		if (strcmp(tmpstr, "network") == 0 ||
+		    strcmp(tmpstr2, "network") == 0) {
+			device_setprop_bool(dev, "without-seeprom", true);
 		}
-noether:
 
 		/* is this a FC node? */
 		if (strcmp(tmpstr, "scsi-fcp") == 0) {
@@ -1358,28 +1354,17 @@ noether:
 					}
 				}
 
-				of_enter_i2c_devs(props, busnode,
+				cfg = of_copy_i2c_devs(busnode,
 				    sizeof(cell_t), 1);
+				if (cfg != NULL) {
+					prop_dictionary_set(props,
+					    "i2c-child-devices", cfg);
+					prop_object_release(cfg);
+				}
 			}
 		}
 
-		if (!strcmp(machine_model, "TAD,SPARCLE"))
-			add_spdmem_props_sparcle(busdev);
-
-		if (device_is_a(busdev, "pcfiic") &&
-		    (!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
-		    !strcmp(machine_model, "SUNW,Sun-Fire-V210")))
-			add_env_sensors_v210(busdev);
-
-		/* E450 SUNW,envctrl */
-		if (device_is_a(busdev, "pcfiic") &&
-		    (!strcmp(machine_model, "SUNW,Ultra-4")))
-			add_i2c_props_e450(busdev, busnode);
-
-		/* E250 SUNW,envctrltwo */
-		if (device_is_a(busdev, "pcfiic") &&
-		    (!strcmp(machine_model, "SUNW,Ultra-250")))
-			add_i2c_props_e250(busdev, busnode);
+		set_i2c_bus_props(busdev, busnode);	/* i2c bus patches */
 	}
 
 	/* set properties for PCI framebuffers */
@@ -1446,8 +1431,6 @@ noether:
 #endif
 		set_static_edid(dict);
 	}
-
-	set_hw_props(dev);
 }
 
 /*

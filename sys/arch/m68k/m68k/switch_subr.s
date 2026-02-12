@@ -1,4 +1,4 @@
-/*	$NetBSD: switch_subr.s,v 1.38 2024/10/31 07:30:28 isaki Exp $	*/
+/*	$NetBSD: switch_subr.s,v 1.42 2025/04/03 13:44:06 nat Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation.

@@ -1,4 +1,4 @@
-/*	$NetBSD: pdc.c,v 1.4 2019/04/15 20:40:37 skrll Exp $	*/
+/*	$NetBSD: pdc.c,v 1.7 2025/09/07 21:45:13 thorpej Exp $	*/
 
 /*	$OpenBSD: pdc.c,v 1.14 2001/04/29 21:05:43 mickey Exp $	*/
 
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pdc.c,v 1.4 2019/04/15 20:40:37 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pdc.c,v 1.7 2025/09/07 21:45:13 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -55,6 +55,7 @@ struct pdc_softc {
 	device_t sc_dv;
 	struct tty *sc_tty;
 	struct callout sc_to;
+	struct todr_chip_handle sc_todr;
 } pdcsoftc_t;
 
 pdcio_t pdc;
@@ -127,8 +128,10 @@ pdc_init(void)
 
 	pdc = (pdcio_t)PAGE0->mem_pdc;
 
-	/* XXX should we reset the console/kbd here?
-	   well, /boot did that for us anyway */
+	/*
+	 * XXX should we reset the console/kbd here?
+	 * well, /boot did that for us anyway
+	 */
 	if ((err = pdc_call((iodcio_t)pdc, 0, PDC_IODC, PDC_IODC_READ,
 	      &pdcret1, pz_cons->pz_hpa, IODC_IO, cn_iodc, IODC_MAXSIZE)) < 0 ||
 	    (err = pdc_call((iodcio_t)pdc, 0, PDC_IODC, PDC_IODC_READ,
@@ -234,10 +237,6 @@ pdcmatch(device_t parent, cfdata_t cf, void *aux)
 void
 pdcattach(device_t parent, device_t self, void *aux)
 {
-	static struct todr_chip_handle todr = {
-		.todr_settime = pdcsettod,
-		.todr_gettime = pdcgettod,
-	};
 	struct pdc_softc *sc = device_private(self);
 
 	sc->sc_dv = self;
@@ -249,7 +248,10 @@ pdcattach(device_t parent, device_t self, void *aux)
 	cn_set_magic("+++++");
 
 	/* attach the TOD clock */
-	todr_attach(&todr);
+	sc->sc_todr.todr_settime = pdcsettod;
+	sc->sc_todr.todr_gettime = pdcgettod;
+	sc->sc_todr.todr_dev = self;
+	todr_attach(&sc->sc_todr);
 
 	aprint_normal("\n");
 

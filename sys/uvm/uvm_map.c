@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.426 2024/08/16 11:28:01 riastradh Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.429 2025/12/11 07:25:10 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.426 2024/08/16 11:28:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.429 2025/12/11 07:25:10 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -3343,7 +3343,7 @@ uvm_map_inherit(struct vm_map *map, vaddr_t start, vaddr_t end,
 	if (uvm_map_lookup_entry(map, start, &temp_entry)) {
 		entry = temp_entry;
 		UVM_MAP_CLIP_START(map, entry, start);
-	}  else {
+	} else {
 		entry = temp_entry->next;
 	}
 	while ((entry != &map->header) && (entry->start < end)) {
@@ -4257,28 +4257,6 @@ uvmspace_unshare(struct lwp *l)
 
 #endif
 
-
-/*
- * uvmspace_spawn: a new process has been spawned and needs a vmspace
- */
-
-void
-uvmspace_spawn(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
-{
-	struct proc *p = l->l_proc;
-	struct vmspace *nvm;
-
-#ifdef __HAVE_CPU_VMSPACE_EXEC
-	cpu_vmspace_exec(l, start, end);
-#endif
-
-	nvm = uvmspace_alloc(start, end, topdown);
-	kpreempt_disable();
-	p->p_vmspace = nvm;
-	pmap_activate(l);
-	kpreempt_enable();
-}
-
 /*
  * uvmspace_exec: the process wants to exec a new program
  */
@@ -4296,21 +4274,14 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 	cpu_vmspace_exec(l, start, end);
 #endif
 
-	map = &ovm->vm_map;
 	/*
-	 * see if more than one process is using this vmspace...
+	 * If p is the only process using the vmspace, we can safely
+	 * recycle it for the program that is being exec'd, rather than
+	 * allocate a new vmspace -- but we have to make sure it's
+	 * empty first.
 	 */
-
-	if (ovm->vm_refcnt == 1
-	    && topdown == ((ovm->vm_map.flags & VM_MAP_TOPDOWN) != 0)) {
-
-		/*
-		 * if p is the only process using its vmspace then we can safely
-		 * recycle that vmspace for the program that is being exec'd.
-		 * But only if TOPDOWN matches the requested value for the new
-		 * vm space!
-		 */
-
+	map = &ovm->vm_map;
+	if (ovm->vm_refcnt == 1 && map->nentries != 0) {
 		/*
 		 * SYSV SHM semantics require us to kill all segments on an exec
 		 */
@@ -4321,7 +4292,6 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 		 * POSIX 1003.1b -- "lock future mappings" is revoked
 		 * when a process execs another program image.
 		 */
-
 		map->flags &= ~VM_MAP_WIREFUTURE;
 
 		/*
@@ -4336,7 +4306,6 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 		 * but there isn't an elegant way of inferring that right
 		 * now.
 		 */
-
 		flags = pmap_remove_all(map->pmap) ? UVM_FLAG_VAONLY : 0;
 		map->flags |= VM_MAP_DYING;
 		uvm_unmap1(map, vm_map_min(map), vm_map_max(map), flags);
@@ -4344,27 +4313,34 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 		pmap_update(map->pmap);
 		KASSERT(map->header.prev == &map->header);
 		KASSERT(map->nentries == 0);
+	}
 
+	if (ovm->vm_refcnt == 1) {
 		/*
-		 * resize the map
+		 * The vmspace is not shared and is empty (if it
+		 * weren't, we would have emptied it above).
+		 *
+		 * Resize the map and set topdown as appropriate.
 		 */
-
+		KASSERT(map->nentries == 0);
 		vm_map_setmin(map, start);
 		vm_map_setmax(map, end);
+		if (topdown) {
+			map->flags |= VM_MAP_TOPDOWN;
+		} else {
+			map->flags &= ~VM_MAP_TOPDOWN;
+		}
 	} else {
-
 		/*
 		 * p's vmspace is being shared, so we can't reuse it for p since
 		 * it is still being used for others.   allocate a new vmspace
 		 * for p
 		 */
-
 		nvm = uvmspace_alloc(start, end, topdown);
 
 		/*
 		 * install new vmspace and drop our ref to the old one.
 		 */
-
 		kpreempt_disable();
 		pmap_deactivate(l);
 		p->p_vmspace = nvm;
@@ -5156,7 +5132,7 @@ uvm_voaddr_acquire(struct vm_map * const map, vaddr_t const va,
 
 /*
  * uvm_voaddr_release: release the references held by the
- * vitual object address.
+ * virtual object address.
  */
 void
 uvm_voaddr_release(struct uvm_voaddr * const voaddr)

@@ -1,4 +1,4 @@
-/* $NetBSD: pmap_machdep.c,v 1.20 2024/01/01 17:18:02 skrll Exp $ */
+/* $NetBSD: pmap_machdep.c,v 1.23 2025/10/12 19:44:04 skrll Exp $ */
 
 /*
  * Copyright (c) 2014, 2019, 2021 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #define	__PMAP_PRIVATE
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pmap_machdep.c,v 1.20 2024/01/01 17:18:02 skrll Exp $");
+__RCSID("$NetBSD: pmap_machdep.c,v 1.23 2025/10/12 19:44:04 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -45,6 +45,7 @@ __RCSID("$NetBSD: pmap_machdep.c,v 1.20 2024/01/01 17:18:02 skrll Exp $");
 #include <uvm/uvm.h>
 
 #include <riscv/machdep.h>
+#include <riscv/sbi.h>
 #include <riscv/sysreg.h>
 
 #ifdef VERBOSE_INIT_RISCV
@@ -55,6 +56,13 @@ __RCSID("$NetBSD: pmap_machdep.c,v 1.20 2024/01/01 17:18:02 skrll Exp $");
 
 vaddr_t pmap_direct_base __read_mostly;
 vaddr_t pmap_direct_end __read_mostly;
+
+#ifdef _LP64
+static pt_entry_t pmap_pte_pbmt_mask __read_mostly;
+static pt_entry_t pmap_pte_pma __read_mostly;
+static pt_entry_t pmap_pte_nc __read_mostly;
+static pt_entry_t pmap_pte_io __read_mostly;
+#endif
 
 void
 pmap_zero_page(paddr_t pa)
@@ -84,6 +92,19 @@ pmap_copy_page(paddr_t src, paddr_t dst)
 	KASSERT(false);
 #endif
 }
+
+#ifdef _LP64
+pt_entry_t
+pte_enter_flags_to_pbmt(int flags)
+{
+	if (flags & PMAP_DEV) {
+		return pmap_pte_io;
+	} else if (flags & PMAP_NOCACHE) {
+		return pmap_pte_nc;
+	}
+	return pmap_pte_pma;
+}
+#endif
 
 struct vm_page *
 pmap_md_alloc_poolpage(int flags)
@@ -221,7 +242,7 @@ pmap_md_pdetab_init(struct pmap *pmap)
 		 * XXXSB where/when do new entries in pmap_kernel()->pm_pdetab
 		 * XXXSB get added to existing pmaps?
 		 *
-		 * pmap_growkernal doesn't have support for fixing up exiting
+		 * pmap_growkernel doesn't have support for fixing up exiting
 		 * pmaps. (yet)
 		 *
 		 * Various options:
@@ -299,6 +320,35 @@ pmap_md_grow(pmap_pdetab_t *ptb, vaddr_t va, vsize_t vshift,
     #endif
 }
 
+void
+pmap_probe_pbmt(void)
+{
+#ifdef _LP64
+	const register_t mvendorid = sbi_get_mvendorid().value;
+
+	switch (mvendorid) {
+	case CPU_VENDOR_THEAD:
+		if (csr_thead_sxstatus_read() & TX_SXSTATUS_MAEE) {
+			VPRINTF("T-Head XMAE detected.\n");
+			pmap_pte_pbmt_mask = PTE_XMAE;
+			pmap_pte_pma       = PTE_XMAE_PMA;
+			pmap_pte_nc        = PTE_XMAE_NC;
+			pmap_pte_io        = PTE_XMAE_IO;
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	/*
+	 * No fixups of the initial MMU tables.  We have to assume
+	 * that those were set up correctly in locore.S.  The variables
+	 * set above are for new mappings created now that the kernel
+	 * is up and running.
+	 */
+#endif
+}
 
 void
 pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
@@ -428,11 +478,13 @@ pmap_kenter_range(vaddr_t va, paddr_t pa, vsize_t size,
 	const vaddr_t eva = MEGAPAGE_ROUND(va + size);
 	const vaddr_t pdetab_mask = PMAP_PDETABSIZE - 1;
 	const vsize_t vshift = SEGSHIFT;
+	const pt_entry_t pbmt_flag = pte_enter_flags_to_pbmt(flags);
 
 	while (sva < eva) {
 		const size_t sidx = (sva >> vshift) & pdetab_mask;
 
-		l1_pte[sidx] = PA_TO_PTE(spa) | PTE_KERN | PTE_HARDWIRED | PTE_RW;
+		l1_pte[sidx] = PA_TO_PTE(spa) | PTE_KERN | PTE_HARDWIRED |
+		    PTE_RW | pbmt_flag;
 		spa += NBSEG;
 		sva += NBSEG;
 	}

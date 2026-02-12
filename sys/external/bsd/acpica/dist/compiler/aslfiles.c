@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2023, Intel Corp.
+ * Copyright (C) 2000 - 2025, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -238,9 +238,7 @@ FlGetFileHandle (
 
     while (Current)
     {
-        if (!((Current->FileType == ASL_INPUT_TYPE_ASCII_DATA) &&
-            (InFileId == ASL_FILE_SOURCE_OUTPUT)) &&
-            !strcmp (Current->Files[InFileId].Filename, Filename))
+        if (!strcmp (Current->Files[InFileId].Filename, Filename))
         {
             return (Current->Files[OutFileId].Handle);
         }

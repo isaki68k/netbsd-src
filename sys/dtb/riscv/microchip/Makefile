@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2024/08/12 10:55:51 skrll Exp $
+#	$NetBSD: Makefile,v 1.3 2025/11/29 08:01:00 skrll Exp $
 
 DTSSUBDIR=	microchip
 DTSMAKEVARS=	CONFIG_ARCH_MICROCHIP_POLARFIRE=y

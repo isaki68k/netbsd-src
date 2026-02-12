@@ -1,4 +1,4 @@
-/*	$NetBSD: pcf8583.c,v 1.19 2020/01/02 16:53:05 thorpej Exp $	*/
+/*	$NetBSD: pcf8583.c,v 1.21 2025/09/07 21:45:15 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcf8583.c,v 1.19 2020/01/02 16:53:05 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcf8583.c,v 1.21 2025/09/07 21:45:15 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -160,10 +160,9 @@ pcfrtc_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_open = 0;
 
-	sc->sc_todr.cookie = sc;
+	sc->sc_todr.todr_dev = self;
 	sc->sc_todr.todr_gettime = pcfrtc_gettime;
 	sc->sc_todr.todr_settime = pcfrtc_settime;
-	sc->sc_todr.todr_setwen = NULL;
 
 	todr_attach(&sc->sc_todr);
 }
@@ -278,7 +277,7 @@ pcfrtc_write(dev_t dev, struct uio *uio, int flags)
 static int
 pcfrtc_gettime(struct todr_chip_handle *ch, struct timeval *tv)
 {
-	struct pcfrtc_softc *sc = ch->cookie;
+	struct pcfrtc_softc *sc = device_private(ch->todr_dev);
 	struct clock_ymdhms dt;
 	int err;
 	uint8_t centi;
@@ -295,7 +294,7 @@ pcfrtc_gettime(struct todr_chip_handle *ch, struct timeval *tv)
 static int
 pcfrtc_settime(struct todr_chip_handle *ch, struct timeval *tv)
 {
-	struct pcfrtc_softc *sc = ch->cookie;
+	struct pcfrtc_softc *sc = device_private(ch->todr_dev);
 	struct clock_ymdhms dt;
 	int err;
 

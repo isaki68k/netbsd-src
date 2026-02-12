@@ -1,4 +1,4 @@
-/*	$NetBSD: lapic.c,v 1.90 2024/02/25 18:27:54 andvar Exp $	*/
+/*	$NetBSD: lapic.c,v 1.94 2026/02/07 01:52:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2008, 2020 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.90 2024/02/25 18:27:54 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.94 2026/02/07 01:52:33 riastradh Exp $");
 
 #include "acpica.h"
 #include "ioapic.h"
@@ -131,6 +131,7 @@ bool x2apic_enable = true;
 #else
 bool x2apic_enable = false;
 #endif
+bool lapic_from_cpuid = false;
 
 static bool lapic_broken_periodic __read_mostly;
 
@@ -606,9 +607,11 @@ lapic_initclock(void)
 		/*
 		 * Recalibrate the timer using the cycle counter, now that
 		 * the cycle counter itself has been recalibrated.
+		 *
+		 * Not needed when lapic_per_second is read from CPUID.
 		 */
-		lapic_calibrate_timer(true);
-
+		if (!lapic_from_cpuid)
+			lapic_calibrate_timer(true);
 		/*
 		 * Hook up time counter.  This assume that all LAPICs have
 		 * the same frequency.
@@ -642,7 +645,8 @@ lapic_calibrate_timer(bool secondpass)
 
 	KASSERT(ci == &cpu_info_primary);
 
-	aprint_debug_dev(ci->ci_dev, "[re]calibrating local timer\n");
+	aprint_debug_dev(ci->ci_dev, "%scalibrating local timer\n",
+	    secondpass ? "re" : "");
 
 	/*
 	 * Configure timer to one-shot, interrupt masked,

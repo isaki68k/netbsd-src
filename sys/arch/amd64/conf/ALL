@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.190 2024/08/26 13:38:28 riastradh Exp $
+# $NetBSD: ALL,v 1.196 2025/11/07 19:07:38 pgoyette Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,7 +17,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.190 $"
+#ident		"ALL-$Revision: 1.196 $"
 
 maxusers	64		# estimated number of users
 
@@ -353,6 +353,7 @@ ipmi0		at mainbus?
 options 	ACPI_SCANPCI		# find PCI roots using ACPI
 options 	MPBIOS			# configure CPUs and APICs using MPBIOS
 options 	MPBIOS_SCANPCI		# MPBIOS configures PCI roots
+options 	PCI_RESOURCE		# Allocate unconfigured PCI resources
 options 	PCI_INTR_FIXUP		# PCI interrupt routing via ACPI
 options 	PCI_BUS_FIXUP		# fixup PCI bus numbering
 options 	PCI_ADDR_FIXUP		# fixup PCI I/O addresses
@@ -1026,7 +1027,7 @@ ntwoc*	at pci? dev ? function ?	# Riscom/N2 PCI Sync Serial
 pcn*	at pci? dev ? function ?	# AMD PCnet-PCI Ethernet
 ral*	at pci? dev ? function ?	# Ralink Technology RT25x0 802.11a/b/g
 re*	at pci? dev ? function ?	# Realtek 8139C+/8169/8169S/8110S
-rge*	at pci? dev ? function ?	# Realtek 8125
+rge*	at pci? dev ? function ?	# Realtek 8125/8126/8127
 rtk*	at pci? dev ? function ?	# Realtek 8129/8139
 rtw*	at pci? dev ? function ?	# Realtek 8180L (802.11)
 rtwn*	at pci? dev ? function ?	# Realtek 8188CE/8192CE 802.11b/g/n
@@ -1254,7 +1255,7 @@ irframe* at ustir?
 udsir*	at uhub? port ?
 irframe* at udsir?
 
-# Windows Media Center IR tranceiver
+# Windows Media Center IR transceiver
 irmce*	at uhub? port ?
 cir*	at irmce?
 
@@ -1284,6 +1285,9 @@ upgt*	at uhub? port ?		# Intersil PrismGT
 urtw*	at uhub? port ?		# Realtek RTL8187/RTL8187B 802.11b/g
 urtwn*	at uhub? port ?		# Realtek RTL8188CU/RTL8192CU 802.11b/g/n
 zyd*	at uhub? port ?		# Zydas ZD1211
+
+# USB CAN adapters
+gscan*  at uhub? port ?         # Geschwister Schneider USB to CAN interface
 
 # Prolific PL2301/PL2302 host-to-host adapter
 upl*	at uhub? port ?
@@ -1589,13 +1593,8 @@ weasel* at pci?
 
 # Virtio devices
 virtio* at pci? dev ? function ?	# Virtio PCI device
-viomb*	at virtio?			# Virtio memory balloon device
-ld*	at virtio?			# Virtio disk device
-viocon* at virtio?			# Virtio console device
-vioif*	at virtio?			# Virtio network device
-viornd* at virtio?			# Virtio entropy device
-vioscsi* at virtio?			# Virtio SCSI device
-vio9p*	at virtio?			# Virtio 9P device
+
+include "dev/virtio/virtio.config"
 
 # Hyper-V devices
 vmbus*		at acpi?		# Hyper-V VMBus

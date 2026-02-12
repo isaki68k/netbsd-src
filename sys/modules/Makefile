@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.293 2024/11/04 20:43:38 brad Exp $
+#	$NetBSD: Makefile,v 1.299 2025/12/28 20:24:56 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -61,7 +61,9 @@ SUBDIR+=	des
 SUBDIR+=	dk_subr
 SUBDIR+=	drvctl
 SUBDIR+=	ds2482ow
+SUBDIR+=	ds28e17iic
 SUBDIR+=	efs
+SUBDIR+=	emcfan
 SUBDIR+=	ext2fs
 SUBDIR+=	exec_script
 SUBDIR+=	fdesc
@@ -96,6 +98,7 @@ SUBDIR+=	if_lagg
 SUBDIR+=	if_loop
 SUBDIR+=	if_mpls
 SUBDIR+=	if_mue
+SUBDIR+=	if_ncm
 SUBDIR+=	if_npflog
 SUBDIR+=	if_ppp
 SUBDIR+=	if_pppoe
@@ -477,19 +480,23 @@ SUBDIR+=	imcsmb
 SUBDIR+=	iscsi
 .endif
 
-# For now, all of these are disabled, pending resolution of how to deal
-# with attachment-specific modules and bus-specific modules (as opposed
+# For now, all of these are  built but not installed, pending resolution
+# of how to deal with attachment- and bus-specific modules (as opposed
 # to machine- or architecture-specific modules)
+#
+# See also PR kern/59716
 
 .if 0
 SUBDIR+=	aac
 SUBDIR+=	amr
 SUBDIR+=	ataraid
 SUBDIR+=	cac
-SUBDIR+=	cac_eisa
-SUBDIR+=	cac_pci
+#SUBDIR+=	cac_eisa
+#SUBDIR+=	cac_pci
 SUBDIR+=	emuxki
 SUBDIR+=	if_aq
+SUBDIR+=	if_igc
+SUBDIR+=	if_rge
 SUBDIR+=	if_vioif
 SUBDIR+=	if_vmx
 SUBDIR+=	ld
@@ -503,8 +510,8 @@ SUBDIR+=	ld_sdmmc
 SUBDIR+=	ld_twa
 SUBDIR+=	ld_twe
 SUBDIR+=	ld_virtio
-SUBDIR+=	mlx
-SUBDIR+=	mlx_eisa
+#SUBDIR+=	mlx
+#SUBDIR+=	mlx_eisa
 SUBDIR+=	mlx_pci
 SUBDIR+=	ld_nvme
 SUBDIR+=	nvme

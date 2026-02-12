@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_output.c,v 1.37 2024/09/08 09:36:51 rillig Exp $ */
+/*	$NetBSD: sctp_output.c,v 1.39 2025/06/12 06:08:10 ozaki-r Exp $ */
 /*	$KAME: sctp_output.c,v 1.48 2005/06/16 18:29:24 jinmei Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.37 2024/09/08 09:36:51 rillig Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.39 2025/06/12 06:08:10 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -2131,7 +2131,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 		} else
 			ip->ip_off = 0;
 
-		ip->ip_id = htons(ip_newid(NULL));
+		ip->ip_id = htons(ip_newid());
 		ip->ip_ttl = inp->inp_ip_ttl;
 		ip->ip_len = htons(m->m_pkthdr.len);
 		if (stcb) {
@@ -7625,7 +7625,7 @@ send_forward_tsn(struct sctp_tcb *stcb,
 		 * off some that we could have included.. but this is
 		 * unlikely (aka 1432/4 would mean 300+ stream seq's would
 		 * have to be reported in one FWD-TSN. With a bit of work
-		 * we can later FIX this to optimize and pull out duplcates..
+		 * we can later FIX this to optimize and pull out duplicates..
 		 * but it does add more overhead. So for now... not!
 		 */
 		at = TAILQ_FIRST(&asoc->sent_queue);

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.614 2024/08/27 00:56:16 riastradh Exp $
+# $NetBSD: GENERIC,v 1.620 2025/11/07 19:07:38 pgoyette Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.614 $"
+#ident		"GENERIC-$Revision: 1.620 $"
 
 maxusers	64		# estimated number of users
 
@@ -320,6 +320,7 @@ acpi0		at mainbus0
 options 	ACPI_SCANPCI		# find PCI roots using ACPI
 options 	MPBIOS			# configure CPUs and APICs using MPBIOS
 options 	MPBIOS_SCANPCI		# MPBIOS configures PCI roots
+#options 	PCI_RESOURCE		# Allocate unconfigured PCI resources
 #options 	PCI_INTR_FIXUP		# fixup PCI interrupt routing via ACPI
 #options 	PCI_BUS_FIXUP		# fixup PCI bus numbering
 #options 	PCI_ADDR_FIXUP		# fixup PCI I/O addresses
@@ -860,7 +861,7 @@ ntwoc*	at pci? dev ? function ?	# Riscom/N2 PCI Sync Serial
 pcn*	at pci? dev ? function ?	# AMD PCnet-PCI Ethernet
 ral*	at pci? dev ? function ?	# Ralink Technology RT25x0 802.11a/b/g
 re*	at pci? dev ? function ?	# Realtek 8139C+/8169/8169S/8110S
-rge*	at pci? dev ? function ?	# Realtek 8125
+rge*	at pci? dev ? function ?	# Realtek 8125/8126/8127
 rtk*	at pci? dev ? function ?	# Realtek 8129/8139
 rtw*	at pci? dev ? function ?	# Realtek 8180L (802.11)
 rtwn*	at pci? dev ? function ?	# Realtek 8188CE/8192CE 802.11b/g/n
@@ -1127,13 +1128,8 @@ weasel* at pci?
 
 # Virtio devices
 virtio* at pci? dev ? function ?	# Virtio PCI device
-viomb*	at virtio?			# Virtio memory balloon device
-ld*	at virtio?			# Virtio disk device
-viocon* at virtio?			# Virtio serial device
-vioif*	at virtio?			# Virtio network device
-viornd* at virtio?			# Virtio entropy device
-vioscsi* at virtio?			# Virtio SCSI device
-#vio9p*	at virtio?			# Virtio 9P device
+
+include "dev/virtio/virtio.config"
 
 # Hyper-V devices
 vmbus*		at acpi?		# Hyper-V VMBus
@@ -1146,6 +1142,9 @@ hvheartbeat*	at vmbus?		# Hyper-V Heartbeat Service
 hvshutdown*	at vmbus?		# Hyper-V Guest Shutdown Service
 hvtimesync*	at vmbus?		# Hyper-V Time Synchronization Service
 #hvkvp*		at vmbus?		# Hyper-V Data Exchange Service
+
+# VMWare devices
+pvscsi* 	at pci? dev ? function?	# PV SCSI device
 
 # Pseudo-Devices
 

@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1314 2025/01/08 22:55:35 jmcneill Exp $
+#	$NetBSD: files,v 1.1317 2025/10/24 23:16:11 brad Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -26,6 +26,7 @@ defflag	opt_ptrace.h		PTRACE PTRACE_HOOKS
 defflag				COREDUMP
 defflag	opt_modular.h		MODULAR
 defflag	opt_modular.h		MODULAR_DEFAULT_AUTOLOAD
+defflag	opt_modular.h		MODULAR_DEFAULT_AUTOUNLOAD_UNSAFE
 defflag	opt_modular.h		MODULAR_DEFAULT_VERBOSE
 defflag				KEYLOCK
 defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
@@ -391,6 +392,16 @@ define	ipmibus		{ }
 define	scmi
 define	smbios
 
+# 8250/16[45]50-based "com" ports
+#
+defflag	opt_com.h		COM_DEBUG
+# XXX In a perfect world, this would be done with attributes
+defflag	opt_com.h		COM_16650 COM_16750
+				COM_HAYESP COM_PXA2X0
+defparam opt_com.h		COM_TOLERANCE
+device	com { } : tty
+file	dev/ic/com.c			com			needs-flag
+
 # speaker devices, attaches to audio or pcppi drivers
 device	spkr: wsbelldev
 file	dev/spkr.c			spkr
@@ -444,7 +455,16 @@ file	dev/ic/scmd.c	scmd
 
 # Bosch BMP280 / BME280 sensor (attaches via I2C or SPI)
 device  bmx280thp
-file	dev/ic/bmx280.c	bmx280thp
+file	dev/ic/bmx280.c			bmx280thp
+
+# NXP SC16IS7xx UART bridge (attaches via I2C or SPI,
+# and provides an attachment for com* and gpio*)
+define	sc16is7xxbus {  }
+device	sc16is7xx: sc16is7xxbus, gpiobus
+file	dev/ic/sc16is7xx.c		sc16is7xx
+
+attach	com at sc16is7xxbus with sc16is7xx_tty
+file	dev/ic/sc16is7xx_tty.c		sc16is7xx_tty
 
 # Generic HID support (used by USB, bluetooth and i2c)
 include "dev/hid/files.hid"
@@ -937,16 +957,6 @@ file	dev/ic/tms320av110.c		tms320av110
 device	ne: ether, ifnet, arp, dp8390nic, mii
 file	dev/ic/ne2000.c			ne
 
-# 8250/16[45]50-based "com" ports
-#
-defflag	opt_com.h		COM_DEBUG
-# XXX In a perfect world, this would be done with attributes
-defflag	opt_com.h		COM_16650 COM_16750
-				COM_HAYESP COM_PXA2X0
-defparam opt_com.h		COM_TOLERANCE
-device	com { } : tty
-file	dev/ic/com.c			com			needs-flag
-
 # PC-like keyboard controller
 #
 device	pckbc: pckbport
@@ -1161,7 +1171,8 @@ file	dev/ic/lm700x.c			lm700x
 
 # Philips PCF8584 i2c controller
 define	pcf8584
-file	dev/ic/pcf8584.c		pcf8584
+device	pcfiic: pcf8584, i2cbus
+file	dev/ic/pcf8584.c		pcfiic
 
 # PCA9564 i2c controller
 define	pca9564
@@ -1169,7 +1180,7 @@ file	dev/ic/pca9564.c		pca9564
 
 # Synopsys DesignWare I2C controller
 define	dwiic
-device dwiic: dwiic, i2cbus
+device	dwiic: dwiic, i2cbus
 file	dev/ic/dwiic.c			dwiic
 
 # Cadence I2C controller

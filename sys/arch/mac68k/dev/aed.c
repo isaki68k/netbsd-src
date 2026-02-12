@@ -1,4 +1,4 @@
-/*	$NetBSD: aed.c,v 1.41 2024/12/09 10:32:53 nat Exp $	*/
+/*	$NetBSD: aed.c,v 1.43 2025/04/03 01:54:46 nat Exp $	*/
 
 /*
  * Copyright (c) 2024 Nathanial Sloss <nathanialsloss@yahoo.com.au>
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.41 2024/12/09 10:32:53 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.43 2025/04/03 01:54:46 nat Exp $");
 
 #include "opt_adb.h"
 
@@ -62,7 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.41 2024/12/09 10:32:53 nat Exp $");
  */
 static int	aedmatch(device_t, cfdata_t, void *);
 static void	aedattach(device_t, device_t, void *);
-static void	aed_emulate_mouse(adb_event_t *);
+static int	aed_emulate_mouse(adb_event_t *);
 static void	aed_kbdrpt(void *);
 static void	aed_dokeyupdown(adb_event_t *);
 static void	aed_handoff(adb_event_t *);
@@ -164,6 +164,10 @@ aedattach(device_t parent, device_t self, void *aux)
 
 	printf("ADB Event device\n");
 
+#if 1
+	(void)config_found(self, &aa_args, NULL, CFARGS_NONE);
+#endif
+
 	return;
 }
 
@@ -181,9 +185,9 @@ aed_input(adb_event_t *event)
 
 	switch (event->def_addr) {
 	case ADBADDR_KBD:
-		if (aed_sc->sc_options & AED_MSEMUL)
-			aed_emulate_mouse(&new_event);
-		else
+		if (aed_sc->sc_options & AED_MSEMUL) {
+			rv = aed_emulate_mouse(&new_event);
+		} else
 			aed_dokeyupdown(&new_event);
 		break;
 	case ADBADDR_MS:
@@ -208,11 +212,12 @@ aed_input(adb_event_t *event)
  * 3rd mouse button events while the 1, 2, and 3 keys will generate
  * the corresponding mouse button event.
  */
-static void 
+static int 
 aed_emulate_mouse(adb_event_t *event)
 {
 	static int emulmodkey_down;
 	adb_event_t new_event;
+	int result = 0;
 
 	if (event->u.k.key == ADBK_KEYDOWN(ADBK_OPTION)) {
 		emulmodkey_down = 1;
@@ -231,6 +236,7 @@ aed_emulate_mouse(adb_event_t *event)
 		switch(event->u.k.key) {
 #ifdef ALTXBUTTONS
 		case ADBK_KEYDOWN(ADBK_1):
+			result = 1;
 			aed_sc->sc_buttons |= 1;	/* left down */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -239,6 +245,7 @@ aed_emulate_mouse(adb_event_t *event)
 			aed_handoff(&new_event);
 			break;
 		case ADBK_KEYUP(ADBK_1):
+			result = 1;
 			aed_sc->sc_buttons &= ~1;	/* left up */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -251,6 +258,7 @@ aed_emulate_mouse(adb_event_t *event)
 #ifdef ALTXBUTTONS
 		case ADBK_KEYDOWN(ADBK_2):
 #endif
+			result = 1;
 			aed_sc->sc_buttons |= 2;	/* middle down */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -262,6 +270,7 @@ aed_emulate_mouse(adb_event_t *event)
 #ifdef ALTXBUTTONS
 		case ADBK_KEYUP(ADBK_2):
 #endif
+			result = 1;
 			aed_sc->sc_buttons &= ~2;	/* middle up */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -273,6 +282,7 @@ aed_emulate_mouse(adb_event_t *event)
 #ifdef ALTXBUTTONS
 		case ADBK_KEYDOWN(ADBK_3):
 #endif
+			result = 1;
 			aed_sc->sc_buttons |= 4;	/* right down */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -284,6 +294,7 @@ aed_emulate_mouse(adb_event_t *event)
 #ifdef ALTXBUTTONS
 		case ADBK_KEYUP(ADBK_3):
 #endif
+			result = 1;
 			aed_sc->sc_buttons &= ~4;	/* right up */
 			new_event.def_addr = ADBADDR_MS;
 			new_event.u.m.buttons = aed_sc->sc_buttons;
@@ -291,10 +302,18 @@ aed_emulate_mouse(adb_event_t *event)
 			microtime(&new_event.timestamp);
 			aed_handoff(&new_event);
 			break;
+		case ADBK_KEYDOWN(ADBK_UP):
+			result = 1;
+			break;
 		case ADBK_KEYUP(ADBK_UP):
+			result = 1;
 			pmf_event_inject(NULL, PMFE_DISPLAY_BRIGHTNESS_UP);
 			break;
+		case ADBK_KEYDOWN(ADBK_DOWN):
+			result = 1;
+			break;
 		case ADBK_KEYUP(ADBK_DOWN):
+			result = 1;
 			pmf_event_inject(NULL, PMFE_DISPLAY_BRIGHTNESS_DOWN);
 			break;
 		case ADBK_KEYUP(ADBK_SHIFT):
@@ -343,6 +362,8 @@ aed_emulate_mouse(adb_event_t *event)
 	} else {
 		aed_dokeyupdown(event);
 	}
+
+	return result;
 }
 
 /*

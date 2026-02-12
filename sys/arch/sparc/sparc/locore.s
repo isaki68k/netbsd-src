@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.285 2024/02/10 08:24:51 andvar Exp $	*/
+/*	$NetBSD: locore.s,v 1.289 2025/12/11 07:25:11 andvar Exp $	*/
 
 /*
  * Copyright (c) 1996 Paul Kranenburg
@@ -2782,7 +2782,7 @@ lev14_softint:
 	 ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG0)], %l3	! prefetch 1st arg
 
 /*
- * Fast flush handlers. xcalled from other CPUs throught soft interrupt 14
+ * Fast flush handlers. xcalled from other CPUs through soft interrupt 14
  * On entry:	%l6 = CPUINFO_VA
  *		%l3 = first argument
  *
@@ -5916,7 +5916,7 @@ _ENTRY(_C_LABEL(no_asyncflt_regs))
 _ENTRY(_C_LABEL(hypersparc_pure_vcache_flush))
 	/*
 	 * Flush entire on-chip instruction cache, which is
-	 * a pure vitually-indexed/virtually-tagged cache.
+	 * a pure virtually-indexed/virtually-tagged cache.
 	 */
 	retl
 	 sta	%g0, [%g0] ASI_HICACHECLR
@@ -6001,6 +6001,25 @@ Lpanic_spunout:
 	.asciz	"cpu%d: stuck on lock@%x"
 	_ALIGN
 
+ENTRY(paravirt_membar_sync)
+	/*
+	 * Store-before-load ordering with respect to matching logic
+	 * on the hypervisor side.
+	 *
+	 * This is the same as membar_sync, but without
+	 * conditionalizing away the LDSTUB instruction on uniprocessor
+	 * builds -- because under virtualization, we still have to
+	 * coordinate with a `device' backed by a hypervisor that is
+	 * potentially on another physical CPU even if we observe only
+	 * one virtual CPU as the guest.
+	 *
+	 * Sync with membar_sync in
+	 * common/lib/libc/arch/sparc/atomic/membar_ops.S.
+	 */
+	retl
+	 ldstub	[%sp - 4], %g0	/* makeshift store-before-load barrier */
+END(paravirt_membar_sync)
+
 #if defined(KGDB) || defined(DDB) || defined(DIAGNOSTIC)
 /*
  * Write all windows (user or otherwise), except the current one.
@@ -6042,11 +6061,7 @@ Lpanic_ljmp:
 	_ALIGN
 
 ENTRY(longjmp)
-	addcc	%o1, %g0, %g6	! compute v ? v : 1 in a global register
-	be,a	0f
-	 mov	1, %g6
-0:
-	mov	%o0, %g1	! save a in another global register
+	mov	%o0, %g1	! save a in a global register
 	ld	[%g1+8], %g7	/* get caller's frame */
 1:
 	cmp	%fp, %g7	! compare against desired frame
@@ -6070,8 +6085,8 @@ Llongjmpbotch:
 	 mov	%o2, %sp	! it is OK, put it in place
 	b,a	Llongjmpbotch
 3:
-	jmp	%o3 + 8		! success, return %g6
-	 mov	%g6, %o0
+	jmp	%o3 + 8		! success, return 1
+	 mov	1, %o0
 
 	.data
 	.globl	_C_LABEL(kernel_top)
